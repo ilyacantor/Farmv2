@@ -1,0 +1,95 @@
+{
+  "id": "e2e-medium-chaotic",
+  "name": "Medium Chaotic Environment",
+  "description": "E2E test with medium-scale environment and moderate chaos injection across all layers.",
+  "type": "e2e",
+  "tags": ["medium", "medium-chaos", "resilience"],
+  "config": {
+    "scale": {
+      "assets": {
+        "applications": 200,
+        "services": 300,
+        "databases": 80,
+        "hosts": 120
+      },
+      "business": {
+        "organizations": 100,
+        "customers": 1000,
+        "subscriptions": 750,
+        "invoices": 3000,
+        "transactions": 8000,
+        "products": 200
+      },
+      "events": {
+        "per_day": 25000,
+        "duration_days": 7,
+        "types": ["auth", "access", "network", "error"]
+      }
+    },
+    "chaos": {
+      "response_chaos": {
+        "enabled": true,
+        "latency_ms": {
+          "p50": 200,
+          "p95": 800,
+          "p99": 2500
+        },
+        "error_rate_pct": 8,
+        "timeout_rate_pct": 3,
+        "jitter_enabled": true
+      },
+      "schema_chaos": {
+        "enabled": true,
+        "field_add_pct": 12,
+        "field_remove_pct": 6,
+        "field_rename_pct": 3,
+        "type_change_pct": 2
+      },
+      "data_chaos": {
+        "enabled": true,
+        "missing_values_pct": 10,
+        "duplicates_pct": 5,
+        "conflicts_pct": 4,
+        "invalid_formats_pct": 2
+      }
+    },
+    "seed": 23456,
+    "synthetic_services": [
+      {
+        "type": "crm",
+        "base_path": "/synthetic/crm"
+      },
+      {
+        "type": "billing",
+        "base_path": "/synthetic/billing"
+      },
+      {
+        "type": "assets",
+        "base_path": "/synthetic/assets"
+      },
+      {
+        "type": "events",
+        "base_path": "/synthetic/events"
+      }
+    ],
+    "expected_outcomes": {
+      "aod": {
+        "min_assets_discovered": 600,
+        "max_errors": 50
+      },
+      "aam": {
+        "min_connector_availability_pct": 85,
+        "max_error_rate_pct": 12,
+        "min_eventual_success_pct": 90
+      },
+      "dcl": {
+        "min_mapping_coverage_pct": 80,
+        "max_conflicts": 100,
+        "max_unmapped_fields": 50
+      },
+      "agents": {
+        "min_recommendations": 5
+      }
+    }
+  }
+}
