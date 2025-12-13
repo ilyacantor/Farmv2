@@ -1,12 +1,16 @@
 import json
 import pytest
+from fastapi.testclient import TestClient
+
 from src.generators.enterprise import EnterpriseGenerator
 from src.models.planes import (
     ScaleEnum,
     EnterpriseProfileEnum,
     RealismProfileEnum,
     SnapshotResponse,
+    SCHEMA_VERSION,
 )
+from src.main import app
 
 
 BANNED_FIELDS = [
@@ -44,10 +48,11 @@ class TestSchemaValidation:
         snapshot = generate_snapshot()
         
         assert snapshot.meta is not None
-        assert snapshot.meta.run_id is not None
+        assert snapshot.meta.snapshot_id is not None
         assert snapshot.meta.tenant_id == "TestCorp"
         assert snapshot.meta.seed == 12345
         assert snapshot.meta.counts is not None
+        assert snapshot.meta.schema_version == SCHEMA_VERSION
         
         assert snapshot.planes is not None
         assert snapshot.planes.discovery is not None
@@ -89,13 +94,20 @@ class TestSchemaValidation:
             assert isinstance(ci.ci_id, str)
             assert isinstance(ci.name, str)
 
+    def test_schema_version_present(self):
+        snapshot = generate_snapshot()
+        assert snapshot.meta.schema_version == "farm.v1"
+        
+        snapshot_dict = snapshot.model_dump()
+        assert snapshot_dict["meta"]["schema_version"] == "farm.v1"
+
 
 class TestDeterminism:
     def test_same_seed_produces_identical_snapshot(self):
         snapshot1 = generate_snapshot(seed=42)
         snapshot2 = generate_snapshot(seed=42)
         
-        snapshot1.meta.generated_at = snapshot2.meta.generated_at
+        snapshot1.meta.created_at = snapshot2.meta.created_at
         
         json1 = json.dumps(snapshot1.model_dump(), sort_keys=True)
         json2 = json.dumps(snapshot2.model_dump(), sort_keys=True)
@@ -195,6 +207,116 @@ class TestScales:
         assert len(enterprise.planes.discovery.observations) > len(small.planes.discovery.observations)
         assert len(enterprise.planes.endpoint.devices) > len(small.planes.endpoint.devices)
         assert len(enterprise.planes.cloud.resources) > len(small.planes.cloud.resources)
+
+
+class TestAPIEndpoints:
+    @pytest.fixture
+    def client(self):
+        return TestClient(app)
+
+    def test_generate_snapshot_via_api(self, client):
+        response = client.post("/api/snapshots", json={
+            "tenant_id": "APICorp",
+            "seed": 99999,
+            "scale": "small",
+            "enterprise_profile": "modern_saas",
+            "realism_profile": "typical"
+        })
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "snapshot_id" in data
+        assert data["tenant_id"] == "APICorp"
+        assert "created_at" in data
+        assert data["schema_version"] == "farm.v1"
+
+    def test_fetch_snapshot_via_api(self, client):
+        create_response = client.post("/api/snapshots", json={
+            "tenant_id": "FetchCorp",
+            "seed": 88888,
+            "scale": "small",
+            "enterprise_profile": "modern_saas",
+            "realism_profile": "clean"
+        })
+        
+        assert create_response.status_code == 200
+        create_data = create_response.json()
+        snapshot_id = create_data["snapshot_id"]
+        
+        get_response = client.get(f"/api/snapshots/{snapshot_id}")
+        assert get_response.status_code == 200
+        assert get_response.headers["content-type"] == "application/json"
+        
+        snapshot_data = get_response.json()
+        assert snapshot_data["meta"]["snapshot_id"] == snapshot_id
+        assert snapshot_data["meta"]["schema_version"] == "farm.v1"
+        assert "planes" in snapshot_data
+
+    def test_list_snapshots_via_api(self, client):
+        client.post("/api/snapshots", json={
+            "tenant_id": "ListCorp",
+            "seed": 77777,
+            "scale": "small",
+            "enterprise_profile": "modern_saas",
+            "realism_profile": "typical"
+        })
+        
+        response = client.get("/api/snapshots")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) > 0
+        
+        for item in data:
+            assert "snapshot_id" in item
+            assert "tenant_id" in item
+            assert "created_at" in item
+            assert "schema_version" in item
+            assert "planes" not in item
+
+    def test_list_snapshots_with_tenant_filter(self, client):
+        client.post("/api/snapshots", json={
+            "tenant_id": "FilterCorp",
+            "seed": 66666,
+            "scale": "small",
+            "enterprise_profile": "modern_saas",
+            "realism_profile": "typical"
+        })
+        
+        response = client.get("/api/snapshots?tenant_id=FilterCorp")
+        assert response.status_code == 200
+        
+        data = response.json()
+        for item in data:
+            assert item["tenant_id"] == "FilterCorp"
+
+    def test_list_snapshots_with_limit(self, client):
+        response = client.get("/api/snapshots?limit=5")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert len(data) <= 5
+
+    def test_get_nonexistent_snapshot_returns_404(self, client):
+        response = client.get("/api/snapshots/nonexistent-id-12345")
+        assert response.status_code == 404
+
+    def test_schema_version_in_fetched_snapshot(self, client):
+        create_response = client.post("/api/snapshots", json={
+            "tenant_id": "SchemaCorp",
+            "seed": 55555,
+            "scale": "small",
+            "enterprise_profile": "modern_saas",
+            "realism_profile": "typical"
+        })
+        
+        snapshot_id = create_response.json()["snapshot_id"]
+        get_response = client.get(f"/api/snapshots/{snapshot_id}")
+        
+        snapshot_data = get_response.json()
+        assert snapshot_data["meta"]["schema_version"] == "farm.v1"
 
 
 if __name__ == "__main__":

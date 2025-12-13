@@ -560,13 +560,13 @@ class EnterpriseGenerator:
         }
         
         meta = SnapshotMeta(
-            run_id=self.run_id,
+            snapshot_id=self.run_id,
             tenant_id=self.tenant_id,
             seed=self.seed,
             scale=self.scale,
             enterprise_profile=self.enterprise_profile,
             realism_profile=self.realism_profile,
-            generated_at=datetime.utcnow().isoformat() + "Z",
+            created_at=datetime.utcnow().isoformat() + "Z",
             counts=counts,
         )
         

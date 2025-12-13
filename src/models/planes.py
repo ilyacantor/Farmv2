@@ -233,14 +233,18 @@ class AllPlanes(BaseModel):
     finance: FinancePlane
 
 
+SCHEMA_VERSION = "farm.v1"
+
+
 class SnapshotMeta(BaseModel):
-    run_id: str
+    schema_version: str = SCHEMA_VERSION
+    snapshot_id: str
     tenant_id: str
     seed: int
     scale: ScaleEnum
     enterprise_profile: EnterpriseProfileEnum
     realism_profile: RealismProfileEnum
-    generated_at: str
+    created_at: str
     counts: dict[str, int] = Field(default_factory=dict)
 
 
@@ -267,3 +271,21 @@ class RunRecord(BaseModel):
     generated_at: str
     counts: dict[str, int]
     file_path: Optional[str] = None
+
+
+class SnapshotCreateResponse(BaseModel):
+    snapshot_id: str
+    tenant_id: str
+    created_at: str
+    schema_version: str = SCHEMA_VERSION
+
+
+class SnapshotMetadata(BaseModel):
+    snapshot_id: str
+    tenant_id: str
+    seed: int
+    scale: str
+    enterprise_profile: str
+    realism_profile: str
+    created_at: str
+    schema_version: str = SCHEMA_VERSION
