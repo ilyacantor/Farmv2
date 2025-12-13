@@ -159,8 +159,12 @@ class EnterpriseGenerator:
         return str(uuid.UUID(int=self.rng.getrandbits(128), version=4))
 
     def _random_date(self, days_back: int = 365) -> str:
-        delta = timedelta(days=self.rng.randint(0, days_back))
+        delta = timedelta(days=self.rng.randint(0, abs(days_back)))
         return (self.base_date - delta).isoformat() + "Z"
+
+    def _random_future_date(self, days_ahead: int = 365) -> str:
+        delta = timedelta(days=self.rng.randint(1, days_ahead))
+        return (self.base_date + delta).isoformat() + "Z"
 
     def _random_recent_date(self, days_back: int = 30) -> str:
         delta = timedelta(days=self.rng.randint(0, days_back), hours=self.rng.randint(0, 23))
@@ -501,7 +505,7 @@ class EnterpriseGenerator:
                 vendor_name=vendor_name,
                 product=app["name"] if self.rng.random() > 0.2 else None,
                 start_date=self._random_date(730),
-                end_date=self._random_date(-365) if self.rng.random() > 0.3 else None,
+                end_date=self._random_future_date(365) if self.rng.random() > 0.3 else None,
                 owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
             ))
             
