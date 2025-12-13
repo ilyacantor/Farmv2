@@ -41,9 +41,19 @@ Farm generates 7 independent planes:
 
 ## API Endpoints
 
-- `POST /api/snapshot` - Generate a new enterprise snapshot
+### New Snapshot API (for AOD)
+- `POST /api/snapshots` - Generate snapshot, returns `{snapshot_id, tenant_id, created_at, schema_version}`
+- `GET /api/snapshots/{snapshot_id}` - Get full snapshot JSON
+- `GET /api/snapshots?tenant_id=...&limit=...` - List snapshot metadata only (no blob)
+
+### Legacy API
+- `POST /api/snapshot` - Generate a new enterprise snapshot (full response)
 - `GET /api/runs` - List all run history
 - `GET /api/runs/{run_id}` - Download specific snapshot
+
+## Schema Version
+
+All snapshots include `meta.schema_version = "farm.v1"`
 
 ## Configuration
 
