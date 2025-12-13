@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AOS Farm Console</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { font-family: 'Quicksand', sans-serif; }
+        body { background-color: #0F172A; }
+        .cyan-glow { box-shadow: 0 0 20px rgba(34, 211, 238, 0.3); }
+        .purple-glow { box-shadow: 0 0 20px rgba(168, 85, 247, 0.3); }
+    </style>
+</head>
+<body class="min-h-screen text-white">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <header class="mb-8">
+            <div class="flex items-center gap-3 mb-2">
+                <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center">
+                    <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                    </svg>
+                </div>
+                <h1 class="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
+                    AOS Farm Console
+                </h1>
+            </div>
+            <p class="text-slate-400 text-lg">Synthetic Enterprise Data Generator for AutonomOS</p>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-1 bg-slate-800/60 rounded-xl p-6 border border-slate-700">
+                <h2 class="text-xl font-semibold text-cyan-400 mb-4">Generate Snapshot</h2>
+                
+                <form id="snapshotForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Tenant ID</label>
+                        <input type="text" id="tenantId" value="Acme Corp" 
+                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Seed</label>
+                        <input type="number" id="seed" value="12345" 
+                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Scale</label>
+                        <select id="scale" 
+                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                            <option value="small">Small</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="large">Large</option>
+                            <option value="enterprise">Enterprise</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Enterprise Profile</label>
+                        <select id="enterpriseProfile" 
+                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                            <option value="modern_saas" selected>Modern SaaS</option>
+                            <option value="regulated_finance">Regulated Finance</option>
+                            <option value="healthcare_provider">Healthcare Provider</option>
+                            <option value="global_manufacturing">Global Manufacturing</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Realism Profile</label>
+                        <select id="realismProfile" 
+                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                            <option value="clean">Clean</option>
+                            <option value="typical" selected>Typical</option>
+                            <option value="messy">Messy</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" id="generateBtn"
+                        class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 cyan-glow">
+                        Generate Snapshot
+                    </button>
+                </form>
+            </div>
+
+            <div class="lg:col-span-2 space-y-6">
+                <div id="resultsSection" class="hidden">
+                    <div class="bg-slate-800/60 rounded-xl p-6 border border-slate-700 mb-6">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-xl font-semibold text-cyan-400">Snapshot Generated</h2>
+                            <button id="downloadBtn" 
+                                class="bg-purple-600 hover:bg-purple-500 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 purple-glow flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                </svg>
+                                Download JSON
+                            </button>
+                        </div>
+                        
+                        <div id="metaInfo" class="text-sm text-slate-400 mb-4"></div>
+                        
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3" id="countsGrid"></div>
+                    </div>
+
+                    <div class="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
+                        <h3 class="text-lg font-semibold text-cyan-400 mb-4">Sample Records</h3>
+                        <div class="space-y-4" id="samplesContainer"></div>
+                    </div>
+                </div>
+
+                <div id="runsSection" class="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
+                    <h2 class="text-xl font-semibold text-cyan-400 mb-4">Run History</h2>
+                    <div id="runsList" class="space-y-2"></div>
+                    <p id="noRuns" class="text-slate-500 text-center py-4">No runs yet. Generate a snapshot to get started.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentSnapshot = null;
+
+        async function loadRuns() {
+            try {
+                const response = await fetch('/api/runs');
+                const runs = await response.json();
+                
+                const runsList = document.getElementById('runsList');
+                const noRuns = document.getElementById('noRuns');
+                
+                if (runs.length === 0) {
+                    runsList.innerHTML = '';
+                    noRuns.classList.remove('hidden');
+                } else {
+                    noRuns.classList.add('hidden');
+                    runsList.innerHTML = runs.map(run => `
+                        <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700 hover:border-cyan-500/50 transition-colors cursor-pointer" 
+                             onclick="loadRun('${run.run_id}')">
+                            <div class="flex items-center justify-between">
+                                <div>
+                                    <span class="text-cyan-400 font-medium">${run.tenant_id}</span>
+                                    <span class="text-slate-500 text-sm ml-2">Seed: ${run.seed}</span>
+                                </div>
+                                <div class="text-xs text-slate-500">${new Date(run.generated_at).toLocaleString()}</div>
+                            </div>
+                            <div class="text-xs text-slate-400 mt-1">
+                                ${run.scale} | ${run.enterprise_profile} | ${run.realism_profile}
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } catch (e) {
+                console.error('Failed to load runs:', e);
+            }
+        }
+
+        async function loadRun(runId) {
+            try {
+                const response = await fetch(`/api/runs/${runId}`);
+                currentSnapshot = await response.json();
+                displaySnapshot(currentSnapshot);
+            } catch (e) {
+                console.error('Failed to load run:', e);
+            }
+        }
+
+        function displaySnapshot(snapshot) {
+            document.getElementById('resultsSection').classList.remove('hidden');
+            
+            const meta = snapshot.meta;
+            document.getElementById('metaInfo').innerHTML = `
+                <div class="flex flex-wrap gap-4">
+                    <span><strong class="text-slate-300">Run ID:</strong> ${meta.run_id.substring(0, 8)}...</span>
+                    <span><strong class="text-slate-300">Tenant:</strong> ${meta.tenant_id}</span>
+                    <span><strong class="text-slate-300">Seed:</strong> ${meta.seed}</span>
+                    <span><strong class="text-slate-300">Generated:</strong> ${new Date(meta.generated_at).toLocaleString()}</span>
+                </div>
+            `;
+            
+            const counts = meta.counts;
+            const countsGrid = document.getElementById('countsGrid');
+            const countItems = [
+                { label: 'Discovery Observations', key: 'discovery_observations', color: 'cyan' },
+                { label: 'IdP Objects', key: 'idp_objects', color: 'purple' },
+                { label: 'CMDB CIs', key: 'cmdb_cis', color: 'blue' },
+                { label: 'Cloud Resources', key: 'cloud_resources', color: 'green' },
+                { label: 'Endpoint Devices', key: 'endpoint_devices', color: 'amber' },
+                { label: 'Installed Apps', key: 'endpoint_installed_apps', color: 'orange' },
+                { label: 'DNS Records', key: 'network_dns', color: 'teal' },
+                { label: 'Proxy Logs', key: 'network_proxy', color: 'indigo' },
+                { label: 'Certificates', key: 'network_certs', color: 'pink' },
+                { label: 'Vendors', key: 'finance_vendors', color: 'emerald' },
+                { label: 'Contracts', key: 'finance_contracts', color: 'violet' },
+                { label: 'Transactions', key: 'finance_transactions', color: 'rose' },
+            ];
+            
+            countsGrid.innerHTML = countItems.map(item => `
+                <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700">
+                    <div class="text-2xl font-bold text-${item.color}-400">${counts[item.key] || 0}</div>
+                    <div class="text-xs text-slate-400">${item.label}</div>
+                </div>
+            `).join('');
+            
+            const samplesContainer = document.getElementById('samplesContainer');
+            const planes = [
+                { name: 'Discovery', data: snapshot.planes.discovery.observations, key: 'observed_name' },
+                { name: 'IdP', data: snapshot.planes.idp.objects, key: 'name' },
+                { name: 'CMDB', data: snapshot.planes.cmdb.cis, key: 'name' },
+                { name: 'Cloud', data: snapshot.planes.cloud.resources, key: 'name' },
+                { name: 'Endpoint Devices', data: snapshot.planes.endpoint.devices, key: 'hostname' },
+                { name: 'Finance Vendors', data: snapshot.planes.finance.vendors, key: 'vendor_name' },
+            ];
+            
+            samplesContainer.innerHTML = planes.map(plane => `
+                <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700">
+                    <h4 class="text-cyan-400 font-medium mb-2">${plane.name} (${plane.data.length} records)</h4>
+                    <div class="text-xs text-slate-400 space-y-1 max-h-32 overflow-y-auto">
+                        ${plane.data.slice(0, 5).map(item => `
+                            <div class="bg-slate-800/60 rounded px-2 py-1">
+                                <code class="text-slate-300">${item[plane.key] || 'N/A'}</code>
+                            </div>
+                        `).join('')}
+                        ${plane.data.length > 5 ? `<div class="text-slate-500">...and ${plane.data.length - 5} more</div>` : ''}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        document.getElementById('snapshotForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const btn = document.getElementById('generateBtn');
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            
+            try {
+                const response = await fetch('/api/snapshot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        tenant_id: document.getElementById('tenantId').value,
+                        seed: parseInt(document.getElementById('seed').value),
+                        scale: document.getElementById('scale').value,
+                        enterprise_profile: document.getElementById('enterpriseProfile').value,
+                        realism_profile: document.getElementById('realismProfile').value,
+                    })
+                });
+                
+                currentSnapshot = await response.json();
+                displaySnapshot(currentSnapshot);
+                loadRuns();
+            } catch (e) {
+                console.error('Failed to generate snapshot:', e);
+                alert('Failed to generate snapshot. Check console for details.');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Generate Snapshot';
+            }
+        });
+
+        document.getElementById('downloadBtn').addEventListener('click', () => {
+            if (!currentSnapshot) return;
+            
+            const blob = new Blob([JSON.stringify(currentSnapshot, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `snapshot-${currentSnapshot.meta.run_id}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+
+        loadRuns();
+    </script>
+</body>
+</html>

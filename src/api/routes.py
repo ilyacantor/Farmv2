@@ -1,0 +1,141 @@
+import json
+import os
+from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+import aiosqlite
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
+
+from src.generators.enterprise import EnterpriseGenerator
+from src.models.planes import (
+    SnapshotRequest,
+    SnapshotResponse,
+    RunRecord,
+)
+
+router = APIRouter()
+
+DB_PATH = "data/farm.db"
+SNAPSHOTS_DIR = "data/snapshots"
+
+
+async def init_db():
+    Path("data").mkdir(exist_ok=True)
+    Path(SNAPSHOTS_DIR).mkdir(exist_ok=True)
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS runs (
+                run_id TEXT PRIMARY KEY,
+                tenant_id TEXT NOT NULL,
+                seed INTEGER NOT NULL,
+                scale TEXT NOT NULL,
+                enterprise_profile TEXT NOT NULL,
+                realism_profile TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                counts TEXT NOT NULL,
+                file_path TEXT
+            )
+        """)
+        await db.commit()
+
+
+async def save_run(run: RunRecord, snapshot_data: dict):
+    await init_db()
+    
+    file_path = f"{SNAPSHOTS_DIR}/{run.run_id}.json"
+    with open(file_path, "w") as f:
+        json.dump(snapshot_data, f, indent=2)
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("""
+            INSERT INTO runs (run_id, tenant_id, seed, scale, enterprise_profile, realism_profile, generated_at, counts, file_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            run.run_id,
+            run.tenant_id,
+            run.seed,
+            run.scale,
+            run.enterprise_profile,
+            run.realism_profile,
+            run.generated_at,
+            json.dumps(run.counts),
+            file_path,
+        ))
+        await db.commit()
+    
+    return file_path
+
+
+@router.post("/api/snapshot", response_model=SnapshotResponse)
+async def create_snapshot(request: SnapshotRequest):
+    generator = EnterpriseGenerator(
+        tenant_id=request.tenant_id,
+        seed=request.seed,
+        scale=request.scale,
+        enterprise_profile=request.enterprise_profile,
+        realism_profile=request.realism_profile,
+    )
+    
+    snapshot = generator.generate()
+    
+    run_record = RunRecord(
+        run_id=snapshot.meta.run_id,
+        tenant_id=snapshot.meta.tenant_id,
+        seed=snapshot.meta.seed,
+        scale=snapshot.meta.scale.value,
+        enterprise_profile=snapshot.meta.enterprise_profile.value,
+        realism_profile=snapshot.meta.realism_profile.value,
+        generated_at=snapshot.meta.generated_at,
+        counts=snapshot.meta.counts,
+    )
+    
+    snapshot_dict = snapshot.model_dump()
+    await save_run(run_record, snapshot_dict)
+    
+    return snapshot
+
+
+@router.get("/api/runs")
+async def list_runs():
+    await init_db()
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM runs ORDER BY generated_at DESC") as cursor:
+            rows = await cursor.fetchall()
+            runs = []
+            for row in rows:
+                runs.append(RunRecord(
+                    run_id=row["run_id"],
+                    tenant_id=row["tenant_id"],
+                    seed=row["seed"],
+                    scale=row["scale"],
+                    enterprise_profile=row["enterprise_profile"],
+                    realism_profile=row["realism_profile"],
+                    generated_at=row["generated_at"],
+                    counts=json.loads(row["counts"]),
+                    file_path=row["file_path"],
+                ))
+            return runs
+
+
+@router.get("/api/runs/{run_id}")
+async def get_run(run_id: str):
+    await init_db()
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Run not found")
+            
+            file_path = row["file_path"]
+            if file_path and os.path.exists(file_path):
+                with open(file_path, "r") as f:
+                    return json.load(f)
+            else:
+                raise HTTPException(status_code=404, detail="Snapshot file not found")
