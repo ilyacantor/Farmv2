@@ -347,6 +347,7 @@ class ReconcileMetadata(BaseModel):
     aod_run_id: str
     created_at: str
     status: str
+    report_text: str = ""
 
 
 class AutoReconcileRequest(BaseModel):

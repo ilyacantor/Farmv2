@@ -406,9 +406,68 @@
             const lines = (rec.report_text || '').split('\n').filter(l => l.trim());
             const headline = lines.find(l => l.includes('RESULT:')) || lines[0] || '';
             
+            const zombieLine = lines.find(l => l.includes('zombies, Farm expected'));
+            const shadowLine = lines.find(l => l.includes('shadows, Farm expected'));
+            const missedZombies = lines.find(l => l.includes('Missed zombies:'));
+            const missedShadows = lines.find(l => l.includes('Missed shadows:'));
+            const extraZombies = lines.find(l => l.includes('Extra zombies in AOD:'));
+            const extraShadows = lines.find(l => l.includes('Extra shadows in AOD:'));
+            
+            const parseCount = (line, pattern) => {
+                if (!line) return null;
+                const match = line.match(pattern);
+                return match ? { aod: parseInt(match[1]), farm: parseInt(match[2]) } : null;
+            };
+            
+            const zombieCounts = parseCount(zombieLine, /AOD reported (\d+) zombies, Farm expected (\d+)/);
+            const shadowCounts = parseCount(shadowLine, /AOD reported (\d+) shadows, Farm expected (\d+)/);
+            
+            const getCompareStyle = (aod, farm) => {
+                if (aod === farm) return 'text-green-400';
+                return 'text-red-400';
+            };
+            
+            let metricsHtml = '';
+            if (zombieCounts || shadowCounts) {
+                metricsHtml = `
+                    <div class="grid grid-cols-2 gap-3 mt-2 text-xs">
+                        ${zombieCounts ? `
+                            <div class="bg-slate-800/60 rounded p-2">
+                                <div class="text-slate-500 mb-1">Zombies</div>
+                                <div class="${getCompareStyle(zombieCounts.aod, zombieCounts.farm)}">
+                                    AOD: ${zombieCounts.aod} / Expected: ${zombieCounts.farm}
+                                    ${zombieCounts.aod !== zombieCounts.farm ? ` (${zombieCounts.aod > zombieCounts.farm ? '+' : ''}${zombieCounts.aod - zombieCounts.farm})` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
+                        ${shadowCounts ? `
+                            <div class="bg-slate-800/60 rounded p-2">
+                                <div class="text-slate-500 mb-1">Shadows</div>
+                                <div class="${getCompareStyle(shadowCounts.aod, shadowCounts.farm)}">
+                                    AOD: ${shadowCounts.aod} / Expected: ${shadowCounts.farm}
+                                    ${shadowCounts.aod !== shadowCounts.farm ? ` (${shadowCounts.aod > shadowCounts.farm ? '+' : ''}${shadowCounts.aod - shadowCounts.farm})` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+            
+            let issuesHtml = '';
+            const issues = [missedZombies, missedShadows, extraZombies, extraShadows].filter(Boolean);
+            if (issues.length > 0) {
+                issuesHtml = `
+                    <div class="mt-2 space-y-1">
+                        ${issues.map(issue => `<div class="text-xs text-amber-400">${issue}</div>`).join('')}
+                    </div>
+                `;
+            }
+            
             return `
                 <div class="mt-3 pt-3 border-t border-slate-700">
-                    <div class="text-sm text-slate-300">${headline}</div>
+                    <div class="text-sm text-slate-300 font-medium">${headline}</div>
+                    ${metricsHtml}
+                    ${issuesHtml}
                     <details class="mt-2">
                         <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-400">View full report</summary>
                         <div class="mt-2 bg-slate-800/60 rounded p-3 text-xs text-slate-400 whitespace-pre-line">

@@ -614,10 +614,10 @@ async def list_reconciliations(
         db.row_factory = aiosqlite.Row
         
         if snapshot_id:
-            query = "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status FROM reconciliations WHERE snapshot_id = ? ORDER BY created_at DESC LIMIT ?"
+            query = "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text FROM reconciliations WHERE snapshot_id = ? ORDER BY created_at DESC LIMIT ?"
             params = (snapshot_id, limit)
         else:
-            query = "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status FROM reconciliations ORDER BY created_at DESC LIMIT ?"
+            query = "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text FROM reconciliations ORDER BY created_at DESC LIMIT ?"
             params = (limit,)
         
         async with db.execute(query, params) as cursor:
@@ -630,6 +630,7 @@ async def list_reconciliations(
                     aod_run_id=row["aod_run_id"],
                     created_at=row["created_at"],
                     status=row["status"],
+                    report_text=row["report_text"] or "",
                 )
                 for row in rows
             ]
