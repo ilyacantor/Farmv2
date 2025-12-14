@@ -91,7 +91,7 @@ async def save_run(run: RunRecord, snapshot_data: dict):
     
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
-            INSERT INTO runs (run_id, tenant_id, seed, scale, enterprise_profile, realism_profile, generated_at, counts, file_path)
+            INSERT OR REPLACE INTO runs (run_id, tenant_id, seed, scale, enterprise_profile, realism_profile, generated_at, counts, file_path)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             run.run_id,
