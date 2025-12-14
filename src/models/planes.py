@@ -289,3 +289,58 @@ class SnapshotMetadata(BaseModel):
     realism_profile: str
     created_at: str
     schema_version: str = SCHEMA_VERSION
+
+
+class ReconcileStatusEnum(str, Enum):
+    PASS = "PASS"
+    WARN = "WARN"
+    FAIL = "FAIL"
+
+
+class AODSummary(BaseModel):
+    assets_admitted: int = 0
+    findings: int = 0
+    zombies: int = 0
+    shadows: int = 0
+
+
+class AODLists(BaseModel):
+    zombie_assets: list[str] = Field(default_factory=list)
+    shadow_assets: list[str] = Field(default_factory=list)
+    top_findings: list[str] = Field(default_factory=list)
+
+
+class ReconcileRequest(BaseModel):
+    snapshot_id: str
+    aod_run_id: str
+    tenant_id: str
+    aod_summary: AODSummary
+    aod_lists: AODLists
+
+
+class FarmExpectations(BaseModel):
+    expected_zombies: int = 0
+    expected_shadows: int = 0
+    zombie_keys: list[str] = Field(default_factory=list)
+    shadow_keys: list[str] = Field(default_factory=list)
+
+
+class ReconcileResponse(BaseModel):
+    reconciliation_id: str
+    snapshot_id: str
+    tenant_id: str
+    aod_run_id: str
+    created_at: str
+    status: ReconcileStatusEnum
+    report_text: str
+    aod_summary: AODSummary
+    farm_expectations: FarmExpectations
+
+
+class ReconcileMetadata(BaseModel):
+    reconciliation_id: str
+    snapshot_id: str
+    tenant_id: str
+    aod_run_id: str
+    created_at: str
+    status: str

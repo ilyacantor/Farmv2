@@ -1,0 +1,104 @@
+Why: you need a **closed-loop harness** so you can tell, run-by-run, whether AOD is drifting (or Farm is) **without nukes**. The only trustworthy way is: Farm computes its own **evidence-only expectations** (like your spooky diagnostic), then compares them to what AOD reported.
+
+What to do next: add a **Farm “reconcile” endpoint + report store** that ingests AOD outputs for a given snapshot/run, runs the Farm-side diagnostic on that same snapshot, and writes a **plain-English diff narrative**.
+
+## Single Replit prompt for Farm (copy/paste)
+
+> Implement a run-by-run **Reconciliation** capability in Farm that records AOD results and compares them against Farm’s evidence-only expectations, producing a short plain-English narrative.
+>
+> Goal:
+>
+> * For each snapshot_id + aod_run_id, store:
+> * the AOD-reported results (counts + key lists)
+> * Farm’s computed expectations from the snapshot (using the same logic as spooky_check)
+> * a reconciliation report highlighting differences (plain English)
+>
+> Non-negotiables:
+>
+> * Do NOT add ground-truth labels to snapshots.
+> * Do NOT add “answer keys” like is_shadow/is_zombie inside snapshot data.
+> * Reconciliation is computed AFTER the fact, per run, and stored separately.
+>
+> Data model:
+>
+> * Add a SQLite table `reconciliations` with columns:
+> * reconciliation_id (uuid)
+> * snapshot_id
+> * tenant_id
+> * aod_run_id
+> * created_at
+> * aod_payload_json (blob)
+> * farm_expectations_json (blob)
+> * report_text (plain English)
+> * status (PASS|WARN|FAIL)
+>
+> API:
+>
+> 1. `POST /api/reconcile`
+>    Request body:
+>
+> ```json
+> {
+>   "snapshot_id": "string",
+>   "aod_run_id": "string",
+>   "tenant_id": "string",
+>   "aod_summary": {
+>     "assets_admitted": 0,
+>     "findings": 0,
+>     "artifacts": 0,
+>     "zombies": 0,
+>     "shadows": 0
+>   },
+>   "aod_lists": {
+>     "zombie_assets": ["asset_key_or_name", "..."],
+>     "shadow_assets": ["..."],
+>     "top_findings": [{"type":"...", "asset":"...", "severity":"..."}]
+>   }
+> }
+> ```
+>
+> Behavior:
+>
+> * Load the snapshot JSON by snapshot_id (from existing snapshot storage).
+>
+> * Compute Farm expectations using evidence-only heuristics (reuse spooky_check logic):
+>
+>   * zombie_opportunities count + top 10 keys
+>   * shadow_opportunities count + top 10 keys
+>   * counts for idp_present/cmdb_present/finance_present/activity_present/indeterminate
+>
+> * Compare AOD results vs Farm expectations:
+>
+>   * Compare zombie count and overlap of “top zombie keys”
+>   * Compare shadow count (likely 0 today; still report)
+>   * Compare notable mismatches:
+>
+>     * “Farm expects many zombies but AOD reported none”
+>     * “AOD reported zombies not present in Farm opportunity list”
+>
+> * Produce a short narrative report (max ~12 lines) with:
+>
+>   * one-sentence headline (PASS/WARN/FAIL)
+>   * 3 bullets: what matches
+>   * 3 bullets: what differs (with numbers)
+>   * 1 bullet: most likely cause (definition mismatch vs missing plane evidence vs correlation failure)
+>   * 1 bullet: what to do next (single action)
+>
+> * Store reconciliation row and return it.
+>
+> 2. `GET /api/reconcile?snapshot_id=...` (list)
+> 3. `GET /api/reconcile/{reconciliation_id}` (full report)
+>
+> Status rules:
+>
+> * PASS if counts match within tolerance and key overlap is meaningful.
+> * WARN if counts differ but directionally consistent.
+> * FAIL if Farm expects >0 zombies/shadows and AOD reports 0, or if AOD reports many that Farm doesn’t see opportunities for.
+>
+> Deliver proof:
+>
+> * Run reconciliation against one existing snapshot + one AOD run (use a sample payload if needed).
+> * Print the plain-English report output.
+> * Show it is stored and retrievable via GET.
+>
+> Keep it simple, deterministic, and plain English.
