@@ -67,28 +67,20 @@
         </nav>
 
         <div id="testingTab">
-            <div class="grid grid-cols-1 gap-6">
-                <div>
-                    <div class="bg-slate-800/60 rounded-xl border border-slate-700">
-                        <div class="flex items-center justify-between p-4 border-b border-slate-700">
-                            <h2 class="text-lg font-semibold text-purple-400">AOD Reconciliation</h2>
-                            <div class="flex gap-2">
-                                <select id="filterTenant" onchange="filterSnapshots()" class="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
-                                    <option value="">All Tenants</option>
-                                </select>
-                                <select id="filterStatus" onchange="filterSnapshots()" class="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
-                                    <option value="">All Status</option>
-                                    <option value="PASS">Pass</option>
-                                    <option value="WARN">Warn</option>
-                                    <option value="FAIL">Fail</option>
-                                    <option value="NOT_RUN">Not Run</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div id="snapshotsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-280px)] overflow-y-auto">
-                            <div class="text-slate-500 text-center py-12">Loading snapshots...</div>
-                        </div>
+            <div class="bg-slate-800/60 rounded-xl border border-slate-700">
+                <div class="flex items-center justify-between p-4 border-b border-slate-700">
+                    <h2 class="text-lg font-semibold text-purple-400">Reconciliation Results</h2>
+                    <div class="flex gap-2">
+                        <select id="filterReconcileStatus" onchange="renderReconciliationsList()" class="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
+                            <option value="">All Status</option>
+                            <option value="PASS">Pass</option>
+                            <option value="WARN">Warn</option>
+                            <option value="FAIL">Fail</option>
+                        </select>
                     </div>
+                </div>
+                <div id="reconciliationsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-220px)] overflow-y-auto">
+                    <div class="text-slate-500 text-center py-12">Loading reconciliations...</div>
                 </div>
             </div>
         </div>
@@ -260,8 +252,8 @@
     <script>
         let snapshotsCache = [];
         let reconciliationsCache = {};
+        let reconciliationsListCache = [];
         let aodStatusCache = {};
-        let generationLog = [];
 
         const companyPrefixes = ['Tech', 'Data', 'Cloud', 'Cyber', 'Net', 'Info', 'Sys', 'Core', 'Blue', 'Nova', 'Apex', 'Velo', 'Aero', 'Flux', 'Helix'];
         const companySuffixes = ['Corp', 'Labs', 'Systems', 'Works', 'Flow', 'Hub', 'Dynamics', 'Logic', 'Wave', 'Edge'];
@@ -353,10 +345,10 @@
                 ]);
                 
                 snapshotsCache = await snapshotsRes.json();
-                const allReconciliations = await reconciliationsRes.json();
+                reconciliationsListCache = await reconciliationsRes.json();
                 
                 reconciliationsCache = {};
-                for (const rec of allReconciliations) {
+                for (const rec of reconciliationsListCache) {
                     if (!reconciliationsCache[rec.snapshot_id]) reconciliationsCache[rec.snapshot_id] = [];
                     reconciliationsCache[rec.snapshot_id].push(rec);
                 }
@@ -364,19 +356,80 @@
                 document.getElementById('snapshotCount').textContent = snapshotsCache.length;
                 document.getElementById('configSnapshotCount').textContent = snapshotsCache.length;
                 
-                const tenants = [...new Set(snapshotsCache.map(s => s.tenant_id))].sort();
-                const filterTenant = document.getElementById('filterTenant');
-                filterTenant.innerHTML = '<option value="">All Tenants</option>' + 
-                    tenants.map(t => `<option value="${t}">${t}</option>`).join('');
-                
                 snapshotsCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                renderSnapshotsList();
+                reconciliationsListCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                
+                renderReconciliationsList();
                 renderConfigSnapshotsList();
-                loadAodStatuses();
             } catch (e) {
                 console.error('Failed to load data:', e);
-                document.getElementById('snapshotsList').innerHTML = 
+                document.getElementById('reconciliationsList').innerHTML = 
                     '<div class="text-red-400 text-center py-12">Failed to load data</div>';
+            }
+        }
+        
+        function renderReconciliationsList() {
+            const container = document.getElementById('reconciliationsList');
+            const filterStatus = document.getElementById('filterReconcileStatus')?.value || '';
+            
+            let filtered = reconciliationsListCache;
+            if (filterStatus) filtered = filtered.filter(r => r.status === filterStatus);
+            
+            if (filtered.length === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-center py-12">No reconciliations yet</div>';
+                return;
+            }
+            
+            container.innerHTML = filtered.map(rec => {
+                const created = new Date(rec.created_at);
+                const timeAgo = getTimeAgo(created);
+                
+                return `
+                    <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-1">
+                                    ${getStatusBadge(rec.status)}
+                                    <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
+                                    <span class="text-slate-500 text-xs">AOD: ${rec.aod_run_id || 'N/A'}</span>
+                                </div>
+                                <div class="text-xs text-slate-500 truncate">
+                                    Snapshot: ${rec.snapshot_id.substring(0, 8)}...
+                                </div>
+                            </div>
+                            <div class="text-xs text-slate-500">${timeAgo}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        async function viewReconciliationReport(reconciliationId) {
+            try {
+                const response = await fetch(`/api/reconcile/${reconciliationId}`);
+                const rec = await response.json();
+                
+                const modal = document.getElementById('detailModal');
+                document.getElementById('detailContent').innerHTML = `
+                    <div class="space-y-4">
+                        <div class="flex items-center gap-3">
+                            ${getStatusBadge(rec.status, 'large')}
+                            <span class="text-lg text-white">${rec.tenant_id}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4 text-sm">
+                            <div><span class="text-slate-400">Snapshot:</span> <span class="text-white">${rec.snapshot_id}</span></div>
+                            <div><span class="text-slate-400">AOD Run:</span> <span class="text-white">${rec.aod_run_id || 'N/A'}</span></div>
+                            <div><span class="text-slate-400">Created:</span> <span class="text-white">${new Date(rec.created_at).toLocaleString()}</span></div>
+                        </div>
+                        <div class="bg-slate-900 rounded-lg p-4">
+                            <h4 class="text-sm font-medium text-slate-300 mb-2">Report</h4>
+                            <pre class="text-xs text-slate-400 whitespace-pre-wrap overflow-auto max-h-96">${rec.report_text || 'No report available'}</pre>
+                        </div>
+                    </div>
+                `;
+                modal.classList.remove('hidden');
+            } catch (e) {
+                console.error('Failed to load reconciliation:', e);
             }
         }
 
