@@ -6,6 +6,111 @@ Synthetic Enterprise Data Generator for AutonomOS AOD (Discover) module.
 
 AOS Farm generates IRL-plausible enterprise source-of-truth planes and raw observation streams for testing AOD. Farm outputs raw evidence streams, not conclusions.
 
+## Non-negotiables
+
+Guardrail: No “green-test theater” (Stop optimizing for “done without errors”) The anti-pattern we are eliminating
+
+Agents frequently “solve” problems by making the system look clean:
+
+“All tests pass” while the feature fails the first real eval
+
+Papering over contract mismatches by making schemas permissive
+
+Converting upstream errors into “not found” or “empty” results
+
+Overwriting history / collapsing identity scopes to avoid collisions
+
+Adding hidden shortcuts / labels / join keys that make synthetic demos work but are IRL-invalid
+
+This is forbidden. The goal is not “no errors”; the goal is “correct semantics.”
+
+Definition of “DONE” (must satisfy all)
+
+A change is DONE only if it meets all 4:
+
+Semantics preserved
+
+The behavior matches the stated IRL meaning of the feature (not just the test).
+
+If semantics changed, it must be explicitly called out as a breaking change.
+
+No cheating
+
+No overwrites to silence conflicts
+
+No “optional everything” to dodge validation
+
+No silent fallbacks that hide upstream failure
+
+No ground-truth labels or shared join keys that wouldn’t exist IRL
+
+Proof is real
+
+Tests are not proof by themselves.
+
+Provide one of:
+
+a minimal reproduction showing failure-before / success-after, OR
+
+a “before/after” output diff from a real run (Farm → AOD → UI) that demonstrates the user-visible behavior.
+
+Negative test included
+
+Add at least one test that ensures the cheat can’t come back:
+
+upstream returns HTML/empty → must become UPSTREAM_ERROR (not “no evidence”)
+
+missing required fields → INVALID_INPUT_CONTRACT (not silently defaulted)
+
+re-run same snapshot twice → history preserved (no overwrite)
+
+Required “Fix Proposal Format” (agents must follow)
+
+For any fix, output exactly:
+
+What broke (1–2 sentences)
+
+Why it broke (root cause)
+
+What I changed (one paragraph, no code dump)
+
+Why this is IRL-correct (1–3 bullets)
+
+What would have been the tempting cheat (1 bullet) and why we did not do it
+
+How I proved it (tests + one real run / fixture)
+
+If the agent cannot provide this format, it must stop and say “I can’t prove it yet.”
+
+“All tests pass” is not an acceptable claim by itself
+
+If the agent says “57 tests pass,” it must also include:
+
+which test(s) prove the user-visible behavior
+
+and at least one eval (a run output / API response / UI behavior) demonstrating success
+
+If it can’t show that, “tests pass” is treated as noise.
+
+Fail loudly on reality violations
+
+When data is bad or missing, do NOT “handle” it by pretending it’s fine. Use explicit error statuses (e.g., UPSTREAM_ERROR, INVALID_SNAPSHOT, INVALID_INPUT_CONTRACT) and surface the reason.
+
+Default strategy when unsure
+
+Prefer:
+
+Adapters (normalize into canonical contract) over weakening contracts
+
+Run-scoped identities over overwrites
+
+Explicit errors over silent fallbacks
+
+Evidence-only derivations over labels
+
+## Prompt shortcuts
+**DCCE or dcce** - don't change code, explain
+
 ## Project Structure
 
 ```
