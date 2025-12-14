@@ -18,11 +18,26 @@ from src.models.planes import (
 )
 
 SEED_SNAPSHOTS = [
-    {"tenant_id": "Acme Corp", "seed": 1001, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.typical},
-    {"tenant_id": "Acme Corp", "seed": 1002, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.messy},
-    {"tenant_id": "GlobalBank", "seed": 2001, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.typical},
-    {"tenant_id": "MedCare Health", "seed": 3001, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.healthcare_provider, "realism_profile": RealismProfileEnum.clean},
-    {"tenant_id": "Industrial Dynamics", "seed": 4001, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.global_manufacturing, "realism_profile": RealismProfileEnum.messy},
+    {"tenant_id": "Acme Corp", "seed": 1001, "scale": ScaleEnum.small, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.clean},
+    {"tenant_id": "Acme Corp", "seed": 1002, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.typical},
+    {"tenant_id": "Acme Corp", "seed": 1003, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.messy},
+    {"tenant_id": "Acme Corp", "seed": 1004, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.typical},
+    {"tenant_id": "GlobalBank", "seed": 2001, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.clean},
+    {"tenant_id": "GlobalBank", "seed": 2002, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.typical},
+    {"tenant_id": "GlobalBank", "seed": 2003, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.messy},
+    {"tenant_id": "GlobalBank", "seed": 2004, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.typical},
+    {"tenant_id": "MedCare Health", "seed": 3001, "scale": ScaleEnum.small, "enterprise_profile": EnterpriseProfileEnum.healthcare_provider, "realism_profile": RealismProfileEnum.clean},
+    {"tenant_id": "MedCare Health", "seed": 3002, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.healthcare_provider, "realism_profile": RealismProfileEnum.typical},
+    {"tenant_id": "MedCare Health", "seed": 3003, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.healthcare_provider, "realism_profile": RealismProfileEnum.messy},
+    {"tenant_id": "MedCare Health", "seed": 3004, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.healthcare_provider, "realism_profile": RealismProfileEnum.clean},
+    {"tenant_id": "Industrial Dynamics", "seed": 4001, "scale": ScaleEnum.small, "enterprise_profile": EnterpriseProfileEnum.global_manufacturing, "realism_profile": RealismProfileEnum.typical},
+    {"tenant_id": "Industrial Dynamics", "seed": 4002, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.global_manufacturing, "realism_profile": RealismProfileEnum.messy},
+    {"tenant_id": "Industrial Dynamics", "seed": 4003, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.global_manufacturing, "realism_profile": RealismProfileEnum.typical},
+    {"tenant_id": "Industrial Dynamics", "seed": 4004, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.global_manufacturing, "realism_profile": RealismProfileEnum.clean},
+    {"tenant_id": "TechStart Inc", "seed": 5001, "scale": ScaleEnum.small, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.clean},
+    {"tenant_id": "TechStart Inc", "seed": 5002, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.messy},
+    {"tenant_id": "Pinnacle Financial", "seed": 6001, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.typical},
+    {"tenant_id": "Pinnacle Financial", "seed": 6002, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.messy},
 ]
 
 
