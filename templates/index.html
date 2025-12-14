@@ -70,23 +70,7 @@
             <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 <div class="lg:col-span-1">
                     <div class="bg-slate-800/60 rounded-xl p-4 border border-slate-700 sticky top-4">
-                        <h3 class="text-sm font-semibold text-slate-300 mb-3">Quick Generate</h3>
-                        <form id="quickGenForm" class="space-y-3">
-                            <div>
-                                <select id="qScale" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="small">Small</option>
-                                    <option value="medium" selected>Medium</option>
-                                    <option value="large">Large</option>
-                                    <option value="enterprise">Enterprise</option>
-                                </select>
-                            </div>
-                            <button type="submit" id="quickGenBtn"
-                                class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-medium py-2 px-4 rounded-lg transition-all text-sm">
-                                Generate
-                            </button>
-                        </form>
-                        
-                        <div class="mt-4 pt-4 border-t border-slate-700">
+                        <div>
                             <h4 class="text-xs font-medium text-slate-400 mb-2">Legend</h4>
                             <div class="flex flex-wrap gap-1 text-xs">
                                 <span class="px-2 py-0.5 rounded border status-pass">PASS</span>
@@ -721,26 +705,6 @@
                 throw e;
             }
         }
-
-        document.getElementById('quickGenForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('quickGenBtn');
-            btn.disabled = true;
-            btn.textContent = 'Generating...';
-            
-            try {
-                await generateSnapshot(
-                    generateTenantId(),
-                    generateSeed(),
-                    document.getElementById('qScale').value,
-                    'modern_saas',
-                    'typical'
-                );
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Generate';
-            }
-        });
 
         document.getElementById('snapshotForm').addEventListener('submit', async (e) => {
             e.preventDefault();
