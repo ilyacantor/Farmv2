@@ -155,6 +155,12 @@ Farm generates 7 independent planes:
 - `GET /api/snapshots/{snapshot_id}` - Get full snapshot JSON
 - `GET /api/snapshots?tenant_id=...&limit=...` - List snapshot metadata only (no blob)
 
+### AOD Status API
+- `GET /api/aod/run-status?snapshot_id=...&tenant_id=...` - Check if AOD has processed a snapshot
+  - Returns: `{status: "PROCESSED", run_id: "..."}` if AOD has a run for this snapshot
+  - Returns: `{status: "NOT_PROCESSED"}` if no matching run (AOD 404 or 200 without run_id)
+  - Returns: `{status: "AOD_ERROR", message: "..."}` if AOD unreachable/misconfigured
+
 ### Reconciliation API (for AOD comparison)
 - `POST /api/reconcile` - Compare AOD results against Farm expectations (manual)
   - Request: `{snapshot_id, aod_run_id, tenant_id, aod_summary: {assets_admitted, findings, zombies, shadows}, aod_lists: {zombie_assets, shadow_assets, top_findings}}`
