@@ -111,9 +111,9 @@
                 </div>
 
                 <div id="runsSection" class="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
-                    <h2 class="text-xl font-semibold text-cyan-400 mb-4">Run History</h2>
-                    <div id="runsList" class="space-y-2"></div>
-                    <p id="noRuns" class="text-slate-500 text-center py-4">No runs yet. Generate a snapshot to get started.</p>
+                    <h2 class="text-xl font-semibold text-cyan-400 mb-4">Snapshot History</h2>
+                    <div id="runsList" class="space-y-2 max-h-96 overflow-y-auto"></div>
+                    <p id="noRuns" class="text-slate-500 text-center py-4">No snapshots yet.</p>
                 </div>
             </div>
         </div>
@@ -124,45 +124,45 @@
 
         async function loadRuns() {
             try {
-                const response = await fetch('/api/runs');
-                const runs = await response.json();
+                const response = await fetch('/api/snapshots');
+                const snapshots = await response.json();
                 
                 const runsList = document.getElementById('runsList');
                 const noRuns = document.getElementById('noRuns');
                 
-                if (runs.length === 0) {
+                if (snapshots.length === 0) {
                     runsList.innerHTML = '';
                     noRuns.classList.remove('hidden');
                 } else {
                     noRuns.classList.add('hidden');
-                    runsList.innerHTML = runs.map(run => `
+                    runsList.innerHTML = snapshots.map(snap => `
                         <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700 hover:border-cyan-500/50 transition-colors cursor-pointer" 
-                             onclick="loadRun('${run.run_id}')">
+                             onclick="loadRun('${snap.snapshot_id}')">
                             <div class="flex items-center justify-between">
                                 <div>
-                                    <span class="text-cyan-400 font-medium">${run.tenant_id}</span>
-                                    <span class="text-slate-500 text-sm ml-2">Seed: ${run.seed}</span>
+                                    <span class="text-cyan-400 font-medium">${snap.tenant_id}</span>
+                                    <span class="text-slate-500 text-sm ml-2">Seed: ${snap.seed}</span>
                                 </div>
-                                <div class="text-xs text-slate-500">${new Date(run.generated_at).toLocaleString()}</div>
+                                <div class="text-xs text-slate-500">${new Date(snap.created_at).toLocaleString()}</div>
                             </div>
                             <div class="text-xs text-slate-400 mt-1">
-                                ${run.scale} | ${run.enterprise_profile} | ${run.realism_profile}
+                                ${snap.scale} | ${snap.enterprise_profile} | ${snap.realism_profile}
                             </div>
                         </div>
                     `).join('');
                 }
             } catch (e) {
-                console.error('Failed to load runs:', e);
+                console.error('Failed to load snapshots:', e);
             }
         }
 
-        async function loadRun(runId) {
+        async function loadRun(snapshotId) {
             try {
-                const response = await fetch(`/api/runs/${runId}`);
+                const response = await fetch(`/api/snapshots/${snapshotId}`);
                 currentSnapshot = await response.json();
                 displaySnapshot(currentSnapshot);
             } catch (e) {
-                console.error('Failed to load run:', e);
+                console.error('Failed to load snapshot:', e);
             }
         }
 
@@ -172,10 +172,10 @@
             const meta = snapshot.meta;
             document.getElementById('metaInfo').innerHTML = `
                 <div class="flex flex-wrap gap-4">
-                    <span><strong class="text-slate-300">Run ID:</strong> ${meta.run_id.substring(0, 8)}...</span>
+                    <span><strong class="text-slate-300">Snapshot ID:</strong> ${meta.snapshot_id.substring(0, 8)}...</span>
                     <span><strong class="text-slate-300">Tenant:</strong> ${meta.tenant_id}</span>
                     <span><strong class="text-slate-300">Seed:</strong> ${meta.seed}</span>
-                    <span><strong class="text-slate-300">Generated:</strong> ${new Date(meta.generated_at).toLocaleString()}</span>
+                    <span><strong class="text-slate-300">Created:</strong> ${new Date(meta.created_at).toLocaleString()}</span>
                 </div>
             `;
             
