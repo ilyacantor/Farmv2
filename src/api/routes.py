@@ -664,7 +664,8 @@ async def get_reconciliation(reconciliation_id: str):
 
 @router.post("/api/reconcile/auto", response_model=AutoReconcileResponse)
 async def auto_reconcile(request: AutoReconcileRequest):
-    aod_url = os.environ.get("AOD_URL", "").rstrip("/")
+    aod_url = os.environ.get("AOD_URL") or os.environ.get("AOD_BASE_URL", "")
+    aod_url = aod_url.rstrip("/")
     aod_secret = os.environ.get("AOD_SHARED_SECRET", "")
     
     if not aod_url:
