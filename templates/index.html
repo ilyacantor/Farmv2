@@ -523,14 +523,23 @@
             const container = document.getElementById(`expand-${snapshotId}`);
             if (!container) return;
             
+            const planeIcons = {
+                discovery: '<svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>',
+                idp: '<svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>',
+                cmdb: '<svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>',
+                cloud: '<svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/></svg>',
+                endpoint: '<svg class="w-4 h-4 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>',
+                network: '<svg class="w-4 h-4 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>',
+                finance: '<svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
+            };
             const planes = [
-                { key: 'discovery', name: 'Discovery', icon: '🔍', items: data.discovery?.observations || [] },
-                { key: 'idp', name: 'IdP', icon: '🔐', items: data.idp?.objects || [] },
-                { key: 'cmdb', name: 'CMDB', icon: '📋', items: data.cmdb?.config_items || [] },
-                { key: 'cloud', name: 'Cloud', icon: '☁️', items: data.cloud?.resources || [] },
-                { key: 'endpoint', name: 'Endpoint', icon: '💻', items: data.endpoint?.devices || [] },
-                { key: 'network', name: 'Network', icon: '🌐', items: data.network ? [...(data.network.dns_records || []), ...(data.network.proxy_logs || []), ...(data.network.certificates || [])] : [] },
-                { key: 'finance', name: 'Finance', icon: '💰', items: data.finance ? [...(data.finance.vendors || []), ...(data.finance.contracts || []), ...(data.finance.transactions || [])] : [] }
+                { key: 'discovery', name: 'Discovery', icon: planeIcons.discovery, items: data.discovery?.observations || [] },
+                { key: 'idp', name: 'IdP', icon: planeIcons.idp, items: data.idp?.objects || [] },
+                { key: 'cmdb', name: 'CMDB', icon: planeIcons.cmdb, items: data.cmdb?.config_items || [] },
+                { key: 'cloud', name: 'Cloud', icon: planeIcons.cloud, items: data.cloud?.resources || [] },
+                { key: 'endpoint', name: 'Endpoint', icon: planeIcons.endpoint, items: data.endpoint?.devices || [] },
+                { key: 'network', name: 'Network', icon: planeIcons.network, items: data.network ? [...(data.network.dns_records || []), ...(data.network.proxy_logs || []), ...(data.network.certificates || [])] : [] },
+                { key: 'finance', name: 'Finance', icon: planeIcons.finance, items: data.finance ? [...(data.finance.vendors || []), ...(data.finance.contracts || []), ...(data.finance.transactions || [])] : [] }
             ];
             
             container.innerHTML = `
