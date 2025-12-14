@@ -83,6 +83,22 @@ SHADOW_SAAS_APPS = [
     {"name": "Evernote", "vendor": "Evernote", "domain": "evernote.com", "category": "saas"},
 ]
 
+ZOMBIE_APPS = [
+    {"name": "Basecamp", "vendor": "Basecamp", "domain": "basecamp.com", "category": "saas"},
+    {"name": "Hipchat", "vendor": "Atlassian", "domain": "hipchat.com", "category": "saas"},
+    {"name": "Yammer", "vendor": "Microsoft", "domain": "yammer.com", "category": "saas"},
+    {"name": "Google+", "vendor": "Google", "domain": "plus.google.com", "category": "saas"},
+    {"name": "Pivotal Tracker", "vendor": "Pivotal", "domain": "pivotaltracker.com", "category": "saas"},
+    {"name": "Flowdock", "vendor": "CA Technologies", "domain": "flowdock.com", "category": "saas"},
+]
+
+ZOMBIE_INTERNAL_SERVICES = [
+    {"name": "legacy-auth", "category": "service"},
+    {"name": "old-billing-api", "category": "service"},
+    {"name": "deprecated-mailer", "category": "service"},
+    {"name": "v1-user-service", "category": "service"},
+]
+
 INTERNAL_SERVICES = [
     {"name": "auth-service", "category": "service"},
     {"name": "billing-api", "category": "service"},
@@ -169,6 +185,8 @@ class EnterpriseGenerator:
         self._employees: list[dict] = []
         self._saas_selection: list[dict] = []
         self._shadow_apps: list[dict] = []
+        self._zombie_apps: list[dict] = []
+        self._zombie_services: list[dict] = []
         self._internal_services: list[dict] = []
         self._datastores: list[dict] = []
 
@@ -205,6 +223,12 @@ class EnterpriseGenerator:
         else:
             days_back = self.rng.randint(91, 365)
         
+        delta = timedelta(days=days_back, hours=self.rng.randint(0, 23), minutes=self.rng.randint(0, 59))
+        return (self.base_date - delta).isoformat() + "Z"
+
+    def _random_stale_date(self) -> str:
+        """Generate timestamps that are always stale (>30 days ago)."""
+        days_back = self.rng.randint(45, 180)
         delta = timedelta(days=days_back, hours=self.rng.randint(0, 23), minutes=self.rng.randint(0, 59))
         return (self.base_date - delta).isoformat() + "Z"
 
@@ -273,6 +297,17 @@ class EnterpriseGenerator:
         
         num_datastores = min(len(DATASTORES), 3 + mult)
         self._datastores = self.rng.sample(DATASTORES, num_datastores)
+        
+        zombie_count = {
+            RealismProfileEnum.clean: 1,
+            RealismProfileEnum.typical: max(2, mult),
+            RealismProfileEnum.messy: max(3, mult + 1),
+        }
+        num_zombies = min(len(ZOMBIE_APPS), zombie_count.get(self.realism_profile, 2))
+        self._zombie_apps = self.rng.sample(ZOMBIE_APPS, num_zombies)
+        
+        num_zombie_svcs = min(len(ZOMBIE_INTERNAL_SERVICES), max(1, mult // 2))
+        self._zombie_services = self.rng.sample(ZOMBIE_INTERNAL_SERVICES, num_zombie_svcs)
 
     def generate_discovery_plane(self) -> DiscoveryPlane:
         observations = []
@@ -344,6 +379,35 @@ class EnterpriseGenerator:
                 )
                 observations.append(obs)
         
+        for zombie_app in self._zombie_apps:
+            num_obs = self.rng.randint(1, 2)
+            for _ in range(num_obs):
+                obs = DiscoveryObservation(
+                    observation_id=self._generate_uuid(),
+                    observed_at=self._random_stale_date(),
+                    source=self.rng.choice(list(SourceEnum)),
+                    observed_name=self._apply_name_drift(zombie_app["name"]),
+                    domain=zombie_app["domain"],
+                    vendor_hint=zombie_app["vendor"] if self.rng.random() > 0.3 else None,
+                    category_hint=CategoryHintEnum.saas,
+                    environment_hint=self.rng.choice(list(EnvironmentHintEnum)),
+                    raw={"status": "abandoned"},
+                )
+                observations.append(obs)
+        
+        for zombie_svc in self._zombie_services:
+            obs = DiscoveryObservation(
+                observation_id=self._generate_uuid(),
+                observed_at=self._random_stale_date(),
+                source=SourceEnum.network_scan,
+                observed_name=self._apply_name_drift(zombie_svc["name"]),
+                hostname=f"{zombie_svc['name']}.internal.{self.tenant_id.lower()}.com",
+                category_hint=CategoryHintEnum.service,
+                environment_hint=EnvironmentHintEnum.prod,
+                raw={"status": "deprecated"},
+            )
+            observations.append(obs)
+        
         return DiscoveryPlane(observations=observations)
 
     def generate_idp_plane(self) -> IdPPlane:
@@ -378,6 +442,30 @@ class EnterpriseGenerator:
                     last_login_at=self._random_activity_date() if self.rng.random() > 0.4 else None,
                 )
                 objects.append(idp_obj)
+        
+        for zombie_app in self._zombie_apps:
+            idp_obj = IdPObject(
+                idp_id=f"idp-{self._generate_uuid()[:8]}",
+                name=self._apply_name_drift(zombie_app["name"]),
+                idp_type=IdPTypeEnum.application,
+                external_ref=f"https://{zombie_app['domain']}",
+                has_sso=True,
+                has_scim=False,
+                vendor=zombie_app["vendor"],
+                last_login_at=self._random_stale_date(),
+            )
+            objects.append(idp_obj)
+        
+        for zombie_svc in self._zombie_services:
+            idp_obj = IdPObject(
+                idp_id=f"idp-{self._generate_uuid()[:8]}",
+                name=self._apply_name_drift(zombie_svc["name"]),
+                idp_type=IdPTypeEnum.service_principal,
+                has_sso=False,
+                has_scim=False,
+                last_login_at=self._random_stale_date(),
+            )
+            objects.append(idp_obj)
         
         return IdPPlane(objects=objects)
 
@@ -426,6 +514,26 @@ class EnterpriseGenerator:
                     vendor=ds["vendor"] if self.rng.random() > 0.2 else None,
                 )
                 cis.append(ci)
+        
+        for zombie_app in self._zombie_apps:
+            ci = CMDBConfigItem(
+                ci_id=f"CI{self.rng.randint(100000, 999999)}",
+                name=self._apply_name_drift(zombie_app["name"]),
+                ci_type=CITypeEnum.app,
+                lifecycle=LifecycleEnum.prod,
+                vendor=zombie_app["vendor"],
+                external_ref=f"https://{zombie_app['domain']}",
+            )
+            cis.append(ci)
+        
+        for zombie_svc in self._zombie_services:
+            ci = CMDBConfigItem(
+                ci_id=f"CI{self.rng.randint(100000, 999999)}",
+                name=self._apply_name_drift(zombie_svc["name"]),
+                ci_type=CITypeEnum.service,
+                lifecycle=LifecycleEnum.prod,
+            )
+            cis.append(ci)
         
         return CMDBPlane(cis=cis)
 
