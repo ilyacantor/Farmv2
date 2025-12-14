@@ -303,6 +303,57 @@ class TestAPIEndpoints:
         response = client.get("/api/snapshots/nonexistent-id-12345")
         assert response.status_code == 404
 
+    def test_dual_generation_same_seed_creates_unique_ids_same_fingerprint(self, client):
+        payload = {
+            "tenant_id": "DualTestCorp",
+            "seed": 11111,
+            "scale": "small",
+            "enterprise_profile": "modern_saas",
+            "realism_profile": "typical"
+        }
+        
+        response1 = client.post("/api/snapshots", json=payload)
+        assert response1.status_code == 200
+        data1 = response1.json()
+        
+        response2 = client.post("/api/snapshots", json=payload)
+        assert response2.status_code == 200
+        data2 = response2.json()
+        
+        assert data1["snapshot_id"] != data2["snapshot_id"]
+        assert data1["snapshot_fingerprint"] == data2["snapshot_fingerprint"]
+        assert data2["duplicate_of_snapshot_id"] == data1["snapshot_id"]
+        assert data1["duplicate_of_snapshot_id"] is None
+        
+        list_response = client.get("/api/snapshots?tenant_id=DualTestCorp")
+        snapshots = list_response.json()
+        ids = [s["snapshot_id"] for s in snapshots]
+        assert data1["snapshot_id"] in ids
+        assert data2["snapshot_id"] in ids
+
+    def test_different_seeds_produce_different_fingerprints(self, client):
+        response1 = client.post("/api/snapshots", json={
+            "tenant_id": "FingerprintCorp",
+            "seed": 22222,
+            "scale": "small",
+            "enterprise_profile": "modern_saas",
+            "realism_profile": "typical"
+        })
+        
+        response2 = client.post("/api/snapshots", json={
+            "tenant_id": "FingerprintCorp",
+            "seed": 22223,
+            "scale": "small",
+            "enterprise_profile": "modern_saas",
+            "realism_profile": "typical"
+        })
+        
+        data1 = response1.json()
+        data2 = response2.json()
+        
+        assert data1["snapshot_fingerprint"] != data2["snapshot_fingerprint"]
+        assert data2["duplicate_of_snapshot_id"] is None
+
     def test_schema_version_in_fetched_snapshot(self, client):
         create_response = client.post("/api/snapshots", json={
             "tenant_id": "SchemaCorp",

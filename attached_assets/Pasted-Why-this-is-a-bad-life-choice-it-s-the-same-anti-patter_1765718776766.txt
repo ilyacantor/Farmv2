@@ -1,0 +1,64 @@
+Why this is a bad life choice: it’s the **same anti-pattern** as AOD. The agent changed semantics to “pass the test” by **overwriting history**. That breaks what Farm is supposed to be: a **run store** with provenance.
+
+What to do next (one iteration): keep determinism, but **separate “snapshot identity” from “generation run identity.”**
+Same seed can produce the same **snapshot hash**, but every generation attempt must create a new **snapshot_run_id** and never overwrite prior runs.
+
+Here’s the single prompt to fix it properly.
+
+---
+
+## Replit prompt (single)
+
+> Undo the “INSERT OR REPLACE” overwrite workaround for snapshot generation and fix duplicate snapshot IDs correctly without losing history.
+>
+> Why: Replacing existing snapshots when the same seed is used destroys provenance and makes reconciliation untrustworthy. We want determinism AND auditability.
+>
+> Do this:
+>
+> 1. Revert any `INSERT OR REPLACE` logic for snapshots. Do not overwrite prior rows.
+> 2. Split identity into two concepts:
+>
+> * `snapshot_fingerprint`: deterministic hash derived from the generated snapshot content (or from the request params + seed if content-hash is too heavy).
+> * `snapshot_run_id`: unique ID for each generation event (uuid), always new.
+>
+> 3. Update the DB schema:
+>
+> * Create table `snapshot_runs` with primary key `snapshot_run_id` and columns:
+>
+>   * tenant_id, created_at, seed, scale, enterprise_profile, realism_profile
+>   * snapshot_fingerprint
+>   * snapshot_json blob
+> * Add an index on `snapshot_fingerprint` for lookup.
+>
+> 4. Update the API behavior:
+>
+> * `POST /api/snapshots` always creates a new `snapshot_run_id`.
+> * Response returns:
+>
+>   ```json
+>   { "snapshot_id": "<snapshot_run_id>", "snapshot_fingerprint": "...", "created_at": "...", "schema_version": "farm.v1" }
+>   ```
+> * `GET /api/snapshots` lists snapshot runs (most recent first), including fingerprint.
+> * `GET /api/snapshots/{snapshot_id}` fetches by snapshot_run_id.
+>
+> 5. Optional convenience (but do it now if easy):
+>
+> * If a snapshot with the same fingerprint already exists, include in the response:
+>
+>   * `duplicate_of_snapshot_id` (the most recent prior run with same fingerprint)
+> * Do NOT prevent creation; just report the duplicate.
+>
+> 6. Update tests:
+>
+> * Generate twice with same seed.
+> * Assert two different snapshot_id values exist.
+> * Assert snapshot_fingerprint is identical.
+> * Assert both rows are preserved (no overwrite).
+>
+> Deliver proof:
+>
+> * Show the test passing and console output confirming two snapshot runs exist with the same fingerprint.
+
+---
+
+This keeps your determinism property (fingerprint) **and** keeps run history (snapshot_run_id). Overwrite is never acceptable here.

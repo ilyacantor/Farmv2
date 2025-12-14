@@ -24,9 +24,15 @@ from src.models.planes import (
 )
 import re
 import uuid
+import hashlib
 from collections import defaultdict
 
 router = APIRouter()
+
+
+def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profile: str, realism_profile: str) -> str:
+    data = f"{tenant_id}:{seed}:{scale}:{enterprise_profile}:{realism_profile}"
+    return hashlib.sha256(data.encode()).hexdigest()[:16]
 
 DB_PATH = "data/farm.db"
 SNAPSHOTS_DIR = "data/snapshots"
@@ -53,6 +59,7 @@ async def init_db():
         await db.execute("""
             CREATE TABLE IF NOT EXISTS snapshots (
                 snapshot_id TEXT PRIMARY KEY,
+                snapshot_fingerprint TEXT NOT NULL,
                 tenant_id TEXT NOT NULL,
                 seed INTEGER NOT NULL,
                 scale TEXT NOT NULL,
@@ -63,6 +70,17 @@ async def init_db():
                 snapshot_json TEXT NOT NULL
             )
         """)
+        async with db.execute("PRAGMA table_info(snapshots)") as cursor:
+            columns = [row[1] for row in await cursor.fetchall()]
+            if "snapshot_fingerprint" not in columns:
+                await db.execute("ALTER TABLE snapshots ADD COLUMN snapshot_fingerprint TEXT DEFAULT ''")
+                async with db.execute("SELECT snapshot_id, tenant_id, seed, scale, enterprise_profile, realism_profile FROM snapshots") as cursor2:
+                    rows = await cursor2.fetchall()
+                    for row in rows:
+                        fp = compute_fingerprint(row[1], row[2], row[3], row[4], row[5])
+                        await db.execute("UPDATE snapshots SET snapshot_fingerprint = ? WHERE snapshot_id = ?", (fp, row[0]))
+        
+        await db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_fingerprint ON snapshots(snapshot_fingerprint)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_tenant ON snapshots(tenant_id)")
         await db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at DESC)")
         await db.execute("""
@@ -142,6 +160,25 @@ async def create_snapshot_legacy(request: SnapshotRequest):
 async def create_snapshot(request: SnapshotRequest):
     await init_db()
     
+    fingerprint = compute_fingerprint(
+        request.tenant_id,
+        request.seed,
+        request.scale.value,
+        request.enterprise_profile.value,
+        request.realism_profile.value,
+    )
+    
+    duplicate_of_snapshot_id = None
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT snapshot_id FROM snapshots WHERE snapshot_fingerprint = ? ORDER BY created_at ASC LIMIT 1",
+            (fingerprint,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                duplicate_of_snapshot_id = row["snapshot_id"]
+    
     generator = EnterpriseGenerator(
         tenant_id=request.tenant_id,
         seed=request.seed,
@@ -151,14 +188,18 @@ async def create_snapshot(request: SnapshotRequest):
     )
     
     snapshot = generator.generate()
+    
+    unique_snapshot_id = str(uuid.uuid4())
+    snapshot.meta.snapshot_id = unique_snapshot_id
     snapshot_dict = snapshot.model_dump()
     
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("""
-            INSERT INTO snapshots (snapshot_id, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO snapshots (snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            snapshot.meta.snapshot_id,
+            unique_snapshot_id,
+            fingerprint,
             snapshot.meta.tenant_id,
             snapshot.meta.seed,
             snapshot.meta.scale.value,
@@ -171,10 +212,12 @@ async def create_snapshot(request: SnapshotRequest):
         await db.commit()
     
     return SnapshotCreateResponse(
-        snapshot_id=snapshot.meta.snapshot_id,
+        snapshot_id=unique_snapshot_id,
+        snapshot_fingerprint=fingerprint,
         tenant_id=snapshot.meta.tenant_id,
         created_at=snapshot.meta.created_at,
         schema_version=SCHEMA_VERSION,
+        duplicate_of_snapshot_id=duplicate_of_snapshot_id,
     )
 
 
@@ -206,10 +249,10 @@ async def list_snapshots(
         db.row_factory = aiosqlite.Row
         
         if tenant_id:
-            query = "SELECT snapshot_id, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?"
+            query = "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?"
             params = (tenant_id, limit)
         else:
-            query = "SELECT snapshot_id, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT ?"
+            query = "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT ?"
             params = (limit,)
         
         async with db.execute(query, params) as cursor:
@@ -217,6 +260,7 @@ async def list_snapshots(
             return [
                 SnapshotMetadata(
                     snapshot_id=row["snapshot_id"],
+                    snapshot_fingerprint=row["snapshot_fingerprint"],
                     tenant_id=row["tenant_id"],
                     seed=row["seed"],
                     scale=row["scale"],

@@ -42,7 +42,11 @@ Farm generates 7 independent planes:
 ## API Endpoints
 
 ### New Snapshot API (for AOD)
-- `POST /api/snapshots` - Generate snapshot, returns `{snapshot_id, tenant_id, created_at, schema_version}`
+- `POST /api/snapshots` - Generate snapshot, returns:
+  - `snapshot_id`: Unique run ID (UUID, always unique per generation)
+  - `snapshot_fingerprint`: Deterministic hash from params (same seed = same fingerprint)
+  - `duplicate_of_snapshot_id`: If fingerprint exists, references first snapshot with that fingerprint
+  - `tenant_id`, `created_at`, `schema_version`
 - `GET /api/snapshots/{snapshot_id}` - Get full snapshot JSON
 - `GET /api/snapshots?tenant_id=...&limit=...` - List snapshot metadata only (no blob)
 

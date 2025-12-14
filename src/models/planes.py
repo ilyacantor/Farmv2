@@ -275,13 +275,16 @@ class RunRecord(BaseModel):
 
 class SnapshotCreateResponse(BaseModel):
     snapshot_id: str
+    snapshot_fingerprint: str
     tenant_id: str
     created_at: str
     schema_version: str = SCHEMA_VERSION
+    duplicate_of_snapshot_id: Optional[str] = None
 
 
 class SnapshotMetadata(BaseModel):
     snapshot_id: str
+    snapshot_fingerprint: str
     tenant_id: str
     seed: int
     scale: str
