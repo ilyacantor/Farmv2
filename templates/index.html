@@ -310,7 +310,16 @@
                     reconciliationsCache[rec.snapshot_id].push(rec);
                 }
                 
-                snapshotsCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                snapshotsCache.sort((a, b) => {
+                    const recA = reconciliationsCache[a.snapshot_id]?.[0];
+                    const recB = reconciliationsCache[b.snapshot_id]?.[0];
+                    const timeA = recA ? new Date(recA.created_at) : new Date(0);
+                    const timeB = recB ? new Date(recB.created_at) : new Date(0);
+                    if (recA && recB) return timeB - timeA;
+                    if (recA && !recB) return -1;
+                    if (!recA && recB) return 1;
+                    return new Date(b.created_at) - new Date(a.created_at);
+                });
                 renderSnapshotsList();
                 loadAodStatuses();
             } catch (e) {
