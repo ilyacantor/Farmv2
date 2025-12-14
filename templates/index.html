@@ -358,6 +358,15 @@
             }
         }
         
+        function parseReportSummary(reportText) {
+            const result = { aodZombies: '-', farmZombies: '-', aodShadows: '-', farmShadows: '-' };
+            const zombieMatch = reportText.match(/AOD reported (\d+) zombies, Farm expected (\d+)/);
+            const shadowMatch = reportText.match(/AOD reported (\d+) shadows, Farm expected (\d+)/);
+            if (zombieMatch) { result.aodZombies = zombieMatch[1]; result.farmZombies = zombieMatch[2]; }
+            if (shadowMatch) { result.aodShadows = shadowMatch[1]; result.farmShadows = shadowMatch[2]; }
+            return result;
+        }
+
         function renderReconciliationsList() {
             const container = document.getElementById('reconciliationsList');
             const filterStatus = document.getElementById('filterReconcileStatus')?.value || '';
@@ -373,6 +382,7 @@
             container.innerHTML = filtered.map(rec => {
                 const created = new Date(rec.created_at);
                 const timeAgo = getTimeAgo(created);
+                const summary = parseReportSummary(rec.report_text || '');
                 
                 return `
                     <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
@@ -381,10 +391,13 @@
                                 <div class="flex items-center gap-2 mb-1">
                                     ${getStatusBadge(rec.status)}
                                     <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
-                                    <span class="text-slate-500 text-xs">AOD: ${rec.aod_run_id || 'N/A'}</span>
                                 </div>
-                                <div class="text-xs text-slate-500 truncate">
-                                    Snapshot: ${rec.snapshot_id.substring(0, 8)}...
+                                <div class="flex items-center gap-4 text-xs mt-1">
+                                    <span class="text-slate-400">Zombies: <span class="text-red-400">${summary.aodZombies}/${summary.farmZombies}</span></span>
+                                    <span class="text-slate-400">Shadows: <span class="text-purple-400">${summary.aodShadows}/${summary.farmShadows}</span></span>
+                                </div>
+                                <div class="text-xs text-slate-600 mt-1">
+                                    ${rec.snapshot_id.substring(0, 8)} | AOD: ${rec.aod_run_id || 'N/A'}
                                 </div>
                             </div>
                             <div class="text-xs text-slate-500">${timeAgo}</div>
