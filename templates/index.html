@@ -11,41 +11,10 @@
         body { background-color: #0F172A; }
         .cyan-glow { box-shadow: 0 0 20px rgba(34, 211, 238, 0.3); }
         .purple-glow { box-shadow: 0 0 20px rgba(168, 85, 247, 0.3); }
-        .tooltip-container { position: relative; }
-        .tooltip-container .tooltip-text {
-            visibility: hidden;
-            opacity: 0;
-            position: absolute;
-            bottom: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #1e293b;
-            color: #e2e8f0;
-            padding: 8px 12px;
-            border-radius: 8px;
-            font-size: 12px;
-            line-height: 1.4;
-            width: 220px;
-            text-align: left;
-            z-index: 100;
-            border: 1px solid #334155;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            transition: opacity 0.2s, visibility 0.2s;
-            margin-bottom: 8px;
-        }
-        .tooltip-container .tooltip-text::after {
-            content: '';
-            position: absolute;
-            top: 100%;
-            left: 50%;
-            transform: translateX(-50%);
-            border: 6px solid transparent;
-            border-top-color: #334155;
-        }
-        .tooltip-container:hover .tooltip-text {
-            visibility: visible;
-            opacity: 1;
-        }
+        .status-pass { background: #065f46; border-color: #10b981; color: #6ee7b7; }
+        .status-warn { background: #78350f; border-color: #f59e0b; color: #fcd34d; }
+        .status-fail { background: #7f1d1d; border-color: #ef4444; color: #fca5a5; }
+        .status-none { background: #1e293b; border-color: #475569; color: #94a3b8; }
         .modal-overlay {
             position: fixed;
             inset: 0;
@@ -55,9 +24,6 @@
             justify-content: center;
             z-index: 1000;
         }
-        .status-pass { background: #065f46; border-color: #10b981; color: #6ee7b7; }
-        .status-warn { background: #78350f; border-color: #f59e0b; color: #fcd34d; }
-        .status-fail { background: #7f1d1d; border-color: #ef4444; color: #fca5a5; }
     </style>
 </head>
 <body class="min-h-screen text-white">
@@ -66,451 +32,427 @@
             <div class="flex items-center gap-3 mb-2">
                 <div class="w-10 h-10 rounded-lg bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center">
                     <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                 </div>
-                <h1 class="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
-                    AOS Farm Console
-                </h1>
+                <div>
+                    <h1 class="text-3xl font-bold bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text text-transparent">
+                        AOS Farm
+                    </h1>
+                    <p class="text-slate-400 text-sm">Did AOD get it right?</p>
+                </div>
             </div>
-            <p class="text-slate-400 text-lg">Synthetic Enterprise Data Generator for AutonomOS</p>
         </header>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-1 bg-slate-800/60 rounded-xl p-6 border border-slate-700">
-                <h2 class="text-xl font-semibold text-cyan-400 mb-4">Generate Snapshot</h2>
-                
-                <form id="snapshotForm" class="space-y-4">
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">Tenant ID</label>
-                        <input type="text" id="tenantId" value="Acme Corp" 
-                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
-                    </div>
+            <div class="lg:col-span-1 space-y-6">
+                <div class="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
+                    <h2 class="text-xl font-semibold text-cyan-400 mb-4">Generate Snapshot</h2>
                     
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">Seed</label>
-                        <input type="number" id="seed" value="12345" 
-                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">Scale</label>
-                        <select id="scale" 
-                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
-                            <option value="small">Small</option>
-                            <option value="medium" selected>Medium</option>
-                            <option value="large">Large</option>
-                            <option value="enterprise">Enterprise</option>
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">Enterprise Profile</label>
-                        <select id="enterpriseProfile" 
-                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
-                            <option value="modern_saas" selected>Modern SaaS</option>
-                            <option value="regulated_finance">Regulated Finance</option>
-                            <option value="healthcare_provider">Healthcare Provider</option>
-                            <option value="global_manufacturing">Global Manufacturing</option>
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">Realism Profile</label>
-                        <select id="realismProfile" 
-                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
-                            <option value="clean">Clean</option>
-                            <option value="typical" selected>Typical</option>
-                            <option value="messy">Messy</option>
-                        </select>
-                    </div>
-                    
-                    <button type="submit" id="generateBtn"
-                        class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 cyan-glow">
-                        Generate Snapshot
-                    </button>
-                </form>
+                    <form id="snapshotForm" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Tenant ID</label>
+                            <input type="text" id="tenantId" value="Acme Corp" 
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Seed</label>
+                            <input type="number" id="seed" value="12345" 
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Scale</label>
+                            <select id="scale" 
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                                <option value="small">Small</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="large">Large</option>
+                                <option value="enterprise">Enterprise</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Enterprise Profile</label>
+                            <select id="enterpriseProfile" 
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                                <option value="modern_saas" selected>Modern SaaS</option>
+                                <option value="regulated_finance">Regulated Finance</option>
+                                <option value="healthcare_provider">Healthcare Provider</option>
+                                <option value="global_manufacturing">Global Manufacturing</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Realism Profile</label>
+                            <select id="realismProfile" 
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none">
+                                <option value="clean">Clean</option>
+                                <option value="typical" selected>Typical</option>
+                                <option value="messy">Messy</option>
+                            </select>
+                        </div>
+                        
+                        <button type="submit" id="generateBtn"
+                            class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 cyan-glow">
+                            Generate Snapshot
+                        </button>
+                    </form>
+                </div>
             </div>
 
             <div class="lg:col-span-2 space-y-6">
-                <div id="resultsSection" class="hidden">
-                    <div class="bg-slate-800/60 rounded-xl p-6 border border-slate-700 mb-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <h2 class="text-xl font-semibold text-cyan-400">Snapshot Generated</h2>
-                            <button id="downloadBtn" 
-                                class="bg-purple-600 hover:bg-purple-500 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 purple-glow flex items-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                                </svg>
-                                Download JSON
-                            </button>
-                        </div>
-                        
-                        <div id="metaInfo" class="text-sm text-slate-400 mb-4"></div>
-                        
-                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3" id="countsGrid"></div>
-                    </div>
-
-                    <div id="reconciliationSection" class="bg-slate-800/60 rounded-xl p-6 border border-slate-700 mb-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <h3 class="text-lg font-semibold text-purple-400 flex items-center gap-2">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                                AOD Reconciliation
-                            </h3>
-                            <button id="reconcileBtn" 
-                                class="bg-purple-600 hover:bg-purple-500 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 text-sm flex items-center gap-2">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                </svg>
-                                Reconcile with AOD Run
-                            </button>
-                        </div>
-                        
-                        <div id="reconcileError" class="hidden bg-red-900/40 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4"></div>
-                        
-                        <div id="reconcileEmpty" class="text-slate-500 text-center py-6">
-                            <svg class="w-12 h-12 mx-auto mb-3 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                <div class="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-xl font-semibold text-purple-400 flex items-center gap-2">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
-                            No AOD reconciliation recorded for this snapshot yet.
-                        </div>
-                        
-                        <div id="reconcileContent" class="hidden">
-                            <div id="reconcileLatest" class="mb-4"></div>
-                            
-                            <div id="reconcileHistory" class="hidden">
-                                <div class="border-t border-slate-700 pt-4 mt-4">
-                                    <h4 class="text-sm font-medium text-slate-400 mb-3">Previous Reconciliations</h4>
-                                    <div id="reconcileHistoryList" class="space-y-2 max-h-40 overflow-y-auto"></div>
-                                </div>
-                            </div>
+                            Reconciliation Status
+                        </h2>
+                        <div class="flex gap-2 text-xs">
+                            <span class="px-2 py-1 rounded border status-pass">PASS</span>
+                            <span class="px-2 py-1 rounded border status-warn">WARN</span>
+                            <span class="px-2 py-1 rounded border status-fail">FAIL</span>
+                            <span class="px-2 py-1 rounded border status-none">Not Run</span>
                         </div>
                     </div>
-
-                    <div class="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
-                        <h3 class="text-lg font-semibold text-cyan-400 mb-4">Sample Records</h3>
-                        <div class="space-y-4" id="samplesContainer"></div>
+                    
+                    <div id="snapshotsList" class="space-y-3 max-h-[600px] overflow-y-auto">
+                        <div class="text-slate-500 text-center py-8">Loading snapshots...</div>
                     </div>
-                </div>
-
-                <div id="runsSection" class="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
-                    <h2 class="text-xl font-semibold text-cyan-400 mb-4">Snapshot History</h2>
-                    <div id="runsList" class="space-y-2 max-h-96 overflow-y-auto"></div>
-                    <p id="noRuns" class="text-slate-500 text-center py-4">No snapshots yet.</p>
+                    <p id="noSnapshots" class="hidden text-slate-500 text-center py-8">
+                        No snapshots yet. Generate one to get started.
+                    </p>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="detailModal" class="modal-overlay hidden">
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-semibold text-cyan-400">Snapshot Details</h3>
+                <button id="closeDetailBtn" class="text-slate-400 hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="detailContent"></div>
         </div>
     </div>
 
     <div id="reconcileModal" class="modal-overlay hidden">
         <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 w-full max-w-lg mx-4">
             <div class="flex items-center justify-between mb-4">
-                <h3 class="text-lg font-semibold text-purple-400">Reconcile with AOD Run</h3>
-                <button id="closeModalBtn" class="text-slate-400 hover:text-white">
+                <h3 class="text-lg font-semibold text-purple-400">Reconcile with AOD</h3>
+                <button id="closeReconcileBtn" class="text-slate-400 hover:text-white">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                     </svg>
                 </button>
             </div>
             
-            <p class="text-slate-400 text-sm mb-4">Enter AOD run details to compare against Farm's evidence-based expectations.</p>
+            <div id="aodNotAvailable" class="bg-amber-900/40 border border-amber-700 text-amber-300 px-4 py-3 rounded-lg mb-4">
+                <div class="flex items-center gap-2 font-medium mb-1">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                    AOD API not connected
+                </div>
+                <p class="text-sm">Farm cannot automatically fetch AOD results. Enter results manually below, or configure AOD integration.</p>
+            </div>
             
-            <form id="reconcileForm" class="space-y-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-300 mb-1">AOD Run ID</label>
-                    <input type="text" id="aodRunId" placeholder="e.g., aod-run-2024-001" required
-                        class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
-                </div>
-                
-                <div class="grid grid-cols-2 gap-4">
+            <details class="mb-4">
+                <summary class="text-slate-300 cursor-pointer hover:text-white font-medium">Manual Entry</summary>
+                <form id="reconcileForm" class="space-y-4 mt-4">
+                    <input type="hidden" id="reconcileSnapshotId">
+                    <input type="hidden" id="reconcileTenantId">
+                    
                     <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">Assets Admitted</label>
-                        <input type="number" id="aodAssetsAdmitted" value="0" min="0"
+                        <label class="block text-sm font-medium text-slate-300 mb-1">AOD Run ID</label>
+                        <input type="text" id="aodRunId" placeholder="e.g., aod-run-2024-001" required
                             class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
                     </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Assets Admitted</label>
+                            <input type="number" id="aodAssetsAdmitted" value="0" min="0"
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Findings</label>
+                            <input type="number" id="aodFindings" value="0" min="0"
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Zombies Detected</label>
+                            <input type="number" id="aodZombies" value="0" min="0"
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Shadows Detected</label>
+                            <input type="number" id="aodShadows" value="0" min="0"
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
+                        </div>
+                    </div>
+                    
                     <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">Findings</label>
-                        <input type="number" id="aodFindings" value="0" min="0"
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Zombie Asset Keys (comma-separated)</label>
+                        <input type="text" id="aodZombieAssets" placeholder="e.g., oldapp, legacydb"
                             class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
                     </div>
-                </div>
-                
-                <div class="grid grid-cols-2 gap-4">
+                    
                     <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">Zombies Detected</label>
-                        <input type="number" id="aodZombies" value="0" min="0"
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Shadow Asset Keys (comma-separated)</label>
+                        <input type="text" id="aodShadowAssets" placeholder="e.g., newapp, shadowsaas"
                             class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-300 mb-1">Shadows Detected</label>
-                        <input type="number" id="aodShadows" value="0" min="0"
-                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
-                    </div>
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-slate-300 mb-1">Zombie Asset Keys (comma-separated)</label>
-                    <input type="text" id="aodZombieAssets" placeholder="e.g., oldapp, legacydb"
-                        class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-slate-300 mb-1">Shadow Asset Keys (comma-separated)</label>
-                    <input type="text" id="aodShadowAssets" placeholder="e.g., newapp, shadowsaas"
-                        class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white focus:border-purple-500 focus:ring-1 focus:ring-purple-500 outline-none">
-                </div>
-                
-                <div id="reconcileModalError" class="hidden bg-red-900/40 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm"></div>
-                
-                <div class="flex gap-3 pt-2">
-                    <button type="button" id="cancelReconcileBtn" 
-                        class="flex-1 bg-slate-700 hover:bg-slate-600 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200">
-                        Cancel
-                    </button>
+                    
+                    <div id="reconcileModalError" class="hidden bg-red-900/40 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm"></div>
+                    
                     <button type="submit" id="submitReconcileBtn"
-                        class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 purple-glow">
+                        class="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium py-2 px-4 rounded-lg transition-all duration-200 purple-glow">
                         Run Reconciliation
                     </button>
-                </div>
-            </form>
+                </form>
+            </details>
         </div>
     </div>
 
     <script>
-        let currentSnapshot = null;
-        let currentReconciliations = [];
+        let snapshotsCache = [];
+        let reconciliationsCache = {};
 
-        async function loadRuns() {
+        function getStatusBadge(status, size = 'normal') {
+            const classes = {
+                'PASS': 'status-pass',
+                'WARN': 'status-warn',
+                'FAIL': 'status-fail',
+                'NOT_RUN': 'status-none'
+            };
+            const sizeClass = size === 'large' ? 'px-3 py-1.5 text-sm' : 'px-2 py-1 text-xs';
+            const label = status === 'NOT_RUN' ? 'Not Run' : status;
+            return `<span class="${sizeClass} rounded font-semibold border ${classes[status] || classes['NOT_RUN']}">${label}</span>`;
+        }
+
+        async function loadAllData() {
             try {
-                const response = await fetch('/api/snapshots');
-                const snapshots = await response.json();
+                const [snapshotsRes, reconciliationsRes] = await Promise.all([
+                    fetch('/api/snapshots?limit=100'),
+                    fetch('/api/reconcile?limit=500')
+                ]);
                 
-                const runsList = document.getElementById('runsList');
-                const noRuns = document.getElementById('noRuns');
+                snapshotsCache = await snapshotsRes.json();
+                const allReconciliations = await reconciliationsRes.json();
                 
-                if (snapshots.length === 0) {
-                    runsList.innerHTML = '';
-                    noRuns.classList.remove('hidden');
-                } else {
-                    noRuns.classList.add('hidden');
-                    runsList.innerHTML = snapshots.map(snap => `
-                        <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700 hover:border-cyan-500/50 transition-colors cursor-pointer" 
-                             onclick="loadRun('${snap.snapshot_id}')">
-                            <div class="flex items-center justify-between">
-                                <div>
-                                    <span class="text-cyan-400 font-medium">${snap.tenant_id}</span>
-                                    <span class="text-slate-500 text-sm ml-2">Seed: ${snap.seed}</span>
-                                </div>
-                                <div class="text-xs text-slate-500">${new Date(snap.created_at).toLocaleString()}</div>
-                            </div>
-                            <div class="text-xs text-slate-400 mt-1">
-                                ${snap.scale} | ${snap.enterprise_profile} | ${snap.realism_profile}
-                            </div>
-                        </div>
-                    `).join('');
+                reconciliationsCache = {};
+                for (const rec of allReconciliations) {
+                    if (!reconciliationsCache[rec.snapshot_id]) {
+                        reconciliationsCache[rec.snapshot_id] = [];
+                    }
+                    reconciliationsCache[rec.snapshot_id].push(rec);
                 }
+                
+                renderSnapshotsList();
             } catch (e) {
-                console.error('Failed to load snapshots:', e);
+                console.error('Failed to load data:', e);
+                document.getElementById('snapshotsList').innerHTML = 
+                    '<div class="text-red-400 text-center py-8">Failed to load data. Check console.</div>';
             }
         }
 
-        async function loadRun(snapshotId) {
+        function getLatestReconciliation(snapshotId) {
+            const recs = reconciliationsCache[snapshotId];
+            if (!recs || recs.length === 0) return null;
+            return recs[0];
+        }
+
+        function renderSnapshotsList() {
+            const container = document.getElementById('snapshotsList');
+            const noSnapshots = document.getElementById('noSnapshots');
+            
+            if (snapshotsCache.length === 0) {
+                container.innerHTML = '';
+                noSnapshots.classList.remove('hidden');
+                return;
+            }
+            
+            noSnapshots.classList.add('hidden');
+            
+            container.innerHTML = snapshotsCache.map(snap => {
+                const rec = getLatestReconciliation(snap.snapshot_id);
+                const status = rec ? rec.status : 'NOT_RUN';
+                const recInfo = rec ? 
+                    `<div class="text-xs text-slate-400 mt-1">AOD Run: ${rec.aod_run_id} | ${new Date(rec.created_at).toLocaleDateString()}</div>` :
+                    `<div class="text-xs text-slate-500 mt-1">No reconciliation performed yet</div>`;
+                
+                return `
+                    <div class="bg-slate-900/60 rounded-lg p-4 border border-slate-700 hover:border-purple-500/50 transition-colors">
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-3 mb-1">
+                                    ${getStatusBadge(status, 'large')}
+                                    <span class="text-cyan-400 font-semibold truncate">${snap.tenant_id}</span>
+                                </div>
+                                <div class="text-sm text-slate-400">
+                                    Seed: ${snap.seed} | ${snap.scale} | ${snap.enterprise_profile}
+                                </div>
+                                ${recInfo}
+                            </div>
+                            <div class="flex flex-col items-end gap-2">
+                                <div class="text-xs text-slate-500">${new Date(snap.created_at).toLocaleString()}</div>
+                                <div class="flex gap-2">
+                                    ${!rec ? `
+                                        <button onclick="openReconcileModal('${snap.snapshot_id}', '${snap.tenant_id}')" 
+                                            class="bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium py-1.5 px-3 rounded transition-all duration-200">
+                                            Reconcile
+                                        </button>
+                                    ` : ''}
+                                    <button onclick="openDetailModal('${snap.snapshot_id}')" 
+                                        class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium py-1.5 px-3 rounded transition-all duration-200">
+                                        Details
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        ${rec ? renderReconciliationSummary(rec) : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderReconciliationSummary(rec) {
+            const lines = (rec.report_text || '').split('\n').filter(l => l.trim());
+            const headline = lines.find(l => l.includes('RESULT:')) || lines[0] || '';
+            
+            return `
+                <div class="mt-3 pt-3 border-t border-slate-700">
+                    <div class="text-sm text-slate-300">${headline}</div>
+                    <details class="mt-2">
+                        <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-400">View full report</summary>
+                        <div class="mt-2 bg-slate-800/60 rounded p-3 text-xs text-slate-400 whitespace-pre-line">
+${rec.report_text || 'No report available'}
+                        </div>
+                    </details>
+                </div>
+            `;
+        }
+
+        async function openDetailModal(snapshotId) {
             try {
                 const response = await fetch(`/api/snapshots/${snapshotId}`);
-                currentSnapshot = await response.json();
-                displaySnapshot(currentSnapshot);
-                await loadReconciliations(snapshotId);
+                const snapshot = await response.json();
+                
+                const meta = snapshot.meta;
+                const counts = meta.counts;
+                const recs = reconciliationsCache[snapshotId] || [];
+                
+                document.getElementById('detailContent').innerHTML = `
+                    <div class="space-y-4">
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div><span class="text-slate-400">Tenant:</span> <span class="text-white">${meta.tenant_id}</span></div>
+                            <div><span class="text-slate-400">Seed:</span> <span class="text-white">${meta.seed}</span></div>
+                            <div><span class="text-slate-400">Scale:</span> <span class="text-white">${meta.scale}</span></div>
+                            <div><span class="text-slate-400">Fingerprint:</span> <span class="text-white font-mono">${snapshot.meta.snapshot_fingerprint || 'N/A'}</span></div>
+                        </div>
+                        
+                        <div>
+                            <h4 class="text-purple-400 font-medium mb-2">Reconciliation History (${recs.length})</h4>
+                            ${recs.length === 0 ? 
+                                '<div class="text-slate-500 text-sm">No reconciliations yet.</div>' :
+                                recs.map(r => `
+                                    <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700 mb-2">
+                                        <div class="flex items-center justify-between mb-2">
+                                            ${getStatusBadge(r.status)}
+                                            <span class="text-xs text-slate-500">${new Date(r.created_at).toLocaleString()}</span>
+                                        </div>
+                                        <div class="text-sm text-slate-400">AOD Run: ${r.aod_run_id}</div>
+                                        <div class="text-xs text-slate-500 whitespace-pre-line mt-2">${r.report_text || ''}</div>
+                                    </div>
+                                `).join('')
+                            }
+                        </div>
+                        
+                        <div>
+                            <h4 class="text-cyan-400 font-medium mb-2">Data Counts</h4>
+                            <div class="grid grid-cols-3 md:grid-cols-4 gap-2 text-xs">
+                                ${Object.entries(counts).map(([k, v]) => `
+                                    <div class="bg-slate-900/60 rounded p-2">
+                                        <div class="text-cyan-400 font-bold">${v}</div>
+                                        <div class="text-slate-500">${k.replace(/_/g, ' ')}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        
+                        <div class="flex gap-2">
+                            <button onclick="downloadSnapshot('${snapshotId}')" 
+                                class="bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium py-2 px-4 rounded transition-all duration-200">
+                                Download JSON
+                            </button>
+                            <button onclick="document.getElementById('detailModal').classList.add('hidden'); openReconcileModal('${snapshotId}', '${meta.tenant_id}')" 
+                                class="bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium py-2 px-4 rounded transition-all duration-200">
+                                New Reconciliation
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('detailModal').classList.remove('hidden');
             } catch (e) {
                 console.error('Failed to load snapshot:', e);
             }
         }
 
-        async function loadReconciliations(snapshotId) {
+        async function downloadSnapshot(snapshotId) {
             try {
-                const response = await fetch(`/api/reconcile?snapshot_id=${snapshotId}`);
-                currentReconciliations = await response.json();
-                displayReconciliations();
+                const response = await fetch(`/api/snapshots/${snapshotId}`);
+                const snapshot = await response.json();
+                const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `snapshot-${snapshotId}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
             } catch (e) {
-                console.error('Failed to load reconciliations:', e);
-                currentReconciliations = [];
-                displayReconciliations();
+                console.error('Failed to download:', e);
             }
         }
 
-        function getStatusBadge(status) {
-            const classes = {
-                'PASS': 'status-pass',
-                'WARN': 'status-warn',
-                'FAIL': 'status-fail'
-            };
-            return `<span class="px-2 py-1 rounded text-xs font-semibold border ${classes[status] || 'bg-slate-700 border-slate-600'}">${status}</span>`;
+        function openReconcileModal(snapshotId, tenantId) {
+            document.getElementById('reconcileSnapshotId').value = snapshotId;
+            document.getElementById('reconcileTenantId').value = tenantId;
+            document.getElementById('reconcileModal').classList.remove('hidden');
+            document.getElementById('reconcileModalError').classList.add('hidden');
         }
 
-        function parseReportText(reportText) {
-            if (!reportText) return { headline: '', bullets: [] };
-            const lines = reportText.split('\n').filter(l => l.trim());
-            const headline = lines[0] || '';
-            const bullets = lines.slice(1);
-            return { headline, bullets };
-        }
+        document.getElementById('closeDetailBtn').addEventListener('click', () => {
+            document.getElementById('detailModal').classList.add('hidden');
+        });
 
-        function displayReconciliations() {
-            const empty = document.getElementById('reconcileEmpty');
-            const content = document.getElementById('reconcileContent');
-            const latest = document.getElementById('reconcileLatest');
-            const history = document.getElementById('reconcileHistory');
-            const historyList = document.getElementById('reconcileHistoryList');
-            const error = document.getElementById('reconcileError');
-            
-            error.classList.add('hidden');
-            
-            if (currentReconciliations.length === 0) {
-                empty.classList.remove('hidden');
-                content.classList.add('hidden');
-                return;
+        document.getElementById('closeReconcileBtn').addEventListener('click', () => {
+            document.getElementById('reconcileModal').classList.add('hidden');
+        });
+
+        document.getElementById('detailModal').addEventListener('click', (e) => {
+            if (e.target.id === 'detailModal') {
+                document.getElementById('detailModal').classList.add('hidden');
             }
-            
-            empty.classList.add('hidden');
-            content.classList.remove('hidden');
-            
-            const latestRec = currentReconciliations[0];
-            const { headline, bullets } = parseReportText(latestRec.report_text || '');
-            
-            latest.innerHTML = `
-                <div class="bg-slate-900/60 rounded-lg p-4 border border-slate-700">
-                    <div class="flex items-center justify-between mb-3">
-                        <div class="flex items-center gap-3">
-                            ${getStatusBadge(latestRec.status)}
-                            <span class="text-slate-400 text-sm">AOD Run: <span class="text-white">${latestRec.aod_run_id}</span></span>
-                        </div>
-                        <span class="text-xs text-slate-500">${new Date(latestRec.created_at).toLocaleString()}</span>
-                    </div>
-                    
-                    <div class="text-white font-medium mb-3">${headline}</div>
-                    
-                    ${bullets.length > 0 ? `
-                        <ul class="space-y-1 text-sm text-slate-300">
-                            ${bullets.map(b => `<li class="flex items-start gap-2">
-                                <span class="text-slate-500 mt-0.5">•</span>
-                                <span>${b}</span>
-                            </li>`).join('')}
-                        </ul>
-                    ` : ''}
-                    
-                    <details class="mt-4">
-                        <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-400">View Details</summary>
-                        <div class="mt-2 bg-slate-800/60 rounded p-3 text-xs font-mono overflow-x-auto">
-                            <div class="text-slate-400 mb-2">Farm Expectations:</div>
-                            <div class="text-slate-300">Zombies: ${latestRec.farm_expectations?.expected_zombies || 0} | Shadows: ${latestRec.farm_expectations?.expected_shadows || 0}</div>
-                            ${latestRec.farm_expectations?.zombie_keys?.length ? `<div class="text-slate-400 mt-1">Zombie keys: ${latestRec.farm_expectations.zombie_keys.slice(0,5).join(', ')}${latestRec.farm_expectations.zombie_keys.length > 5 ? '...' : ''}</div>` : ''}
-                            ${latestRec.farm_expectations?.shadow_keys?.length ? `<div class="text-slate-400 mt-1">Shadow keys: ${latestRec.farm_expectations.shadow_keys.slice(0,5).join(', ')}${latestRec.farm_expectations.shadow_keys.length > 5 ? '...' : ''}</div>` : ''}
-                        </div>
-                    </details>
-                </div>
-            `;
-            
-            if (currentReconciliations.length > 1) {
-                history.classList.remove('hidden');
-                historyList.innerHTML = currentReconciliations.slice(1).map(rec => `
-                    <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700 hover:border-purple-500/50 cursor-pointer transition-colors"
-                         onclick="loadReconciliationDetail('${rec.reconciliation_id}')">
-                        <div class="flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                ${getStatusBadge(rec.status)}
-                                <span class="text-slate-400 text-sm">${rec.aod_run_id}</span>
-                            </div>
-                            <span class="text-xs text-slate-500">${new Date(rec.created_at).toLocaleString()}</span>
-                        </div>
-                    </div>
-                `).join('');
-            } else {
-                history.classList.add('hidden');
-            }
-        }
+        });
 
-        async function loadReconciliationDetail(reconciliationId) {
-            try {
-                const response = await fetch(`/api/reconcile/${reconciliationId}`);
-                const rec = await response.json();
-                currentReconciliations = [rec, ...currentReconciliations.filter(r => r.reconciliation_id !== reconciliationId)];
-                displayReconciliations();
-            } catch (e) {
-                console.error('Failed to load reconciliation:', e);
+        document.getElementById('reconcileModal').addEventListener('click', (e) => {
+            if (e.target.id === 'reconcileModal') {
+                document.getElementById('reconcileModal').classList.add('hidden');
             }
-        }
-
-        function displaySnapshot(snapshot) {
-            document.getElementById('resultsSection').classList.remove('hidden');
-            
-            const meta = snapshot.meta;
-            document.getElementById('metaInfo').innerHTML = `
-                <div class="flex flex-wrap gap-4">
-                    <span><strong class="text-slate-300">Snapshot ID:</strong> ${meta.snapshot_id.substring(0, 8)}...</span>
-                    <span><strong class="text-slate-300">Tenant:</strong> ${meta.tenant_id}</span>
-                    <span><strong class="text-slate-300">Seed:</strong> ${meta.seed}</span>
-                    <span><strong class="text-slate-300">Created:</strong> ${new Date(meta.created_at).toLocaleString()}</span>
-                </div>
-            `;
-            
-            const counts = meta.counts;
-            const countsGrid = document.getElementById('countsGrid');
-            const countItems = [
-                { label: 'Discovery Observations', key: 'discovery_observations', color: 'cyan', tooltip: 'Raw observations from scanners, logs, and network traffic. What systems actually "see" in the environment.' },
-                { label: 'IdP Objects', key: 'idp_objects', color: 'purple', tooltip: 'Identity Provider entries (like Okta/Entra). Applications and service principals registered for SSO/SCIM.' },
-                { label: 'CMDB CIs', key: 'cmdb_cis', color: 'blue', tooltip: 'Configuration Items from IT service management (like ServiceNow). The "official" IT inventory.' },
-                { label: 'Cloud Resources', key: 'cloud_resources', color: 'green', tooltip: 'AWS/Azure/GCP resources: accounts, VMs, buckets, databases, IAM roles.' },
-                { label: 'Endpoint Devices', key: 'endpoint_devices', color: 'amber', tooltip: 'Laptops, desktops, servers, and mobile devices tracked by MDM/EDR systems.' },
-                { label: 'Installed Apps', key: 'endpoint_installed_apps', color: 'orange', tooltip: 'Software installed on endpoint devices. Detected by endpoint agents.' },
-                { label: 'DNS Records', key: 'network_dns', color: 'teal', tooltip: 'DNS queries observed on the network. Shows what domains devices are resolving.' },
-                { label: 'Proxy Logs', key: 'network_proxy', color: 'indigo', tooltip: 'Web proxy traffic logs. URLs accessed by users through corporate proxy.' },
-                { label: 'Certificates', key: 'network_certs', color: 'pink', tooltip: 'TLS/SSL certificates observed. Includes issuer and expiration info.' },
-                { label: 'Vendors', key: 'finance_vendors', color: 'emerald', tooltip: 'Known vendors from procurement/finance systems.' },
-                { label: 'Contracts', key: 'finance_contracts', color: 'violet', tooltip: 'Software contracts and agreements. Links vendors to products with dates.' },
-                { label: 'Transactions', key: 'finance_transactions', color: 'rose', tooltip: 'Financial transactions: invoices, expenses, and card payments to vendors.' },
-            ];
-            
-            countsGrid.innerHTML = countItems.map(item => `
-                <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700 cursor-help tooltip-container">
-                    <span class="tooltip-text">${item.tooltip}</span>
-                    <div class="text-2xl font-bold text-${item.color}-400">${counts[item.key] || 0}</div>
-                    <div class="text-xs text-slate-400 flex items-center gap-1">
-                        ${item.label}
-                        <svg class="w-3 h-3 text-slate-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
-                        </svg>
-                    </div>
-                </div>
-            `).join('');
-            
-            const samplesContainer = document.getElementById('samplesContainer');
-            const planes = [
-                { name: 'Discovery', data: snapshot.planes.discovery.observations, key: 'observed_name' },
-                { name: 'IdP', data: snapshot.planes.idp.objects, key: 'name' },
-                { name: 'CMDB', data: snapshot.planes.cmdb.cis, key: 'name' },
-                { name: 'Cloud', data: snapshot.planes.cloud.resources, key: 'name' },
-                { name: 'Endpoint Devices', data: snapshot.planes.endpoint.devices, key: 'hostname' },
-                { name: 'Finance Vendors', data: snapshot.planes.finance.vendors, key: 'vendor_name' },
-            ];
-            
-            samplesContainer.innerHTML = planes.map(plane => `
-                <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700">
-                    <h4 class="text-cyan-400 font-medium mb-2">${plane.name} (${plane.data.length} records)</h4>
-                    <div class="text-xs text-slate-400 space-y-1 max-h-32 overflow-y-auto">
-                        ${plane.data.slice(0, 5).map(item => `
-                            <div class="bg-slate-800/60 rounded px-2 py-1">
-                                <code class="text-slate-300">${item[plane.key] || 'N/A'}</code>
-                            </div>
-                        `).join('')}
-                        ${plane.data.length > 5 ? `<div class="text-slate-500">...and ${plane.data.length - 5} more</div>` : ''}
-                    </div>
-                </div>
-            `).join('');
-            
-            currentReconciliations = [];
-            displayReconciliations();
-        }
+        });
 
         document.getElementById('snapshotForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -520,7 +462,7 @@
             btn.textContent = 'Generating...';
             
             try {
-                const response = await fetch('/api/snapshot', {
+                await fetch('/api/snapshots', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -532,10 +474,7 @@
                     })
                 });
                 
-                currentSnapshot = await response.json();
-                displaySnapshot(currentSnapshot);
-                loadRuns();
-                await loadReconciliations(currentSnapshot.meta.snapshot_id);
+                await loadAllData();
             } catch (e) {
                 console.error('Failed to generate snapshot:', e);
                 alert('Failed to generate snapshot. Check console for details.');
@@ -545,42 +484,8 @@
             }
         });
 
-        document.getElementById('downloadBtn').addEventListener('click', () => {
-            if (!currentSnapshot) return;
-            
-            const blob = new Blob([JSON.stringify(currentSnapshot, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `snapshot-${currentSnapshot.meta.snapshot_id}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        });
-
-        document.getElementById('reconcileBtn').addEventListener('click', () => {
-            if (!currentSnapshot) return;
-            document.getElementById('reconcileModal').classList.remove('hidden');
-            document.getElementById('reconcileModalError').classList.add('hidden');
-        });
-
-        document.getElementById('closeModalBtn').addEventListener('click', () => {
-            document.getElementById('reconcileModal').classList.add('hidden');
-        });
-
-        document.getElementById('cancelReconcileBtn').addEventListener('click', () => {
-            document.getElementById('reconcileModal').classList.add('hidden');
-        });
-
-        document.getElementById('reconcileModal').addEventListener('click', (e) => {
-            if (e.target.id === 'reconcileModal') {
-                document.getElementById('reconcileModal').classList.add('hidden');
-            }
-        });
-
         document.getElementById('reconcileForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            
-            if (!currentSnapshot) return;
             
             const btn = document.getElementById('submitReconcileBtn');
             const errorDiv = document.getElementById('reconcileModalError');
@@ -589,6 +494,9 @@
             errorDiv.classList.add('hidden');
             
             try {
+                const snapshotId = document.getElementById('reconcileSnapshotId').value;
+                const tenantId = document.getElementById('reconcileTenantId').value;
+                
                 const zombieAssets = document.getElementById('aodZombieAssets').value
                     .split(',').map(s => s.trim()).filter(s => s);
                 const shadowAssets = document.getElementById('aodShadowAssets').value
@@ -598,9 +506,9 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        snapshot_id: currentSnapshot.meta.snapshot_id,
+                        snapshot_id: snapshotId,
                         aod_run_id: document.getElementById('aodRunId').value,
-                        tenant_id: currentSnapshot.meta.tenant_id,
+                        tenant_id: tenantId,
                         aod_summary: {
                             assets_admitted: parseInt(document.getElementById('aodAssetsAdmitted').value) || 0,
                             findings: parseInt(document.getElementById('aodFindings').value) || 0,
@@ -617,19 +525,16 @@
                 
                 if (!response.ok) {
                     const err = await response.json();
-                    throw new Error(err.detail || 'Failed to create reconciliation');
+                    throw new Error(err.detail || 'Reconciliation failed');
                 }
-                
-                const result = await response.json();
-                currentReconciliations = [result, ...currentReconciliations];
-                displayReconciliations();
                 
                 document.getElementById('reconcileModal').classList.add('hidden');
                 document.getElementById('reconcileForm').reset();
+                await loadAllData();
                 
             } catch (e) {
                 console.error('Failed to reconcile:', e);
-                errorDiv.textContent = e.message || 'Failed to run reconciliation. Please try again.';
+                errorDiv.textContent = e.message || 'Reconciliation failed';
                 errorDiv.classList.remove('hidden');
             } finally {
                 btn.disabled = false;
@@ -637,7 +542,7 @@
             }
         });
 
-        loadRuns();
+        loadAllData();
     </script>
 </body>
 </html>
