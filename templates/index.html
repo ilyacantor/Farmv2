@@ -105,16 +105,16 @@
         </div>
 
         <div id="configTab" class="hidden">
-            <div class="max-w-2xl mx-auto">
-                <div class="bg-slate-800/60 rounded-xl p-6 border border-slate-700">
-                    <h2 class="text-xl font-semibold text-cyan-400 mb-6">Generate New Snapshot</h2>
-                    
-                    <form id="snapshotForm" class="space-y-5">
-                        <div class="grid grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-1">
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700 sticky top-4">
+                        <h2 class="text-lg font-semibold text-cyan-400 mb-4">Generate Snapshot</h2>
+                        
+                        <form id="snapshotForm" class="space-y-4">
                             <div>
-                                <label class="block text-sm font-medium text-slate-300 mb-1">Scale</label>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Scale</label>
                                 <select id="scale" 
-                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-cyan-500 outline-none">
+                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
                                     <option value="small">Small</option>
                                     <option value="medium" selected>Medium</option>
                                     <option value="large">Large</option>
@@ -123,9 +123,9 @@
                             </div>
                             
                             <div>
-                                <label class="block text-sm font-medium text-slate-300 mb-1">Enterprise Profile</label>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Enterprise Profile</label>
                                 <select id="enterpriseProfile" 
-                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-cyan-500 outline-none">
+                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
                                     <option value="modern_saas" selected>Modern SaaS</option>
                                     <option value="regulated_finance">Regulated Finance</option>
                                     <option value="healthcare_provider">Healthcare Provider</option>
@@ -134,42 +134,31 @@
                             </div>
                             
                             <div>
-                                <label class="block text-sm font-medium text-slate-300 mb-1">Realism Profile</label>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Realism Profile</label>
                                 <select id="realismProfile" 
-                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:border-cyan-500 outline-none">
+                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
                                     <option value="clean">Clean</option>
                                     <option value="typical" selected>Typical</option>
                                     <option value="messy">Messy</option>
                                 </select>
                             </div>
-                        </div>
-                        
-                        <button type="submit" id="generateBtn"
-                            class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 cyan-glow">
-                            Generate Snapshot
-                        </button>
-                    </form>
+                            
+                            <button type="submit" id="generateBtn"
+                                class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 cyan-glow">
+                                Generate Snapshot
+                            </button>
+                        </form>
+                    </div>
                 </div>
 
-                <div class="mt-6 bg-slate-800/60 rounded-xl p-6 border border-slate-700">
-                    <h3 class="text-lg font-semibold text-slate-300 mb-4">About Profiles</h3>
-                    <div class="grid grid-cols-2 gap-4 text-sm">
-                        <div>
-                            <h4 class="text-cyan-400 font-medium mb-2">Enterprise Profiles</h4>
-                            <ul class="space-y-1 text-slate-400">
-                                <li><span class="text-slate-300">Modern SaaS:</span> Cloud-first, AWS/GCP heavy</li>
-                                <li><span class="text-slate-300">Regulated Finance:</span> AWS/Azure, compliance focus</li>
-                                <li><span class="text-slate-300">Healthcare:</span> HIPAA-aware patterns</li>
-                                <li><span class="text-slate-300">Manufacturing:</span> Hybrid on-prem/cloud</li>
-                            </ul>
+                <div class="lg:col-span-2">
+                    <div class="bg-slate-800/60 rounded-xl border border-slate-700">
+                        <div class="flex items-center justify-between p-4 border-b border-slate-700">
+                            <h2 class="text-lg font-semibold text-purple-400">Snapshot Browser</h2>
+                            <span class="text-xs text-slate-500"><span id="configSnapshotCount">0</span> snapshots</span>
                         </div>
-                        <div>
-                            <h4 class="text-purple-400 font-medium mb-2">Realism Profiles</h4>
-                            <ul class="space-y-1 text-slate-400">
-                                <li><span class="text-slate-300">Clean:</span> Perfect data, full coverage</li>
-                                <li><span class="text-slate-300">Typical:</span> Some gaps, name drift</li>
-                                <li><span class="text-slate-300">Messy:</span> Missing owners, stale data, shadows</li>
-                            </ul>
+                        <div id="configSnapshotsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-200px)] overflow-y-auto">
+                            <div class="text-slate-500 text-center py-12">Loading snapshots...</div>
                         </div>
                     </div>
                 </div>
@@ -384,6 +373,7 @@
                 }
                 
                 document.getElementById('snapshotCount').textContent = snapshotsCache.length;
+                document.getElementById('configSnapshotCount').textContent = snapshotsCache.length;
                 
                 const tenants = [...new Set(snapshotsCache.map(s => s.tenant_id))].sort();
                 const filterTenant = document.getElementById('filterTenant');
@@ -392,6 +382,7 @@
                 
                 snapshotsCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                 renderSnapshotsList();
+                renderConfigSnapshotsList();
                 loadAodStatuses();
             } catch (e) {
                 console.error('Failed to load data:', e);
@@ -481,6 +472,185 @@
             const days = Math.floor(hours / 24);
             if (days < 7) return `${days}d ago`;
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        }
+
+        let expandedSnapshots = {};
+        let snapshotDataCache = {};
+
+        function renderConfigSnapshotsList() {
+            const container = document.getElementById('configSnapshotsList');
+            if (snapshotsCache.length === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-center py-12">No snapshots yet. Generate one!</div>';
+                return;
+            }
+            
+            container.innerHTML = snapshotsCache.map(snap => {
+                const created = new Date(snap.created_at);
+                const isExpanded = expandedSnapshots[snap.snapshot_id];
+                
+                return `
+                    <div class="border-b border-slate-700/50">
+                        <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer flex items-center justify-between" 
+                             onclick="toggleSnapshotExpand('${snap.snapshot_id}')">
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <svg class="w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                    </svg>
+                                    <span class="text-cyan-400 font-medium">${snap.tenant_id}</span>
+                                    <span class="text-slate-600 text-xs">seed:${snap.seed}</span>
+                                </div>
+                                <div class="text-xs text-slate-500 ml-6">
+                                    ${snap.scale} | ${snap.enterprise_profile.replace('_', ' ')} | ${snap.realism_profile}
+                                </div>
+                            </div>
+                            <div class="text-xs text-slate-500">${getTimeAgo(created)}</div>
+                        </div>
+                        <div id="expand-${snap.snapshot_id}" class="${isExpanded ? '' : 'hidden'}"></div>
+                    </div>
+                `;
+            }).join('');
+            
+            Object.keys(expandedSnapshots).forEach(id => {
+                if (expandedSnapshots[id] && snapshotDataCache[id]) {
+                    renderSnapshotExpanded(id, snapshotDataCache[id]);
+                }
+            });
+        }
+
+        async function toggleSnapshotExpand(snapshotId) {
+            const container = document.getElementById(`expand-${snapshotId}`);
+            
+            if (expandedSnapshots[snapshotId]) {
+                expandedSnapshots[snapshotId] = false;
+                container.classList.add('hidden');
+                renderConfigSnapshotsList();
+                return;
+            }
+            
+            expandedSnapshots[snapshotId] = true;
+            container.classList.remove('hidden');
+            container.innerHTML = '<div class="p-4 text-slate-400 text-sm">Loading snapshot data...</div>';
+            
+            try {
+                if (!snapshotDataCache[snapshotId]) {
+                    const response = await fetch(`/api/snapshots/${snapshotId}`);
+                    snapshotDataCache[snapshotId] = await response.json();
+                }
+                renderSnapshotExpanded(snapshotId, snapshotDataCache[snapshotId]);
+                renderConfigSnapshotsList();
+            } catch (e) {
+                container.innerHTML = `<div class="p-4 text-red-400 text-sm">Failed to load: ${e.message}</div>`;
+            }
+        }
+
+        let expandedPlanes = {};
+
+        function renderSnapshotExpanded(snapshotId, data) {
+            const container = document.getElementById(`expand-${snapshotId}`);
+            if (!container) return;
+            
+            const planes = [
+                { key: 'discovery', name: 'Discovery', icon: '🔍', items: data.discovery?.observations || [] },
+                { key: 'idp', name: 'IdP', icon: '🔐', items: data.idp?.objects || [] },
+                { key: 'cmdb', name: 'CMDB', icon: '📋', items: data.cmdb?.config_items || [] },
+                { key: 'cloud', name: 'Cloud', icon: '☁️', items: data.cloud?.resources || [] },
+                { key: 'endpoint', name: 'Endpoint', icon: '💻', items: data.endpoint?.devices || [] },
+                { key: 'network', name: 'Network', icon: '🌐', items: data.network ? [...(data.network.dns_records || []), ...(data.network.proxy_logs || []), ...(data.network.certificates || [])] : [] },
+                { key: 'finance', name: 'Finance', icon: '💰', items: data.finance ? [...(data.finance.vendors || []), ...(data.finance.contracts || []), ...(data.finance.transactions || [])] : [] }
+            ];
+            
+            container.innerHTML = `
+                <div class="bg-slate-900/40 border-t border-slate-700">
+                    <div class="p-3 grid grid-cols-4 gap-2 text-xs border-b border-slate-700/50">
+                        ${Object.entries(data.meta?.counts || {}).map(([k, v]) => `
+                            <div class="text-center">
+                                <div class="text-cyan-400 font-bold">${v}</div>
+                                <div class="text-slate-500 truncate">${k.replace(/_/g, ' ')}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="divide-y divide-slate-700/30">
+                        ${planes.map(plane => {
+                            const planeKey = `${snapshotId}-${plane.key}`;
+                            const isPlaneExpanded = expandedPlanes[planeKey];
+                            return `
+                                <div>
+                                    <div class="px-4 py-2 flex items-center justify-between cursor-pointer hover:bg-slate-800/50"
+                                         onclick="event.stopPropagation(); togglePlaneExpand('${snapshotId}', '${plane.key}')">
+                                        <div class="flex items-center gap-2">
+                                            <svg class="w-3 h-3 text-slate-500 transition-transform ${isPlaneExpanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                            </svg>
+                                            <span class="text-sm">${plane.icon} ${plane.name}</span>
+                                        </div>
+                                        <span class="text-xs text-slate-500">${plane.items.length} items</span>
+                                    </div>
+                                    <div id="plane-${planeKey}" class="${isPlaneExpanded ? '' : 'hidden'} bg-slate-950/50 max-h-64 overflow-y-auto">
+                                        ${renderPlaneItems(plane.items, plane.key)}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                    <div class="p-3 border-t border-slate-700/50 flex gap-2">
+                        <button onclick="event.stopPropagation(); downloadSnapshot('${snapshotId}')" 
+                            class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium py-1.5 px-3 rounded transition-all">
+                            Download JSON
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function togglePlaneExpand(snapshotId, planeKey) {
+            const key = `${snapshotId}-${planeKey}`;
+            expandedPlanes[key] = !expandedPlanes[key];
+            if (snapshotDataCache[snapshotId]) {
+                renderSnapshotExpanded(snapshotId, snapshotDataCache[snapshotId]);
+            }
+        }
+
+        let expandedItems = {};
+
+        function renderPlaneItems(items, planeKey) {
+            if (items.length === 0) {
+                return '<div class="px-6 py-2 text-xs text-slate-500 italic">No items</div>';
+            }
+            return items.map((item, idx) => {
+                const itemKey = `${planeKey}-${idx}`;
+                const isItemExpanded = expandedItems[itemKey];
+                const displayName = item.observed_name || item.name || item.hostname || item.vendor_name || item.domain || `Item ${idx + 1}`;
+                const subtitle = item.source || item.idp_type || item.ci_type || item.cloud_provider || item.resource_type || '';
+                
+                return `
+                    <div class="border-b border-slate-800/50 last:border-b-0">
+                        <div class="px-6 py-1.5 flex items-center justify-between cursor-pointer hover:bg-slate-900/50 text-xs"
+                             onclick="event.stopPropagation(); toggleItemExpand('${itemKey}')">
+                            <div class="flex items-center gap-2 flex-1 min-w-0">
+                                <svg class="w-2.5 h-2.5 text-slate-600 transition-transform flex-shrink-0 ${isItemExpanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                </svg>
+                                <span class="text-slate-300 truncate">${displayName}</span>
+                                ${subtitle ? `<span class="text-slate-600">${subtitle}</span>` : ''}
+                            </div>
+                        </div>
+                        <div id="item-${itemKey}" class="${isItemExpanded ? '' : 'hidden'} px-8 py-2 bg-slate-950/80">
+                            <pre class="text-xs text-slate-400 whitespace-pre-wrap overflow-x-auto">${JSON.stringify(item, null, 2)}</pre>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleItemExpand(itemKey) {
+            expandedItems[itemKey] = !expandedItems[itemKey];
+            const container = document.getElementById(`item-${itemKey}`);
+            if (container) {
+                container.classList.toggle('hidden');
+                const arrow = container.previousElementSibling.querySelector('svg');
+                if (arrow) arrow.classList.toggle('rotate-90');
+            }
         }
 
         function renderReconciliationOneLiner(rec) {
