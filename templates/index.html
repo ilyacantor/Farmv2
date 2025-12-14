@@ -293,17 +293,7 @@
         }
 
         function addLogEntry(message, type = 'info') {
-            const now = new Date();
-            const time = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-            const colors = { info: 'text-slate-400', success: 'text-green-400', error: 'text-red-400' };
-            
-            generationLog.unshift({ time, message, type });
-            if (generationLog.length > 50) generationLog.pop();
-            
-            const container = document.getElementById('logEntries');
-            container.innerHTML = generationLog.map(entry => 
-                `<div class="${colors[entry.type] || colors.info}"><span class="text-slate-600">${entry.time}</span> ${entry.message}</div>`
-            ).join('');
+            console.log(`[${type}] ${message}`);
         }
 
         function getStatusBadge(status, size = 'normal') {
