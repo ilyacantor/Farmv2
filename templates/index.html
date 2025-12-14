@@ -155,18 +155,24 @@
                 </button>
             </div>
             
-            <div id="aodNotAvailable" class="bg-amber-900/40 border border-amber-700 text-amber-300 px-4 py-3 rounded-lg mb-4">
-                <div class="flex items-center gap-2 font-medium mb-1">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
-                    </svg>
-                    AOD API not connected
+            <div id="autoReconcileSection" class="mb-4">
+                <input type="hidden" id="autoReconcileSnapshotId">
+                <input type="hidden" id="autoReconcileTenantId">
+                
+                <div id="autoReconcileError" class="hidden bg-red-900/40 border border-red-700 text-red-300 px-4 py-3 rounded-lg mb-4 text-sm"></div>
+                <div id="autoReconcileSuccess" class="hidden bg-green-900/40 border border-green-700 text-green-300 px-4 py-3 rounded-lg mb-4">
+                    <div class="font-medium mb-1">Reconciliation Complete</div>
+                    <div id="autoReconcileResult" class="text-sm"></div>
                 </div>
-                <p class="text-sm">Farm cannot automatically fetch AOD results. Enter results manually below, or configure AOD integration.</p>
+                
+                <button id="autoReconcileBtn" onclick="runAutoReconcile()"
+                    class="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-3 px-6 rounded-lg transition-all duration-200 purple-glow mb-4">
+                    Reconcile (Latest AOD Run)
+                </button>
             </div>
             
             <details class="mb-4">
-                <summary class="text-slate-300 cursor-pointer hover:text-white font-medium">Manual Entry</summary>
+                <summary class="text-slate-300 cursor-pointer hover:text-white font-medium">Advanced: Manual Entry</summary>
                 <form id="reconcileForm" class="space-y-4 mt-4">
                     <input type="hidden" id="reconcileSnapshotId">
                     <input type="hidden" id="reconcileTenantId">
@@ -430,8 +436,69 @@ ${rec.report_text || 'No report available'}
         function openReconcileModal(snapshotId, tenantId) {
             document.getElementById('reconcileSnapshotId').value = snapshotId;
             document.getElementById('reconcileTenantId').value = tenantId;
+            document.getElementById('autoReconcileSnapshotId').value = snapshotId;
+            document.getElementById('autoReconcileTenantId').value = tenantId;
             document.getElementById('reconcileModal').classList.remove('hidden');
             document.getElementById('reconcileModalError').classList.add('hidden');
+            document.getElementById('autoReconcileError').classList.add('hidden');
+            document.getElementById('autoReconcileSuccess').classList.add('hidden');
+            document.getElementById('autoReconcileBtn').disabled = false;
+            document.getElementById('autoReconcileBtn').textContent = 'Reconcile (Latest AOD Run)';
+        }
+
+        async function runAutoReconcile() {
+            const btn = document.getElementById('autoReconcileBtn');
+            const errorDiv = document.getElementById('autoReconcileError');
+            const successDiv = document.getElementById('autoReconcileSuccess');
+            const resultDiv = document.getElementById('autoReconcileResult');
+            
+            const snapshotId = document.getElementById('autoReconcileSnapshotId').value;
+            const tenantId = document.getElementById('autoReconcileTenantId').value;
+            
+            btn.disabled = true;
+            btn.textContent = 'Reconciling...';
+            errorDiv.classList.add('hidden');
+            successDiv.classList.add('hidden');
+            
+            try {
+                const response = await fetch('/api/reconcile/auto', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ snapshot_id: snapshotId, tenant_id: tenantId })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    const errorMsg = data.detail || 'Unknown error occurred';
+                    errorDiv.textContent = errorMsg;
+                    errorDiv.classList.remove('hidden');
+                    btn.disabled = false;
+                    btn.textContent = 'Reconcile (Latest AOD Run)';
+                    return;
+                }
+                
+                const headline = (data.report_text || '').split('\n').find(l => l.includes('RESULT:')) || data.report_text?.split('\n')[0] || '';
+                resultDiv.innerHTML = `
+                    <div class="mb-2">${getStatusBadge(data.status, 'large')}</div>
+                    <div>${headline}</div>
+                    <div class="text-xs mt-1">AOD Run: ${data.aod_run_id}</div>
+                `;
+                successDiv.classList.remove('hidden');
+                
+                await loadAllData();
+                
+                setTimeout(() => {
+                    document.getElementById('reconcileModal').classList.add('hidden');
+                }, 2000);
+                
+            } catch (e) {
+                console.error('Auto reconcile failed:', e);
+                errorDiv.textContent = 'Network error: Could not reach Farm server';
+                errorDiv.classList.remove('hidden');
+                btn.disabled = false;
+                btn.textContent = 'Reconcile (Latest AOD Run)';
+            }
         }
 
         document.getElementById('closeDetailBtn').addEventListener('click', () => {

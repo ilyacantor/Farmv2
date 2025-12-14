@@ -156,9 +156,15 @@ Farm generates 7 independent planes:
 - `GET /api/snapshots?tenant_id=...&limit=...` - List snapshot metadata only (no blob)
 
 ### Reconciliation API (for AOD comparison)
-- `POST /api/reconcile` - Compare AOD results against Farm expectations
+- `POST /api/reconcile` - Compare AOD results against Farm expectations (manual)
   - Request: `{snapshot_id, aod_run_id, tenant_id, aod_summary: {assets_admitted, findings, zombies, shadows}, aod_lists: {zombie_assets, shadow_assets, top_findings}}`
   - Response: `{reconciliation_id, status: PASS/WARN/FAIL, report_text, farm_expectations}`
+- `POST /api/reconcile/auto` - One-click auto-reconciliation (fetches from AOD)
+  - Request: `{snapshot_id, tenant_id}`
+  - Requires: `AOD_URL` env var (optional: `AOD_SHARED_SECRET`)
+  - Behavior: Fetches latest AOD run, gets reconcile payload, creates reconciliation
+  - Response: `{reconciliation_id, snapshot_id, tenant_id, aod_run_id, status, report_text}`
+  - Errors: 400 (not configured), 404 (no AOD run), 502 (AOD unreachable)
 - `GET /api/reconcile?snapshot_id=...` - List reconciliation metadata
 - `GET /api/reconcile/{id}` - Get full reconciliation report
 

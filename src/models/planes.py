@@ -347,3 +347,17 @@ class ReconcileMetadata(BaseModel):
     aod_run_id: str
     created_at: str
     status: str
+
+
+class AutoReconcileRequest(BaseModel):
+    snapshot_id: str
+    tenant_id: str
+
+
+class AutoReconcileResponse(BaseModel):
+    reconciliation_id: str
+    snapshot_id: str
+    tenant_id: str
+    aod_run_id: str
+    status: ReconcileStatusEnum
+    report_text: str

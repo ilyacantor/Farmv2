@@ -1,0 +1,81 @@
+Yep — that “is there anything specific…” is exactly the behavior we want to stamp out. The agent should assume the next step and execute it.
+
+### Why this happened
+
+They shipped a **stub** and then tried to “hand back control” to you instead of completing the loop. In your workflow, reconciliation is only real when it’s **one-click and automatic**.
+
+### What to do next (one iteration)
+
+Wire Farm UI’s “Reconcile” button to actually call AOD, fetch the payload, and create the reconciliation record—no manual entry required.
+
+## Single Replit prompt (paste into the Farm agent)
+
+> Complete the reconciliation loop end-to-end. Remove the “AOD integration stub” behavior by wiring Farm to auto-fetch AOD results and reconcile in one click.
+>
+> Goal: From the snapshot list, user clicks **“Reconcile (latest AOD run)”** and Farm:
+>
+> 1. finds the latest AOD run for that snapshot
+> 2. fetches AOD reconcile payload
+> 3. calls Farm `/api/reconcile` with that payload
+> 4. updates the snapshot list badge to PASS/WARN/FAIL immediately
+>
+> Constraints:
+>
+> * No manual entry required for the normal path (keep manual only under Advanced).
+> * No new product features; just wire the integration cleanly and safely.
+>
+> Assumptions / Contract:
+>
+> * AOD exposes:
+> * `GET {AOD_URL}/api/runs/latest?tenant_id=...&snapshot_id=...` → `{ "run_id": "..." }`
+> * `GET {AOD_URL}/api/runs/{run_id}/reconcile-payload` → `{ run_id, tenant_id, snapshot_id, created_at, summary, lists }`
+> * Use shared secret if configured:
+> * If env `AOD_SHARED_SECRET` exists, include header `X-AOD-SECRET: <secret>` on both calls.
+>
+> Implementation:
+>
+> 1. Add env var support in Farm:
+>
+> * `AOD_URL` (required for auto mode)
+> * `AOD_SHARED_SECRET` (optional)
+>
+> 2. Add backend endpoint in Farm (so UI never calls AOD directly):
+>
+> * `POST /api/reconcile/auto`
+> * Body: `{ snapshot_id, tenant_id }`
+> * Behavior:
+>   a) load snapshot by snapshot_id (for tenant_id validation)
+>   b) call AOD latest endpoint to get run_id
+>   c) call AOD reconcile-payload endpoint to get AOD payload
+>   d) call existing Farm `POST /api/reconcile` with:
+>
+>   * snapshot_id, tenant_id, aod_run_id, aod_summary, aod_lists
+>     e) return the reconciliation_id + status + report_text
+> * Error handling must be explicit and plain-English:
+>
+>   * AOD_URL missing → 400 “Auto reconcile not configured”
+>   * AOD unreachable / bad JSON → 502 with short message
+>   * AOD returns no run → 404 “No AOD run found for this snapshot yet”
+>
+> 3. Update UI:
+>
+> * Replace stub “Reconcile” button to call Farm `POST /api/reconcile/auto`
+> * Show progress state (“Reconciling…”)
+> * On success: update badge + show report preview (headline line)
+> * On failure: show visible inline error banner (no console-only errors)
+>
+> 4. Add tests:
+>
+> * Unit test Farm auto endpoint with mocked AOD responses:
+>
+>   * happy path → creates reconciliation
+>   * no run → 404
+>   * AOD bad response → 502
+>   * missing AOD_URL → 400
+>
+> Deliver proof:
+>
+> * Show one-click reconcile working (badge changes and report appears).
+> * Show a failure case message when AOD_URL is missing or AOD unreachable.
+
+Next time “all-in” means: implement the obvious next step + prove it, not ask what you want next.

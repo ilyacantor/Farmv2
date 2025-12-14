@@ -483,5 +483,65 @@ class TestReconcileEndpoints:
         assert response.status_code == 404
 
 
+class TestAutoReconcile:
+    @pytest.fixture
+    def client(self):
+        return TestClient(app)
+
+    @pytest.fixture
+    def snapshot_id(self, client):
+        response = client.post("/api/snapshots", json={
+            "tenant_id": "AutoReconcileCorp",
+            "seed": 99999,
+            "scale": "small",
+            "enterprise_profile": "modern_saas",
+            "realism_profile": "typical"
+        })
+        return response.json()["snapshot_id"]
+
+    def test_auto_reconcile_missing_aod_url_returns_400(self, client, snapshot_id, monkeypatch):
+        monkeypatch.delenv("AOD_URL", raising=False)
+        
+        response = client.post("/api/reconcile/auto", json={
+            "snapshot_id": snapshot_id,
+            "tenant_id": "AutoReconcileCorp"
+        })
+        
+        assert response.status_code == 400
+        assert "not configured" in response.json()["detail"].lower()
+
+    def test_auto_reconcile_nonexistent_snapshot_returns_404(self, client, monkeypatch):
+        monkeypatch.setenv("AOD_URL", "http://fake-aod:5000")
+        
+        response = client.post("/api/reconcile/auto", json={
+            "snapshot_id": "nonexistent-snapshot-id",
+            "tenant_id": "AutoReconcileCorp"
+        })
+        
+        assert response.status_code == 404
+
+    def test_auto_reconcile_tenant_mismatch_returns_400(self, client, snapshot_id, monkeypatch):
+        monkeypatch.setenv("AOD_URL", "http://fake-aod:5000")
+        
+        response = client.post("/api/reconcile/auto", json={
+            "snapshot_id": snapshot_id,
+            "tenant_id": "WrongTenant"
+        })
+        
+        assert response.status_code == 400
+        assert "mismatch" in response.json()["detail"].lower()
+
+    def test_auto_reconcile_aod_unreachable_returns_502(self, client, snapshot_id, monkeypatch):
+        monkeypatch.setenv("AOD_URL", "http://nonexistent-aod-host:9999")
+        
+        response = client.post("/api/reconcile/auto", json={
+            "snapshot_id": snapshot_id,
+            "tenant_id": "AutoReconcileCorp"
+        })
+        
+        assert response.status_code == 502
+        assert "cannot reach" in response.json()["detail"].lower() or "aod" in response.json()["detail"].lower()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

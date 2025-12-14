@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 import aiosqlite
+import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 
@@ -21,6 +22,10 @@ from src.models.planes import (
     ReconcileMetadata,
     ReconcileStatusEnum,
     FarmExpectations,
+    AODSummary,
+    AODLists,
+    AutoReconcileRequest,
+    AutoReconcileResponse,
 )
 import re
 import uuid
@@ -655,3 +660,128 @@ async def get_reconciliation(reconciliation_id: str):
                 aod_summary=AODSummary(**aod_payload["aod_summary"]),
                 farm_expectations=FarmExpectations(**farm_expectations),
             )
+
+
+@router.post("/api/reconcile/auto", response_model=AutoReconcileResponse)
+async def auto_reconcile(request: AutoReconcileRequest):
+    aod_url = os.environ.get("AOD_URL", "").rstrip("/")
+    aod_secret = os.environ.get("AOD_SHARED_SECRET", "")
+    
+    if not aod_url:
+        raise HTTPException(
+            status_code=400,
+            detail="Auto reconcile not configured. Set AOD_URL environment variable."
+        )
+    
+    await init_db()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT snapshot_id, tenant_id FROM snapshots WHERE snapshot_id = ?", (request.snapshot_id,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Snapshot not found")
+            if row["tenant_id"] != request.tenant_id:
+                raise HTTPException(status_code=400, detail="Tenant ID mismatch")
+    
+    headers = {}
+    if aod_secret:
+        headers["X-AOD-SECRET"] = aod_secret
+    
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            latest_url = f"{aod_url}/api/runs/latest"
+            latest_resp = await client.get(
+                latest_url,
+                params={"tenant_id": request.tenant_id, "snapshot_id": request.snapshot_id},
+                headers=headers
+            )
+            
+            if latest_resp.status_code == 404:
+                raise HTTPException(
+                    status_code=404,
+                    detail="No AOD run found for this snapshot yet. Run AOD first, then reconcile."
+                )
+            
+            if latest_resp.status_code != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"AOD returned error {latest_resp.status_code} when fetching latest run"
+                )
+            
+            try:
+                latest_data = latest_resp.json()
+            except Exception:
+                raise HTTPException(
+                    status_code=502,
+                    detail="AOD returned invalid JSON for latest run"
+                )
+            
+            aod_run_id = latest_data.get("run_id")
+            if not aod_run_id:
+                raise HTTPException(
+                    status_code=502,
+                    detail="AOD response missing run_id field"
+                )
+            
+            payload_url = f"{aod_url}/api/runs/{aod_run_id}/reconcile-payload"
+            payload_resp = await client.get(payload_url, headers=headers)
+            
+            if payload_resp.status_code != 200:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"AOD returned error {payload_resp.status_code} when fetching reconcile payload"
+                )
+            
+            try:
+                payload_data = payload_resp.json()
+            except Exception:
+                raise HTTPException(
+                    status_code=502,
+                    detail="AOD returned invalid JSON for reconcile payload"
+                )
+    
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=502,
+            detail="AOD request timed out. Check if AOD is running and reachable."
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Cannot reach AOD: {str(e)}"
+        )
+    
+    summary_data = payload_data.get("summary", {})
+    lists_data = payload_data.get("lists", {})
+    
+    aod_summary = AODSummary(
+        assets_admitted=summary_data.get("assets_admitted", 0),
+        findings=summary_data.get("findings", 0),
+        zombies=summary_data.get("zombies", 0),
+        shadows=summary_data.get("shadows", 0),
+    )
+    
+    aod_lists = AODLists(
+        zombie_assets=lists_data.get("zombie_assets", []),
+        shadow_assets=lists_data.get("shadow_assets", []),
+        top_findings=lists_data.get("top_findings", []),
+    )
+    
+    reconcile_request = ReconcileRequest(
+        snapshot_id=request.snapshot_id,
+        aod_run_id=aod_run_id,
+        tenant_id=request.tenant_id,
+        aod_summary=aod_summary,
+        aod_lists=aod_lists,
+    )
+    
+    result = await create_reconciliation(reconcile_request)
+    
+    return AutoReconcileResponse(
+        reconciliation_id=result.reconciliation_id,
+        snapshot_id=result.snapshot_id,
+        tenant_id=result.tenant_id,
+        aod_run_id=result.aod_run_id,
+        status=result.status,
+        report_text=result.report_text,
+    )
