@@ -377,6 +377,7 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
         'key': '',
         'names': set(),
         'domains': set(),
+        'vendors': set(),
         'idp_present': False,
         'cmdb_present': False,
         'finance_present': False,
@@ -397,6 +398,9 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
         candidates[key]['names'].add(name)
         if domain:
             candidates[key]['domains'].add(domain)
+        vendor_hint = obs.get('vendor_hint')
+        if vendor_hint:
+            candidates[key]['vendors'].add(vendor_hint)
         
         ts = obs.get('observed_at')
         if ts:
@@ -456,6 +460,8 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
         for key, cand in candidates.items():
             if vendor and any(vendor in normalize_name(n) or normalize_name(n) in vendor for n in cand['names']):
                 cand['finance_present'] = True
+            if vendor and any(vendor == normalize_name(v) for v in cand['vendors']):
+                cand['finance_present'] = True
             if product and any(product in normalize_name(n) or normalize_name(n) in product for n in cand['names']):
                 cand['finance_present'] = True
     
@@ -463,6 +469,8 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
         vendor = normalize_name(txn.get('vendor_name', ''))
         for key, cand in candidates.items():
             if vendor and any(vendor in normalize_name(n) or normalize_name(n) in vendor for n in cand['names']):
+                cand['finance_present'] = True
+            if vendor and any(vendor == normalize_name(v) for v in cand['vendors']):
                 cand['finance_present'] = True
     
     shadow_keys = []
