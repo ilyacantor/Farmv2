@@ -591,14 +591,15 @@
                 network: '<svg class="w-4 h-4 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>',
                 finance: '<svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
             };
+            const p = data.planes || {};
             const planes = [
-                { key: 'discovery', name: 'Discovery', icon: planeIcons.discovery, items: data.discovery?.observations || [] },
-                { key: 'idp', name: 'IdP', icon: planeIcons.idp, items: data.idp?.objects || [] },
-                { key: 'cmdb', name: 'CMDB', icon: planeIcons.cmdb, items: data.cmdb?.config_items || [] },
-                { key: 'cloud', name: 'Cloud', icon: planeIcons.cloud, items: data.cloud?.resources || [] },
-                { key: 'endpoint', name: 'Endpoint', icon: planeIcons.endpoint, items: data.endpoint?.devices || [] },
-                { key: 'network', name: 'Network', icon: planeIcons.network, items: data.network ? [...(data.network.dns_records || []), ...(data.network.proxy_logs || []), ...(data.network.certificates || [])] : [] },
-                { key: 'finance', name: 'Finance', icon: planeIcons.finance, items: data.finance ? [...(data.finance.vendors || []), ...(data.finance.contracts || []), ...(data.finance.transactions || [])] : [] }
+                { key: 'discovery', name: 'Discovery', icon: planeIcons.discovery, items: p.discovery?.observations || [] },
+                { key: 'idp', name: 'IdP', icon: planeIcons.idp, items: p.idp?.objects || [] },
+                { key: 'cmdb', name: 'CMDB', icon: planeIcons.cmdb, items: p.cmdb?.config_items || [] },
+                { key: 'cloud', name: 'Cloud', icon: planeIcons.cloud, items: p.cloud?.resources || [] },
+                { key: 'endpoint', name: 'Endpoint', icon: planeIcons.endpoint, items: p.endpoint?.devices || [] },
+                { key: 'network', name: 'Network', icon: planeIcons.network, items: p.network ? [...(p.network.dns_records || []), ...(p.network.proxy_logs || []), ...(p.network.certificates || [])] : [] },
+                { key: 'finance', name: 'Finance', icon: planeIcons.finance, items: p.finance ? [...(p.finance.vendors || []), ...(p.finance.contracts || []), ...(p.finance.transactions || [])] : [] }
             ];
             
             container.innerHTML = `
