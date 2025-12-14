@@ -358,21 +358,24 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
     for obj in idp_objects:
         name = normalize_name(obj.get('name', ''))
         domain = extract_domain(obj.get('external_ref', ''))
+        matched_keys = set()
         
         for key, cand in candidates.items():
             if name and (name == normalize_name(key) or any(name == normalize_name(n) for n in cand['names'])):
                 cand['idp_present'] = True
+                matched_keys.add(key)
             if domain and (domain == key or domain in cand['domains']):
                 cand['idp_present'] = True
+                matched_keys.add(key)
         
         ts = obj.get('last_login_at')
-        if ts:
-            for key, cand in candidates.items():
-                if cand['idp_present']:
-                    if is_within_window(ts, window_days, reference):
-                        cand['activity_present'] = True
-                    elif is_stale(ts, window_days, reference):
-                        cand['stale_timestamps'].append(ts)
+        if ts and matched_keys:
+            for key in matched_keys:
+                cand = candidates[key]
+                if is_within_window(ts, window_days, reference):
+                    cand['activity_present'] = True
+                elif is_stale(ts, window_days, reference):
+                    cand['stale_timestamps'].append(ts)
     
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])
     for ci in cmdb_cis:

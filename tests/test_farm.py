@@ -319,5 +319,118 @@ class TestAPIEndpoints:
         assert snapshot_data["meta"]["schema_version"] == "farm.v1"
 
 
+class TestReconcileEndpoints:
+    @pytest.fixture
+    def client(self):
+        return TestClient(app)
+
+    @pytest.fixture
+    def snapshot_id(self, client, request):
+        import random
+        seed = random.randint(100000, 999999)
+        response = client.post("/api/snapshots", json={
+            "tenant_id": "ReconcileCorp",
+            "seed": seed,
+            "scale": "small",
+            "enterprise_profile": "modern_saas",
+            "realism_profile": "typical"
+        })
+        return response.json()["snapshot_id"]
+
+    def test_create_reconciliation(self, client, snapshot_id):
+        response = client.post("/api/reconcile", json={
+            "snapshot_id": snapshot_id,
+            "aod_run_id": "aod-run-001",
+            "tenant_id": "ReconcileCorp",
+            "aod_summary": {"assets_admitted": 10, "findings": 2, "zombies": 1, "shadows": 1},
+            "aod_lists": {"zombie_assets": ["oldapp"], "shadow_assets": ["newapp"], "top_findings": []}
+        })
+        
+        assert response.status_code == 200
+        data = response.json()
+        
+        assert "reconciliation_id" in data
+        assert data["snapshot_id"] == snapshot_id
+        assert data["aod_run_id"] == "aod-run-001"
+        assert data["status"] in ["PASS", "WARN", "FAIL"]
+        assert "report_text" in data
+        assert "farm_expectations" in data
+        assert "expected_zombies" in data["farm_expectations"]
+        assert "expected_shadows" in data["farm_expectations"]
+
+    def test_get_reconciliation(self, client, snapshot_id):
+        create_response = client.post("/api/reconcile", json={
+            "snapshot_id": snapshot_id,
+            "aod_run_id": "aod-run-002",
+            "tenant_id": "ReconcileCorp",
+            "aod_summary": {"assets_admitted": 5, "findings": 1, "zombies": 0, "shadows": 0},
+            "aod_lists": {"zombie_assets": [], "shadow_assets": [], "top_findings": []}
+        })
+        
+        reconciliation_id = create_response.json()["reconciliation_id"]
+        
+        get_response = client.get(f"/api/reconcile/{reconciliation_id}")
+        assert get_response.status_code == 200
+        
+        data = get_response.json()
+        assert data["reconciliation_id"] == reconciliation_id
+        assert data["snapshot_id"] == snapshot_id
+        assert "report_text" in data
+        assert "aod_summary" in data
+        assert "farm_expectations" in data
+
+    def test_list_reconciliations(self, client, snapshot_id):
+        client.post("/api/reconcile", json={
+            "snapshot_id": snapshot_id,
+            "aod_run_id": "aod-run-003",
+            "tenant_id": "ReconcileCorp",
+            "aod_summary": {"assets_admitted": 0, "findings": 0, "zombies": 0, "shadows": 0},
+            "aod_lists": {"zombie_assets": [], "shadow_assets": [], "top_findings": []}
+        })
+        
+        response = client.get("/api/reconcile")
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) > 0
+        
+        for item in data:
+            assert "reconciliation_id" in item
+            assert "snapshot_id" in item
+            assert "status" in item
+            assert "report_text" not in item
+
+    def test_list_reconciliations_filter_by_snapshot(self, client, snapshot_id):
+        client.post("/api/reconcile", json={
+            "snapshot_id": snapshot_id,
+            "aod_run_id": "aod-run-004",
+            "tenant_id": "ReconcileCorp",
+            "aod_summary": {"assets_admitted": 0, "findings": 0, "zombies": 0, "shadows": 0},
+            "aod_lists": {"zombie_assets": [], "shadow_assets": [], "top_findings": []}
+        })
+        
+        response = client.get(f"/api/reconcile?snapshot_id={snapshot_id}")
+        assert response.status_code == 200
+        
+        data = response.json()
+        for item in data:
+            assert item["snapshot_id"] == snapshot_id
+
+    def test_reconcile_nonexistent_snapshot_returns_404(self, client):
+        response = client.post("/api/reconcile", json={
+            "snapshot_id": "nonexistent-snapshot-id",
+            "aod_run_id": "aod-run-005",
+            "tenant_id": "ReconcileCorp",
+            "aod_summary": {"assets_admitted": 0, "findings": 0, "zombies": 0, "shadows": 0},
+            "aod_lists": {"zombie_assets": [], "shadow_assets": [], "top_findings": []}
+        })
+        assert response.status_code == 404
+
+    def test_get_nonexistent_reconciliation_returns_404(self, client):
+        response = client.get("/api/reconcile/nonexistent-reconciliation-id")
+        assert response.status_code == 404
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

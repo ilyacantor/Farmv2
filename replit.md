@@ -46,6 +46,13 @@ Farm generates 7 independent planes:
 - `GET /api/snapshots/{snapshot_id}` - Get full snapshot JSON
 - `GET /api/snapshots?tenant_id=...&limit=...` - List snapshot metadata only (no blob)
 
+### Reconciliation API (for AOD comparison)
+- `POST /api/reconcile` - Compare AOD results against Farm expectations
+  - Request: `{snapshot_id, aod_run_id, tenant_id, aod_summary: {assets_admitted, findings, zombies, shadows}, aod_lists: {zombie_assets, shadow_assets, top_findings}}`
+  - Response: `{reconciliation_id, status: PASS/WARN/FAIL, report_text, farm_expectations}`
+- `GET /api/reconcile?snapshot_id=...` - List reconciliation metadata
+- `GET /api/reconcile/{id}` - Get full reconciliation report
+
 ### Legacy API
 - `POST /api/snapshot` - Generate a new enterprise snapshot (full response)
 - `GET /api/runs` - List all run history
