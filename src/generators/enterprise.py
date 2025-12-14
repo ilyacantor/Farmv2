@@ -68,6 +68,21 @@ SAAS_APPS = [
     {"name": "Monday.com", "vendor": "monday.com", "domain": "monday.com", "category": "saas"},
 ]
 
+SHADOW_SAAS_APPS = [
+    {"name": "Grammarly", "vendor": "Grammarly", "domain": "grammarly.com", "category": "saas"},
+    {"name": "Canva", "vendor": "Canva", "domain": "canva.com", "category": "saas"},
+    {"name": "Loom", "vendor": "Loom", "domain": "loom.com", "category": "saas"},
+    {"name": "Calendly", "vendor": "Calendly", "domain": "calendly.com", "category": "saas"},
+    {"name": "Airtable", "vendor": "Airtable", "domain": "airtable.com", "category": "saas"},
+    {"name": "Zapier", "vendor": "Zapier", "domain": "zapier.com", "category": "saas"},
+    {"name": "Typeform", "vendor": "Typeform", "domain": "typeform.com", "category": "saas"},
+    {"name": "Trello", "vendor": "Atlassian", "domain": "trello.com", "category": "saas"},
+    {"name": "ClickUp", "vendor": "ClickUp", "domain": "clickup.com", "category": "saas"},
+    {"name": "Webex", "vendor": "Cisco", "domain": "webex.com", "category": "saas"},
+    {"name": "SurveyMonkey", "vendor": "Momentive", "domain": "surveymonkey.com", "category": "saas"},
+    {"name": "Evernote", "vendor": "Evernote", "domain": "evernote.com", "category": "saas"},
+]
+
 INTERNAL_SERVICES = [
     {"name": "auth-service", "category": "service"},
     {"name": "billing-api", "category": "service"},
@@ -152,6 +167,7 @@ class EnterpriseGenerator:
         
         self._employees: list[dict] = []
         self._saas_selection: list[dict] = []
+        self._shadow_apps: list[dict] = []
         self._internal_services: list[dict] = []
         self._datastores: list[dict] = []
 
@@ -222,6 +238,14 @@ class EnterpriseGenerator:
         num_saas = min(len(SAAS_APPS), 8 + mult * 2)
         self._saas_selection = self.rng.sample(SAAS_APPS, num_saas)
         
+        shadow_count = {
+            RealismProfileEnum.clean: 0,
+            RealismProfileEnum.typical: max(2, mult),
+            RealismProfileEnum.messy: max(3, mult * 2),
+        }
+        num_shadows = min(len(SHADOW_SAAS_APPS), shadow_count.get(self.realism_profile, 2))
+        self._shadow_apps = self.rng.sample(SHADOW_SAAS_APPS, num_shadows)
+        
         num_services = min(len(INTERNAL_SERVICES), 5 + mult * 2)
         self._internal_services = self.rng.sample(INTERNAL_SERVICES, num_services)
         
@@ -278,6 +302,25 @@ class EnterpriseGenerator:
                 raw={"type": ds["type"]},
             )
             observations.append(obs)
+        
+        for shadow_app in self._shadow_apps:
+            num_obs = self.rng.randint(2, 4) * mult
+            for _ in range(num_obs):
+                source = self.rng.choice(list(SourceEnum))
+                obs = DiscoveryObservation(
+                    observation_id=self._generate_uuid(),
+                    observed_at=self._random_recent_date(),
+                    source=source,
+                    observed_name=self._apply_name_drift(shadow_app["name"]),
+                    observed_uri=f"https://{self.tenant_id.lower()}.{shadow_app['domain']}" if self.rng.random() > 0.3 else None,
+                    hostname=f"{shadow_app['name'].lower().replace(' ', '-')}.{shadow_app['domain']}" if self.rng.random() > 0.4 else None,
+                    domain=shadow_app["domain"],
+                    vendor_hint=shadow_app["vendor"] if self.rng.random() > 0.2 else None,
+                    category_hint=CategoryHintEnum.saas,
+                    environment_hint=self.rng.choice(list(EnvironmentHintEnum)),
+                    raw={"bytes_transferred": self.rng.randint(1000, 1000000)},
+                )
+                observations.append(obs)
         
         return DiscoveryPlane(observations=observations)
 
@@ -519,6 +562,35 @@ class EnterpriseGenerator:
                     date=self._random_date(365),
                     payment_type=self.rng.choice(list(PaymentTypeEnum)),
                     memo=f"License renewal" if self.rng.random() > 0.5 else None,
+                ))
+        
+        for shadow_app in self._shadow_apps:
+            vendor_name = self._apply_name_drift(shadow_app["vendor"])
+            vendors.append(FinanceVendor(
+                vendor_id=f"VND-{self._generate_uuid()[:8].upper()}",
+                vendor_name=vendor_name,
+            ))
+            
+            owner = self.rng.choice(self._employees) if self._employees else None
+            contracts.append(FinanceContract(
+                contract_id=f"CTR-{self._generate_uuid()[:8].upper()}",
+                vendor_name=vendor_name,
+                product=shadow_app["name"] if self.rng.random() > 0.2 else None,
+                start_date=self._random_date(730),
+                end_date=self._random_future_date(365) if self.rng.random() > 0.3 else None,
+                owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
+            ))
+            
+            num_txns = self.rng.randint(1, 3) * mult
+            for _ in range(num_txns):
+                transactions.append(FinanceTransaction(
+                    txn_id=f"TXN-{self._generate_uuid()[:8].upper()}",
+                    vendor_name=vendor_name,
+                    amount=round(self.rng.uniform(50, 5000), 2),
+                    currency="USD",
+                    date=self._random_date(365),
+                    payment_type=self.rng.choice(list(PaymentTypeEnum)),
+                    memo=f"Shadow IT expense" if self.rng.random() > 0.7 else None,
                 ))
         
         return FinancePlane(vendors=vendors, contracts=contracts, transactions=transactions)
