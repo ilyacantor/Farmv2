@@ -1,0 +1,65 @@
+Plan (before any changes), in plain English:
+
+**Why it broke**
+Farm is asking AOD: “give me the latest run for *this exact snapshot_id*.”
+But AOD only has runs for snapshot_ids it actually processed. If you generated new Farm snapshots after AOD ran, there will be **no matching run**, so reconciliation fails.
+
+**What I propose to do (one iteration)**
+Keep the strictness (snapshot-specific) but make it *usable*:
+
+1. **Stop “tenant-only” fallback.**
+   It’s a cheat. It will silently reconcile the wrong run to the wrong snapshot, and the fingerprint argument is not safe unless you actually compare fingerprints (you don’t yet).
+
+2. **Make the mismatch visible in the Farm UI.**
+   For each snapshot, show one of:
+
+* “Processed by AOD” (with run_id)
+* “Not processed by AOD yet”
+* “AOD unreachable”
+
+3. **Make reconciliation one-click only when it’s safe.**
+
+* If Farm can find an AOD run matching this snapshot_id → enable **Reconcile**
+* If not → disable the button and show **“Run AOD on this snapshot first”** (or provide a link / instruction)
+
+That fixes your sync issue without weakening correctness.
+
+---
+
+## Single Replit prompt (copy/paste to Farm agent)
+
+> Implement a strict, user-visible reconciliation sync that never reconciles the wrong AOD run.
+>
+> Problem: Farm currently calls AOD `/api/runs/latest?tenant_id=...&snapshot_id=...` and fails when AOD has no run for that snapshot_id (common when snapshots were generated after AOD ran). The agent proposed a tenant-only fallback. That is forbidden because it can reconcile mismatched data.
+>
+> Do this in one pass:
+>
+> 1. Keep strict snapshot matching. No tenant-only fallback.
+> 2. Add a Farm backend helper endpoint `GET /api/aod/run-status?snapshot_id=...&tenant_id=...` that:
+>
+> * calls AOD `GET /api/runs/latest?tenant_id=...&snapshot_id=...`
+> * interprets responses correctly:
+>
+>   * if AOD returns “no run found” → status = NOT_PROCESSED
+>   * if AOD returns a run_id → status = PROCESSED (include run_id)
+>   * if AOD unreachable/bad response → status = AOD_ERROR (include short message)
+> * IMPORTANT: treat “200 with error detail” from AOD as NOT_PROCESSED (until AOD is fixed), not success.
+>
+> 3. Update the snapshot list UI:
+>
+> * show a badge per snapshot: PROCESSED / NOT PROCESSED / AOD ERROR
+> * enable the “Reconcile” button only when PROCESSED
+> * when NOT PROCESSED, show a small inline hint: “Run AOD on this snapshot first.”
+>
+> 4. Update auto-reconcile:
+>
+> * `POST /api/reconcile/auto` must fail fast with a clear message if NOT_PROCESSED (no attempt to reconcile).
+>
+> 5. Deliver proof:
+>
+> * Show one snapshot marked PROCESSED with reconcile enabled
+> * Show one snapshot marked NOT PROCESSED with reconcile disabled and the hint visible
+>
+> No semantic shortcuts. No tenant-only matching.
+
+This gives you correctness + UX clarity. If you later want “tenant-only”, we can do it *properly* by adding a fingerprint handshake between Farm and AOD first—but that’s a different iteration.

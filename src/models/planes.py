@@ -361,3 +361,15 @@ class AutoReconcileResponse(BaseModel):
     aod_run_id: str
     status: ReconcileStatusEnum
     report_text: str
+
+
+class AODRunStatusEnum(str, Enum):
+    PROCESSED = "PROCESSED"
+    NOT_PROCESSED = "NOT_PROCESSED"
+    AOD_ERROR = "AOD_ERROR"
+
+
+class AODRunStatusResponse(BaseModel):
+    status: AODRunStatusEnum
+    run_id: Optional[str] = None
+    message: Optional[str] = None

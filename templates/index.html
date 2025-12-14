@@ -15,6 +15,11 @@
         .status-warn { background: #78350f; border-color: #f59e0b; color: #fcd34d; }
         .status-fail { background: #7f1d1d; border-color: #ef4444; color: #fca5a5; }
         .status-none { background: #1e293b; border-color: #475569; color: #94a3b8; }
+        .aod-processed { background: #065f46; border-color: #10b981; color: #6ee7b7; }
+        .aod-not-processed { background: #1e293b; border-color: #475569; color: #94a3b8; }
+        .aod-error { background: #7f1d1d; border-color: #ef4444; color: #fca5a5; }
+        .aod-loading { background: #1e293b; border-color: #475569; color: #64748b; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .modal-overlay {
             position: fixed;
             inset: 0;
@@ -235,6 +240,7 @@
     <script>
         let snapshotsCache = [];
         let reconciliationsCache = {};
+        let aodStatusCache = {};
 
         function getStatusBadge(status, size = 'normal') {
             const classes = {
@@ -246,6 +252,44 @@
             const sizeClass = size === 'large' ? 'px-3 py-1.5 text-sm' : 'px-2 py-1 text-xs';
             const label = status === 'NOT_RUN' ? 'Not Run' : status;
             return `<span class="${sizeClass} rounded font-semibold border ${classes[status] || classes['NOT_RUN']}">${label}</span>`;
+        }
+
+        function getAodStatusBadge(aodStatus) {
+            if (!aodStatus) {
+                return `<span class="px-2 py-0.5 rounded text-xs font-medium border aod-loading">AOD: ...</span>`;
+            }
+            const classes = {
+                'PROCESSED': 'aod-processed',
+                'NOT_PROCESSED': 'aod-not-processed',
+                'AOD_ERROR': 'aod-error'
+            };
+            const labels = {
+                'PROCESSED': 'AOD Ready',
+                'NOT_PROCESSED': 'Not in AOD',
+                'AOD_ERROR': 'AOD Error'
+            };
+            return `<span class="px-2 py-0.5 rounded text-xs font-medium border ${classes[aodStatus.status] || 'aod-not-processed'}">${labels[aodStatus.status] || aodStatus.status}</span>`;
+        }
+
+        async function fetchAodStatus(snapshotId, tenantId) {
+            try {
+                const resp = await fetch(`/api/aod/run-status?snapshot_id=${encodeURIComponent(snapshotId)}&tenant_id=${encodeURIComponent(tenantId)}`);
+                if (resp.ok) {
+                    return await resp.json();
+                }
+                return { status: 'AOD_ERROR', message: `HTTP ${resp.status}` };
+            } catch (e) {
+                return { status: 'AOD_ERROR', message: e.message };
+            }
+        }
+
+        async function loadAodStatuses() {
+            const promises = snapshotsCache.map(async (snap) => {
+                const status = await fetchAodStatus(snap.snapshot_id, snap.tenant_id);
+                aodStatusCache[snap.snapshot_id] = status;
+            });
+            await Promise.all(promises);
+            renderSnapshotsList();
         }
 
         async function loadAllData() {
@@ -267,6 +311,7 @@
                 }
                 
                 renderSnapshotsList();
+                loadAodStatuses();
             } catch (e) {
                 console.error('Failed to load data:', e);
                 document.getElementById('snapshotsList').innerHTML = 
@@ -295,9 +340,26 @@
             container.innerHTML = snapshotsCache.map(snap => {
                 const rec = getLatestReconciliation(snap.snapshot_id);
                 const status = rec ? rec.status : 'NOT_RUN';
+                const aodStatus = aodStatusCache[snap.snapshot_id];
+                const canReconcile = aodStatus && aodStatus.status === 'PROCESSED';
+                
                 const recInfo = rec ? 
                     `<div class="text-xs text-slate-400 mt-1">AOD Run: ${rec.aod_run_id} | ${new Date(rec.created_at).toLocaleDateString()}</div>` :
-                    `<div class="text-xs text-slate-500 mt-1">No reconciliation performed yet</div>`;
+                    (aodStatus && aodStatus.status === 'NOT_PROCESSED' ?
+                        `<div class="text-xs text-amber-500 mt-1">Run AOD on this snapshot first</div>` :
+                        `<div class="text-xs text-slate-500 mt-1">No reconciliation performed yet</div>`);
+                
+                const reconcileButton = canReconcile ? `
+                    <button onclick="openReconcileModal('${snap.snapshot_id}', '${snap.tenant_id}')" 
+                        class="bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium py-1.5 px-3 rounded transition-all duration-200">
+                        Reconcile
+                    </button>
+                ` : (aodStatus && aodStatus.status === 'NOT_PROCESSED' ? `
+                    <button disabled title="Run AOD on this snapshot first"
+                        class="bg-slate-700 text-slate-500 text-xs font-medium py-1.5 px-3 rounded cursor-not-allowed">
+                        Reconcile
+                    </button>
+                ` : '');
                 
                 return `
                     <div class="bg-slate-900/60 rounded-lg p-4 border border-slate-700 hover:border-purple-500/50 transition-colors">
@@ -305,6 +367,7 @@
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-center gap-3 mb-1">
                                     ${getStatusBadge(status, 'large')}
+                                    ${getAodStatusBadge(aodStatus)}
                                     <span class="text-cyan-400 font-semibold truncate">${snap.tenant_id}</span>
                                 </div>
                                 <div class="text-sm text-slate-400">
@@ -315,12 +378,7 @@
                             <div class="flex flex-col items-end gap-2">
                                 <div class="text-xs text-slate-500">${new Date(snap.created_at).toLocaleString()}</div>
                                 <div class="flex gap-2">
-                                    ${!rec ? `
-                                        <button onclick="openReconcileModal('${snap.snapshot_id}', '${snap.tenant_id}')" 
-                                            class="bg-purple-600 hover:bg-purple-500 text-white text-xs font-medium py-1.5 px-3 rounded transition-all duration-200">
-                                            Reconcile
-                                        </button>
-                                    ` : ''}
+                                    ${!rec ? reconcileButton : ''}
                                     <button onclick="openDetailModal('${snap.snapshot_id}')" 
                                         class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium py-1.5 px-3 rounded transition-all duration-200">
                                         Details
@@ -442,8 +500,31 @@ ${rec.report_text || 'No report available'}
             document.getElementById('reconcileModalError').classList.add('hidden');
             document.getElementById('autoReconcileError').classList.add('hidden');
             document.getElementById('autoReconcileSuccess').classList.add('hidden');
-            document.getElementById('autoReconcileBtn').disabled = false;
-            document.getElementById('autoReconcileBtn').textContent = 'Reconcile (Latest AOD Run)';
+            
+            const aodStatus = aodStatusCache[snapshotId];
+            const btn = document.getElementById('autoReconcileBtn');
+            const errorDiv = document.getElementById('autoReconcileError');
+            
+            if (aodStatus && aodStatus.status === 'NOT_PROCESSED') {
+                btn.disabled = true;
+                btn.textContent = 'AOD has not processed this snapshot';
+                btn.classList.remove('bg-purple-600', 'hover:bg-purple-500', 'purple-glow');
+                btn.classList.add('bg-slate-700', 'text-slate-500', 'cursor-not-allowed');
+                errorDiv.textContent = 'Run AOD on this snapshot first, then you can reconcile.';
+                errorDiv.classList.remove('hidden');
+            } else if (aodStatus && aodStatus.status === 'AOD_ERROR') {
+                btn.disabled = true;
+                btn.textContent = 'AOD unavailable';
+                btn.classList.remove('bg-purple-600', 'hover:bg-purple-500', 'purple-glow');
+                btn.classList.add('bg-slate-700', 'text-slate-500', 'cursor-not-allowed');
+                errorDiv.textContent = aodStatus.message || 'Cannot connect to AOD';
+                errorDiv.classList.remove('hidden');
+            } else {
+                btn.disabled = false;
+                btn.textContent = 'Reconcile (Latest AOD Run)';
+                btn.classList.add('bg-purple-600', 'hover:bg-purple-500', 'purple-glow');
+                btn.classList.remove('bg-slate-700', 'text-slate-500', 'cursor-not-allowed');
+            }
         }
 
         async function runAutoReconcile() {

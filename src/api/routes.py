@@ -26,6 +26,8 @@ from src.models.planes import (
     AODLists,
     AutoReconcileRequest,
     AutoReconcileResponse,
+    AODRunStatusEnum,
+    AODRunStatusResponse,
 )
 import re
 import uuid
@@ -786,3 +788,73 @@ async def auto_reconcile(request: AutoReconcileRequest):
         status=result.status,
         report_text=result.report_text,
     )
+
+
+@router.get("/api/aod/run-status", response_model=AODRunStatusResponse)
+async def get_aod_run_status(
+    snapshot_id: str = Query(..., description="Snapshot ID to check"),
+    tenant_id: str = Query(..., description="Tenant ID"),
+):
+    aod_url = os.environ.get("AOD_URL") or os.environ.get("AOD_BASE_URL", "")
+    aod_url = aod_url.rstrip("/")
+    aod_secret = os.environ.get("AOD_SHARED_SECRET", "")
+    
+    if not aod_url:
+        return AODRunStatusResponse(
+            status=AODRunStatusEnum.AOD_ERROR,
+            message="AOD not configured. Set AOD_URL or AOD_BASE_URL environment variable."
+        )
+    
+    headers = {}
+    if aod_secret:
+        headers["X-AOD-SECRET"] = aod_secret
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            latest_url = f"{aod_url}/api/runs/latest"
+            resp = await client.get(
+                latest_url,
+                params={"tenant_id": tenant_id, "snapshot_id": snapshot_id},
+                headers=headers
+            )
+            
+            if resp.status_code == 404:
+                return AODRunStatusResponse(
+                    status=AODRunStatusEnum.NOT_PROCESSED
+                )
+            
+            if resp.status_code != 200:
+                return AODRunStatusResponse(
+                    status=AODRunStatusEnum.AOD_ERROR,
+                    message=f"AOD returned HTTP {resp.status_code}"
+                )
+            
+            try:
+                data = resp.json()
+            except Exception:
+                return AODRunStatusResponse(
+                    status=AODRunStatusEnum.AOD_ERROR,
+                    message="AOD returned invalid JSON"
+                )
+            
+            run_id = data.get("run_id")
+            if not run_id:
+                return AODRunStatusResponse(
+                    status=AODRunStatusEnum.NOT_PROCESSED
+                )
+            
+            return AODRunStatusResponse(
+                status=AODRunStatusEnum.PROCESSED,
+                run_id=run_id
+            )
+    
+    except httpx.TimeoutException:
+        return AODRunStatusResponse(
+            status=AODRunStatusEnum.AOD_ERROR,
+            message="AOD request timed out"
+        )
+    except httpx.RequestError as e:
+        return AODRunStatusResponse(
+            status=AODRunStatusEnum.AOD_ERROR,
+            message=f"Cannot reach AOD: {str(e)}"
+        )
