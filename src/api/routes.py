@@ -245,6 +245,22 @@ async def get_snapshot(snapshot_id: str):
             )
 
 
+@router.get("/api/snapshots/{snapshot_id}/expectations")
+async def get_snapshot_expectations(snapshot_id: str):
+    await init_db()
+    
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT snapshot_json FROM snapshots WHERE snapshot_id = ?", (snapshot_id,)) as cursor:
+            row = await cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Snapshot not found")
+            
+            snapshot = json.loads(row["snapshot_json"])
+            expectations = analyze_snapshot_for_expectations(snapshot)
+            return expectations.model_dump()
+
+
 @router.get("/api/snapshots", response_model=list[SnapshotMetadata])
 async def list_snapshots(
     tenant_id: Optional[str] = Query(None, description="Filter by tenant ID"),
