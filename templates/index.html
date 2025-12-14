@@ -182,24 +182,29 @@
             const counts = meta.counts;
             const countsGrid = document.getElementById('countsGrid');
             const countItems = [
-                { label: 'Discovery Observations', key: 'discovery_observations', color: 'cyan' },
-                { label: 'IdP Objects', key: 'idp_objects', color: 'purple' },
-                { label: 'CMDB CIs', key: 'cmdb_cis', color: 'blue' },
-                { label: 'Cloud Resources', key: 'cloud_resources', color: 'green' },
-                { label: 'Endpoint Devices', key: 'endpoint_devices', color: 'amber' },
-                { label: 'Installed Apps', key: 'endpoint_installed_apps', color: 'orange' },
-                { label: 'DNS Records', key: 'network_dns', color: 'teal' },
-                { label: 'Proxy Logs', key: 'network_proxy', color: 'indigo' },
-                { label: 'Certificates', key: 'network_certs', color: 'pink' },
-                { label: 'Vendors', key: 'finance_vendors', color: 'emerald' },
-                { label: 'Contracts', key: 'finance_contracts', color: 'violet' },
-                { label: 'Transactions', key: 'finance_transactions', color: 'rose' },
+                { label: 'Discovery Observations', key: 'discovery_observations', color: 'cyan', tooltip: 'Raw observations from scanners, logs, and network traffic. What systems actually "see" in the environment.' },
+                { label: 'IdP Objects', key: 'idp_objects', color: 'purple', tooltip: 'Identity Provider entries (like Okta/Entra). Applications and service principals registered for SSO/SCIM.' },
+                { label: 'CMDB CIs', key: 'cmdb_cis', color: 'blue', tooltip: 'Configuration Items from IT service management (like ServiceNow). The "official" IT inventory.' },
+                { label: 'Cloud Resources', key: 'cloud_resources', color: 'green', tooltip: 'AWS/Azure/GCP resources: accounts, VMs, buckets, databases, IAM roles.' },
+                { label: 'Endpoint Devices', key: 'endpoint_devices', color: 'amber', tooltip: 'Laptops, desktops, servers, and mobile devices tracked by MDM/EDR systems.' },
+                { label: 'Installed Apps', key: 'endpoint_installed_apps', color: 'orange', tooltip: 'Software installed on endpoint devices. Detected by endpoint agents.' },
+                { label: 'DNS Records', key: 'network_dns', color: 'teal', tooltip: 'DNS queries observed on the network. Shows what domains devices are resolving.' },
+                { label: 'Proxy Logs', key: 'network_proxy', color: 'indigo', tooltip: 'Web proxy traffic logs. URLs accessed by users through corporate proxy.' },
+                { label: 'Certificates', key: 'network_certs', color: 'pink', tooltip: 'TLS/SSL certificates observed. Includes issuer and expiration info.' },
+                { label: 'Vendors', key: 'finance_vendors', color: 'emerald', tooltip: 'Known vendors from procurement/finance systems.' },
+                { label: 'Contracts', key: 'finance_contracts', color: 'violet', tooltip: 'Software contracts and agreements. Links vendors to products with dates.' },
+                { label: 'Transactions', key: 'finance_transactions', color: 'rose', tooltip: 'Financial transactions: invoices, expenses, and card payments to vendors.' },
             ];
             
             countsGrid.innerHTML = countItems.map(item => `
-                <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700">
+                <div class="bg-slate-900/60 rounded-lg p-3 border border-slate-700 cursor-help group relative" title="${item.tooltip}">
                     <div class="text-2xl font-bold text-${item.color}-400">${counts[item.key] || 0}</div>
-                    <div class="text-xs text-slate-400">${item.label}</div>
+                    <div class="text-xs text-slate-400 flex items-center gap-1">
+                        ${item.label}
+                        <svg class="w-3 h-3 text-slate-500 opacity-50 group-hover:opacity-100" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
                 </div>
             `).join('');
             
