@@ -1,5 +1,6 @@
 import json
 import pytest
+from datetime import datetime
 from fastapi.testclient import TestClient
 
 from src.generators.enterprise import EnterpriseGenerator
@@ -32,13 +33,17 @@ BANNED_FIELDS = [
 ]
 
 
-def generate_snapshot(seed: int = 12345, scale: ScaleEnum = ScaleEnum.small):
+FROZEN_TIME = datetime(2025, 1, 15, 12, 0, 0)
+
+
+def generate_snapshot(seed: int = 12345, scale: ScaleEnum = ScaleEnum.small, snapshot_time: datetime = None):
     generator = EnterpriseGenerator(
         tenant_id="TestCorp",
         seed=seed,
         scale=scale,
         enterprise_profile=EnterpriseProfileEnum.modern_saas,
         realism_profile=RealismProfileEnum.typical,
+        snapshot_time=snapshot_time if snapshot_time else FROZEN_TIME,
     )
     return generator.generate()
 
@@ -104,10 +109,9 @@ class TestSchemaValidation:
 
 class TestDeterminism:
     def test_same_seed_produces_identical_snapshot(self):
-        snapshot1 = generate_snapshot(seed=42)
-        snapshot2 = generate_snapshot(seed=42)
-        
-        snapshot1.meta.created_at = snapshot2.meta.created_at
+        frozen = datetime(2025, 1, 15, 12, 0, 0)
+        snapshot1 = generate_snapshot(seed=42, snapshot_time=frozen)
+        snapshot2 = generate_snapshot(seed=42, snapshot_time=frozen)
         
         json1 = json.dumps(snapshot1.model_dump(), sort_keys=True)
         json2 = json.dumps(snapshot2.model_dump(), sort_keys=True)

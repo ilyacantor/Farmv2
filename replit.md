@@ -206,4 +206,10 @@ pytest tests/ -v
 - All planes are independent (different IDs, coverage, naming)
 - Correlation only via realistic keys (names, domains, hostnames)
 - No "conclusions" fields (no shadow flags, labels, or verdicts)
-- Deterministic generation by seed
+- Deterministic generation by seed (when `snapshot_time` is fixed)
+- Timestamps anchor to snapshot creation time (not fixed dates)
+- Activity timestamps follow realistic recency distribution:
+  - 60% within last 7 days (active)
+  - 25% within 8-30 days (recent)
+  - 10% within 31-90 days (stale)
+  - 5% within 91-365 days (zombie candidates)

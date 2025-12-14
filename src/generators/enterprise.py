@@ -148,6 +148,7 @@ class EnterpriseGenerator:
         scale: ScaleEnum,
         enterprise_profile: EnterpriseProfileEnum,
         realism_profile: RealismProfileEnum,
+        snapshot_time: Optional[datetime] = None,
     ):
         self.tenant_id = tenant_id
         self.seed = seed
@@ -156,7 +157,7 @@ class EnterpriseGenerator:
         self.realism_profile = realism_profile
         self.rng = random.Random(seed)
         self.run_id = self._generate_uuid()
-        self.base_date = datetime(2024, 1, 15)
+        self.base_date = snapshot_time if snapshot_time else datetime.utcnow()
         
         self.scale_multipliers = {
             ScaleEnum.small: 1,
@@ -184,6 +185,27 @@ class EnterpriseGenerator:
 
     def _random_recent_date(self, days_back: int = 30) -> str:
         delta = timedelta(days=self.rng.randint(0, days_back), hours=self.rng.randint(0, 23))
+        return (self.base_date - delta).isoformat() + "Z"
+
+    def _random_activity_date(self) -> str:
+        """Generate timestamps with realistic recency distribution.
+        
+        60% within last 7 days (active)
+        25% within 8-30 days (recent) 
+        10% within 31-90 days (stale)
+        5% within 91-365 days (zombie candidates)
+        """
+        roll = self.rng.random()
+        if roll < 0.60:
+            days_back = self.rng.randint(0, 7)
+        elif roll < 0.85:
+            days_back = self.rng.randint(8, 30)
+        elif roll < 0.95:
+            days_back = self.rng.randint(31, 90)
+        else:
+            days_back = self.rng.randint(91, 365)
+        
+        delta = timedelta(days=days_back, hours=self.rng.randint(0, 23), minutes=self.rng.randint(0, 59))
         return (self.base_date - delta).isoformat() + "Z"
 
     def _generate_email(self, first: str, last: str) -> str:
@@ -262,7 +284,7 @@ class EnterpriseGenerator:
                 source = self.rng.choice(list(SourceEnum))
                 obs = DiscoveryObservation(
                     observation_id=self._generate_uuid(),
-                    observed_at=self._random_recent_date(),
+                    observed_at=self._random_activity_date(),
                     source=source,
                     observed_name=self._apply_name_drift(app["name"]),
                     observed_uri=f"https://{self.tenant_id.lower()}.{app['domain']}" if self.rng.random() > 0.3 else None,
@@ -280,7 +302,7 @@ class EnterpriseGenerator:
             for _ in range(num_obs):
                 obs = DiscoveryObservation(
                     observation_id=self._generate_uuid(),
-                    observed_at=self._random_recent_date(),
+                    observed_at=self._random_activity_date(),
                     source=self.rng.choice([SourceEnum.cloud_api, SourceEnum.network_scan]),
                     observed_name=self._apply_name_drift(svc["name"]),
                     hostname=f"{svc['name']}.internal.{self.tenant_id.lower()}.com" if self.rng.random() > 0.3 else None,
@@ -293,7 +315,7 @@ class EnterpriseGenerator:
         for ds in self._datastores:
             obs = DiscoveryObservation(
                 observation_id=self._generate_uuid(),
-                observed_at=self._random_recent_date(),
+                observed_at=self._random_activity_date(),
                 source=SourceEnum.network_scan,
                 observed_name=self._apply_name_drift(ds["name"]),
                 vendor_hint=ds["vendor"] if self.rng.random() > 0.3 else None,
@@ -309,7 +331,7 @@ class EnterpriseGenerator:
                 source = self.rng.choice(list(SourceEnum))
                 obs = DiscoveryObservation(
                     observation_id=self._generate_uuid(),
-                    observed_at=self._random_recent_date(),
+                    observed_at=self._random_activity_date(),
                     source=source,
                     observed_name=self._apply_name_drift(shadow_app["name"]),
                     observed_uri=f"https://{self.tenant_id.lower()}.{shadow_app['domain']}" if self.rng.random() > 0.3 else None,
@@ -341,7 +363,7 @@ class EnterpriseGenerator:
                     has_sso=self.rng.random() > 0.3,
                     has_scim=self.rng.random() > 0.6,
                     vendor=app["vendor"] if self.rng.random() > 0.1 else None,
-                    last_login_at=self._random_recent_date() if self.rng.random() > 0.2 else None,
+                    last_login_at=self._random_activity_date() if self.rng.random() > 0.2 else None,
                 )
                 objects.append(idp_obj)
         
@@ -353,7 +375,7 @@ class EnterpriseGenerator:
                     idp_type=IdPTypeEnum.service_principal,
                     has_sso=False,
                     has_scim=False,
-                    last_login_at=self._random_recent_date() if self.rng.random() > 0.4 else None,
+                    last_login_at=self._random_activity_date() if self.rng.random() > 0.4 else None,
                 )
                 objects.append(idp_obj)
         
@@ -470,7 +492,7 @@ class EnterpriseGenerator:
                 hostname=f"{device_type[:3].upper()}-{self.rng.randint(1000, 9999)}",
                 os=os_choice,
                 owner_email=self._maybe_stale_owner(employee["email"]) if employee else None,
-                last_seen_at=self._random_recent_date() if self.rng.random() > 0.1 else None,
+                last_seen_at=self._random_activity_date() if self.rng.random() > 0.1 else None,
             )
             devices.append(device)
             
@@ -638,7 +660,7 @@ class EnterpriseGenerator:
             scale=self.scale,
             enterprise_profile=self.enterprise_profile,
             realism_profile=self.realism_profile,
-            created_at=datetime.utcnow().isoformat() + "Z",
+            created_at=self.base_date.isoformat() + "Z",
             counts=counts,
         )
         
