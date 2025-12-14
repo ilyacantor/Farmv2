@@ -310,6 +310,7 @@
                     reconciliationsCache[rec.snapshot_id].push(rec);
                 }
                 
+                snapshotsCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                 renderSnapshotsList();
                 loadAodStatuses();
             } catch (e) {
@@ -344,7 +345,7 @@
                 const canReconcile = aodStatus && aodStatus.status === 'PROCESSED';
                 
                 const recInfo = rec ? 
-                    `<div class="text-xs text-slate-400 mt-1">AOD Run: ${rec.aod_run_id} | ${new Date(rec.created_at).toLocaleDateString()}</div>` :
+                    `<div class="text-xs text-slate-400 mt-1">AOD Run: ${rec.aod_run_id} | ${new Date(rec.created_at).toLocaleString('en-US', {timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true})} PST</div>` :
                     (aodStatus && aodStatus.status === 'NOT_PROCESSED' ?
                         `<div class="text-xs text-amber-500 mt-1">Run AOD on this snapshot first</div>` :
                         `<div class="text-xs text-slate-500 mt-1">No reconciliation performed yet</div>`);
@@ -376,7 +377,7 @@
                                 ${recInfo}
                             </div>
                             <div class="flex flex-col items-end gap-2">
-                                <div class="text-xs text-slate-500">${new Date(snap.created_at).toLocaleString()}</div>
+                                <div class="text-xs text-slate-500">${new Date(snap.created_at).toLocaleString('en-US', {timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true})} PST</div>
                                 <div class="flex gap-2">
                                     ${!rec ? reconcileButton : ''}
                                     <button onclick="openDetailModal('${snap.snapshot_id}')" 
