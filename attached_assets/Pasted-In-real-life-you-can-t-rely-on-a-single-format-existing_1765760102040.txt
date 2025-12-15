@@ -1,0 +1,50 @@
+In real life you **can’t rely on a single “format” existing across sources**. IdP won’t give you domains. Finance may give merchants. CMDB gives display names. Sometimes you get URLs, sometimes not.
+
+So the right real-world play is:
+
+### Why you can’t “just pick a format”
+
+There is no universal raw identifier. If you force everything to `*com`, you’ll be wrong for:
+
+* products with no public domain signal in the record
+* mergers / brand vs legal entity
+* vendors with multiple domains
+* internal apps (no domain)
+* “Google+” / “Atlassian” / “Workday” style names
+
+### What you do instead (real-life contract)
+
+You define **one internal canonical key** and treat it as **an ID**, not a format:
+
+**`vendor_key` = AutonomOS canonical vendor ID**
+Stable, source-agnostic, deterministic.
+
+Then you carry **evidence fields** alongside it:
+
+* `display_name`
+* `domains[]` (if known)
+* `aliases[]`
+* `source_keys[]` (what each plane called it)
+* `key_confidence` (high/med/low)
+
+### How reconciliation works in real life
+
+Farm expectations should compare on **canonical vendor_key** (your internal ID), not domains or names.
+If Farm wants to *show* `yammer.com`, that’s presentation, not identity.
+
+### Practical “today” guidance for your synthetic world
+
+Right now you have two “canonicals” fighting:
+
+* Farm’s `*com` key
+* AOD’s shorter key (`yammer`)
+
+Don’t pretend either is “real life.” Pick one as **the internal ID** and make the other an alias.
+
+**Best choice:** keep AOD’s `vendor_key` as the internal ID (e.g., `yammer`) and add `domains` / `domain_key` as evidence (e.g., `yammer.com`, `yammercom`). Then update Farm expected keys to be internal IDs, not domains.
+
+### Replit prompt (Farm + AOD)
+
+> Real life doesn’t have one vendor format across planes. Stop using `*com` strings as identity. Define `vendor_key` as the internal canonical vendor ID (stable, source-agnostic). Include domains/aliases separately as evidence. Update Farm expectations and reconciliation to compare on `vendor_key` only; treat `*com` as a display/evidence alias, not the key.
+
+That’s the durable model. Anything else will keep breaking the moment you add a new data plane or a vendor without a clean domain.

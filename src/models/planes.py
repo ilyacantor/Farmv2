@@ -326,11 +326,19 @@ class ReconcileRequest(BaseModel):
     aod_lists: AODLists
 
 
+class FarmExpectedAsset(BaseModel):
+    vendor_key: str
+    domains: list[str] = Field(default_factory=list)
+    display_names: list[str] = Field(default_factory=list)
+
+
 class FarmExpectations(BaseModel):
     expected_zombies: int = 0
     expected_shadows: int = 0
     zombie_keys: list[str] = Field(default_factory=list)
     shadow_keys: list[str] = Field(default_factory=list)
+    zombie_assets: list[FarmExpectedAsset] = Field(default_factory=list)
+    shadow_assets: list[FarmExpectedAsset] = Field(default_factory=list)
 
 
 class ReconcileResponse(BaseModel):

@@ -22,6 +22,7 @@ from src.models.planes import (
     ReconcileMetadata,
     ReconcileStatusEnum,
     FarmExpectations,
+    FarmExpectedAsset,
     AODSummary,
     AODLists,
     AutoReconcileRequest,
@@ -384,6 +385,13 @@ def is_stale(ts: Optional[str], window_days: int, reference: datetime) -> bool:
     return (reference - dt).days > window_days
 
 
+def derive_vendor_key(name: str, vendor_hint: Optional[str] = None) -> str:
+    """Derive canonical vendor_key from name/vendor. This is an internal ID, not a domain."""
+    if vendor_hint:
+        return normalize_name(vendor_hint)
+    return normalize_name(name)
+
+
 def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> FarmExpectations:
     meta = snapshot.get('meta', {})
     planes = snapshot.get('planes', {})
@@ -406,7 +414,8 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
     for obs in observations:
         domain = obs.get('domain') or extract_domain(obs.get('observed_uri') or obs.get('hostname') or '')
         name = obs.get('observed_name', '')
-        key = domain if domain else normalize_name(name)
+        vendor_hint = obs.get('vendor_hint')
+        key = derive_vendor_key(name, vendor_hint)
         if not key:
             continue
         
@@ -414,7 +423,6 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
         candidates[key]['names'].add(name)
         if domain:
             candidates[key]['domains'].add(domain)
-        vendor_hint = obs.get('vendor_hint')
         if vendor_hint:
             candidates[key]['vendors'].add(vendor_hint)
         
@@ -489,20 +497,27 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
             if vendor and any(vendor == normalize_name(v) for v in cand['vendors']):
                 cand['finance_present'] = True
     
-    shadow_keys = []
-    zombie_keys = []
+    shadow_assets = []
+    zombie_assets = []
     
     for key, cand in candidates.items():
+        asset = FarmExpectedAsset(
+            vendor_key=key,
+            domains=list(cand['domains'])[:5],
+            display_names=list(cand['names'])[:5],
+        )
         if (cand['finance_present'] or cand['cloud_present']) and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present']:
-            shadow_keys.append(key)
+            shadow_assets.append(asset)
         elif (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0:
-            zombie_keys.append(key)
+            zombie_assets.append(asset)
     
     return FarmExpectations(
-        expected_zombies=len(zombie_keys),
-        expected_shadows=len(shadow_keys),
-        zombie_keys=zombie_keys[:20],
-        shadow_keys=shadow_keys[:20],
+        expected_zombies=len(zombie_assets),
+        expected_shadows=len(shadow_assets),
+        zombie_keys=[a.vendor_key for a in zombie_assets[:20]],
+        shadow_keys=[a.vendor_key for a in shadow_assets[:20]],
+        zombie_assets=zombie_assets[:20],
+        shadow_assets=shadow_assets[:20],
     )
 
 
@@ -582,7 +597,7 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
         lines.append("RESULT: PASS - All expectations met.")
     elif zombie_key_mismatch or shadow_key_mismatch:
         status = ReconcileStatusEnum.FAIL
-        lines.append(f"RESULT: FAIL - Key format mismatch detected. AOD must send canonical vendor_key (domain-style like 'yammercom').")
+        lines.append(f"RESULT: FAIL - Key format mismatch detected. AOD must send canonical vendor_key (internal ID like 'yammer', 'atlassian').")
     elif (zombie_diff <= 2 and shadow_diff <= 2):
         status = ReconcileStatusEnum.WARN
         lines.append(f"RESULT: WARN - Minor discrepancies: {', '.join(issues[:3])}")
