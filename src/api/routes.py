@@ -46,6 +46,28 @@ def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profil
 
 DB_PATH = "data/farm.db"
 SNAPSHOTS_DIR = "data/snapshots"
+MAX_SNAPSHOTS = 50
+
+
+async def cleanup_old_snapshots():
+    """Delete oldest snapshots when count exceeds MAX_SNAPSHOTS."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT COUNT(*) FROM snapshots") as cursor:
+            row = await cursor.fetchone()
+            count = row[0] if row else 0
+        
+        if count > MAX_SNAPSHOTS:
+            to_delete = count - MAX_SNAPSHOTS
+            async with db.execute(
+                "SELECT snapshot_id FROM snapshots ORDER BY created_at ASC LIMIT ?",
+                (to_delete,)
+            ) as cursor:
+                old_ids = [row[0] for row in await cursor.fetchall()]
+            
+            for sid in old_ids:
+                await db.execute("DELETE FROM snapshots WHERE snapshot_id = ?", (sid,))
+                await db.execute("DELETE FROM reconciliations WHERE snapshot_id = ?", (sid,))
+            await db.commit()
 
 
 async def init_db():
@@ -221,6 +243,8 @@ async def create_snapshot(request: SnapshotRequest):
         ))
         await db.commit()
     
+    await cleanup_old_snapshots()
+    
     return SnapshotCreateResponse(
         snapshot_id=unique_snapshot_id,
         snapshot_fingerprint=fingerprint,
@@ -300,6 +324,8 @@ async def create_batch_snapshots(request: BatchSnapshotRequest):
             schema_version=SCHEMA_VERSION,
             duplicate_of_snapshot_id=duplicate_of_snapshot_id,
         ))
+    
+    await cleanup_old_snapshots()
     
     return BatchSnapshotResponse(
         created=len(created_snapshots),
