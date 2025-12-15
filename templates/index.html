@@ -407,18 +407,14 @@
             }).join('');
         }
         
-        function computeMisalignment(farmKeys, aodKeys) {
+        function computeMisalignment(farmKeys, aodKeys, aodCount) {
             const normalize = (k) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
             const farmSet = new Set(farmKeys.map(normalize));
             const aodSet = new Set(aodKeys.map(normalize));
-            const aodNormToOrig = {};
-            aodKeys.forEach(k => { aodNormToOrig[normalize(k)] = k; });
-            const farmNormToOrig = {};
-            farmKeys.forEach(k => { farmNormToOrig[normalize(k)] = k; });
             
             const matched = [];
             const missed = [];
-            const extra = [];
+            const extraKeys = [];
             
             farmKeys.forEach(k => {
                 const n = normalize(k);
@@ -427,9 +423,11 @@
             });
             aodKeys.forEach(k => {
                 const n = normalize(k);
-                if (!farmSet.has(n)) extra.push(k);
+                if (!farmSet.has(n)) extraKeys.push(k);
             });
-            return { matched, missed, extra };
+            
+            const extraCount = aodCount - matched.length;
+            return { matched, missed, extraKeys, extraCount };
         }
         
         function renderAssetList(title, items, colorClass) {
@@ -437,6 +435,19 @@
             return `
                 <div class="mb-2">
                     <span class="text-xs font-medium ${colorClass}">${title} (${items.length}):</span>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                        ${items.map(k => `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 ${colorClass}">${k}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderAssetListWithCount(title, items, count, colorClass) {
+            if (count === 0) return '';
+            const showing = items.length < count ? ` (showing ${items.length})` : '';
+            return `
+                <div class="mb-2">
+                    <span class="text-xs font-medium ${colorClass}">${title} (${count})${showing}:</span>
                     <div class="flex flex-wrap gap-1 mt-1">
                         ${items.map(k => `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 ${colorClass}">${k}</span>`).join('')}
                     </div>
@@ -459,8 +470,8 @@
                 const aodZombies = rec.aod_lists?.zombie_assets || [];
                 const aodShadows = rec.aod_lists?.shadow_assets || [];
                 
-                const zombieAlign = computeMisalignment(farmZombies, aodZombies);
-                const shadowAlign = computeMisalignment(farmShadows, aodShadows);
+                const zombieAlign = computeMisalignment(farmZombies, aodZombies, aodZombieCount);
+                const shadowAlign = computeMisalignment(farmShadows, aodShadows, aodShadowCount);
                 
                 const modal = document.getElementById('detailModal');
                 document.getElementById('detailContent').innerHTML = `
@@ -480,17 +491,15 @@
                                 <h4 class="text-sm font-medium text-red-400 mb-3">Zombies (AOD ${aodZombieCount} / Farm ${farmZombieCount})</h4>
                                 ${renderAssetList('Matched', zombieAlign.matched, 'text-green-400')}
                                 ${renderAssetList('Missed by AOD', zombieAlign.missed, 'text-red-400')}
-                                ${renderAssetList('Extra in AOD', zombieAlign.extra, 'text-yellow-400')}
-                                ${aodZombies.length < aodZombieCount ? `<div class="text-xs text-slate-500 mt-2">AOD reported ${aodZombieCount} total, showing ${aodZombies.length} keys</div>` : ''}
-                                ${zombieAlign.matched.length === 0 && zombieAlign.missed.length === 0 && zombieAlign.extra.length === 0 ? '<span class="text-xs text-slate-500">No zombies</span>' : ''}
+                                ${renderAssetListWithCount('Extra in AOD', zombieAlign.extraKeys, zombieAlign.extraCount, 'text-yellow-400')}
+                                ${zombieAlign.matched.length === 0 && zombieAlign.missed.length === 0 && zombieAlign.extraCount === 0 ? '<span class="text-xs text-slate-500">No zombies</span>' : ''}
                             </div>
                             <div class="bg-slate-900 rounded-lg p-4">
                                 <h4 class="text-sm font-medium text-purple-400 mb-3">Shadows (AOD ${aodShadowCount} / Farm ${farmShadowCount})</h4>
                                 ${renderAssetList('Matched', shadowAlign.matched, 'text-green-400')}
                                 ${renderAssetList('Missed by AOD', shadowAlign.missed, 'text-red-400')}
-                                ${renderAssetList('Extra in AOD', shadowAlign.extra, 'text-yellow-400')}
-                                ${aodShadows.length < aodShadowCount ? `<div class="text-xs text-slate-500 mt-2">AOD reported ${aodShadowCount} total, showing ${aodShadows.length} keys</div>` : ''}
-                                ${shadowAlign.matched.length === 0 && shadowAlign.missed.length === 0 && shadowAlign.extra.length === 0 ? '<span class="text-xs text-slate-500">No shadows</span>' : ''}
+                                ${renderAssetListWithCount('Extra in AOD', shadowAlign.extraKeys, shadowAlign.extraCount, 'text-yellow-400')}
+                                ${shadowAlign.matched.length === 0 && shadowAlign.missed.length === 0 && shadowAlign.extraCount === 0 ? '<span class="text-xs text-slate-500">No shadows</span>' : ''}
                             </div>
                         </div>
                         
