@@ -117,7 +117,7 @@ Evidence-only derivations over labels
 src/
 ├── main.py              # FastAPI entry point
 ├── api/
-│   └── routes.py        # API endpoints
+│   └── routes.py        # API endpoints (asyncpg/Postgres)
 ├── models/
 │   └── planes.py        # Pydantic models for all data planes
 └── generators/
@@ -129,8 +129,36 @@ templates/
 tests/
 └── test_farm.py         # Test suite
 
-data/                    # SQLite database (farm.db)
+tools/
+└── sanity/
+    └── farm_sanity_check.py  # Supabase-only validation harness
 ```
+
+## Database
+
+**Supabase Postgres only** - No SQLite, no JSON disk storage.
+
+- `SUPABASE_DB_URL` takes priority, else `DATABASE_URL`
+- If `IGNORE_REPLIT_DB=true`, Replit DB URLs are ignored
+- DB provider is logged at startup
+
+### Schema
+
+**runs table:**
+- `run_id` (TEXT, PK) - UUID for each generation run
+- `run_fingerprint` - stable hash of config + seed
+- `tenant_id`, `seed`, `scale`, `enterprise_profile`, `realism_profile`
+- `created_at`, `schema_version`
+
+**snapshots table:**
+- `snapshot_id` (TEXT, PK)
+- `run_id` (FK → runs.run_id, NOT NULL) - provenance link
+- `sequence` (INTEGER, default 0)
+- `snapshot_fingerprint`, `snapshot_json`
+- All config metadata columns
+
+**reconciliations table:**
+- Stores AOD comparison results
 
 ## Data Planes
 
