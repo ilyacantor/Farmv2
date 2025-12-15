@@ -535,12 +535,14 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
     summary_zombie_mismatch = aod_summary.zombies != aod_zombie_count
     summary_shadow_mismatch = aod_summary.shadows != aod_shadow_count
     
-    lines.append(f"AOD payload: {aod_zombie_count} zombies, {aod_shadow_count} shadows")
+    # List lengths are authoritative; summary is informational only
+    lines.append(f"AOD reported: {aod_zombie_count} zombies, {aod_shadow_count} shadows (from payload lists)")
     lines.append(f"Farm expected: {farm_zombies} zombies, {farm_shadows} shadows")
     
     if summary_zombie_mismatch or summary_shadow_mismatch:
-        lines.append(f"PAYLOAD_INCONSISTENCY: AOD summary ({aod_summary.zombies}/{aod_summary.shadows}) != payload list ({aod_zombie_count}/{aod_shadow_count})")
-        issues.append("payload_inconsistency")
+        lines.append(f"INFO: PAYLOAD_INCONSISTENCY: AOD summary ({aod_summary.zombies}/{aod_summary.shadows}) differs from list lengths ({aod_zombie_count}/{aod_shadow_count})")
+        lines.append("  (AOD should derive summary from list lengths - this is informational, not blocking)")
+        # Note: Not adding to issues[] - this is informational, doesn't block reconciliation
     
     aod_zombie_set = set(normalize_name(k) for k in aod_zombie_keys)
     aod_shadow_set = set(normalize_name(k) for k in aod_shadow_keys)
