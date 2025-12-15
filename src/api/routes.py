@@ -1232,13 +1232,14 @@ async def get_reconciliation_analysis(reconciliation_id: str):
         if not rec_row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
         
-        snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
-        if not snap_row:
-            raise HTTPException(status_code=404, detail="Snapshot not found")
-        
-        snapshot = json.loads(snap_row["snapshot_json"])
         aod_payload = json.loads(rec_row["aod_payload_json"])
         farm_exp = json.loads(rec_row["farm_expectations_json"])
+        
+        snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
+        if snap_row:
+            snapshot = json.loads(snap_row["snapshot_json"])
+        else:
+            snapshot = {'__expected__': farm_exp}
         
         analysis = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
         
