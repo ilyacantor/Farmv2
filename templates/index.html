@@ -61,6 +61,9 @@
             <button id="tabTesting" onclick="switchTab('testing')" class="pb-3 px-1 font-medium text-sm tab-active transition-colors">
                 Testing
             </button>
+            <button id="tabAnalysis" onclick="switchTab('analysis')" class="pb-3 px-1 font-medium text-sm tab-inactive transition-colors">
+                Analysis
+            </button>
             <button id="tabConfig" onclick="switchTab('config')" class="pb-3 px-1 font-medium text-sm tab-inactive transition-colors">
                 Configuration
             </button>
@@ -81,6 +84,22 @@
                 </div>
                 <div id="reconciliationsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-220px)] overflow-y-auto">
                     <div class="text-slate-500 text-center py-12">Loading reconciliations...</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="analysisTab" class="hidden">
+            <div class="bg-slate-800/60 rounded-xl border border-slate-700">
+                <div class="flex items-center justify-between p-4 border-b border-slate-700">
+                    <h2 class="text-lg font-semibold text-cyan-400">Expected Analysis</h2>
+                    <div class="flex gap-2">
+                        <select id="analysisSnapshotSelect" onchange="loadExpectedAnalysis()" class="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
+                            <option value="">Select a snapshot...</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="analysisContent" class="p-4">
+                    <div class="text-slate-500 text-center py-12">Select a snapshot to view expected analysis</div>
                 </div>
             </div>
         </div>
@@ -276,20 +295,32 @@
 
         function switchTab(tab) {
             const testingTab = document.getElementById('testingTab');
+            const analysisTab = document.getElementById('analysisTab');
             const configTab = document.getElementById('configTab');
             const tabTesting = document.getElementById('tabTesting');
+            const tabAnalysis = document.getElementById('tabAnalysis');
             const tabConfig = document.getElementById('tabConfig');
+            
+            const inactive = 'pb-3 px-1 font-medium text-sm tab-inactive transition-colors';
+            const active = 'pb-3 px-1 font-medium text-sm tab-active transition-colors';
+            
+            testingTab.classList.add('hidden');
+            analysisTab.classList.add('hidden');
+            configTab.classList.add('hidden');
+            tabTesting.className = inactive;
+            tabAnalysis.className = inactive;
+            tabConfig.className = inactive;
             
             if (tab === 'testing') {
                 testingTab.classList.remove('hidden');
-                configTab.classList.add('hidden');
-                tabTesting.className = 'pb-3 px-1 font-medium text-sm tab-active transition-colors';
-                tabConfig.className = 'pb-3 px-1 font-medium text-sm tab-inactive transition-colors';
+                tabTesting.className = active;
+            } else if (tab === 'analysis') {
+                analysisTab.classList.remove('hidden');
+                tabAnalysis.className = active;
+                populateAnalysisSelect();
             } else {
-                testingTab.classList.add('hidden');
                 configTab.classList.remove('hidden');
-                tabTesting.className = 'pb-3 px-1 font-medium text-sm tab-inactive transition-colors';
-                tabConfig.className = 'pb-3 px-1 font-medium text-sm tab-active transition-colors';
+                tabConfig.className = active;
             }
         }
 
@@ -1175,6 +1206,161 @@
                 if (e.target === modal) modal.classList.add('hidden');
             });
         });
+
+        let expectedCache = {};
+
+        function populateAnalysisSelect() {
+            const select = document.getElementById('analysisSnapshotSelect');
+            const currentVal = select.value;
+            select.innerHTML = '<option value="">Select a snapshot...</option>' +
+                snapshotsCache.map(s => `<option value="${s.snapshot_id}">${s.tenant_id} (seed:${s.seed}) - ${getTimeAgo(new Date(s.created_at))}</option>`).join('');
+            if (currentVal && snapshotsCache.find(s => s.snapshot_id === currentVal)) {
+                select.value = currentVal;
+            }
+        }
+
+        async function loadExpectedAnalysis() {
+            const select = document.getElementById('analysisSnapshotSelect');
+            const snapshotId = select.value;
+            const container = document.getElementById('analysisContent');
+            
+            if (!snapshotId) {
+                container.innerHTML = '<div class="text-slate-500 text-center py-12">Select a snapshot to view expected analysis</div>';
+                return;
+            }
+            
+            container.innerHTML = '<div class="text-slate-400 text-center py-12">Loading...</div>';
+            
+            try {
+                if (!expectedCache[snapshotId]) {
+                    const resp = await fetch(`/api/snapshots/${snapshotId}/expected`);
+                    if (!resp.ok) throw new Error('Failed to load expected data');
+                    expectedCache[snapshotId] = await resp.json();
+                }
+                renderExpectedAnalysis(snapshotId, expectedCache[snapshotId]);
+            } catch (e) {
+                container.innerHTML = `<div class="text-red-400 text-center py-12">Error: ${e.message}</div>`;
+            }
+        }
+
+        function renderExpectedAnalysis(snapshotId, data) {
+            const container = document.getElementById('analysisContent');
+            const snap = snapshotsCache.find(s => s.snapshot_id === snapshotId);
+            
+            const zombies = data.zombie_expected || [];
+            const shadows = data.shadow_expected || [];
+            const clean = data.clean_expected || [];
+            const reasons = data.expected_reasons || {};
+            const admission = data.expected_admission || {};
+            const rcaHints = data.expected_rca_hint || {};
+            
+            const renderReasonBadges = (codes) => {
+                if (!codes || codes.length === 0) return '<span class="text-slate-600 text-xs">-</span>';
+                const colors = {
+                    'HAS_DISCOVERY': 'bg-cyan-900/60 text-cyan-300',
+                    'HAS_IDP': 'bg-purple-900/60 text-purple-300',
+                    'NO_IDP': 'bg-red-900/60 text-red-300',
+                    'HAS_CMDB': 'bg-green-900/60 text-green-300',
+                    'NO_CMDB': 'bg-red-900/60 text-red-300',
+                    'HAS_FINANCE': 'bg-yellow-900/60 text-yellow-300',
+                    'HAS_CLOUD': 'bg-blue-900/60 text-blue-300',
+                    'RECENT_ACTIVITY': 'bg-green-900/60 text-green-300',
+                    'STALE_ACTIVITY': 'bg-orange-900/60 text-orange-300'
+                };
+                return codes.map(c => `<span class="text-xs px-1.5 py-0.5 rounded ${colors[c] || 'bg-slate-800 text-slate-400'}">${c}</span>`).join(' ');
+            };
+            
+            const renderRcaBadge = (hint) => {
+                if (!hint) return '';
+                const colors = {
+                    'UNGOVERNED_WITH_SPEND': 'bg-purple-900/60 text-purple-300 border-purple-700',
+                    'STALE_NO_RECENT_USE': 'bg-orange-900/60 text-orange-300 border-orange-700'
+                };
+                return `<span class="text-xs px-2 py-0.5 rounded border ${colors[hint] || 'bg-slate-800 text-slate-400 border-slate-600'}">${hint}</span>`;
+            };
+            
+            const renderAssetTable = (assets, title, colorClass, icon) => {
+                if (assets.length === 0) return `<div class="text-slate-600 text-sm italic">No ${title.toLowerCase()}</div>`;
+                return `
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="text-left text-slate-500 border-b border-slate-700">
+                                    <th class="pb-2 pr-4">Asset Key</th>
+                                    <th class="pb-2 pr-4">Reason Codes</th>
+                                    <th class="pb-2 pr-4">RCA Hint</th>
+                                    <th class="pb-2">Admission</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800">
+                                ${assets.map(a => {
+                                    const key = a.asset_key;
+                                    return `
+                                        <tr class="hover:bg-slate-800/50">
+                                            <td class="py-2 pr-4 ${colorClass} font-medium">${key}</td>
+                                            <td class="py-2 pr-4">${renderReasonBadges(reasons[key])}</td>
+                                            <td class="py-2 pr-4">${renderRcaBadge(rcaHints[key])}</td>
+                                            <td class="py-2 text-slate-400">${admission[key] || '-'}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            };
+            
+            container.innerHTML = `
+                <div class="space-y-6">
+                    <div class="flex items-center gap-4 text-sm">
+                        <span class="text-slate-400">Snapshot:</span>
+                        <span class="text-cyan-400 font-medium">${snap?.tenant_id || snapshotId.substring(0, 8)}</span>
+                        <span class="text-slate-600">seed:${snap?.seed || '?'}</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-3 gap-4 text-center">
+                        <div class="bg-red-900/20 border border-red-800/50 rounded-lg p-4">
+                            <div class="text-2xl font-bold text-red-400">${zombies.length}</div>
+                            <div class="text-xs text-red-300">Zombies Expected</div>
+                        </div>
+                        <div class="bg-purple-900/20 border border-purple-800/50 rounded-lg p-4">
+                            <div class="text-2xl font-bold text-purple-400">${shadows.length}</div>
+                            <div class="text-xs text-purple-300">Shadows Expected</div>
+                        </div>
+                        <div class="bg-green-900/20 border border-green-800/50 rounded-lg p-4">
+                            <div class="text-2xl font-bold text-green-400">${clean.length}</div>
+                            <div class="text-xs text-green-300">Clean Assets</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-slate-900/60 rounded-lg p-4 border border-slate-700">
+                        <h4 class="text-sm font-medium text-red-400 mb-3 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            Zombies (${zombies.length})
+                        </h4>
+                        ${renderAssetTable(zombies, 'zombies', 'text-red-400')}
+                    </div>
+                    
+                    <div class="bg-slate-900/60 rounded-lg p-4 border border-slate-700">
+                        <h4 class="text-sm font-medium text-purple-400 mb-3 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21"/></svg>
+                            Shadows (${shadows.length})
+                        </h4>
+                        ${renderAssetTable(shadows, 'shadows', 'text-purple-400')}
+                    </div>
+                    
+                    <details class="bg-slate-900/60 rounded-lg border border-slate-700">
+                        <summary class="p-4 cursor-pointer text-sm font-medium text-green-400 flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            Clean Assets (${clean.length})
+                        </summary>
+                        <div class="p-4 pt-0">
+                            ${renderAssetTable(clean, 'clean assets', 'text-green-400')}
+                        </div>
+                    </details>
+                </div>
+            `;
+        }
 
         loadAllData();
         addLogEntry('Farm Console loaded', 'info');
