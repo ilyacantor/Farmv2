@@ -195,7 +195,13 @@ Farm generates 7 independent planes:
 
 ### Canonical Reason Codes
 - `HAS_DISCOVERY`, `HAS_IDP`, `NO_IDP`, `HAS_CMDB`, `NO_CMDB`
-- `HAS_FINANCE`, `HAS_CLOUD`, `RECENT_ACTIVITY`, `STALE_ACTIVITY`
+- `HAS_FINANCE`, `HAS_ONGOING_FINANCE`, `HAS_CLOUD`, `RECENT_ACTIVITY`, `STALE_ACTIVITY`
+
+### Finance Evidence Rules
+- `HAS_FINANCE` - Any finance record (contract, transaction, vendor) matches
+- `HAS_ONGOING_FINANCE` - Contract exists OR transaction has `is_recurring=true`
+- **Shadow classification requires `HAS_ONGOING_FINANCE`** (not just `HAS_FINANCE`)
+- One-time payments alone do NOT qualify as shadow evidence (IRL: not proof of operational existence)
 
 ### RCA Hint Codes
 - `UNGOVERNED_WITH_SPEND` - Shadow: in finance/cloud but not in IdP/CMDB
