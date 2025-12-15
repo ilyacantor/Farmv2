@@ -29,6 +29,8 @@ from src.models.planes import (
     AutoReconcileResponse,
     AODRunStatusEnum,
     AODRunStatusResponse,
+    BatchSnapshotRequest,
+    BatchSnapshotResponse,
 )
 import re
 import uuid
@@ -226,6 +228,82 @@ async def create_snapshot(request: SnapshotRequest):
         created_at=snapshot.meta.created_at,
         schema_version=SCHEMA_VERSION,
         duplicate_of_snapshot_id=duplicate_of_snapshot_id,
+    )
+
+
+@router.post("/api/snapshots/batch", response_model=BatchSnapshotResponse)
+async def create_batch_snapshots(request: BatchSnapshotRequest):
+    """Create multiple snapshots at once (default 20). Each gets a unique seed based on base_seed + index."""
+    await init_db()
+    
+    count = min(request.count, 100)  # Cap at 100
+    created_snapshots = []
+    
+    for i in range(count):
+        seed = request.base_seed + i
+        
+        fingerprint = compute_fingerprint(
+            request.tenant_id,
+            seed,
+            request.scale.value,
+            request.enterprise_profile.value,
+            request.realism_profile.value,
+        )
+        
+        duplicate_of_snapshot_id = None
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT snapshot_id FROM snapshots WHERE snapshot_fingerprint = ? ORDER BY created_at ASC LIMIT 1",
+                (fingerprint,)
+            ) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    duplicate_of_snapshot_id = row["snapshot_id"]
+        
+        generator = EnterpriseGenerator(
+            tenant_id=request.tenant_id,
+            seed=seed,
+            scale=request.scale,
+            enterprise_profile=request.enterprise_profile,
+            realism_profile=request.realism_profile,
+        )
+        
+        snapshot = generator.generate()
+        unique_snapshot_id = str(uuid.uuid4())
+        snapshot.meta.snapshot_id = unique_snapshot_id
+        snapshot_dict = snapshot.model_dump()
+        
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("""
+                INSERT INTO snapshots (snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                unique_snapshot_id,
+                fingerprint,
+                snapshot.meta.tenant_id,
+                snapshot.meta.seed,
+                snapshot.meta.scale.value,
+                snapshot.meta.enterprise_profile.value,
+                snapshot.meta.realism_profile.value,
+                snapshot.meta.created_at,
+                SCHEMA_VERSION,
+                json.dumps(snapshot_dict),
+            ))
+            await db.commit()
+        
+        created_snapshots.append(SnapshotCreateResponse(
+            snapshot_id=unique_snapshot_id,
+            snapshot_fingerprint=fingerprint,
+            tenant_id=snapshot.meta.tenant_id,
+            created_at=snapshot.meta.created_at,
+            schema_version=SCHEMA_VERSION,
+            duplicate_of_snapshot_id=duplicate_of_snapshot_id,
+        ))
+    
+    return BatchSnapshotResponse(
+        created=len(created_snapshots),
+        snapshots=created_snapshots,
     )
 
 

@@ -294,6 +294,20 @@ class SnapshotMetadata(BaseModel):
     schema_version: str = SCHEMA_VERSION
 
 
+class BatchSnapshotRequest(BaseModel):
+    tenant_id: str
+    count: int = 20
+    base_seed: int = 12345
+    scale: ScaleEnum = ScaleEnum.medium
+    enterprise_profile: EnterpriseProfileEnum = EnterpriseProfileEnum.modern_saas
+    realism_profile: RealismProfileEnum = RealismProfileEnum.typical
+
+
+class BatchSnapshotResponse(BaseModel):
+    created: int
+    snapshots: list[SnapshotCreateResponse]
+
+
 class ReconcileStatusEnum(str, Enum):
     PASS = "PASS"
     WARN = "WARN"
