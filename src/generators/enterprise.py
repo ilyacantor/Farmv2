@@ -227,8 +227,8 @@ class EnterpriseGenerator:
         return (self.base_date - delta).isoformat() + "Z"
 
     def _random_stale_date(self) -> str:
-        """Generate timestamps that are always stale (>30 days ago)."""
-        days_back = self.rng.randint(45, 180)
+        """Generate timestamps that are always stale (>90 days ago for zombie detection)."""
+        days_back = self.rng.randint(91, 365)
         delta = timedelta(days=days_back, hours=self.rng.randint(0, 23), minutes=self.rng.randint(0, 59))
         return (self.base_date - delta).isoformat() + "Z"
 
@@ -299,14 +299,14 @@ class EnterpriseGenerator:
         self._datastores = self.rng.sample(DATASTORES, num_datastores)
         
         zombie_count = {
-            RealismProfileEnum.clean: 1,
-            RealismProfileEnum.typical: max(2, mult),
-            RealismProfileEnum.messy: max(3, mult + 1),
+            RealismProfileEnum.clean: 2,
+            RealismProfileEnum.typical: max(3, mult),
+            RealismProfileEnum.messy: max(4, mult + 1),
         }
         num_zombies = min(len(ZOMBIE_APPS), zombie_count.get(self.realism_profile, 2))
         self._zombie_apps = self.rng.sample(ZOMBIE_APPS, num_zombies)
         
-        num_zombie_svcs = min(len(ZOMBIE_INTERNAL_SERVICES), max(1, mult // 2))
+        num_zombie_svcs = min(len(ZOMBIE_INTERNAL_SERVICES), max(2, mult // 2))
         self._zombie_services = self.rng.sample(ZOMBIE_INTERNAL_SERVICES, num_zombie_svcs)
 
     def generate_discovery_plane(self) -> DiscoveryPlane:
