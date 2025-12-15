@@ -326,7 +326,7 @@ def is_stale(ts: Optional[str], window_days: int, reference: datetime) -> bool:
     return (reference - dt).days > window_days
 
 
-def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> FarmExpectations:
+def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> FarmExpectations:
     meta = snapshot.get('meta', {})
     planes = snapshot.get('planes', {})
     reference = parse_timestamp(meta.get('created_at')) or datetime.utcnow()
