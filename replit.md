@@ -180,8 +180,26 @@ Farm generates 7 independent planes:
   - `snapshot_fingerprint`: Deterministic hash from params (same seed = same fingerprint)
   - `duplicate_of_snapshot_id`: If fingerprint exists, references first snapshot with that fingerprint
   - `tenant_id`, `created_at`, `schema_version`
-- `GET /api/snapshots/{snapshot_id}` - Get full snapshot JSON
+  - Snapshot now includes `__expected__` block for grading metadata (AOD should ignore)
+- `GET /api/snapshots/{snapshot_id}` - Get full snapshot JSON (includes `__expected__`)
+- `GET /api/snapshots/{snapshot_id}/expectations` - Legacy: get summary counts
+- `GET /api/snapshots/{snapshot_id}/expected` - Get detailed `__expected__` block:
+  - `shadow_expected[]`: `{asset_key}` for each expected shadow
+  - `zombie_expected[]`: `{asset_key}` for each expected zombie
+  - `clean_expected[]`: `{asset_key}` for admitted non-anomalous assets
+  - `expected_reasons[key]`: Canonical reason codes per asset
+  - `expected_admission[key]`: `"admitted"` or `"rejected"`
+  - `expected_rca_hint[key]`: Optional RCA hint for debugging
 - `GET /api/snapshots?tenant_id=...&limit=...` - List snapshot metadata only (no blob)
+- `DELETE /api/snapshots/cleanup?keep=3` - Delete old snapshots, keep most recent N
+
+### Canonical Reason Codes
+- `HAS_DISCOVERY`, `HAS_IDP`, `NO_IDP`, `HAS_CMDB`, `NO_CMDB`
+- `HAS_FINANCE`, `HAS_CLOUD`, `RECENT_ACTIVITY`, `STALE_ACTIVITY`
+
+### RCA Hint Codes
+- `UNGOVERNED_WITH_SPEND` - Shadow: in finance/cloud but not in IdP/CMDB
+- `STALE_NO_RECENT_USE` - Zombie: in IdP/CMDB but no recent activity
 
 ### AOD Status API
 - `GET /api/aod/run-status?snapshot_id=...&tenant_id=...` - Check if AOD has processed a snapshot
