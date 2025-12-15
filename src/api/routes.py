@@ -997,6 +997,101 @@ def get_explanation(mismatch_type: str, key: str, farm_reasons: list, rca_hint: 
     return f"{analysis['headline']}. {analysis['farm_detail']}. {analysis['aod_detail']}."
 
 
+def investigate_fp_shadow(asset_key: str, aod_reasons: list, snapshot: dict) -> dict:
+    """Investigate why Farm disagrees with AOD's shadow classification.
+    Returns evidence that the asset is actually governed (not shadow IT).
+    """
+    key_lower = asset_key.lower()
+    key_core = re.sub(r'[^a-z0-9]', '', key_lower)
+    findings = []
+    evidence = {}
+    
+    def matches_key(name):
+        if not name:
+            return False
+        name_lower = name.lower()
+        name_core = re.sub(r'[^a-z0-9]', '', name_lower)
+        return key_lower in name_lower or key_core in name_core or name_core in key_core
+    
+    idp = snapshot.get('idp', {}).get('users', []) + snapshot.get('idp', {}).get('apps', [])
+    for entry in idp:
+        app_name = entry.get('app_name') or entry.get('name') or entry.get('display_name', '')
+        if matches_key(app_name):
+            findings.append(f"Found in IdP: '{app_name}'")
+            evidence['idp_entry'] = app_name
+            break
+    
+    cmdb = snapshot.get('cmdb', {}).get('assets', [])
+    for entry in cmdb:
+        name = entry.get('name') or entry.get('app_name') or entry.get('asset_name', '')
+        if matches_key(name):
+            findings.append(f"Found in CMDB: '{name}'")
+            evidence['cmdb_entry'] = name
+            break
+    
+    if 'NO_IDP' in aod_reasons and 'idp_entry' in evidence:
+        findings.append(f"AOD claims NO_IDP but Farm found IdP record")
+    if 'NO_CMDB' in aod_reasons and 'cmdb_entry' in evidence:
+        findings.append(f"AOD claims NO_CMDB but Farm found CMDB record")
+    
+    if not findings:
+        findings.append("Farm found governance records that AOD may have missed or matched differently")
+    
+    return {
+        'conclusion': "Asset is governed - not shadow IT" if evidence else "Farm disagrees with shadow classification",
+        'findings': findings,
+        'evidence': evidence,
+    }
+
+
+def investigate_fp_zombie(asset_key: str, aod_reasons: list, snapshot: dict) -> dict:
+    """Investigate why Farm disagrees with AOD's zombie classification.
+    Returns evidence that the asset is actually active (not zombie).
+    """
+    key_lower = asset_key.lower()
+    key_core = re.sub(r'[^a-z0-9]', '', key_lower)
+    findings = []
+    evidence = {}
+    
+    def matches_key(name):
+        if not name:
+            return False
+        name_lower = name.lower()
+        name_core = re.sub(r'[^a-z0-9]', '', name_lower)
+        return key_lower in name_lower or key_core in name_core or name_core in key_core
+    
+    discovery = snapshot.get('discovery', {}).get('observations', [])
+    for obs in discovery:
+        app_name = obs.get('app_name') or obs.get('name', '')
+        if matches_key(app_name):
+            last_seen = obs.get('last_seen') or obs.get('timestamp', '')
+            findings.append(f"Found discovery observation: '{app_name}' last seen {last_seen[:10] if last_seen else 'recently'}")
+            evidence['discovery_entry'] = app_name
+            evidence['last_seen'] = last_seen
+            break
+    
+    finance = snapshot.get('finance', {})
+    for tx in finance.get('transactions', []):
+        vendor = tx.get('vendor_name') or tx.get('vendor', '')
+        if matches_key(vendor):
+            if tx.get('is_recurring'):
+                findings.append(f"Has active recurring subscription: '{vendor}'")
+                evidence['recurring_spend'] = vendor
+            break
+    
+    if 'STALE_ACTIVITY' in aod_reasons and 'discovery_entry' in evidence:
+        findings.append("AOD claims STALE_ACTIVITY but Farm found recent observations")
+    
+    if not findings:
+        findings.append("Farm found activity evidence that AOD may have missed")
+    
+    return {
+        'conclusion': "Asset is active - not zombie" if evidence else "Farm disagrees with zombie classification",
+        'findings': findings,
+        'evidence': evidence,
+    }
+
+
 def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> dict:
     """Build detailed reconciliation analysis comparing Farm expectations vs AOD results."""
     expected_block = snapshot.get('__expected__', {})
@@ -1172,6 +1267,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             aod_key_reasons = get_aod_reasons(aod_key)
             farm_class = 'zombie' if aod_key in farm_zombies else ('clean' if aod_key in farm_clean else 'unknown')
             asset_analysis = generate_asset_analysis('false_positive_shadow', aod_key, farm_reasons, None, aod_key_reasons)
+            investigation = investigate_fp_shadow(aod_key, aod_key_reasons, snapshot) if aod_key_reasons else None
             analysis['false_positive_shadows'].append({
                 'asset_key': aod_key,
                 'farm_classification': farm_class,
@@ -1181,6 +1277,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
+                'farm_investigation': investigation,
                 'explanation': get_explanation('false_positive_shadow', aod_key, farm_reasons, aod_reasons=aod_key_reasons),
             })
     
@@ -1190,6 +1287,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             aod_key_reasons = get_aod_reasons(aod_key)
             farm_class = 'shadow' if aod_key in farm_shadows else ('clean' if aod_key in farm_clean else 'unknown')
             asset_analysis = generate_asset_analysis('false_positive_zombie', aod_key, farm_reasons, None, aod_key_reasons)
+            investigation = investigate_fp_zombie(aod_key, aod_key_reasons, snapshot) if aod_key_reasons else None
             analysis['false_positive_zombies'].append({
                 'asset_key': aod_key,
                 'farm_classification': farm_class,
@@ -1199,6 +1297,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
+                'farm_investigation': investigation,
                 'explanation': get_explanation('false_positive_zombie', aod_key, farm_reasons, aod_reasons=aod_key_reasons),
             })
     

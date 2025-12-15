@@ -520,6 +520,17 @@
             ).join(' ');
             const rcaHint = asset.rca_hint ? `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">${asset.rca_hint}</span>` : '';
             
+            const investigation = asset.farm_investigation;
+            const investigationHtml = investigation ? `
+                <div class="mt-2 pt-2 border-t border-slate-700">
+                    <div class="text-orange-400 font-medium text-xs mb-1">Farm Investigation:</div>
+                    <div class="text-slate-300 text-xs">${investigation.conclusion}</div>
+                    <ul class="mt-1 text-xs text-slate-400 list-disc list-inside">
+                        ${investigation.findings.map(f => `<li>${f}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : '';
+            
             return `
                 <div class="bg-slate-800/60 rounded-lg p-3 mb-2 border-l-2 border-slate-600">
                     <div class="flex items-start justify-between gap-2 mb-2">
@@ -538,6 +549,7 @@
                             <div class="mt-1 flex flex-wrap gap-1">${aodCodes || '<span class="text-slate-500">no codes</span>'}</div>
                         </div>
                     </div>
+                    ${investigationHtml}
                 </div>
             `;
         }
