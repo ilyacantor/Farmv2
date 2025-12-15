@@ -326,6 +326,7 @@ class ReconcileResponse(BaseModel):
     status: ReconcileStatusEnum
     report_text: str
     aod_summary: AODSummary
+    aod_lists: AODLists
     farm_expectations: FarmExpectations
 
 

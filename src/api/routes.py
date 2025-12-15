@@ -565,6 +565,7 @@ async def create_reconciliation(request: ReconcileRequest):
         status=status,
         report_text=report_text,
         aod_summary=request.aod_summary,
+        aod_lists=request.aod_lists,
         farm_expectations=farm_expectations,
     )
 
@@ -614,6 +615,7 @@ async def get_reconciliation(reconciliation_id: str):
         aod_payload = json.loads(row["aod_payload_json"])
         farm_expectations = json.loads(row["farm_expectations_json"])
         
+        aod_lists_data = aod_payload.get("aod_lists", {})
         return ReconcileResponse(
             reconciliation_id=row["reconciliation_id"],
             snapshot_id=row["snapshot_id"],
@@ -623,6 +625,7 @@ async def get_reconciliation(reconciliation_id: str):
             status=ReconcileStatusEnum(row["status"]),
             report_text=row["report_text"],
             aod_summary=AODSummary(**aod_payload["aod_summary"]),
+            aod_lists=AODLists(**aod_lists_data),
             farm_expectations=FarmExpectations(**farm_expectations),
         )
 

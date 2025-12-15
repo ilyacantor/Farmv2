@@ -407,10 +407,55 @@
             }).join('');
         }
         
+        function computeMisalignment(farmKeys, aodKeys) {
+            const normalize = (k) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const farmSet = new Set(farmKeys.map(normalize));
+            const aodSet = new Set(aodKeys.map(normalize));
+            const aodNormToOrig = {};
+            aodKeys.forEach(k => { aodNormToOrig[normalize(k)] = k; });
+            const farmNormToOrig = {};
+            farmKeys.forEach(k => { farmNormToOrig[normalize(k)] = k; });
+            
+            const matched = [];
+            const missed = [];
+            const extra = [];
+            
+            farmKeys.forEach(k => {
+                const n = normalize(k);
+                if (aodSet.has(n)) matched.push(k);
+                else missed.push(k);
+            });
+            aodKeys.forEach(k => {
+                const n = normalize(k);
+                if (!farmSet.has(n)) extra.push(k);
+            });
+            return { matched, missed, extra };
+        }
+        
+        function renderAssetList(title, items, colorClass) {
+            if (!items || items.length === 0) return '';
+            return `
+                <div class="mb-2">
+                    <span class="text-xs font-medium ${colorClass}">${title} (${items.length}):</span>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                        ${items.map(k => `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 ${colorClass}">${k}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
         async function viewReconciliationReport(reconciliationId) {
             try {
                 const response = await fetch(`/api/reconcile/${reconciliationId}`);
                 const rec = await response.json();
+                
+                const farmZombies = rec.farm_expectations?.zombie_keys || [];
+                const farmShadows = rec.farm_expectations?.shadow_keys || [];
+                const aodZombies = rec.aod_lists?.zombie_assets || [];
+                const aodShadows = rec.aod_lists?.shadow_assets || [];
+                
+                const zombieAlign = computeMisalignment(farmZombies, aodZombies);
+                const shadowAlign = computeMisalignment(farmShadows, aodShadows);
                 
                 const modal = document.getElementById('detailModal');
                 document.getElementById('detailContent').innerHTML = `
@@ -424,10 +469,28 @@
                             <div><span class="text-slate-400">AOD Run:</span> <span class="text-white">${rec.aod_run_id || 'N/A'}</span></div>
                             <div><span class="text-slate-400">Created:</span> <span class="text-white">${new Date(rec.created_at).toLocaleString()}</span></div>
                         </div>
-                        <div class="bg-slate-900 rounded-lg p-4">
-                            <h4 class="text-sm font-medium text-slate-300 mb-2">Report</h4>
-                            <pre class="text-xs text-slate-400 whitespace-pre-wrap overflow-auto max-h-96">${rec.report_text || 'No report available'}</pre>
+                        
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="bg-slate-900 rounded-lg p-4">
+                                <h4 class="text-sm font-medium text-red-400 mb-3">Zombies (Farm ${farmZombies.length} / AOD ${aodZombies.length})</h4>
+                                ${renderAssetList('Matched', zombieAlign.matched, 'text-green-400')}
+                                ${renderAssetList('Missed by AOD', zombieAlign.missed, 'text-red-400')}
+                                ${renderAssetList('Extra in AOD', zombieAlign.extra, 'text-yellow-400')}
+                                ${zombieAlign.matched.length === 0 && zombieAlign.missed.length === 0 && zombieAlign.extra.length === 0 ? '<span class="text-xs text-slate-500">No zombies</span>' : ''}
+                            </div>
+                            <div class="bg-slate-900 rounded-lg p-4">
+                                <h4 class="text-sm font-medium text-purple-400 mb-3">Shadows (Farm ${farmShadows.length} / AOD ${aodShadows.length})</h4>
+                                ${renderAssetList('Matched', shadowAlign.matched, 'text-green-400')}
+                                ${renderAssetList('Missed by AOD', shadowAlign.missed, 'text-red-400')}
+                                ${renderAssetList('Extra in AOD', shadowAlign.extra, 'text-yellow-400')}
+                                ${shadowAlign.matched.length === 0 && shadowAlign.missed.length === 0 && shadowAlign.extra.length === 0 ? '<span class="text-xs text-slate-500">No shadows</span>' : ''}
+                            </div>
                         </div>
+                        
+                        <details class="bg-slate-900 rounded-lg p-4">
+                            <summary class="text-sm font-medium text-slate-300 cursor-pointer">Raw Report</summary>
+                            <pre class="text-xs text-slate-400 whitespace-pre-wrap overflow-auto max-h-64 mt-2">${rec.report_text || 'No report available'}</pre>
+                        </details>
                     </div>
                 `;
                 modal.classList.remove('hidden');
