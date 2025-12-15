@@ -300,8 +300,29 @@ class AODLists(BaseModel):
     zombie_assets: list[str] = Field(default_factory=list)
     shadow_assets: list[str] = Field(default_factory=list)
     high_severity_findings: list[str] = Field(default_factory=list)
-    actual_reason_codes: dict[str, list[str]] = Field(default_factory=dict)
-    admission_actual: dict[str, str] = Field(default_factory=dict)
+    actual_reason_codes: dict[str, list[str]] = Field(default_factory=dict, alias="actual_reason_codes")
+    admission_actual: dict[str, str] = Field(default_factory=dict, alias="admission_actual")
+    reason_codes: dict[str, list[str]] = Field(default_factory=dict)
+    admission: dict[str, str] = Field(default_factory=dict)
+    aod_reason_codes: dict[str, list[str]] = Field(default_factory=dict)
+    
+    def get_reason_codes(self) -> dict[str, list[str]]:
+        """Get reason codes from whichever field AOD populated."""
+        if self.actual_reason_codes:
+            return self.actual_reason_codes
+        if self.reason_codes:
+            return self.reason_codes
+        if self.aod_reason_codes:
+            return self.aod_reason_codes
+        return {}
+    
+    def get_admission(self) -> dict[str, str]:
+        """Get admission data from whichever field AOD populated."""
+        if self.admission_actual:
+            return self.admission_actual
+        if self.admission:
+            return self.admission
+        return {}
 
 
 class ReconcileRequest(BaseModel):

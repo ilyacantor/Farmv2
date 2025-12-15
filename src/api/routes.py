@@ -663,6 +663,18 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
 async def create_reconciliation(request: ReconcileRequest):
     pool = await get_pool()
     
+    raw_aod_lists = request.aod_lists.model_dump()
+    reason_codes_check = {
+        'actual_reason_codes': request.aod_lists.actual_reason_codes,
+        'reason_codes': request.aod_lists.reason_codes,
+        'aod_reason_codes': request.aod_lists.aod_reason_codes,
+        'admission_actual': request.aod_lists.admission_actual,
+        'admission': request.aod_lists.admission,
+    }
+    print(f"[DEBUG] Reconcile request for {request.tenant_id}")
+    print(f"[DEBUG] AOD lists keys: {list(raw_aod_lists.keys())}")
+    print(f"[DEBUG] Reason codes check: {reason_codes_check}")
+    
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", request.snapshot_id)
         if not row:
@@ -861,8 +873,17 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     aod_lists = aod_payload.get('aod_lists', {})
     aod_shadows = set(aod_lists.get('shadow_assets', []))
     aod_zombies = set(aod_lists.get('zombie_assets', []))
-    aod_reason_codes = aod_lists.get('actual_reason_codes', {})
-    aod_admission = aod_lists.get('admission_actual', {})
+    aod_reason_codes = (
+        aod_lists.get('actual_reason_codes') or 
+        aod_lists.get('reason_codes') or 
+        aod_lists.get('aod_reason_codes') or 
+        {}
+    )
+    aod_admission = (
+        aod_lists.get('admission_actual') or 
+        aod_lists.get('admission') or 
+        {}
+    )
     
     def norm(s):
         """Normalize asset key for comparison - extract core name, remove suffixes."""
