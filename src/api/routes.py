@@ -843,33 +843,17 @@ async def list_reconciliations(
     async with pool.acquire() as conn:
         if snapshot_id:
             rows = await conn.fetch(
-                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text, aod_payload_json, farm_expectations_json FROM reconciliations WHERE snapshot_id = $1 ORDER BY created_at DESC LIMIT $2",
+                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text FROM reconciliations WHERE snapshot_id = $1 ORDER BY created_at DESC LIMIT $2",
                 snapshot_id, limit
             )
         else:
             rows = await conn.fetch(
-                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text, aod_payload_json, farm_expectations_json FROM reconciliations ORDER BY created_at DESC LIMIT $1",
+                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text FROM reconciliations ORDER BY created_at DESC LIMIT $1",
                 limit
             )
         
-        results = []
-        for row in rows:
-            farm_exp = json.loads(row["farm_expectations_json"]) if row["farm_expectations_json"] else {}
-            aod_payload = json.loads(row["aod_payload_json"]) if row["aod_payload_json"] else {}
-            aod_lists = aod_payload.get("aod_lists", {})
-            
-            aod_shadow_keys = (
-                aod_lists.get('shadow_asset_keys') or 
-                aod_lists.get('shadow_asset_keys_sample') or 
-                aod_lists.get('shadow_assets', [])
-            )
-            aod_zombie_keys = (
-                aod_lists.get('zombie_asset_keys') or 
-                aod_lists.get('zombie_asset_keys_sample') or 
-                aod_lists.get('zombie_assets', [])
-            )
-            
-            results.append(ReconcileMetadata(
+        return [
+            ReconcileMetadata(
                 reconciliation_id=row["reconciliation_id"],
                 snapshot_id=row["snapshot_id"],
                 tenant_id=row["tenant_id"],
@@ -877,13 +861,9 @@ async def list_reconciliations(
                 created_at=row["created_at"],
                 status=row["status"],
                 report_text=row["report_text"] or "",
-                farm_zombies=farm_exp.get("expected_zombies", 0),
-                farm_shadows=farm_exp.get("expected_shadows", 0),
-                aod_zombies=len(aod_zombie_keys),
-                aod_shadows=len(aod_shadow_keys),
-            ))
-        
-        return results
+            )
+            for row in rows
+        ]
 
 
 @router.get("/api/reconcile/{reconciliation_id}", response_model=ReconcileResponse)

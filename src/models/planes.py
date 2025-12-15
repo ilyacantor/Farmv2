@@ -362,10 +362,6 @@ class ReconcileMetadata(BaseModel):
     created_at: str
     status: str
     report_text: str = ""
-    farm_zombies: int = 0
-    farm_shadows: int = 0
-    aod_zombies: int = 0
-    aod_shadows: int = 0
 
 
 class AutoReconcileRequest(BaseModel):
