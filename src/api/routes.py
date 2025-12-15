@@ -786,46 +786,62 @@ EXPLANATION_TEMPLATES = {
         'RECENT_ACTIVITY': "AOD false positive on {key}: this app has recent activity within the detection window. Users are actively using it.",
         'HAS_DISCOVERY+RECENT_ACTIVITY': "AOD false positive on {key}: we see recent discovery observations showing active usage. Not a zombie.",
     },
-    'matched': {
-        'shadow': "Correctly identified {key} as shadow IT.",
-        'zombie': "Correctly identified {key} as zombie asset.",
-    }
+    'matched_shadow': {
+        'default': "Both Farm and AOD agree {key} is shadow IT.",
+        'UNGOVERNED_WITH_SPEND': "{key} is shadow IT: has finance spend ({farm_reasons}) but missing from IdP/CMDB governance.",
+    },
+    'matched_zombie': {
+        'default': "Both Farm and AOD agree {key} is a zombie asset.",
+        'STALE_NO_RECENT_USE': "{key} is zombie: registered in governance systems but no recent activity ({farm_reasons}).",
+    },
 }
 
 
 def get_explanation(mismatch_type: str, key: str, farm_reasons: list, rca_hint: str = None, aod_reasons: list = None) -> str:
-    """Generate plain English explanation for a mismatch, referencing both Farm and AOD reasoning."""
+    """Generate plain English explanation, referencing both Farm and AOD reasoning."""
     templates = EXPLANATION_TEMPLATES.get(mismatch_type, {})
     aod_reasons = aod_reasons or []
+    farm_reasons_str = ', '.join(farm_reasons[:4]) if farm_reasons else 'unknown signals'
     
     base_explanation = ""
     if rca_hint and rca_hint in templates:
-        base_explanation = templates[rca_hint].format(key=key)
+        base_explanation = templates[rca_hint].format(key=key, farm_reasons=farm_reasons_str)
     else:
         code_combo = '+'.join(sorted(farm_reasons[:3]))
         if code_combo in templates:
-            base_explanation = templates[code_combo].format(key=key)
+            base_explanation = templates[code_combo].format(key=key, farm_reasons=farm_reasons_str)
         else:
             for code in farm_reasons:
                 if code in templates:
-                    base_explanation = templates[code].format(key=key)
+                    base_explanation = templates[code].format(key=key, farm_reasons=farm_reasons_str)
                     break
         if not base_explanation:
-            base_explanation = templates.get('default', f"Mismatch on {key}").format(key=key)
+            base_explanation = templates.get('default', f"Mismatch on {key}").format(key=key, farm_reasons=farm_reasons_str)
     
-    if aod_reasons and mismatch_type.startswith('false_positive'):
-        aod_codes_str = ', '.join(aod_reasons[:3])
-        base_explanation += f" AOD flagged it because it saw: {aod_codes_str}."
-        
-        missing_from_aod = [c for c in farm_reasons if c not in aod_reasons]
-        if missing_from_aod:
-            base_explanation += f" But AOD missed: {', '.join(missing_from_aod[:2])}."
+    if mismatch_type.startswith('matched_'):
+        if aod_reasons:
+            aod_codes_str = ', '.join(aod_reasons[:4])
+            base_explanation += f" AOD saw: {aod_codes_str}."
+        else:
+            base_explanation += f" Farm expected based on: {farm_reasons_str}."
     
-    elif aod_reasons and mismatch_type.endswith('_missed'):
-        pass
+    elif mismatch_type.startswith('false_positive'):
+        if aod_reasons:
+            aod_codes_str = ', '.join(aod_reasons[:3])
+            base_explanation += f" AOD flagged because it saw: {aod_codes_str}."
+            missing_from_aod = [c for c in farm_reasons if c not in aod_reasons]
+            if missing_from_aod:
+                base_explanation += f" But missed: {', '.join(missing_from_aod[:2])}."
+        else:
+            if farm_reasons:
+                base_explanation += f" Farm saw: {farm_reasons_str} - which contradicts the shadow/zombie classification."
+            else:
+                base_explanation += " AOD did not provide reason codes to explain why it flagged this."
     
-    elif not aod_reasons and mismatch_type.endswith('_missed'):
-        base_explanation += " AOD did not provide reason codes for this asset."
+    elif mismatch_type.endswith('_missed'):
+        base_explanation += f" Farm expected it based on: {farm_reasons_str}."
+        if not aod_reasons:
+            base_explanation += " AOD provided no reason codes for this asset."
     
     return base_explanation
 
@@ -906,13 +922,14 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         rca = expected_rca.get(key)
         aod_matched = find_match(key, aod_shadows)
         if aod_matched:
+            aod_key_reasons = get_aod_reasons(aod_matched or key)
             analysis['matched_shadows'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
-                'aod_reason_codes': get_aod_reasons(aod_matched or key),
+                'aod_reason_codes': aod_key_reasons,
                 'aod_admission': get_aod_admission(aod_matched or key),
                 'rca_hint': rca,
-                'explanation': EXPLANATION_TEMPLATES['matched']['shadow'].format(key=key),
+                'explanation': get_explanation('matched_shadow', key, reasons, rca, aod_reasons=aod_key_reasons),
             })
         else:
             analysis['missed_shadows'].append({
@@ -929,13 +946,14 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         rca = expected_rca.get(key)
         aod_matched = find_match(key, aod_zombies)
         if aod_matched:
+            aod_key_reasons = get_aod_reasons(aod_matched or key)
             analysis['matched_zombies'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
-                'aod_reason_codes': get_aod_reasons(aod_matched or key),
+                'aod_reason_codes': aod_key_reasons,
                 'aod_admission': get_aod_admission(aod_matched or key),
                 'rca_hint': rca,
-                'explanation': EXPLANATION_TEMPLATES['matched']['zombie'].format(key=key),
+                'explanation': get_explanation('matched_zombie', key, reasons, rca, aod_reasons=aod_key_reasons),
             })
         else:
             analysis['missed_zombies'].append({
