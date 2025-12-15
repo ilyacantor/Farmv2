@@ -449,6 +449,11 @@
                 const response = await fetch(`/api/reconcile/${reconciliationId}`);
                 const rec = await response.json();
                 
+                const farmZombieCount = rec.farm_expectations?.expected_zombies || 0;
+                const farmShadowCount = rec.farm_expectations?.expected_shadows || 0;
+                const aodZombieCount = rec.aod_summary?.zombie_count || 0;
+                const aodShadowCount = rec.aod_summary?.shadow_count || 0;
+                
                 const farmZombies = rec.farm_expectations?.zombie_keys || [];
                 const farmShadows = rec.farm_expectations?.shadow_keys || [];
                 const aodZombies = rec.aod_lists?.zombie_assets || [];
@@ -472,17 +477,19 @@
                         
                         <div class="grid grid-cols-2 gap-4">
                             <div class="bg-slate-900 rounded-lg p-4">
-                                <h4 class="text-sm font-medium text-red-400 mb-3">Zombies (Farm ${farmZombies.length} / AOD ${aodZombies.length})</h4>
+                                <h4 class="text-sm font-medium text-red-400 mb-3">Zombies (AOD ${aodZombieCount} / Farm ${farmZombieCount})</h4>
                                 ${renderAssetList('Matched', zombieAlign.matched, 'text-green-400')}
                                 ${renderAssetList('Missed by AOD', zombieAlign.missed, 'text-red-400')}
                                 ${renderAssetList('Extra in AOD', zombieAlign.extra, 'text-yellow-400')}
+                                ${aodZombies.length < aodZombieCount ? `<div class="text-xs text-slate-500 mt-2">AOD reported ${aodZombieCount} total, showing ${aodZombies.length} keys</div>` : ''}
                                 ${zombieAlign.matched.length === 0 && zombieAlign.missed.length === 0 && zombieAlign.extra.length === 0 ? '<span class="text-xs text-slate-500">No zombies</span>' : ''}
                             </div>
                             <div class="bg-slate-900 rounded-lg p-4">
-                                <h4 class="text-sm font-medium text-purple-400 mb-3">Shadows (Farm ${farmShadows.length} / AOD ${aodShadows.length})</h4>
+                                <h4 class="text-sm font-medium text-purple-400 mb-3">Shadows (AOD ${aodShadowCount} / Farm ${farmShadowCount})</h4>
                                 ${renderAssetList('Matched', shadowAlign.matched, 'text-green-400')}
                                 ${renderAssetList('Missed by AOD', shadowAlign.missed, 'text-red-400')}
                                 ${renderAssetList('Extra in AOD', shadowAlign.extra, 'text-yellow-400')}
+                                ${aodShadows.length < aodShadowCount ? `<div class="text-xs text-slate-500 mt-2">AOD reported ${aodShadowCount} total, showing ${aodShadows.length} keys</div>` : ''}
                                 ${shadowAlign.matched.length === 0 && shadowAlign.missed.length === 0 && shadowAlign.extra.length === 0 ? '<span class="text-xs text-slate-500">No shadows</span>' : ''}
                             </div>
                         </div>
