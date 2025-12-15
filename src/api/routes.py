@@ -761,3 +761,133 @@ async def check_aod_run_status(
                 status=AODRunStatusEnum.AOD_ERROR,
                 message=f"Could not reach AOD: {str(e)}"
             )
+
+
+def compute_expected_zombies_v0(snapshot_data: dict, window_days: int) -> list[str]:
+    """
+    Zombie v0 Grader: Compute expected zombie asset_ids from snapshot data.
+    
+    Rule: zombie = exists_in_sor AND NOT activity_in_window
+    - exists_in_sor = present in IdP or CMDB (by asset_id)
+    - activity_in_window = observed_at within window_days of snapshot creation
+    """
+    meta = snapshot_data.get('meta', {})
+    planes = snapshot_data.get('planes', {})
+    
+    created_at_str = meta.get('created_at', '')
+    reference = parse_timestamp(created_at_str) or datetime.utcnow()
+    
+    sor_asset_ids = set()
+    idp_objects = planes.get('idp', {}).get('objects', [])
+    for obj in idp_objects:
+        asset_id = obj.get('asset_id')
+        if asset_id:
+            sor_asset_ids.add(asset_id)
+    
+    cmdb_cis = planes.get('cmdb', {}).get('cis', []) or planes.get('cmdb', {}).get('config_items', [])
+    for ci in cmdb_cis:
+        asset_id = ci.get('asset_id')
+        if asset_id:
+            sor_asset_ids.add(asset_id)
+    
+    active_asset_ids = set()
+    observations = planes.get('discovery', {}).get('observations', [])
+    for obs in observations:
+        asset_id = obs.get('asset_id')
+        observed_at = obs.get('observed_at')
+        if asset_id and observed_at:
+            if is_within_window(observed_at, window_days, reference):
+                active_asset_ids.add(asset_id)
+    
+    zombie_asset_ids = sor_asset_ids - active_asset_ids
+    return sorted(list(zombie_asset_ids))
+
+
+@router.get("/v0/grade/zombies")
+async def grade_zombies_v0(
+    run_id: str = Query(..., description="Run ID to grade"),
+    window_days: int = Query(30, ge=1, le=365, description="Activity window in days"),
+    aod_url: str = Query(..., description="AOD base URL")
+):
+    """
+    Zombie v0 Grader - Walled off from existing reconciliation logic.
+    Compares Farm expected zombies vs AOD reported zombies by asset_id only.
+    """
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT snapshot_json FROM snapshots WHERE run_id = $1 LIMIT 1",
+            run_id
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail=f"No snapshot found for run_id={run_id}")
+        
+        snapshot_data = json.loads(row["snapshot_json"])
+    
+    expected_zombies = compute_expected_zombies_v0(snapshot_data, window_days)
+    
+    aod_url = aod_url.rstrip("/")
+    aod_secret = os.environ.get("AOD_SHARED_SECRET", "")
+    
+    headers = {}
+    if aod_secret:
+        headers["Authorization"] = f"Bearer {aod_secret}"
+    
+    reported_zombies = []
+    aod_error = None
+    
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            resp = await client.get(
+                f"{aod_url}/v0/zombies",
+                params={"run_id": run_id, "window_days": window_days},
+                headers=headers
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                reported_zombies = data.get("zombie_asset_ids", []) or data.get("zombies", []) or []
+                if isinstance(reported_zombies, list):
+                    reported_zombies = [z.get("asset_id") if isinstance(z, dict) else z for z in reported_zombies]
+                    reported_zombies = [z for z in reported_zombies if z]
+            elif resp.status_code == 404:
+                aod_error = f"AOD endpoint not found (404)"
+            else:
+                aod_error = f"AOD returned {resp.status_code}: {resp.text[:200]}"
+                
+        except httpx.RequestError as e:
+            aod_error = f"Could not reach AOD: {str(e)}"
+    
+    expected_set = set(expected_zombies)
+    reported_set = set(reported_zombies)
+    
+    overlap = expected_set & reported_set
+    missing = expected_set - reported_set
+    extra = reported_set - expected_set
+    
+    passed = (missing == set() and extra == set()) if aod_error is None else False
+    
+    return {
+        "run_id": run_id,
+        "window_days": window_days,
+        "aod_url": aod_url,
+        "result": "PASS" if passed else "FAIL",
+        "aod_error": aod_error,
+        "expected": {
+            "count": len(expected_zombies),
+            "asset_ids": expected_zombies
+        },
+        "reported": {
+            "count": len(reported_zombies),
+            "asset_ids": sorted(reported_zombies)
+        },
+        "comparison": {
+            "overlap_count": len(overlap),
+            "overlap_asset_ids": sorted(list(overlap)),
+            "missing_count": len(missing),
+            "missing_asset_ids": sorted(list(missing)),
+            "extra_count": len(extra),
+            "extra_asset_ids": sorted(list(extra))
+        }
+    }
