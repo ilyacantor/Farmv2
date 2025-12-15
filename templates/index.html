@@ -138,9 +138,16 @@
                         <div class="flex items-center justify-between p-4 border-b border-slate-700">
                             <h2 class="text-lg font-semibold text-purple-400">Snapshot Browser</h2>
                             <div class="flex items-center gap-3">
-                                <button onclick="eraseAllSnapshots()" id="cleanupBtn" class="text-xs px-2 py-1 bg-red-900/40 hover:bg-red-800/60 text-red-400 rounded border border-red-800/50 transition-colors">
-                                    Erase All
-                                </button>
+                                <div id="eraseNormal">
+                                    <button onclick="showEraseConfirm()" class="text-xs px-2 py-1 bg-red-900/40 hover:bg-red-800/60 text-red-400 rounded border border-red-800/50 transition-colors">
+                                        Erase All
+                                    </button>
+                                </div>
+                                <div id="eraseConfirm" class="hidden flex items-center gap-2">
+                                    <span class="text-xs text-red-400">Sure?</span>
+                                    <button onclick="doEraseAll()" class="text-xs px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded transition-colors">Yes</button>
+                                    <button onclick="hideEraseConfirm()" class="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors">No</button>
+                                </div>
                                 <span class="text-xs text-slate-500"><span id="configSnapshotCount">0</span> snapshots</span>
                             </div>
                         </div>
@@ -762,16 +769,19 @@
             });
         }
 
-        async function eraseAllSnapshots() {
-            const count = snapshotsCache.length;
-            if (count === 0) return;
-            
-            if (!confirm(`Erase all ${count} snapshot${count > 1 ? 's' : ''}?`)) return;
-            
-            const btn = document.getElementById('cleanupBtn');
-            btn.disabled = true;
-            btn.textContent = 'Erasing...';
-            
+        function showEraseConfirm() {
+            if (snapshotsCache.length === 0) return;
+            document.getElementById('eraseNormal').classList.add('hidden');
+            document.getElementById('eraseConfirm').classList.remove('hidden');
+        }
+        
+        function hideEraseConfirm() {
+            document.getElementById('eraseConfirm').classList.add('hidden');
+            document.getElementById('eraseNormal').classList.remove('hidden');
+        }
+        
+        async function doEraseAll() {
+            hideEraseConfirm();
             try {
                 await fetch('/api/snapshots/cleanup?keep=0', { method: 'DELETE' });
                 expandedSnapshots = {};
@@ -780,9 +790,6 @@
                 await refreshData();
             } catch (e) {
                 console.error('Erase failed:', e);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Erase All';
             }
         }
 

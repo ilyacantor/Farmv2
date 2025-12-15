@@ -402,7 +402,7 @@ class CleanupResponse(BaseModel):
 
 
 @router.delete("/api/snapshots/cleanup")
-async def cleanup_old_snapshots(keep: int = Query(3, ge=1, le=100, description="Number of recent snapshots to keep")):
+async def cleanup_old_snapshots(keep: int = Query(3, ge=0, le=100, description="Number of recent snapshots to keep (0 = delete all)")):
     pool = await get_pool()
     
     async with pool.acquire() as conn:
