@@ -5,7 +5,7 @@ from typing import Optional
 
 import asyncpg
 import httpx
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -659,57 +659,70 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
     return report_text, status
 
 
+@router.post("/api/reconcile/debug-raw")
+async def debug_reconcile_raw(request: Request):
+    """Debug endpoint to see raw request body before Pydantic parsing."""
+    body = await request.body()
+    raw_json = json.loads(body)
+    aod_lists = raw_json.get('aod_lists', {})
+    print(f"[DEBUG-RAW] Raw aod_lists keys: {list(aod_lists.keys())}")
+    print(f"[DEBUG-RAW] actual_reason_codes present: {'actual_reason_codes' in aod_lists}")
+    print(f"[DEBUG-RAW] actual_reason_codes value: {aod_lists.get('actual_reason_codes', 'NOT_FOUND')}")
+    return {
+        "aod_lists_keys": list(aod_lists.keys()),
+        "has_actual_reason_codes": 'actual_reason_codes' in aod_lists,
+        "actual_reason_codes_sample": dict(list(aod_lists.get('actual_reason_codes', {}).items())[:3]),
+        "has_admission_actual": 'admission_actual' in aod_lists,
+    }
+
+
 @router.post("/api/reconcile", response_model=ReconcileResponse)
-async def create_reconciliation(request: ReconcileRequest):
+async def create_reconciliation(request: Request):
+    body = await request.body()
+    raw_json = json.loads(body)
+    
+    raw_aod_lists = raw_json.get('aod_lists', {})
+    print(f"[DEBUG] Raw request aod_lists keys: {list(raw_aod_lists.keys())}")
+    print(f"[DEBUG] Raw actual_reason_codes: {list(raw_aod_lists.get('actual_reason_codes', {}).keys())[:5]}")
+    
+    parsed_request = ReconcileRequest(**raw_json)
     pool = await get_pool()
     
-    raw_aod_lists = request.aod_lists.model_dump()
-    reason_codes_check = {
-        'actual_reason_codes': request.aod_lists.actual_reason_codes,
-        'reason_codes': request.aod_lists.reason_codes,
-        'aod_reason_codes': request.aod_lists.aod_reason_codes,
-        'admission_actual': request.aod_lists.admission_actual,
-        'admission': request.aod_lists.admission,
-    }
-    print(f"[DEBUG] Reconcile request for {request.tenant_id}")
-    print(f"[DEBUG] AOD lists keys: {list(raw_aod_lists.keys())}")
-    print(f"[DEBUG] Reason codes check: {reason_codes_check}")
-    
     async with pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", request.snapshot_id)
+        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", parsed_request.snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
         snapshot = json.loads(row["snapshot_json"])
     
     farm_expectations = analyze_snapshot_for_expectations(snapshot)
-    report_text, status = generate_reconcile_report(request.aod_summary, request.aod_lists, farm_expectations)
+    report_text, status = generate_reconcile_report(parsed_request.aod_summary, parsed_request.aod_lists, farm_expectations)
     
     reconciliation_id = str(uuid.uuid4())
     created_at = datetime.utcnow().isoformat() + "Z"
     
     aod_payload = {
-        "aod_summary": request.aod_summary.model_dump(),
-        "aod_lists": request.aod_lists.model_dump(),
+        "aod_summary": parsed_request.aod_summary.model_dump(),
+        "aod_lists": raw_aod_lists,
     }
     
     async with pool.acquire() as conn:
         await conn.execute("""
             INSERT INTO reconciliations (reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, aod_payload_json, farm_expectations_json, report_text, status)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        """, reconciliation_id, request.snapshot_id, request.tenant_id, request.aod_run_id,
+        """, reconciliation_id, parsed_request.snapshot_id, parsed_request.tenant_id, parsed_request.aod_run_id,
             created_at, json.dumps(aod_payload), json.dumps(farm_expectations.model_dump()),
             report_text, status.value)
     
     return ReconcileResponse(
         reconciliation_id=reconciliation_id,
-        snapshot_id=request.snapshot_id,
-        tenant_id=request.tenant_id,
-        aod_run_id=request.aod_run_id,
+        snapshot_id=parsed_request.snapshot_id,
+        tenant_id=parsed_request.tenant_id,
+        aod_run_id=parsed_request.aod_run_id,
         created_at=created_at,
         status=status,
         report_text=report_text,
-        aod_summary=request.aod_summary,
-        aod_lists=request.aod_lists,
+        aod_summary=parsed_request.aod_summary,
+        aod_lists=parsed_request.aod_lists,
         farm_expectations=farm_expectations,
     )
 
