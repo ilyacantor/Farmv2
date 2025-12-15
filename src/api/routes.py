@@ -525,19 +525,22 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
     lines = []
     issues = []
     
-    aod_zombies = aod_summary.zombies
-    aod_shadows = aod_summary.shadows
+    aod_zombie_keys = [asset.vendor_key for asset in aod_lists.zombie_assets]
+    aod_shadow_keys = [asset.vendor_key for asset in aod_lists.shadow_assets]
+    aod_zombie_count = len(aod_zombie_keys)
+    aod_shadow_count = len(aod_shadow_keys)
     farm_zombies = farm_expectations.expected_zombies
     farm_shadows = farm_expectations.expected_shadows
     
-    aod_zombie_keys = [asset.vendor_key for asset in aod_lists.zombie_assets]
-    aod_shadow_keys = [asset.vendor_key for asset in aod_lists.shadow_assets]
-    aod_zombie_payload_count = len(aod_zombie_keys)
-    aod_shadow_payload_count = len(aod_shadow_keys)
+    summary_zombie_mismatch = aod_summary.zombies != aod_zombie_count
+    summary_shadow_mismatch = aod_summary.shadows != aod_shadow_count
     
-    lines.append(f"AOD summary: {aod_zombies} zombies, {aod_shadows} shadows")
-    lines.append(f"AOD payload: {aod_zombie_payload_count} zombie keys, {aod_shadow_payload_count} shadow keys")
+    lines.append(f"AOD payload: {aod_zombie_count} zombies, {aod_shadow_count} shadows")
     lines.append(f"Farm expected: {farm_zombies} zombies, {farm_shadows} shadows")
+    
+    if summary_zombie_mismatch or summary_shadow_mismatch:
+        lines.append(f"PAYLOAD_INCONSISTENCY: AOD summary ({aod_summary.zombies}/{aod_summary.shadows}) != payload list ({aod_zombie_count}/{aod_shadow_count})")
+        issues.append("payload_inconsistency")
     
     aod_zombie_set = set(normalize_name(k) for k in aod_zombie_keys)
     aod_shadow_set = set(normalize_name(k) for k in aod_shadow_keys)
@@ -547,11 +550,11 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
     zombie_overlap = len(aod_zombie_set & farm_zombie_set)
     shadow_overlap = len(aod_shadow_set & farm_shadow_set)
     
-    zombie_key_mismatch = aod_zombie_payload_count > 0 and zombie_overlap == 0 and len(farm_zombie_set) > 0
-    shadow_key_mismatch = aod_shadow_payload_count > 0 and shadow_overlap == 0 and len(farm_shadow_set) > 0
+    zombie_key_mismatch = aod_zombie_count > 0 and zombie_overlap == 0 and len(farm_zombie_set) > 0
+    shadow_key_mismatch = aod_shadow_count > 0 and shadow_overlap == 0 and len(farm_shadow_set) > 0
     
     if zombie_key_mismatch:
-        lines.append(f"ZOMBIE KEY_FORMAT_MISMATCH: AOD sent {aod_zombie_payload_count} keys but 0 overlap with Farm expected keys")
+        lines.append(f"ZOMBIE KEY_FORMAT_MISMATCH: AOD sent {aod_zombie_count} keys but 0 overlap with Farm expected keys")
         lines.append(f"  AOD keys: {aod_zombie_keys[:3]}")
         lines.append(f"  Farm keys: {farm_expectations.zombie_keys[:3]}")
         issues.append("zombie key_format_mismatch")
@@ -559,15 +562,15 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
         lines.append(f"Zombie overlap: {zombie_overlap}/{len(farm_zombie_set)} expected keys matched")
     
     if shadow_key_mismatch:
-        lines.append(f"SHADOW KEY_FORMAT_MISMATCH: AOD sent {aod_shadow_payload_count} keys but 0 overlap with Farm expected keys")
+        lines.append(f"SHADOW KEY_FORMAT_MISMATCH: AOD sent {aod_shadow_count} keys but 0 overlap with Farm expected keys")
         lines.append(f"  AOD keys: {aod_shadow_keys[:3]}")
         lines.append(f"  Farm keys: {farm_expectations.shadow_keys[:3]}")
         issues.append("shadow key_format_mismatch")
     elif farm_shadow_set:
         lines.append(f"Shadow overlap: {shadow_overlap}/{len(farm_shadow_set)} expected keys matched")
     
-    zombie_diff = abs(aod_zombies - farm_zombies)
-    shadow_diff = abs(aod_shadows - farm_shadows)
+    zombie_diff = abs(aod_zombie_count - farm_zombies)
+    shadow_diff = abs(aod_shadow_count - farm_shadows)
     
     if zombie_diff > 0 and not zombie_key_mismatch:
         issues.append(f"Zombie count off by {zombie_diff}")
