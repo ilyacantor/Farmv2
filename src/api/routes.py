@@ -448,28 +448,31 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
     )
 
 
+def grade_count_check(name: str, aod_count: int, farm_count: int) -> tuple[str, ReconcileStatusEnum]:
+    """Grade a single count check. Exceeds = WARN, Under = FAIL, Match = PASS."""
+    if aod_count == farm_count:
+        return f"{name}: PASS (AOD {aod_count} = Farm {farm_count})", ReconcileStatusEnum.PASS
+    elif aod_count > farm_count:
+        return f"{name}: WARN (AOD {aod_count} > Farm {farm_count})", ReconcileStatusEnum.WARN
+    else:
+        return f"{name}: FAIL (AOD {aod_count} < Farm {farm_count})", ReconcileStatusEnum.FAIL
+
+
 def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExpectations) -> tuple[str, ReconcileStatusEnum]:
     lines = []
-    issues = []
+    check_statuses = []
     
     aod_zombies = aod_summary.zombie_count
     aod_shadows = aod_summary.shadow_count
     farm_zombies = farm_expectations.expected_zombies
     farm_shadows = farm_expectations.expected_shadows
     
-    lines.append(f"AOD reported {aod_zombies} zombies, Farm expected {farm_zombies}.")
-    lines.append(f"AOD reported {aod_shadows} shadows, Farm expected {farm_shadows}.")
+    zombie_line, zombie_status = grade_count_check("Zombie count", aod_zombies, farm_zombies)
+    shadow_line, shadow_status = grade_count_check("Shadow count", aod_shadows, farm_shadows)
     
-    zombie_diff = abs(aod_zombies - farm_zombies)
-    shadow_diff = abs(aod_shadows - farm_shadows)
-    
-    if zombie_diff == 0 and shadow_diff == 0:
-        lines.append("Counts match exactly.")
-    else:
-        if zombie_diff > 0:
-            issues.append(f"Zombie count off by {zombie_diff}")
-        if shadow_diff > 0:
-            issues.append(f"Shadow count off by {shadow_diff}")
+    lines.append(zombie_line)
+    lines.append(shadow_line)
+    check_statuses.extend([zombie_status, shadow_status])
     
     aod_zombie_set = set(normalize_name(k) for k in aod_lists.zombie_assets)
     aod_shadow_set = set(normalize_name(k) for k in aod_lists.shadow_assets)
@@ -478,41 +481,49 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
     
     zombie_overlap = len(aod_zombie_set & farm_zombie_set)
     shadow_overlap = len(aod_shadow_set & farm_shadow_set)
-    
-    if farm_zombie_set:
-        lines.append(f"Zombie key overlap: {zombie_overlap}/{len(farm_zombie_set)} expected keys found in AOD.")
-    if farm_shadow_set:
-        lines.append(f"Shadow key overlap: {shadow_overlap}/{len(farm_shadow_set)} expected keys found in AOD.")
-    
     zombie_missed = farm_zombie_set - aod_zombie_set
     shadow_missed = farm_shadow_set - aod_shadow_set
-    
-    if zombie_missed:
-        lines.append(f"Missed zombies: {list(zombie_missed)[:5]}")
-        issues.append(f"Missed {len(zombie_missed)} zombie keys")
-    if shadow_missed:
-        lines.append(f"Missed shadows: {list(shadow_missed)[:5]}")
-        issues.append(f"Missed {len(shadow_missed)} shadow keys")
-    
     zombie_extra = aod_zombie_set - farm_zombie_set
     shadow_extra = aod_shadow_set - farm_shadow_set
+    
+    if farm_zombie_set:
+        if len(zombie_missed) == 0:
+            lines.append(f"Zombie keys: PASS ({zombie_overlap}/{len(farm_zombie_set)} matched)")
+            check_statuses.append(ReconcileStatusEnum.PASS)
+        elif len(zombie_extra) > len(zombie_missed):
+            lines.append(f"Zombie keys: WARN ({zombie_overlap}/{len(farm_zombie_set)} matched, +{len(zombie_extra)} extra)")
+            check_statuses.append(ReconcileStatusEnum.WARN)
+        else:
+            lines.append(f"Zombie keys: FAIL (missed: {list(zombie_missed)[:3]})")
+            check_statuses.append(ReconcileStatusEnum.FAIL)
+    
+    if farm_shadow_set:
+        if len(shadow_missed) == 0:
+            lines.append(f"Shadow keys: PASS ({shadow_overlap}/{len(farm_shadow_set)} matched)")
+            check_statuses.append(ReconcileStatusEnum.PASS)
+        elif len(shadow_extra) > len(shadow_missed):
+            lines.append(f"Shadow keys: WARN ({shadow_overlap}/{len(farm_shadow_set)} matched, +{len(shadow_extra)} extra)")
+            check_statuses.append(ReconcileStatusEnum.WARN)
+        else:
+            lines.append(f"Shadow keys: FAIL (missed: {list(shadow_missed)[:3]})")
+            check_statuses.append(ReconcileStatusEnum.FAIL)
     
     if zombie_extra:
         lines.append(f"Extra zombies in AOD: {list(zombie_extra)[:5]}")
     if shadow_extra:
         lines.append(f"Extra shadows in AOD: {list(shadow_extra)[:5]}")
     
-    if not issues:
-        status = ReconcileStatusEnum.PASS
-        lines.append("RESULT: PASS - All expectations met.")
-    elif (zombie_diff <= 2 and shadow_diff <= 2) and len(zombie_missed) <= 2 and len(shadow_missed) <= 2:
-        status = ReconcileStatusEnum.WARN
-        lines.append(f"RESULT: WARN - Minor discrepancies: {', '.join(issues[:3])}")
-    else:
+    if ReconcileStatusEnum.FAIL in check_statuses:
         status = ReconcileStatusEnum.FAIL
-        lines.append(f"RESULT: FAIL - Significant discrepancies: {', '.join(issues[:3])}")
+        lines.append("OVERALL: FAIL")
+    elif ReconcileStatusEnum.WARN in check_statuses:
+        status = ReconcileStatusEnum.WARN
+        lines.append("OVERALL: WARN")
+    else:
+        status = ReconcileStatusEnum.PASS
+        lines.append("OVERALL: PASS")
     
-    report_text = "\n".join(lines[:12])
+    report_text = "\n".join(lines[:15])
     return report_text, status
 
 
