@@ -1337,6 +1337,8 @@ async def auto_reconcile(request: AutoReconcileRequest):
         zombie_assets=aod_lists_data.get("zombie_assets", []),
         shadow_assets=aod_lists_data.get("shadow_assets", []),
         high_severity_findings=aod_lists_data.get("high_severity_findings", []),
+        actual_reason_codes=aod_lists_data.get("actual_reason_codes", {}),
+        admission_actual=aod_lists_data.get("admission_actual", {}),
     )
     
     reconcile_request = ReconcileRequest(
