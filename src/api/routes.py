@@ -822,53 +822,73 @@ EXPLANATION_TEMPLATES = {
 }
 
 
-def get_explanation(mismatch_type: str, key: str, farm_reasons: list, rca_hint: str = None, aod_reasons: list = None) -> str:
-    """Generate plain English explanation, referencing both Farm and AOD reasoning."""
-    templates = EXPLANATION_TEMPLATES.get(mismatch_type, {})
+def generate_asset_analysis(mismatch_type: str, key: str, farm_reasons: list, rca_hint: str = None, aod_reasons: list = None, aod_admission: str = None) -> dict:
+    """Generate structured analysis with headline, Farm perspective, and AOD perspective."""
     aod_reasons = aod_reasons or []
-    farm_reasons_str = ', '.join(farm_reasons[:4]) if farm_reasons else 'unknown signals'
+    farm_reasons_str = ', '.join(farm_reasons[:4]) if farm_reasons else 'no evidence'
+    aod_reasons_str = ', '.join(aod_reasons[:4]) if aod_reasons else 'no reason codes provided'
     
-    base_explanation = ""
-    if rca_hint and rca_hint in templates:
-        base_explanation = templates[rca_hint].format(key=key, farm_reasons=farm_reasons_str)
+    asset_type = 'shadow' if 'shadow' in mismatch_type else 'zombie'
+    
+    if mismatch_type == 'shadow_missed':
+        headline = f"AOD missed {key} as shadow IT"
+        if 'HAS_FINANCE' in farm_reasons and 'NO_IDP' in farm_reasons:
+            headline += " - has finance spend but missing from governance systems"
+        elif rca_hint == 'UNGOVERNED_WITH_SPEND':
+            headline += " - money going out but IT doesn't know about it"
+        farm_detail = f"Farm expected SHADOW because: {farm_reasons_str}"
+        aod_detail = "AOD did not flag this asset" if not aod_reasons else f"AOD saw: {aod_reasons_str} but didn't classify as shadow"
+        
+    elif mismatch_type == 'zombie_missed':
+        headline = f"AOD missed {key} as zombie"
+        if 'STALE_ACTIVITY' in farm_reasons:
+            headline += " - registered but no recent usage"
+        elif rca_hint == 'STALE_NO_RECENT_USE':
+            headline += " - paying for something nobody's using"
+        farm_detail = f"Farm expected ZOMBIE because: {farm_reasons_str}"
+        aod_detail = "AOD did not flag this asset" if not aod_reasons else f"AOD saw: {aod_reasons_str} but didn't classify as zombie"
+        
+    elif mismatch_type == 'false_positive_shadow':
+        headline = f"AOD incorrectly flagged {key} as shadow"
+        if 'HAS_IDP' in farm_reasons or 'HAS_CMDB' in farm_reasons:
+            headline += " - it's actually governed"
+        farm_detail = f"Farm says CLEAN because: {farm_reasons_str}" if farm_reasons else "Farm expected this to be clean/governed"
+        aod_detail = f"AOD flagged as shadow because: {aod_reasons_str}"
+        
+    elif mismatch_type == 'false_positive_zombie':
+        headline = f"AOD incorrectly flagged {key} as zombie"
+        if 'RECENT_ACTIVITY' in farm_reasons:
+            headline += " - it actually has recent usage"
+        farm_detail = f"Farm says ACTIVE because: {farm_reasons_str}" if farm_reasons else "Farm expected this to be active"
+        aod_detail = f"AOD flagged as zombie because: {aod_reasons_str}"
+        
+    elif mismatch_type == 'matched_shadow':
+        headline = f"{key} correctly identified as shadow IT"
+        farm_detail = f"Farm expected SHADOW: {farm_reasons_str}"
+        aod_detail = f"AOD found SHADOW: {aod_reasons_str}" if aod_reasons else "AOD agreed (no specific codes)"
+        
+    elif mismatch_type == 'matched_zombie':
+        headline = f"{key} correctly identified as zombie"
+        farm_detail = f"Farm expected ZOMBIE: {farm_reasons_str}"
+        aod_detail = f"AOD found ZOMBIE: {aod_reasons_str}" if aod_reasons else "AOD agreed (no specific codes)"
+        
     else:
-        code_combo = '+'.join(sorted(farm_reasons[:3]))
-        if code_combo in templates:
-            base_explanation = templates[code_combo].format(key=key, farm_reasons=farm_reasons_str)
-        else:
-            for code in farm_reasons:
-                if code in templates:
-                    base_explanation = templates[code].format(key=key, farm_reasons=farm_reasons_str)
-                    break
-        if not base_explanation:
-            base_explanation = templates.get('default', f"Mismatch on {key}").format(key=key, farm_reasons=farm_reasons_str)
+        headline = f"Mismatch on {key}"
+        farm_detail = f"Farm reasons: {farm_reasons_str}"
+        aod_detail = f"AOD reasons: {aod_reasons_str}"
     
-    if mismatch_type.startswith('matched_'):
-        if aod_reasons:
-            aod_codes_str = ', '.join(aod_reasons[:4])
-            base_explanation += f" AOD saw: {aod_codes_str}."
-        else:
-            base_explanation += f" Farm expected based on: {farm_reasons_str}."
-    
-    elif mismatch_type.startswith('false_positive'):
-        if aod_reasons:
-            aod_codes_str = ', '.join(aod_reasons[:3])
-            base_explanation += f" AOD flagged because it saw: {aod_codes_str}."
-            missing_from_aod = [c for c in farm_reasons if c not in aod_reasons]
-            if missing_from_aod:
-                base_explanation += f" But missed: {', '.join(missing_from_aod[:2])}."
-        else:
-            if farm_reasons:
-                base_explanation += f" Farm saw: {farm_reasons_str} - which contradicts the shadow/zombie classification."
-            else:
-                base_explanation += " AOD did not provide reason codes to explain why it flagged this."
-    
-    elif mismatch_type.endswith('_missed'):
-        base_explanation += f" Farm expected it based on: {farm_reasons_str}."
-        if not aod_reasons:
-            base_explanation += " AOD provided no reason codes for this asset."
-    
-    return base_explanation
+    return {
+        'headline': headline,
+        'farm_detail': farm_detail,
+        'aod_detail': aod_detail,
+        'rca_hint': rca_hint,
+    }
+
+
+def get_explanation(mismatch_type: str, key: str, farm_reasons: list, rca_hint: str = None, aod_reasons: list = None) -> str:
+    """Generate plain English explanation (legacy compat)."""
+    analysis = generate_asset_analysis(mismatch_type, key, farm_reasons, rca_hint, aod_reasons)
+    return f"{analysis['headline']}. {analysis['farm_detail']}. {analysis['aod_detail']}."
 
 
 def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> dict:
@@ -957,21 +977,29 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         aod_matched = find_match(key, aod_shadows)
         if aod_matched:
             aod_key_reasons = get_aod_reasons(aod_matched or key)
+            asset_analysis = generate_asset_analysis('matched_shadow', key, reasons, rca, aod_key_reasons)
             analysis['matched_shadows'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': aod_key_reasons,
                 'aod_admission': get_aod_admission(aod_matched or key),
                 'rca_hint': rca,
+                'headline': asset_analysis['headline'],
+                'farm_detail': asset_analysis['farm_detail'],
+                'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('matched_shadow', key, reasons, rca, aod_reasons=aod_key_reasons),
             })
         else:
+            asset_analysis = generate_asset_analysis('shadow_missed', key, reasons, rca, [])
             analysis['missed_shadows'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': [],
                 'aod_admission': None,
                 'rca_hint': rca,
+                'headline': asset_analysis['headline'],
+                'farm_detail': asset_analysis['farm_detail'],
+                'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('shadow_missed', key, reasons, rca),
             })
     
@@ -981,21 +1009,29 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         aod_matched = find_match(key, aod_zombies)
         if aod_matched:
             aod_key_reasons = get_aod_reasons(aod_matched or key)
+            asset_analysis = generate_asset_analysis('matched_zombie', key, reasons, rca, aod_key_reasons)
             analysis['matched_zombies'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': aod_key_reasons,
                 'aod_admission': get_aod_admission(aod_matched or key),
                 'rca_hint': rca,
+                'headline': asset_analysis['headline'],
+                'farm_detail': asset_analysis['farm_detail'],
+                'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('matched_zombie', key, reasons, rca, aod_reasons=aod_key_reasons),
             })
         else:
+            asset_analysis = generate_asset_analysis('zombie_missed', key, reasons, rca, [])
             analysis['missed_zombies'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': [],
                 'aod_admission': None,
                 'rca_hint': rca,
+                'headline': asset_analysis['headline'],
+                'farm_detail': asset_analysis['farm_detail'],
+                'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('zombie_missed', key, reasons, rca),
             })
     
@@ -1004,12 +1040,16 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             farm_reasons = expected_reasons.get(aod_key, [])
             aod_key_reasons = get_aod_reasons(aod_key)
             farm_class = 'zombie' if aod_key in farm_zombies else ('clean' if aod_key in farm_clean else 'unknown')
+            asset_analysis = generate_asset_analysis('false_positive_shadow', aod_key, farm_reasons, None, aod_key_reasons)
             analysis['false_positive_shadows'].append({
                 'asset_key': aod_key,
                 'farm_classification': farm_class,
                 'farm_reason_codes': farm_reasons,
                 'aod_reason_codes': aod_key_reasons,
                 'aod_admission': get_aod_admission(aod_key),
+                'headline': asset_analysis['headline'],
+                'farm_detail': asset_analysis['farm_detail'],
+                'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('false_positive_shadow', aod_key, farm_reasons, aod_reasons=aod_key_reasons),
             })
     
@@ -1018,12 +1058,16 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             farm_reasons = expected_reasons.get(aod_key, [])
             aod_key_reasons = get_aod_reasons(aod_key)
             farm_class = 'shadow' if aod_key in farm_shadows else ('clean' if aod_key in farm_clean else 'unknown')
+            asset_analysis = generate_asset_analysis('false_positive_zombie', aod_key, farm_reasons, None, aod_key_reasons)
             analysis['false_positive_zombies'].append({
                 'asset_key': aod_key,
                 'farm_classification': farm_class,
                 'farm_reason_codes': farm_reasons,
                 'aod_reason_codes': aod_key_reasons,
                 'aod_admission': get_aod_admission(aod_key),
+                'headline': asset_analysis['headline'],
+                'farm_detail': asset_analysis['farm_detail'],
+                'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('false_positive_zombie', aod_key, farm_reasons, aod_reasons=aod_key_reasons),
             })
     
