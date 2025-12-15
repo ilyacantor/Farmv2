@@ -272,7 +272,6 @@ class SnapshotCreateResponse(BaseModel):
 
 class SnapshotMetadata(BaseModel):
     snapshot_id: str
-    run_id: str
     snapshot_fingerprint: str
     tenant_id: str
     seed: int

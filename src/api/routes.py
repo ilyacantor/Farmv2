@@ -259,19 +259,18 @@ async def list_snapshots(
     async with pool.acquire() as conn:
         if tenant_id:
             rows = await conn.fetch(
-                "SELECT snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2",
+                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2",
                 tenant_id, limit
             )
         else:
             rows = await conn.fetch(
-                "SELECT snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT $1",
+                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT $1",
                 limit
             )
         
         return [
             SnapshotMetadata(
                 snapshot_id=row["snapshot_id"],
-                run_id=row["run_id"],
                 snapshot_fingerprint=row["snapshot_fingerprint"],
                 tenant_id=row["tenant_id"],
                 seed=row["seed"],
@@ -313,24 +312,21 @@ def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
         return None
 
 
-ZOMBIE_WINDOW_DAYS = 90
-
-
-def is_within_window(ts: Optional[str], reference: datetime) -> bool:
+def is_within_window(ts: Optional[str], window_days: int, reference: datetime) -> bool:
     dt = parse_timestamp(ts)
     if not dt:
         return False
-    return (reference - dt).days <= ZOMBIE_WINDOW_DAYS
+    return (reference - dt).days <= window_days
 
 
-def is_stale(ts: Optional[str], reference: datetime) -> bool:
+def is_stale(ts: Optional[str], window_days: int, reference: datetime) -> bool:
     dt = parse_timestamp(ts)
     if not dt:
         return False
-    return (reference - dt).days > ZOMBIE_WINDOW_DAYS
+    return (reference - dt).days > window_days
 
 
-def analyze_snapshot_for_expectations(snapshot: dict) -> FarmExpectations:
+def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> FarmExpectations:
     meta = snapshot.get('meta', {})
     planes = snapshot.get('planes', {})
     reference = parse_timestamp(meta.get('created_at')) or datetime.utcnow()
@@ -366,9 +362,9 @@ def analyze_snapshot_for_expectations(snapshot: dict) -> FarmExpectations:
         
         ts = obs.get('observed_at')
         if ts:
-            if is_within_window(ts, reference):
+            if is_within_window(ts, window_days, reference):
                 candidates[key]['activity_present'] = True
-            elif is_stale(ts, reference):
+            elif is_stale(ts, window_days, reference):
                 candidates[key]['stale_timestamps'].append(ts)
     
     idp_objects = planes.get('idp', {}).get('objects', [])
@@ -389,9 +385,9 @@ def analyze_snapshot_for_expectations(snapshot: dict) -> FarmExpectations:
         if ts and matched_keys:
             for key in matched_keys:
                 cand = candidates[key]
-                if is_within_window(ts, reference):
+                if is_within_window(ts, window_days, reference):
                     cand['activity_present'] = True
-                elif is_stale(ts, reference):
+                elif is_stale(ts, window_days, reference):
                     cand['stale_timestamps'].append(ts)
     
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])
@@ -765,139 +761,3 @@ async def check_aod_run_status(
                 status=AODRunStatusEnum.AOD_ERROR,
                 message=f"Could not reach AOD: {str(e)}"
             )
-
-
-def compute_expected_zombies_v0(snapshot_data: dict) -> list[str]:
-    """
-    Zombie v0 Grader: Compute expected zombie asset_ids from snapshot data.
-    
-    Rule: zombie = exists_in_sor AND NOT activity_in_window
-    - exists_in_sor = present in IdP or CMDB (by asset_id)
-    - activity_in_window = observed_at within 90 days of snapshot creation
-    """
-    meta = snapshot_data.get('meta', {})
-    planes = snapshot_data.get('planes', {})
-    
-    created_at_str = meta.get('created_at', '')
-    reference = parse_timestamp(created_at_str) or datetime.utcnow()
-    
-    sor_asset_ids = set()
-    idp_objects = planes.get('idp', {}).get('objects', [])
-    for obj in idp_objects:
-        asset_id = obj.get('asset_id')
-        if asset_id:
-            sor_asset_ids.add(asset_id)
-    
-    cmdb_cis = planes.get('cmdb', {}).get('cis', []) or planes.get('cmdb', {}).get('config_items', [])
-    for ci in cmdb_cis:
-        asset_id = ci.get('asset_id')
-        if asset_id:
-            sor_asset_ids.add(asset_id)
-    
-    active_asset_ids = set()
-    observations = planes.get('discovery', {}).get('observations', [])
-    for obs in observations:
-        asset_id = obs.get('asset_id')
-        observed_at = obs.get('observed_at')
-        if asset_id and observed_at:
-            if is_within_window(observed_at, reference):
-                active_asset_ids.add(asset_id)
-    
-    zombie_asset_ids = sor_asset_ids - active_asset_ids
-    return sorted(list(zombie_asset_ids))
-
-
-@router.get("/v0/grade/zombies")
-async def grade_zombies_v0(
-    run_id: str = Query(..., description="Run ID to grade"),
-    aod_url: Optional[str] = Query(None, description="AOD base URL (uses AOD_BASE_URL env if not provided)")
-):
-    """
-    Zombie v0 Grader - Walled off from existing reconciliation logic.
-    Compares Farm expected zombies vs AOD reported zombies by asset_id only.
-    Uses fixed 90-day activity window.
-    """
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT snapshot_json FROM snapshots WHERE run_id = $1 LIMIT 1",
-            run_id
-        )
-        if not row:
-            raise HTTPException(status_code=404, detail=f"No snapshot found for run_id={run_id}")
-        
-        snapshot_data = json.loads(row["snapshot_json"])
-    
-    expected_zombies = compute_expected_zombies_v0(snapshot_data)
-    
-    if not aod_url:
-        aod_url = os.environ.get("AOD_URL") or os.environ.get("AOD_BASE_URL", "")
-    
-    if not aod_url:
-        raise HTTPException(status_code=400, detail="AOD_BASE_URL not configured")
-    
-    aod_url = aod_url.rstrip("/")
-    aod_secret = os.environ.get("AOD_SHARED_SECRET", "")
-    
-    headers = {}
-    if aod_secret:
-        headers["Authorization"] = f"Bearer {aod_secret}"
-    
-    reported_zombies = []
-    aod_error = None
-    
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            resp = await client.get(
-                f"{aod_url}/v0/zombies",
-                params={"run_id": run_id, "window_days": ZOMBIE_WINDOW_DAYS},
-                headers=headers
-            )
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                reported_zombies = data.get("zombie_asset_ids", []) or data.get("zombies", []) or []
-                if isinstance(reported_zombies, list):
-                    reported_zombies = [z.get("asset_id") if isinstance(z, dict) else z for z in reported_zombies]
-                    reported_zombies = [z for z in reported_zombies if z]
-            elif resp.status_code == 404:
-                aod_error = f"AOD endpoint not found (404)"
-            else:
-                aod_error = f"AOD returned {resp.status_code}: {resp.text[:200]}"
-                
-        except httpx.RequestError as e:
-            aod_error = f"Could not reach AOD: {str(e)}"
-    
-    expected_set = set(expected_zombies)
-    reported_set = set(reported_zombies)
-    
-    overlap = expected_set & reported_set
-    missing = expected_set - reported_set
-    extra = reported_set - expected_set
-    
-    passed = (missing == set() and extra == set()) if aod_error is None else False
-    
-    return {
-        "run_id": run_id,
-        "window_days": ZOMBIE_WINDOW_DAYS,
-        "aod_url": aod_url,
-        "result": "PASS" if passed else "FAIL",
-        "aod_error": aod_error,
-        "expected": {
-            "count": len(expected_zombies),
-            "asset_ids": expected_zombies
-        },
-        "reported": {
-            "count": len(reported_zombies),
-            "asset_ids": sorted(reported_zombies)
-        },
-        "comparison": {
-            "overlap_count": len(overlap),
-            "overlap_asset_ids": sorted(list(overlap)),
-            "missing_count": len(missing),
-            "missing_asset_ids": sorted(list(missing)),
-            "extra_count": len(extra),
-            "extra_asset_ids": sorted(list(extra))
-        }
-    }

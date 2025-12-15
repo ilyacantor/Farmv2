@@ -64,9 +64,6 @@
             <button id="tabConfig" onclick="switchTab('config')" class="pb-3 px-1 font-medium text-sm tab-inactive transition-colors">
                 Configuration
             </button>
-            <button id="tabZombieV0" onclick="switchTab('zombiev0')" class="pb-3 px-1 font-medium text-sm tab-inactive transition-colors">
-                Zombie v0 Grader
-            </button>
         </nav>
 
         <div id="testingTab">
@@ -144,46 +141,6 @@
                         <div id="configSnapshotsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-200px)] overflow-y-auto">
                             <div class="text-slate-500 text-center py-12">Loading snapshots...</div>
                         </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div id="zombiev0Tab" class="hidden">
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
-                    <h2 class="text-lg font-semibold text-cyan-400 mb-4">Zombie v0 Grader</h2>
-                    
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-xs font-medium text-slate-400 mb-1">Tenant</label>
-                            <select id="zombieV0Tenant" onchange="updateZombieV0RunIds()"
-                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                <option value="">Select tenant...</option>
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label class="block text-xs font-medium text-slate-400 mb-1">Run ID</label>
-                            <select id="zombieV0RunId"
-                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                <option value="">Select run...</option>
-                            </select>
-                        </div>
-                        
-                        <button onclick="gradeZombieV0()" id="gradeZombieV0Btn"
-                            class="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 purple-glow">
-                            Grade Zombie v0
-                        </button>
-                    </div>
-                </div>
-
-                <div class="bg-slate-800/60 rounded-xl border border-slate-700">
-                    <div class="p-4 border-b border-slate-700">
-                        <h2 class="text-lg font-semibold text-purple-400">Grading Results</h2>
-                    </div>
-                    <div id="zombieV0Results" class="p-4">
-                        <div class="text-slate-500 text-center py-8">Enter parameters and click "Grade Zombie v0" to see results</div>
                     </div>
                 </div>
             </div>
@@ -315,30 +272,19 @@
         function switchTab(tab) {
             const testingTab = document.getElementById('testingTab');
             const configTab = document.getElementById('configTab');
-            const zombiev0Tab = document.getElementById('zombiev0Tab');
             const tabTesting = document.getElementById('tabTesting');
             const tabConfig = document.getElementById('tabConfig');
-            const tabZombieV0 = document.getElementById('tabZombieV0');
-            
-            const inactiveClass = 'pb-3 px-1 font-medium text-sm tab-inactive transition-colors';
-            const activeClass = 'pb-3 px-1 font-medium text-sm tab-active transition-colors';
-            
-            testingTab.classList.add('hidden');
-            configTab.classList.add('hidden');
-            zombiev0Tab.classList.add('hidden');
-            tabTesting.className = inactiveClass;
-            tabConfig.className = inactiveClass;
-            tabZombieV0.className = inactiveClass;
             
             if (tab === 'testing') {
                 testingTab.classList.remove('hidden');
-                tabTesting.className = activeClass;
-            } else if (tab === 'config') {
+                configTab.classList.add('hidden');
+                tabTesting.className = 'pb-3 px-1 font-medium text-sm tab-active transition-colors';
+                tabConfig.className = 'pb-3 px-1 font-medium text-sm tab-inactive transition-colors';
+            } else {
+                testingTab.classList.add('hidden');
                 configTab.classList.remove('hidden');
-                tabConfig.className = activeClass;
-            } else if (tab === 'zombiev0') {
-                zombiev0Tab.classList.remove('hidden');
-                tabZombieV0.className = activeClass;
+                tabTesting.className = 'pb-3 px-1 font-medium text-sm tab-inactive transition-colors';
+                tabConfig.className = 'pb-3 px-1 font-medium text-sm tab-active transition-colors';
             }
         }
 
@@ -1070,108 +1016,7 @@
             });
         });
 
-        let zombieV0SnapshotsCache = [];
-        
-        async function populateZombieV0Tenants() {
-            const tenantSelect = document.getElementById('zombieV0Tenant');
-            const tenants = [...new Set(snapshotsCache.map(s => s.tenant_id))].sort();
-            tenantSelect.innerHTML = '<option value="">Select tenant...</option>' + 
-                tenants.map(t => `<option value="${t}">${t}</option>`).join('');
-            zombieV0SnapshotsCache = snapshotsCache;
-        }
-        
-        function updateZombieV0RunIds() {
-            const tenant = document.getElementById('zombieV0Tenant').value;
-            const runSelect = document.getElementById('zombieV0RunId');
-            
-            if (!tenant) {
-                runSelect.innerHTML = '<option value="">Select run...</option>';
-                return;
-            }
-            
-            const filtered = zombieV0SnapshotsCache.filter(s => s.tenant_id === tenant);
-            runSelect.innerHTML = '<option value="">Select run...</option>' + 
-                filtered.map(s => `<option value="${s.run_id || s.snapshot_id}">${s.snapshot_id.slice(0,8)} (seed:${s.seed})</option>`).join('');
-        }
-        
-        async function gradeZombieV0() {
-            const runId = document.getElementById('zombieV0RunId').value;
-            const resultsContainer = document.getElementById('zombieV0Results');
-            const btn = document.getElementById('gradeZombieV0Btn');
-            
-            if (!runId) {
-                resultsContainer.innerHTML = '<div class="text-red-400 text-center py-4">Please select a Run</div>';
-                return;
-            }
-            
-            btn.disabled = true;
-            btn.textContent = 'Grading...';
-            resultsContainer.innerHTML = '<div class="text-slate-400 text-center py-8">Loading...</div>';
-            
-            try {
-                const params = new URLSearchParams({ run_id: runId });
-                
-                const response = await fetch(`/v0/grade/zombies?${params}`);
-                const data = await response.json();
-                
-                if (!response.ok) {
-                    resultsContainer.innerHTML = `<div class="text-red-400 text-center py-4">${data.detail || 'Failed to grade'}</div>`;
-                    return;
-                }
-                
-                const resultClass = data.result === 'PASS' ? 'status-pass' : 'status-fail';
-                const resultIcon = data.result === 'PASS' 
-                    ? '<svg class="w-5 h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
-                    : '<svg class="w-5 h-5 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>';
-                
-                const renderKeyList = (title, count, keys, colorClass) => `
-                    <div class="mb-4">
-                        <div class="text-sm font-medium ${colorClass} mb-1">${title}: ${count}</div>
-                        <div class="bg-slate-900/60 rounded-lg p-2 max-h-32 overflow-y-auto text-xs text-slate-300">
-                            ${keys.length > 0 ? keys.map(k => `<div class="py-0.5">${k}</div>`).join('') : '<div class="text-slate-500">None</div>'}
-                        </div>
-                    </div>
-                `;
-                
-                resultsContainer.innerHTML = `
-                    <div class="space-y-4">
-                        <div class="flex items-center justify-between">
-                            <span class="px-4 py-2 rounded-lg font-bold text-lg border ${resultClass}">
-                                ${resultIcon}${data.result}
-                            </span>
-                            <span class="text-xs text-slate-500">Run: ${data.run_id}</span>
-                        </div>
-                        
-                        ${data.aod_error ? `
-                            <div class="bg-red-900/40 border border-red-700 text-red-300 px-4 py-3 rounded-lg text-sm">
-                                <span class="font-medium">AOD Error:</span> ${data.aod_error}
-                            </div>
-                        ` : ''}
-                        
-                        <div class="grid grid-cols-2 gap-4">
-                            ${renderKeyList('Expected Zombies', data.expected?.count || 0, data.expected?.asset_ids || [], 'text-cyan-400')}
-                            ${renderKeyList('Reported Zombies', data.reported?.count || 0, data.reported?.asset_ids || [], 'text-purple-400')}
-                        </div>
-                        
-                        <div class="border-t border-slate-700 pt-4">
-                            <h4 class="text-sm font-semibold text-slate-300 mb-3">Comparison</h4>
-                            <div class="grid grid-cols-3 gap-3">
-                                ${renderKeyList('Overlap', data.comparison?.overlap_count || 0, data.comparison?.overlap_asset_ids || [], 'text-green-400')}
-                                ${renderKeyList('Missing', data.comparison?.missing_count || 0, data.comparison?.missing_asset_ids || [], 'text-yellow-400')}
-                                ${renderKeyList('Extra', data.comparison?.extra_count || 0, data.comparison?.extra_asset_ids || [], 'text-red-400')}
-                            </div>
-                        </div>
-                    </div>
-                `;
-            } catch (e) {
-                resultsContainer.innerHTML = `<div class="text-red-400 text-center py-4">Error: ${e.message}</div>`;
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Grade Zombie v0';
-            }
-        }
-
-        loadAllData().then(() => populateZombieV0Tenants());
+        loadAllData();
         addLogEntry('Farm Console loaded', 'info');
     </script>
 </body>
