@@ -209,7 +209,7 @@ Farm generates 7 independent planes:
 
 ### Reconciliation API (for AOD comparison)
 - `POST /api/reconcile` - Compare AOD results against Farm expectations (manual)
-  - Request: `{snapshot_id, aod_run_id, tenant_id, aod_summary: {assets_admitted, findings, zombies, shadows}, aod_lists: {zombie_assets, shadow_assets, top_findings}}`
+  - Request: `{snapshot_id, aod_run_id, tenant_id, aod_summary, aod_lists}`
   - Response: `{reconciliation_id, status: PASS/WARN/FAIL, report_text, farm_expectations}`
 - `POST /api/reconcile/auto` - One-click auto-reconciliation (fetches from AOD)
   - Request: `{snapshot_id, tenant_id}`
@@ -219,6 +219,61 @@ Farm generates 7 independent planes:
   - Errors: 400 (not configured), 404 (no AOD run), 502 (AOD unreachable)
 - `GET /api/reconcile?snapshot_id=...` - List reconciliation metadata
 - `GET /api/reconcile/{id}` - Get full reconciliation report
+- `GET /api/reconcile/{id}/analysis` - Get detailed side-by-side analysis with plain English explanations
+
+## Data Flow Architecture
+
+### Ownership Boundaries (Hard Rule)
+- **AOD never consumes Farm expected/rca data** - AOD only emits its own "actual + reasons"
+- **Farm owns reconciliation UI** - has expected + actual + diffs
+- **AOD owns structured actual output** - status + reason codes + admission outcome
+
+### AOD Output Contract (what AOD publishes)
+```json
+{
+  "aod_summary": {
+    "observations_in": 100,
+    "candidates_out": 50,
+    "assets_admitted": 45,
+    "shadow_count": 3,
+    "zombie_count": 4
+  },
+  "aod_lists": {
+    "shadow_assets": ["app1.com", "app2.io"],
+    "zombie_assets": ["legacy-tool", "old-saas"],
+    "actual_reason_codes": {
+      "app1.com": ["HAS_DISCOVERY", "NO_IDP", "HAS_FINANCE"],
+      "legacy-tool": ["HAS_IDP", "HAS_CMDB", "STALE_ACTIVITY"]
+    },
+    "admission_actual": {
+      "app1.com": "rejected",
+      "legacy-tool": "rejected",
+      "known-app": "admitted"
+    }
+  }
+}
+```
+
+### Farm Expected Contract (what Farm computes)
+```json
+{
+  "shadow_expected": [{"asset_key": "app1.com"}],
+  "zombie_expected": [{"asset_key": "legacy-tool"}],
+  "clean_expected": [{"asset_key": "known-app"}],
+  "expected_reasons": {
+    "app1.com": ["HAS_DISCOVERY", "NO_IDP", "NO_CMDB", "HAS_FINANCE"]
+  },
+  "expected_admission": {"app1.com": "rejected"},
+  "expected_rca_hint": {"app1.com": "UNGOVERNED_WITH_SPEND"}
+}
+```
+
+### Farm Computes (reconciliation)
+- `matched_shadows`, `matched_zombies` - AOD got it right
+- `missed_shadows`, `missed_zombies` - AOD false negatives
+- `false_positive_shadows`, `false_positive_zombies` - AOD false positives
+- `rca_code` per mismatch - deterministic plain-English explanation
+- Side-by-side: `farm_reason_codes` vs `aod_reason_codes` per asset
 
 ## Schema Version
 
