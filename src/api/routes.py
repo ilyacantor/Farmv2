@@ -793,22 +793,41 @@ EXPLANATION_TEMPLATES = {
 }
 
 
-def get_explanation(mismatch_type: str, key: str, reason_codes: list, rca_hint: str = None) -> str:
-    """Generate plain English explanation for a mismatch."""
+def get_explanation(mismatch_type: str, key: str, farm_reasons: list, rca_hint: str = None, aod_reasons: list = None) -> str:
+    """Generate plain English explanation for a mismatch, referencing both Farm and AOD reasoning."""
     templates = EXPLANATION_TEMPLATES.get(mismatch_type, {})
+    aod_reasons = aod_reasons or []
     
+    base_explanation = ""
     if rca_hint and rca_hint in templates:
-        return templates[rca_hint].format(key=key)
+        base_explanation = templates[rca_hint].format(key=key)
+    else:
+        code_combo = '+'.join(sorted(farm_reasons[:3]))
+        if code_combo in templates:
+            base_explanation = templates[code_combo].format(key=key)
+        else:
+            for code in farm_reasons:
+                if code in templates:
+                    base_explanation = templates[code].format(key=key)
+                    break
+        if not base_explanation:
+            base_explanation = templates.get('default', f"Mismatch on {key}").format(key=key)
     
-    code_combo = '+'.join(sorted(reason_codes[:3]))
-    if code_combo in templates:
-        return templates[code_combo].format(key=key)
+    if aod_reasons and mismatch_type.startswith('false_positive'):
+        aod_codes_str = ', '.join(aod_reasons[:3])
+        base_explanation += f" AOD flagged it because it saw: {aod_codes_str}."
+        
+        missing_from_aod = [c for c in farm_reasons if c not in aod_reasons]
+        if missing_from_aod:
+            base_explanation += f" But AOD missed: {', '.join(missing_from_aod[:2])}."
     
-    for code in reason_codes:
-        if code in templates:
-            return templates[code].format(key=key)
+    elif aod_reasons and mismatch_type.endswith('_missed'):
+        pass
     
-    return templates.get('default', f"Mismatch on {key}").format(key=key)
+    elif not aod_reasons and mismatch_type.endswith('_missed'):
+        base_explanation += " AOD did not provide reason codes for this asset."
+    
+    return base_explanation
 
 
 def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> dict:
@@ -931,27 +950,29 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     for aod_key in aod_shadows:
         if not find_match(aod_key, farm_shadows):
             farm_reasons = expected_reasons.get(aod_key, [])
+            aod_key_reasons = get_aod_reasons(aod_key)
             farm_class = 'zombie' if aod_key in farm_zombies else ('clean' if aod_key in farm_clean else 'unknown')
             analysis['false_positive_shadows'].append({
                 'asset_key': aod_key,
                 'farm_classification': farm_class,
                 'farm_reason_codes': farm_reasons,
-                'aod_reason_codes': get_aod_reasons(aod_key),
+                'aod_reason_codes': aod_key_reasons,
                 'aod_admission': get_aod_admission(aod_key),
-                'explanation': get_explanation('false_positive_shadow', aod_key, farm_reasons),
+                'explanation': get_explanation('false_positive_shadow', aod_key, farm_reasons, aod_reasons=aod_key_reasons),
             })
     
     for aod_key in aod_zombies:
         if not find_match(aod_key, farm_zombies):
             farm_reasons = expected_reasons.get(aod_key, [])
+            aod_key_reasons = get_aod_reasons(aod_key)
             farm_class = 'shadow' if aod_key in farm_shadows else ('clean' if aod_key in farm_clean else 'unknown')
             analysis['false_positive_zombies'].append({
                 'asset_key': aod_key,
                 'farm_classification': farm_class,
                 'farm_reason_codes': farm_reasons,
-                'aod_reason_codes': get_aod_reasons(aod_key),
+                'aod_reason_codes': aod_key_reasons,
                 'aod_admission': get_aod_admission(aod_key),
-                'explanation': get_explanation('false_positive_zombie', aod_key, farm_reasons),
+                'explanation': get_explanation('false_positive_zombie', aod_key, farm_reasons, aod_reasons=aod_key_reasons),
             })
     
     total_expected = len(farm_shadows) + len(farm_zombies)
