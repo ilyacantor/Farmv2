@@ -375,13 +375,13 @@
             }
         }
         
-        function parseReportSummary(reportText) {
-            const result = { aodZombies: '-', farmZombies: '-', aodShadows: '-', farmShadows: '-' };
-            const zombieMatch = reportText.match(/Zombie count: \w+ \(AOD (\d+) [<>=] Farm (\d+)\)/);
-            const shadowMatch = reportText.match(/Shadow count: \w+ \(AOD (\d+) [<>=] Farm (\d+)\)/);
-            if (zombieMatch) { result.aodZombies = zombieMatch[1]; result.farmZombies = zombieMatch[2]; }
-            if (shadowMatch) { result.aodShadows = shadowMatch[1]; result.farmShadows = shadowMatch[2]; }
-            return result;
+        function getRecCounts(rec) {
+            return {
+                aodZombies: rec.aod_zombies ?? '-',
+                farmZombies: rec.farm_zombies ?? '-',
+                aodShadows: rec.aod_shadows ?? '-',
+                farmShadows: rec.farm_shadows ?? '-'
+            };
         }
 
         function renderReconciliationsList() {
@@ -399,7 +399,7 @@
             container.innerHTML = filtered.map(rec => {
                 const created = new Date(rec.created_at);
                 const timeAgo = getTimeAgo(created);
-                const summary = parseReportSummary(rec.report_text || '');
+                const counts = getRecCounts(rec);
                 
                 return `
                     <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
@@ -410,8 +410,8 @@
                                     <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
                                 </div>
                                 <div class="flex items-center gap-4 text-xs mt-1">
-                                    <span class="text-slate-400">Zombies: <span class="text-red-400">${summary.aodZombies}/${summary.farmZombies}</span></span>
-                                    <span class="text-slate-400">Shadows: <span class="text-purple-400">${summary.aodShadows}/${summary.farmShadows}</span></span>
+                                    <span class="text-slate-400">Zombies: <span class="text-red-400">${counts.aodZombies}/${counts.farmZombies}</span></span>
+                                    <span class="text-slate-400">Shadows: <span class="text-purple-400">${counts.aodShadows}/${counts.farmShadows}</span></span>
                                 </div>
                                 <div class="text-xs text-slate-600 mt-1">
                                     ${rec.snapshot_id.substring(0, 8)} | AOD: ${rec.aod_run_id || 'N/A'}
@@ -564,10 +564,10 @@
                 const analysis = analysisData.analysis || {};
                 
                 const summary = analysis.summary || {};
-                const farmZombieCount = summary.farm_zombies || rec.farm_expectations?.expected_zombies || 0;
-                const farmShadowCount = summary.farm_shadows || rec.farm_expectations?.expected_shadows || 0;
-                const aodZombieCount = summary.aod_zombies || rec.aod_summary?.zombie_count || 0;
-                const aodShadowCount = summary.aod_shadows || rec.aod_summary?.shadow_count || 0;
+                const farmZombieCount = summary.farm_zombies ?? 0;
+                const farmShadowCount = summary.farm_shadows ?? 0;
+                const aodZombieCount = (analysis.matched_zombies?.length || 0) + (analysis.false_positive_zombies?.length || 0);
+                const aodShadowCount = (analysis.matched_shadows?.length || 0) + (analysis.false_positive_shadows?.length || 0);
                 
                 const zombieAlign = {
                     matched: (analysis.matched_zombies || []).map(a => a.asset_key),
