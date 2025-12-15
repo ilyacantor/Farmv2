@@ -1,10 +1,9 @@
 import json
 import os
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
-import aiosqlite
+import asyncpg
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -34,21 +33,88 @@ from collections import defaultdict
 
 router = APIRouter()
 
+_db_pool: Optional[asyncpg.Pool] = None
+
+
+def get_db_url() -> str:
+    """Get database URL. SUPABASE_DB_URL takes priority, else DATABASE_URL.
+    Fatal if neither is set (or IGNORE_REPLIT_DB=true and only REPLIT vars exist).
+    """
+    ignore_replit = os.environ.get("IGNORE_REPLIT_DB", "").lower() == "true"
+    
+    supabase_url = os.environ.get("SUPABASE_DB_URL", "")
+    database_url = os.environ.get("DATABASE_URL", "")
+    
+    if supabase_url:
+        return supabase_url
+    
+    if database_url:
+        if ignore_replit and "replit" in database_url.lower():
+            raise RuntimeError(
+                "FATAL: IGNORE_REPLIT_DB=true but only Replit DATABASE_URL found. "
+                "Set SUPABASE_DB_URL or unset IGNORE_REPLIT_DB."
+            )
+        return database_url
+    
+    raise RuntimeError(
+        "FATAL: No database URL configured. Set SUPABASE_DB_URL or DATABASE_URL."
+    )
+
+
+def report_db_provider():
+    """Log which DB provider is being used at startup."""
+    supabase_url = os.environ.get("SUPABASE_DB_URL", "")
+    database_url = os.environ.get("DATABASE_URL", "")
+    
+    if supabase_url:
+        print("[DB] Using SUPABASE_DB_URL (Supabase Postgres)")
+    elif database_url:
+        if "replit" in database_url.lower() or "neon" in database_url.lower():
+            print("[DB] Using DATABASE_URL (Replit/Neon Postgres)")
+        else:
+            print("[DB] Using DATABASE_URL (external Postgres)")
+    else:
+        print("[DB] WARNING: No database URL configured!")
+
+
+async def get_pool() -> asyncpg.Pool:
+    global _db_pool
+    if _db_pool is None:
+        db_url = get_db_url()
+        _db_pool = await asyncpg.create_pool(db_url, min_size=1, max_size=10)
+    return _db_pool
+
 
 def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profile: str, realism_profile: str) -> str:
     data = f"{tenant_id}:{seed}:{scale}:{enterprise_profile}:{realism_profile}"
     return hashlib.sha256(data.encode()).hexdigest()[:16]
 
-DB_PATH = "data/farm.db"
-
 
 async def init_db():
-    Path("data").mkdir(exist_ok=True)
+    """Initialize database with runs and snapshots tables (Postgres)."""
+    report_db_provider()
+    pool = await get_pool()
     
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS runs (
+                run_id TEXT PRIMARY KEY,
+                run_fingerprint TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                seed INTEGER NOT NULL,
+                schema_version TEXT NOT NULL,
+                enterprise_profile TEXT NOT NULL,
+                realism_profile TEXT NOT NULL,
+                scale TEXT NOT NULL,
+                tenant_id TEXT NOT NULL
+            )
+        """)
+        
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS snapshots (
                 snapshot_id TEXT PRIMARY KEY,
+                run_id TEXT NOT NULL REFERENCES runs(run_id),
+                sequence INTEGER DEFAULT 0,
                 snapshot_fingerprint TEXT NOT NULL,
                 tenant_id TEXT NOT NULL,
                 seed INTEGER NOT NULL,
@@ -60,20 +126,15 @@ async def init_db():
                 snapshot_json TEXT NOT NULL
             )
         """)
-        async with db.execute("PRAGMA table_info(snapshots)") as cursor:
-            columns = [row[1] for row in await cursor.fetchall()]
-            if "snapshot_fingerprint" not in columns:
-                await db.execute("ALTER TABLE snapshots ADD COLUMN snapshot_fingerprint TEXT DEFAULT ''")
-                async with db.execute("SELECT snapshot_id, tenant_id, seed, scale, enterprise_profile, realism_profile FROM snapshots") as cursor2:
-                    rows = await cursor2.fetchall()
-                    for row in rows:
-                        fp = compute_fingerprint(row[1], row[2], row[3], row[4], row[5])
-                        await db.execute("UPDATE snapshots SET snapshot_fingerprint = ? WHERE snapshot_id = ?", (fp, row[0]))
         
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_fingerprint ON snapshots(snapshot_fingerprint)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_tenant ON snapshots(tenant_id)")
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at DESC)")
-        await db.execute("""
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_fingerprint ON snapshots(snapshot_fingerprint)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_tenant ON snapshots(tenant_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at DESC)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_run ON snapshots(run_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_fingerprint ON runs(run_fingerprint)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_tenant ON runs(tenant_id)")
+        
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS reconciliations (
                 reconciliation_id TEXT PRIMARY KEY,
                 snapshot_id TEXT NOT NULL,
@@ -86,13 +147,12 @@ async def init_db():
                 status TEXT NOT NULL
             )
         """)
-        await db.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_snapshot ON reconciliations(snapshot_id)")
-        await db.commit()
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_snapshot ON reconciliations(snapshot_id)")
 
 
 @router.post("/api/snapshots", response_model=SnapshotCreateResponse)
 async def create_snapshot(request: SnapshotRequest):
-    await init_db()
+    pool = await get_pool()
     
     fingerprint = compute_fingerprint(
         request.tenant_id,
@@ -102,16 +162,25 @@ async def create_snapshot(request: SnapshotRequest):
         request.realism_profile.value,
     )
     
-    duplicate_of_snapshot_id = None
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT snapshot_id FROM snapshots WHERE snapshot_fingerprint = ? ORDER BY created_at ASC LIMIT 1",
-            (fingerprint,)
-        ) as cursor:
-            row = await cursor.fetchone()
-            if row:
-                duplicate_of_snapshot_id = row["snapshot_id"]
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT snapshot_id, tenant_id, created_at, schema_version FROM snapshots WHERE snapshot_fingerprint = $1 ORDER BY created_at ASC LIMIT 1",
+            fingerprint
+        )
+        
+        if existing:
+            return SnapshotCreateResponse(
+                snapshot_id=existing["snapshot_id"],
+                snapshot_fingerprint=fingerprint,
+                tenant_id=existing["tenant_id"],
+                created_at=existing["created_at"],
+                schema_version=existing["schema_version"],
+                duplicate_of_snapshot_id=existing["snapshot_id"],
+            )
+    
+    run_id = str(uuid.uuid4())
+    unique_snapshot_id = str(uuid.uuid4())
+    created_at = datetime.utcnow().isoformat() + "Z"
     
     generator = EnterpriseGenerator(
         tenant_id=request.tenant_id,
@@ -122,28 +191,24 @@ async def create_snapshot(request: SnapshotRequest):
     )
     
     snapshot = generator.generate()
-    
-    unique_snapshot_id = str(uuid.uuid4())
     snapshot.meta.snapshot_id = unique_snapshot_id
     snapshot_dict = snapshot.model_dump()
     
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
-            INSERT INTO snapshots (snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            unique_snapshot_id,
-            fingerprint,
-            snapshot.meta.tenant_id,
-            snapshot.meta.seed,
-            snapshot.meta.scale.value,
-            snapshot.meta.enterprise_profile.value,
-            snapshot.meta.realism_profile.value,
-            snapshot.meta.created_at,
-            SCHEMA_VERSION,
-            json.dumps(snapshot_dict),
-        ))
-        await db.commit()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("""
+                INSERT INTO runs (run_id, run_fingerprint, created_at, seed, schema_version, enterprise_profile, realism_profile, scale, tenant_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            """, run_id, fingerprint, created_at, request.seed, SCHEMA_VERSION,
+                request.enterprise_profile.value, request.realism_profile.value, request.scale.value, request.tenant_id)
+            
+            await conn.execute("""
+                INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            """, unique_snapshot_id, run_id, 0, fingerprint,
+                snapshot.meta.tenant_id, snapshot.meta.seed, snapshot.meta.scale.value,
+                snapshot.meta.enterprise_profile.value, snapshot.meta.realism_profile.value,
+                snapshot.meta.created_at, SCHEMA_VERSION, json.dumps(snapshot_dict))
     
     return SnapshotCreateResponse(
         snapshot_id=unique_snapshot_id,
@@ -151,41 +216,37 @@ async def create_snapshot(request: SnapshotRequest):
         tenant_id=snapshot.meta.tenant_id,
         created_at=snapshot.meta.created_at,
         schema_version=SCHEMA_VERSION,
-        duplicate_of_snapshot_id=duplicate_of_snapshot_id,
+        duplicate_of_snapshot_id=None,
     )
 
 
 @router.get("/api/snapshots/{snapshot_id}")
 async def get_snapshot(snapshot_id: str):
-    await init_db()
+    pool = await get_pool()
     
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT snapshot_json FROM snapshots WHERE snapshot_id = ?", (snapshot_id,)) as cursor:
-            row = await cursor.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Snapshot not found")
-            
-            return JSONResponse(
-                content=json.loads(row["snapshot_json"]),
-                media_type="application/json"
-            )
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+        return JSONResponse(
+            content=json.loads(row["snapshot_json"]),
+            media_type="application/json"
+        )
 
 
 @router.get("/api/snapshots/{snapshot_id}/expectations")
 async def get_snapshot_expectations(snapshot_id: str):
-    await init_db()
+    pool = await get_pool()
     
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT snapshot_json FROM snapshots WHERE snapshot_id = ?", (snapshot_id,)) as cursor:
-            row = await cursor.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Snapshot not found")
-            
-            snapshot = json.loads(row["snapshot_json"])
-            expectations = analyze_snapshot_for_expectations(snapshot)
-            return expectations.model_dump()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+        snapshot = json.loads(row["snapshot_json"])
+        expectations = analyze_snapshot_for_expectations(snapshot)
+        return expectations.model_dump()
 
 
 @router.get("/api/snapshots", response_model=list[SnapshotMetadata])
@@ -193,34 +254,34 @@ async def list_snapshots(
     tenant_id: Optional[str] = Query(None, description="Filter by tenant ID"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results")
 ):
-    await init_db()
+    pool = await get_pool()
     
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        
+    async with pool.acquire() as conn:
         if tenant_id:
-            query = "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?"
-            params = (tenant_id, limit)
+            rows = await conn.fetch(
+                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2",
+                tenant_id, limit
+            )
         else:
-            query = "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT ?"
-            params = (limit,)
+            rows = await conn.fetch(
+                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT $1",
+                limit
+            )
         
-        async with db.execute(query, params) as cursor:
-            rows = await cursor.fetchall()
-            return [
-                SnapshotMetadata(
-                    snapshot_id=row["snapshot_id"],
-                    snapshot_fingerprint=row["snapshot_fingerprint"],
-                    tenant_id=row["tenant_id"],
-                    seed=row["seed"],
-                    scale=row["scale"],
-                    enterprise_profile=row["enterprise_profile"],
-                    realism_profile=row["realism_profile"],
-                    created_at=row["created_at"],
-                    schema_version=row["schema_version"],
-                )
-                for row in rows
-            ]
+        return [
+            SnapshotMetadata(
+                snapshot_id=row["snapshot_id"],
+                snapshot_fingerprint=row["snapshot_fingerprint"],
+                tenant_id=row["tenant_id"],
+                seed=row["seed"],
+                scale=row["scale"],
+                enterprise_profile=row["enterprise_profile"],
+                realism_profile=row["realism_profile"],
+                created_at=row["created_at"],
+                schema_version=row["schema_version"],
+            )
+            for row in rows
+        ]
 
 
 def normalize_name(name: str) -> str:
@@ -457,15 +518,13 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
 
 @router.post("/api/reconcile", response_model=ReconcileResponse)
 async def create_reconciliation(request: ReconcileRequest):
-    await init_db()
+    pool = await get_pool()
     
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT snapshot_json FROM snapshots WHERE snapshot_id = ?", (request.snapshot_id,)) as cursor:
-            row = await cursor.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Snapshot not found")
-            snapshot = json.loads(row["snapshot_json"])
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", request.snapshot_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        snapshot = json.loads(row["snapshot_json"])
     
     farm_expectations = analyze_snapshot_for_expectations(snapshot)
     report_text, status = generate_reconcile_report(request.aod_summary, request.aod_lists, farm_expectations)
@@ -478,22 +537,13 @@ async def create_reconciliation(request: ReconcileRequest):
         "aod_lists": request.aod_lists.model_dump(),
     }
     
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
+    async with pool.acquire() as conn:
+        await conn.execute("""
             INSERT INTO reconciliations (reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, aod_payload_json, farm_expectations_json, report_text, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            reconciliation_id,
-            request.snapshot_id,
-            request.tenant_id,
-            request.aod_run_id,
-            created_at,
-            json.dumps(aod_payload),
-            json.dumps(farm_expectations.model_dump()),
-            report_text,
-            status.value,
-        ))
-        await db.commit()
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        """, reconciliation_id, request.snapshot_id, request.tenant_id, request.aod_run_id,
+            created_at, json.dumps(aod_payload), json.dumps(farm_expectations.model_dump()),
+            report_text, status.value)
     
     return ReconcileResponse(
         reconciliation_id=reconciliation_id,
@@ -513,61 +563,57 @@ async def list_reconciliations(
     snapshot_id: Optional[str] = Query(None, description="Filter by snapshot ID"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results")
 ):
-    await init_db()
+    pool = await get_pool()
     
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        
+    async with pool.acquire() as conn:
         if snapshot_id:
-            query = "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text FROM reconciliations WHERE snapshot_id = ? ORDER BY created_at DESC LIMIT ?"
-            params = (snapshot_id, limit)
+            rows = await conn.fetch(
+                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text FROM reconciliations WHERE snapshot_id = $1 ORDER BY created_at DESC LIMIT $2",
+                snapshot_id, limit
+            )
         else:
-            query = "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text FROM reconciliations ORDER BY created_at DESC LIMIT ?"
-            params = (limit,)
+            rows = await conn.fetch(
+                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text FROM reconciliations ORDER BY created_at DESC LIMIT $1",
+                limit
+            )
         
-        async with db.execute(query, params) as cursor:
-            rows = await cursor.fetchall()
-            return [
-                ReconcileMetadata(
-                    reconciliation_id=row["reconciliation_id"],
-                    snapshot_id=row["snapshot_id"],
-                    tenant_id=row["tenant_id"],
-                    aod_run_id=row["aod_run_id"],
-                    created_at=row["created_at"],
-                    status=row["status"],
-                    report_text=row["report_text"] or "",
-                )
-                for row in rows
-            ]
-
-
-@router.get("/api/reconcile/{reconciliation_id}", response_model=ReconcileResponse)
-async def get_reconciliation(reconciliation_id: str):
-    await init_db()
-    
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM reconciliations WHERE reconciliation_id = ?", (reconciliation_id,)) as cursor:
-            row = await cursor.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Reconciliation not found")
-            
-            aod_payload = json.loads(row["aod_payload_json"])
-            farm_expectations = json.loads(row["farm_expectations_json"])
-            
-            from src.models.planes import AODSummary, AODLists
-            
-            return ReconcileResponse(
+        return [
+            ReconcileMetadata(
                 reconciliation_id=row["reconciliation_id"],
                 snapshot_id=row["snapshot_id"],
                 tenant_id=row["tenant_id"],
                 aod_run_id=row["aod_run_id"],
                 created_at=row["created_at"],
-                status=ReconcileStatusEnum(row["status"]),
-                report_text=row["report_text"],
-                aod_summary=AODSummary(**aod_payload["aod_summary"]),
-                farm_expectations=FarmExpectations(**farm_expectations),
+                status=row["status"],
+                report_text=row["report_text"] or "",
             )
+            for row in rows
+        ]
+
+
+@router.get("/api/reconcile/{reconciliation_id}", response_model=ReconcileResponse)
+async def get_reconciliation(reconciliation_id: str):
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT * FROM reconciliations WHERE reconciliation_id = $1", reconciliation_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Reconciliation not found")
+        
+        aod_payload = json.loads(row["aod_payload_json"])
+        farm_expectations = json.loads(row["farm_expectations_json"])
+        
+        return ReconcileResponse(
+            reconciliation_id=row["reconciliation_id"],
+            snapshot_id=row["snapshot_id"],
+            tenant_id=row["tenant_id"],
+            aod_run_id=row["aod_run_id"],
+            created_at=row["created_at"],
+            status=ReconcileStatusEnum(row["status"]),
+            report_text=row["report_text"],
+            aod_summary=AODSummary(**aod_payload["aod_summary"]),
+            farm_expectations=FarmExpectations(**farm_expectations),
+        )
 
 
 @router.post("/api/reconcile/auto", response_model=AutoReconcileResponse)
@@ -579,101 +625,72 @@ async def auto_reconcile(request: AutoReconcileRequest):
     if not aod_url:
         raise HTTPException(
             status_code=400,
-            detail="Auto reconcile not configured. Set AOD_URL environment variable."
+            detail="AOD_URL or AOD_BASE_URL environment variable not configured. Cannot auto-reconcile."
         )
     
-    await init_db()
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT snapshot_id, tenant_id FROM snapshots WHERE snapshot_id = ?", (request.snapshot_id,)) as cursor:
-            row = await cursor.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="Snapshot not found")
-            if row["tenant_id"] != request.tenant_id:
-                raise HTTPException(status_code=400, detail="Tenant ID mismatch")
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", request.snapshot_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
     
     headers = {}
     if aod_secret:
-        headers["X-AOD-SECRET"] = aod_secret
+        headers["Authorization"] = f"Bearer {aod_secret}"
     
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            latest_url = f"{aod_url}/api/runs/latest"
-            latest_resp = await client.get(
-                latest_url,
-                params={"tenant_id": request.tenant_id, "snapshot_id": request.snapshot_id},
-                headers=headers
-            )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            status_url = f"{aod_url}/api/runs/latest"
+            params = {"snapshot_id": request.snapshot_id, "tenant_id": request.tenant_id}
+            status_resp = await client.get(status_url, params=params, headers=headers)
             
-            if latest_resp.status_code == 404:
+            if status_resp.status_code == 404:
                 raise HTTPException(
                     status_code=404,
-                    detail="No AOD run found for this snapshot yet. Run AOD first, then reconcile."
+                    detail=f"No AOD run found for snapshot_id={request.snapshot_id}"
                 )
-            
-            if latest_resp.status_code != 200:
+            elif status_resp.status_code != 200:
                 raise HTTPException(
                     status_code=502,
-                    detail=f"AOD returned error {latest_resp.status_code} when fetching latest run"
+                    detail=f"AOD returned status {status_resp.status_code}: {status_resp.text[:200]}"
                 )
             
-            try:
-                latest_data = latest_resp.json()
-            except Exception:
-                raise HTTPException(
-                    status_code=502,
-                    detail="AOD returned invalid JSON for latest run"
-                )
-            
-            aod_run_id = latest_data.get("run_id")
+            aod_run_data = status_resp.json()
+            aod_run_id = aod_run_data.get("run_id")
             if not aod_run_id:
                 raise HTTPException(
                     status_code=502,
-                    detail="AOD response missing run_id field"
+                    detail="AOD response missing run_id"
                 )
             
-            payload_url = f"{aod_url}/api/runs/{aod_run_id}/reconcile-payload"
-            payload_resp = await client.get(payload_url, headers=headers)
+            reconcile_url = f"{aod_url}/api/runs/{aod_run_id}/reconcile-payload"
+            reconcile_resp = await client.get(reconcile_url, headers=headers)
             
-            if payload_resp.status_code != 200:
+            if reconcile_resp.status_code != 200:
                 raise HTTPException(
                     status_code=502,
-                    detail=f"AOD returned error {payload_resp.status_code} when fetching reconcile payload"
+                    detail=f"Failed to fetch reconcile payload from AOD: {reconcile_resp.status_code}"
                 )
             
-            try:
-                payload_data = payload_resp.json()
-            except Exception:
-                raise HTTPException(
-                    status_code=502,
-                    detail="AOD returned invalid JSON for reconcile payload"
-                )
-    
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=502,
-            detail="AOD request timed out. Check if AOD is running and reachable."
-        )
-    except httpx.RequestError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"Cannot reach AOD: {str(e)}"
-        )
-    
-    summary_data = payload_data.get("summary", {})
-    lists_data = payload_data.get("lists", {})
+            payload = reconcile_resp.json()
+            
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Could not reach AOD at {aod_url}: {str(e)}"
+            )
     
     aod_summary = AODSummary(
-        assets_admitted=summary_data.get("assets_admitted", 0),
-        findings=summary_data.get("findings", 0),
-        zombies=summary_data.get("zombies", 0),
-        shadows=summary_data.get("shadows", 0),
+        assets_admitted=payload.get("assets_admitted", 0),
+        findings=payload.get("findings", 0),
+        zombies=payload.get("zombies", 0),
+        shadows=payload.get("shadows", 0),
     )
-    
     aod_lists = AODLists(
-        zombie_assets=lists_data.get("zombie_assets", []),
-        shadow_assets=lists_data.get("shadow_assets", []),
-        top_findings=lists_data.get("top_findings", []),
+        zombie_assets=payload.get("zombie_assets", []),
+        shadow_assets=payload.get("shadow_assets", []),
+        top_findings=payload.get("top_findings", []),
     )
     
     reconcile_request = ReconcileRequest(
@@ -690,16 +707,16 @@ async def auto_reconcile(request: AutoReconcileRequest):
         reconciliation_id=result.reconciliation_id,
         snapshot_id=result.snapshot_id,
         tenant_id=result.tenant_id,
-        aod_run_id=result.aod_run_id,
+        aod_run_id=aod_run_id,
         status=result.status,
         report_text=result.report_text,
     )
 
 
 @router.get("/api/aod/run-status", response_model=AODRunStatusResponse)
-async def get_aod_run_status(
+async def check_aod_run_status(
     snapshot_id: str = Query(..., description="Snapshot ID to check"),
-    tenant_id: str = Query(..., description="Tenant ID"),
+    tenant_id: str = Query(..., description="Tenant ID")
 ):
     aod_url = os.environ.get("AOD_URL") or os.environ.get("AOD_BASE_URL", "")
     aod_url = aod_url.rstrip("/")
@@ -708,59 +725,39 @@ async def get_aod_run_status(
     if not aod_url:
         return AODRunStatusResponse(
             status=AODRunStatusEnum.AOD_ERROR,
-            message="AOD not configured. Set AOD_URL or AOD_BASE_URL environment variable."
+            message="AOD_URL or AOD_BASE_URL not configured"
         )
     
     headers = {}
     if aod_secret:
-        headers["X-AOD-SECRET"] = aod_secret
+        headers["Authorization"] = f"Bearer {aod_secret}"
     
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            latest_url = f"{aod_url}/api/runs/latest"
-            resp = await client.get(
-                latest_url,
-                params={"tenant_id": tenant_id, "snapshot_id": snapshot_id},
-                headers=headers
-            )
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            status_url = f"{aod_url}/api/runs/latest"
+            params = {"snapshot_id": snapshot_id, "tenant_id": tenant_id}
+            resp = await client.get(status_url, params=params, headers=headers)
             
             if resp.status_code == 404:
-                return AODRunStatusResponse(
-                    status=AODRunStatusEnum.NOT_PROCESSED
-                )
-            
-            if resp.status_code != 200:
-                return AODRunStatusResponse(
-                    status=AODRunStatusEnum.AOD_ERROR,
-                    message=f"AOD returned HTTP {resp.status_code}"
-                )
-            
-            try:
+                return AODRunStatusResponse(status=AODRunStatusEnum.NOT_PROCESSED)
+            elif resp.status_code == 200:
                 data = resp.json()
-            except Exception:
+                run_id = data.get("run_id")
+                if run_id:
+                    return AODRunStatusResponse(
+                        status=AODRunStatusEnum.PROCESSED,
+                        run_id=run_id
+                    )
+                else:
+                    return AODRunStatusResponse(status=AODRunStatusEnum.NOT_PROCESSED)
+            else:
                 return AODRunStatusResponse(
                     status=AODRunStatusEnum.AOD_ERROR,
-                    message="AOD returned invalid JSON"
+                    message=f"AOD returned {resp.status_code}"
                 )
-            
-            run_id = data.get("run_id")
-            if not run_id:
-                return AODRunStatusResponse(
-                    status=AODRunStatusEnum.NOT_PROCESSED
-                )
-            
+                
+        except httpx.RequestError as e:
             return AODRunStatusResponse(
-                status=AODRunStatusEnum.PROCESSED,
-                run_id=run_id
+                status=AODRunStatusEnum.AOD_ERROR,
+                message=f"Could not reach AOD: {str(e)}"
             )
-    
-    except httpx.TimeoutException:
-        return AODRunStatusResponse(
-            status=AODRunStatusEnum.AOD_ERROR,
-            message="AOD request timed out"
-        )
-    except httpx.RequestError as e:
-        return AODRunStatusResponse(
-            status=AODRunStatusEnum.AOD_ERROR,
-            message=f"Cannot reach AOD: {str(e)}"
-        )

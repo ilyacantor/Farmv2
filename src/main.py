@@ -1,14 +1,13 @@
 import json
 from contextlib import asynccontextmanager
 
-import aiosqlite
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import router, init_db, DB_PATH
+from src.api.routes import router, init_db, get_pool, compute_fingerprint
 from src.generators.enterprise import EnterpriseGenerator
 from src.models.planes import (
     ScaleEnum,
@@ -16,6 +15,7 @@ from src.models.planes import (
     RealismProfileEnum,
     SCHEMA_VERSION,
 )
+import uuid
 
 SEED_SNAPSHOTS = [
     {"tenant_id": "Acme Corp", "seed": 1001, "scale": ScaleEnum.small, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.clean},
@@ -42,11 +42,15 @@ SEED_SNAPSHOTS = [
 
 
 async def seed_initial_snapshots():
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT COUNT(*) FROM snapshots") as cursor:
-            row = await cursor.fetchone()
-            if row and row[0] > 0:
-                return
+    """Seed initial snapshots with run-first workflow."""
+    from datetime import datetime
+    
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        count = await conn.fetchval("SELECT COUNT(*) FROM snapshots")
+        if count and count > 0:
+            return
     
     for config in SEED_SNAPSHOTS:
         generator = EnterpriseGenerator(
@@ -59,22 +63,34 @@ async def seed_initial_snapshots():
         snapshot = generator.generate()
         snapshot_dict = snapshot.model_dump()
         
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("""
-                INSERT OR IGNORE INTO snapshots (snapshot_id, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                snapshot.meta.snapshot_id,
-                snapshot.meta.tenant_id,
-                snapshot.meta.seed,
-                snapshot.meta.scale.value,
-                snapshot.meta.enterprise_profile.value,
-                snapshot.meta.realism_profile.value,
-                snapshot.meta.created_at,
-                SCHEMA_VERSION,
-                json.dumps(snapshot_dict),
-            ))
-            await db.commit()
+        run_id = str(uuid.uuid4())
+        snapshot_id = str(uuid.uuid4())
+        created_at = datetime.utcnow().isoformat() + "Z"
+        fingerprint = compute_fingerprint(
+            config["tenant_id"],
+            config["seed"],
+            config["scale"].value,
+            config["enterprise_profile"].value,
+            config["realism_profile"].value,
+        )
+        
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute("""
+                    INSERT INTO runs (run_id, run_fingerprint, created_at, seed, schema_version, enterprise_profile, realism_profile, scale, tenant_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    ON CONFLICT (run_id) DO NOTHING
+                """, run_id, fingerprint, created_at, config["seed"], SCHEMA_VERSION,
+                    config["enterprise_profile"].value, config["realism_profile"].value, config["scale"].value, config["tenant_id"])
+                
+                await conn.execute("""
+                    INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                    ON CONFLICT (snapshot_id) DO NOTHING
+                """, snapshot_id, run_id, 0, fingerprint,
+                    snapshot.meta.tenant_id, snapshot.meta.seed, snapshot.meta.scale.value,
+                    snapshot.meta.enterprise_profile.value, snapshot.meta.realism_profile.value,
+                    snapshot.meta.created_at, SCHEMA_VERSION, json.dumps(snapshot_dict))
 
 
 @asynccontextmanager
