@@ -452,8 +452,8 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
     lines = []
     issues = []
     
-    aod_zombies = aod_summary.zombies
-    aod_shadows = aod_summary.shadows
+    aod_zombies = aod_summary.zombie_count
+    aod_shadows = aod_summary.shadow_count
     farm_zombies = farm_expectations.expected_zombies
     farm_shadows = farm_expectations.expected_shadows
     
@@ -681,16 +681,20 @@ async def auto_reconcile(request: AutoReconcileRequest):
                 detail=f"Could not reach AOD at {aod_url}: {str(e)}"
             )
     
+    aod_summary_data = payload.get("aod_summary", payload)
+    aod_lists_data = payload.get("aod_lists", payload)
+    
     aod_summary = AODSummary(
-        assets_admitted=payload.get("assets_admitted", 0),
-        findings=payload.get("findings", 0),
-        zombies=payload.get("zombies", 0),
-        shadows=payload.get("shadows", 0),
+        observations_in=aod_summary_data.get("observations_in", 0),
+        candidates_out=aod_summary_data.get("candidates_out", 0),
+        assets_admitted=aod_summary_data.get("assets_admitted", 0),
+        shadow_count=aod_summary_data.get("shadow_count", 0),
+        zombie_count=aod_summary_data.get("zombie_count", 0),
     )
     aod_lists = AODLists(
-        zombie_assets=payload.get("zombie_assets", []),
-        shadow_assets=payload.get("shadow_assets", []),
-        top_findings=payload.get("top_findings", []),
+        zombie_assets=aod_lists_data.get("zombie_assets", []),
+        shadow_assets=aod_lists_data.get("shadow_assets", []),
+        high_severity_findings=aod_lists_data.get("high_severity_findings", []),
     )
     
     reconcile_request = ReconcileRequest(

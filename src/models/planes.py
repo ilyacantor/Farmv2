@@ -289,16 +289,17 @@ class ReconcileStatusEnum(str, Enum):
 
 
 class AODSummary(BaseModel):
+    observations_in: int = 0
+    candidates_out: int = 0
     assets_admitted: int = 0
-    findings: int = 0
-    zombies: int = 0
-    shadows: int = 0
+    shadow_count: int = 0
+    zombie_count: int = 0
 
 
 class AODLists(BaseModel):
     zombie_assets: list[str] = Field(default_factory=list)
     shadow_assets: list[str] = Field(default_factory=list)
-    top_findings: list[str] = Field(default_factory=list)
+    high_severity_findings: list[str] = Field(default_factory=list)
 
 
 class ReconcileRequest(BaseModel):
