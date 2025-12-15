@@ -46,7 +46,7 @@ async def call_aod_explain_nonflag(
     Returns per-key: {present_in_aod, decision, reason_codes[]}
     Fallback: decision="UNKNOWN_KEY", reason_codes=["NO_EXPLAIN_ENDPOINT"]
     """
-    aod_url = os.environ.get("AOD_URL", "")
+    aod_url = os.environ.get("AOD_BASE_URL", "") or os.environ.get("AOD_URL", "")
     use_stub = os.environ.get("USE_AOD_EXPLAIN_STUB", "").lower() == "true"
     
     if use_stub:
