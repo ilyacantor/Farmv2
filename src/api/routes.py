@@ -807,7 +807,7 @@ def compute_expected_zombies_v0(snapshot_data: dict, window_days: int) -> list[s
 async def grade_zombies_v0(
     run_id: str = Query(..., description="Run ID to grade"),
     window_days: int = Query(30, ge=1, le=365, description="Activity window in days"),
-    aod_url: str = Query(..., description="AOD base URL")
+    aod_url: Optional[str] = Query(None, description="AOD base URL (uses AOD_BASE_URL env if not provided)")
 ):
     """
     Zombie v0 Grader - Walled off from existing reconciliation logic.
@@ -826,6 +826,12 @@ async def grade_zombies_v0(
         snapshot_data = json.loads(row["snapshot_json"])
     
     expected_zombies = compute_expected_zombies_v0(snapshot_data, window_days)
+    
+    if not aod_url:
+        aod_url = os.environ.get("AOD_URL") or os.environ.get("AOD_BASE_URL", "")
+    
+    if not aod_url:
+        raise HTTPException(status_code=400, detail="AOD_BASE_URL not configured")
     
     aod_url = aod_url.rstrip("/")
     aod_secret = os.environ.get("AOD_SHARED_SECRET", "")

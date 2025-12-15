@@ -156,20 +156,24 @@
                     
                     <div class="space-y-4">
                         <div>
-                            <label class="block text-xs font-medium text-slate-400 mb-1">Run ID</label>
-                            <input type="text" id="zombieV0RunId" placeholder="e.g., run-2024-001"
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Tenant</label>
+                            <select id="zombieV0Tenant" onchange="updateZombieV0RunIds()"
                                 class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                <option value="">Select tenant...</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Run ID</label>
+                            <select id="zombieV0RunId"
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                <option value="">Select run...</option>
+                            </select>
                         </div>
                         
                         <div>
                             <label class="block text-xs font-medium text-slate-400 mb-1">Window Days</label>
                             <input type="number" id="zombieV0WindowDays" value="30" min="1"
-                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                        </div>
-                        
-                        <div>
-                            <label class="block text-xs font-medium text-slate-400 mb-1">AOD Base URL</label>
-                            <input type="text" id="zombieV0AodUrl" placeholder="e.g., https://aod.example.com"
                                 class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
                         </div>
                         
@@ -1072,15 +1076,38 @@
             });
         });
 
+        let zombieV0SnapshotsCache = [];
+        
+        async function populateZombieV0Tenants() {
+            const tenantSelect = document.getElementById('zombieV0Tenant');
+            const tenants = [...new Set(snapshotsCache.map(s => s.tenant_id))].sort();
+            tenantSelect.innerHTML = '<option value="">Select tenant...</option>' + 
+                tenants.map(t => `<option value="${t}">${t}</option>`).join('');
+            zombieV0SnapshotsCache = snapshotsCache;
+        }
+        
+        function updateZombieV0RunIds() {
+            const tenant = document.getElementById('zombieV0Tenant').value;
+            const runSelect = document.getElementById('zombieV0RunId');
+            
+            if (!tenant) {
+                runSelect.innerHTML = '<option value="">Select run...</option>';
+                return;
+            }
+            
+            const filtered = zombieV0SnapshotsCache.filter(s => s.tenant_id === tenant);
+            runSelect.innerHTML = '<option value="">Select run...</option>' + 
+                filtered.map(s => `<option value="${s.run_id || s.snapshot_id}">${s.snapshot_id.slice(0,8)} (seed:${s.seed})</option>`).join('');
+        }
+        
         async function gradeZombieV0() {
-            const runId = document.getElementById('zombieV0RunId').value.trim();
+            const runId = document.getElementById('zombieV0RunId').value;
             const windowDays = document.getElementById('zombieV0WindowDays').value || 30;
-            const aodUrl = document.getElementById('zombieV0AodUrl').value.trim();
             const resultsContainer = document.getElementById('zombieV0Results');
             const btn = document.getElementById('gradeZombieV0Btn');
             
             if (!runId) {
-                resultsContainer.innerHTML = '<div class="text-red-400 text-center py-4">Please enter a Run ID</div>';
+                resultsContainer.innerHTML = '<div class="text-red-400 text-center py-4">Please select a Run</div>';
                 return;
             }
             
@@ -1090,7 +1117,6 @@
             
             try {
                 const params = new URLSearchParams({ run_id: runId, window_days: windowDays });
-                if (aodUrl) params.append('aod_url', aodUrl);
                 
                 const response = await fetch(`/v0/grade/zombies?${params}`);
                 const data = await response.json();
@@ -1152,7 +1178,7 @@
             }
         }
 
-        loadAllData();
+        loadAllData().then(() => populateZombieV0Tenants());
         addLogEntry('Farm Console loaded', 'info');
     </script>
 </body>
