@@ -851,7 +851,7 @@ async def grade_zombies_v0(
         try:
             resp = await client.get(
                 f"{aod_url}/v0/zombies",
-                params={"run_id": run_id},
+                params={"run_id": run_id, "window_days": ZOMBIE_WINDOW_DAYS},
                 headers=headers
             )
             
