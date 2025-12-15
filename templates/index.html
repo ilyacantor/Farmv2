@@ -171,12 +171,6 @@
                             </select>
                         </div>
                         
-                        <div>
-                            <label class="block text-xs font-medium text-slate-400 mb-1">Window Days</label>
-                            <input type="number" id="zombieV0WindowDays" value="30" min="1"
-                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                        </div>
-                        
                         <button onclick="gradeZombieV0()" id="gradeZombieV0Btn"
                             class="w-full bg-purple-600 hover:bg-purple-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 purple-glow">
                             Grade Zombie v0
@@ -1102,7 +1096,6 @@
         
         async function gradeZombieV0() {
             const runId = document.getElementById('zombieV0RunId').value;
-            const windowDays = document.getElementById('zombieV0WindowDays').value || 30;
             const resultsContainer = document.getElementById('zombieV0Results');
             const btn = document.getElementById('gradeZombieV0Btn');
             
@@ -1116,7 +1109,7 @@
             resultsContainer.innerHTML = '<div class="text-slate-400 text-center py-8">Loading...</div>';
             
             try {
-                const params = new URLSearchParams({ run_id: runId, window_days: windowDays });
+                const params = new URLSearchParams({ run_id: runId });
                 
                 const response = await fetch(`/v0/grade/zombies?${params}`);
                 const data = await response.json();
