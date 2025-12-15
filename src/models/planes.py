@@ -294,20 +294,6 @@ class SnapshotMetadata(BaseModel):
     schema_version: str = SCHEMA_VERSION
 
 
-class BatchSnapshotRequest(BaseModel):
-    tenant_id: str
-    count: int = 20
-    base_seed: int = 12345
-    scale: ScaleEnum = ScaleEnum.medium
-    enterprise_profile: EnterpriseProfileEnum = EnterpriseProfileEnum.modern_saas
-    realism_profile: RealismProfileEnum = RealismProfileEnum.typical
-
-
-class BatchSnapshotResponse(BaseModel):
-    created: int
-    snapshots: list[SnapshotCreateResponse]
-
-
 class ReconcileStatusEnum(str, Enum):
     PASS = "PASS"
     WARN = "WARN"
@@ -321,14 +307,9 @@ class AODSummary(BaseModel):
     shadows: int = 0
 
 
-class AODAsset(BaseModel):
-    vendor_key: str
-    display_name: Optional[str] = None
-
-
 class AODLists(BaseModel):
-    zombie_assets: list[AODAsset] = Field(default_factory=list)
-    shadow_assets: list[AODAsset] = Field(default_factory=list)
+    zombie_assets: list[str] = Field(default_factory=list)
+    shadow_assets: list[str] = Field(default_factory=list)
     top_findings: list[str] = Field(default_factory=list)
 
 
@@ -340,19 +321,11 @@ class ReconcileRequest(BaseModel):
     aod_lists: AODLists
 
 
-class FarmExpectedAsset(BaseModel):
-    vendor_key: str
-    domains: list[str] = Field(default_factory=list)
-    display_names: list[str] = Field(default_factory=list)
-
-
 class FarmExpectations(BaseModel):
     expected_zombies: int = 0
     expected_shadows: int = 0
     zombie_keys: list[str] = Field(default_factory=list)
     shadow_keys: list[str] = Field(default_factory=list)
-    zombie_assets: list[FarmExpectedAsset] = Field(default_factory=list)
-    shadow_assets: list[FarmExpectedAsset] = Field(default_factory=list)
 
 
 class ReconcileResponse(BaseModel):

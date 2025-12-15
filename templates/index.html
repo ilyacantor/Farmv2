@@ -124,21 +124,9 @@
                                 </select>
                             </div>
                             
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Count</label>
-                                <select id="generateCount" 
-                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="1" selected>1</option>
-                                    <option value="5">5</option>
-                                    <option value="10">10</option>
-                                    <option value="20">20</option>
-                                    <option value="50">50</option>
-                                </select>
-                            </div>
-                            
                             <button type="submit" id="generateBtn"
                                 class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 cyan-glow">
-                                Generate
+                                Generate Snapshot
                             </button>
                         </form>
                     </div>
@@ -950,66 +938,23 @@
             }
         }
 
-        async function generateBatchSnapshots(tenantId, baseSeed, count, scale, enterpriseProfile, realismProfile) {
-            addLogEntry(`Generating ${count} snapshots for ${tenantId}...`, 'info');
-            
-            try {
-                const response = await fetch('/api/snapshots/batch', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        tenant_id: tenantId,
-                        base_seed: parseInt(baseSeed),
-                        count: parseInt(count),
-                        scale: scale,
-                        enterprise_profile: enterpriseProfile,
-                        realism_profile: realismProfile,
-                    })
-                });
-                
-                const data = await response.json();
-                addLogEntry(`Created ${data.created} snapshots`, 'success');
-                await loadAllData();
-                return data;
-            } catch (e) {
-                addLogEntry(`Batch generation failed: ${e.message}`, 'error');
-                throw e;
-            }
-        }
-
         document.getElementById('snapshotForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('generateBtn');
-            const count = parseInt(document.getElementById('generateCount').value) || 1;
             btn.disabled = true;
-            btn.textContent = count > 1 ? `Generating ${count}...` : 'Generating...';
+            btn.textContent = 'Generating...';
             
             try {
-                const scale = document.getElementById('scale').value;
-                const enterpriseProfile = document.getElementById('enterpriseProfile').value;
-                const realismProfile = document.getElementById('realismProfile').value;
-                
-                if (count > 1) {
-                    await generateBatchSnapshots(
-                        generateTenantId(),
-                        generateSeed(),
-                        count,
-                        scale,
-                        enterpriseProfile,
-                        realismProfile
-                    );
-                } else {
-                    await generateSnapshot(
-                        generateTenantId(),
-                        generateSeed(),
-                        scale,
-                        enterpriseProfile,
-                        realismProfile
-                    );
-                }
+                await generateSnapshot(
+                    generateTenantId(),
+                    generateSeed(),
+                    document.getElementById('scale').value,
+                    document.getElementById('enterpriseProfile').value,
+                    document.getElementById('realismProfile').value
+                );
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Generate';
+                btn.textContent = 'Generate Snapshot';
             }
         });
 

@@ -22,15 +22,12 @@ from src.models.planes import (
     ReconcileMetadata,
     ReconcileStatusEnum,
     FarmExpectations,
-    FarmExpectedAsset,
     AODSummary,
     AODLists,
     AutoReconcileRequest,
     AutoReconcileResponse,
     AODRunStatusEnum,
     AODRunStatusResponse,
-    BatchSnapshotRequest,
-    BatchSnapshotResponse,
 )
 import re
 import uuid
@@ -46,28 +43,6 @@ def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profil
 
 DB_PATH = "data/farm.db"
 SNAPSHOTS_DIR = "data/snapshots"
-MAX_SNAPSHOTS = 50
-
-
-async def cleanup_old_snapshots():
-    """Delete oldest snapshots when count exceeds MAX_SNAPSHOTS."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT COUNT(*) FROM snapshots") as cursor:
-            row = await cursor.fetchone()
-            count = row[0] if row else 0
-        
-        if count > MAX_SNAPSHOTS:
-            to_delete = count - MAX_SNAPSHOTS
-            async with db.execute(
-                "SELECT snapshot_id FROM snapshots ORDER BY created_at ASC LIMIT ?",
-                (to_delete,)
-            ) as cursor:
-                old_ids = [row[0] for row in await cursor.fetchall()]
-            
-            for sid in old_ids:
-                await db.execute("DELETE FROM snapshots WHERE snapshot_id = ?", (sid,))
-                await db.execute("DELETE FROM reconciliations WHERE snapshot_id = ?", (sid,))
-            await db.commit()
 
 
 async def init_db():
@@ -243,8 +218,6 @@ async def create_snapshot(request: SnapshotRequest):
         ))
         await db.commit()
     
-    await cleanup_old_snapshots()
-    
     return SnapshotCreateResponse(
         snapshot_id=unique_snapshot_id,
         snapshot_fingerprint=fingerprint,
@@ -252,84 +225,6 @@ async def create_snapshot(request: SnapshotRequest):
         created_at=snapshot.meta.created_at,
         schema_version=SCHEMA_VERSION,
         duplicate_of_snapshot_id=duplicate_of_snapshot_id,
-    )
-
-
-@router.post("/api/snapshots/batch", response_model=BatchSnapshotResponse)
-async def create_batch_snapshots(request: BatchSnapshotRequest):
-    """Create multiple snapshots at once (default 20). Each gets a unique seed based on base_seed + index."""
-    await init_db()
-    
-    count = min(request.count, 100)  # Cap at 100
-    created_snapshots = []
-    
-    for i in range(count):
-        seed = request.base_seed + i
-        
-        fingerprint = compute_fingerprint(
-            request.tenant_id,
-            seed,
-            request.scale.value,
-            request.enterprise_profile.value,
-            request.realism_profile.value,
-        )
-        
-        duplicate_of_snapshot_id = None
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT snapshot_id FROM snapshots WHERE snapshot_fingerprint = ? ORDER BY created_at ASC LIMIT 1",
-                (fingerprint,)
-            ) as cursor:
-                row = await cursor.fetchone()
-                if row:
-                    duplicate_of_snapshot_id = row["snapshot_id"]
-        
-        generator = EnterpriseGenerator(
-            tenant_id=request.tenant_id,
-            seed=seed,
-            scale=request.scale,
-            enterprise_profile=request.enterprise_profile,
-            realism_profile=request.realism_profile,
-        )
-        
-        snapshot = generator.generate()
-        unique_snapshot_id = str(uuid.uuid4())
-        snapshot.meta.snapshot_id = unique_snapshot_id
-        snapshot_dict = snapshot.model_dump()
-        
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("""
-                INSERT INTO snapshots (snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                unique_snapshot_id,
-                fingerprint,
-                snapshot.meta.tenant_id,
-                snapshot.meta.seed,
-                snapshot.meta.scale.value,
-                snapshot.meta.enterprise_profile.value,
-                snapshot.meta.realism_profile.value,
-                snapshot.meta.created_at,
-                SCHEMA_VERSION,
-                json.dumps(snapshot_dict),
-            ))
-            await db.commit()
-        
-        created_snapshots.append(SnapshotCreateResponse(
-            snapshot_id=unique_snapshot_id,
-            snapshot_fingerprint=fingerprint,
-            tenant_id=snapshot.meta.tenant_id,
-            created_at=snapshot.meta.created_at,
-            schema_version=SCHEMA_VERSION,
-            duplicate_of_snapshot_id=duplicate_of_snapshot_id,
-        ))
-    
-    await cleanup_old_snapshots()
-    
-    return BatchSnapshotResponse(
-        created=len(created_snapshots),
-        snapshots=created_snapshots,
     )
 
 
@@ -489,13 +384,6 @@ def is_stale(ts: Optional[str], window_days: int, reference: datetime) -> bool:
     return (reference - dt).days > window_days
 
 
-def derive_vendor_key(name: str, vendor_hint: Optional[str] = None) -> str:
-    """Derive canonical vendor_key from name/vendor. This is an internal ID, not a domain."""
-    if vendor_hint:
-        return normalize_name(vendor_hint)
-    return normalize_name(name)
-
-
 def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> FarmExpectations:
     meta = snapshot.get('meta', {})
     planes = snapshot.get('planes', {})
@@ -518,8 +406,7 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
     for obs in observations:
         domain = obs.get('domain') or extract_domain(obs.get('observed_uri') or obs.get('hostname') or '')
         name = obs.get('observed_name', '')
-        vendor_hint = obs.get('vendor_hint')
-        key = derive_vendor_key(name, vendor_hint)
+        key = domain if domain else normalize_name(name)
         if not key:
             continue
         
@@ -527,6 +414,7 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
         candidates[key]['names'].add(name)
         if domain:
             candidates[key]['domains'].add(domain)
+        vendor_hint = obs.get('vendor_hint')
         if vendor_hint:
             candidates[key]['vendors'].add(vendor_hint)
         
@@ -601,27 +489,20 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
             if vendor and any(vendor == normalize_name(v) for v in cand['vendors']):
                 cand['finance_present'] = True
     
-    shadow_assets = []
-    zombie_assets = []
+    shadow_keys = []
+    zombie_keys = []
     
     for key, cand in candidates.items():
-        asset = FarmExpectedAsset(
-            vendor_key=key,
-            domains=list(cand['domains'])[:5],
-            display_names=list(cand['names'])[:5],
-        )
         if (cand['finance_present'] or cand['cloud_present']) and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present']:
-            shadow_assets.append(asset)
+            shadow_keys.append(key)
         elif (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0:
-            zombie_assets.append(asset)
+            zombie_keys.append(key)
     
     return FarmExpectations(
-        expected_zombies=len(zombie_assets),
-        expected_shadows=len(shadow_assets),
-        zombie_keys=[a.vendor_key for a in zombie_assets[:20]],
-        shadow_keys=[a.vendor_key for a in shadow_assets[:20]],
-        zombie_assets=zombie_assets[:20],
-        shadow_assets=shadow_assets[:20],
+        expected_zombies=len(zombie_keys),
+        expected_shadows=len(shadow_keys),
+        zombie_keys=zombie_keys[:20],
+        shadow_keys=shadow_keys[:20],
     )
 
 
@@ -629,92 +510,67 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
     lines = []
     issues = []
     
-    aod_zombie_keys = [asset.vendor_key for asset in aod_lists.zombie_assets]
-    aod_shadow_keys = [asset.vendor_key for asset in aod_lists.shadow_assets]
-    aod_zombie_count = len(aod_zombie_keys)
-    aod_shadow_count = len(aod_shadow_keys)
+    aod_zombies = aod_summary.zombies
+    aod_shadows = aod_summary.shadows
     farm_zombies = farm_expectations.expected_zombies
     farm_shadows = farm_expectations.expected_shadows
     
-    summary_zombie_mismatch = aod_summary.zombies != aod_zombie_count
-    summary_shadow_mismatch = aod_summary.shadows != aod_shadow_count
+    lines.append(f"AOD reported {aod_zombies} zombies, Farm expected {farm_zombies}.")
+    lines.append(f"AOD reported {aod_shadows} shadows, Farm expected {farm_shadows}.")
     
-    # List lengths are authoritative; summary is informational only
-    lines.append(f"AOD reported: {aod_zombie_count} zombies, {aod_shadow_count} shadows (from payload lists)")
-    lines.append(f"Farm expected: {farm_zombies} zombies, {farm_shadows} shadows")
+    zombie_diff = abs(aod_zombies - farm_zombies)
+    shadow_diff = abs(aod_shadows - farm_shadows)
     
-    if summary_zombie_mismatch or summary_shadow_mismatch:
-        lines.append(f"INFO: PAYLOAD_INCONSISTENCY: AOD summary ({aod_summary.zombies}/{aod_summary.shadows}) differs from list lengths ({aod_zombie_count}/{aod_shadow_count})")
-        lines.append("  (AOD should derive summary from list lengths - this is informational, not blocking)")
-        # Note: Not adding to issues[] - this is informational, doesn't block reconciliation
+    if zombie_diff == 0 and shadow_diff == 0:
+        lines.append("Counts match exactly.")
+    else:
+        if zombie_diff > 0:
+            issues.append(f"Zombie count off by {zombie_diff}")
+        if shadow_diff > 0:
+            issues.append(f"Shadow count off by {shadow_diff}")
     
-    aod_zombie_set = set(normalize_name(k) for k in aod_zombie_keys)
-    aod_shadow_set = set(normalize_name(k) for k in aod_shadow_keys)
+    aod_zombie_set = set(normalize_name(k) for k in aod_lists.zombie_assets)
+    aod_shadow_set = set(normalize_name(k) for k in aod_lists.shadow_assets)
     farm_zombie_set = set(normalize_name(k) for k in farm_expectations.zombie_keys)
     farm_shadow_set = set(normalize_name(k) for k in farm_expectations.shadow_keys)
     
     zombie_overlap = len(aod_zombie_set & farm_zombie_set)
     shadow_overlap = len(aod_shadow_set & farm_shadow_set)
     
-    zombie_key_mismatch = aod_zombie_count > 0 and zombie_overlap == 0 and len(farm_zombie_set) > 0
-    shadow_key_mismatch = aod_shadow_count > 0 and shadow_overlap == 0 and len(farm_shadow_set) > 0
+    if farm_zombie_set:
+        lines.append(f"Zombie key overlap: {zombie_overlap}/{len(farm_zombie_set)} expected keys found in AOD.")
+    if farm_shadow_set:
+        lines.append(f"Shadow key overlap: {shadow_overlap}/{len(farm_shadow_set)} expected keys found in AOD.")
     
-    if zombie_key_mismatch:
-        lines.append(f"ZOMBIE KEY_FORMAT_MISMATCH: AOD sent {aod_zombie_count} keys but 0 overlap with Farm expected keys")
-        lines.append(f"  AOD keys: {aod_zombie_keys[:3]}")
-        lines.append(f"  Farm keys: {farm_expectations.zombie_keys[:3]}")
-        issues.append("zombie key_format_mismatch")
-    elif farm_zombie_set:
-        lines.append(f"Zombie overlap: {zombie_overlap}/{len(farm_zombie_set)} expected keys matched")
+    zombie_missed = farm_zombie_set - aod_zombie_set
+    shadow_missed = farm_shadow_set - aod_shadow_set
     
-    if shadow_key_mismatch:
-        lines.append(f"SHADOW KEY_FORMAT_MISMATCH: AOD sent {aod_shadow_count} keys but 0 overlap with Farm expected keys")
-        lines.append(f"  AOD keys: {aod_shadow_keys[:3]}")
-        lines.append(f"  Farm keys: {farm_expectations.shadow_keys[:3]}")
-        issues.append("shadow key_format_mismatch")
-    elif farm_shadow_set:
-        lines.append(f"Shadow overlap: {shadow_overlap}/{len(farm_shadow_set)} expected keys matched")
+    if zombie_missed:
+        lines.append(f"Missed zombies: {list(zombie_missed)[:5]}")
+        issues.append(f"Missed {len(zombie_missed)} zombie keys")
+    if shadow_missed:
+        lines.append(f"Missed shadows: {list(shadow_missed)[:5]}")
+        issues.append(f"Missed {len(shadow_missed)} shadow keys")
     
-    zombie_diff = abs(aod_zombie_count - farm_zombies)
-    shadow_diff = abs(aod_shadow_count - farm_shadows)
+    zombie_extra = aod_zombie_set - farm_zombie_set
+    shadow_extra = aod_shadow_set - farm_shadow_set
     
-    if zombie_diff > 0 and not zombie_key_mismatch:
-        issues.append(f"Zombie count off by {zombie_diff}")
-    if shadow_diff > 0 and not shadow_key_mismatch:
-        issues.append(f"Shadow count off by {shadow_diff}")
-    
-    if not zombie_key_mismatch:
-        zombie_missed = farm_zombie_set - aod_zombie_set
-        zombie_extra = aod_zombie_set - farm_zombie_set
-        if zombie_missed:
-            lines.append(f"Missed zombies: {list(zombie_missed)[:5]}")
-            issues.append(f"Missed {len(zombie_missed)} zombie keys")
-        if zombie_extra:
-            lines.append(f"Extra zombies in AOD: {list(zombie_extra)[:5]}")
-    
-    if not shadow_key_mismatch:
-        shadow_missed = farm_shadow_set - aod_shadow_set
-        shadow_extra = aod_shadow_set - farm_shadow_set
-        if shadow_missed:
-            lines.append(f"Missed shadows: {list(shadow_missed)[:5]}")
-            issues.append(f"Missed {len(shadow_missed)} shadow keys")
-        if shadow_extra:
-            lines.append(f"Extra shadows in AOD: {list(shadow_extra)[:5]}")
+    if zombie_extra:
+        lines.append(f"Extra zombies in AOD: {list(zombie_extra)[:5]}")
+    if shadow_extra:
+        lines.append(f"Extra shadows in AOD: {list(shadow_extra)[:5]}")
     
     if not issues:
         status = ReconcileStatusEnum.PASS
         lines.append("RESULT: PASS - All expectations met.")
-    elif zombie_key_mismatch or shadow_key_mismatch:
-        status = ReconcileStatusEnum.FAIL
-        lines.append(f"RESULT: FAIL - Key format mismatch detected. AOD must send canonical vendor_key (internal ID like 'yammer', 'atlassian').")
-    elif (zombie_diff <= 2 and shadow_diff <= 2):
+    elif (zombie_diff <= 2 and shadow_diff <= 2) and len(zombie_missed) <= 2 and len(shadow_missed) <= 2:
         status = ReconcileStatusEnum.WARN
         lines.append(f"RESULT: WARN - Minor discrepancies: {', '.join(issues[:3])}")
     else:
         status = ReconcileStatusEnum.FAIL
         lines.append(f"RESULT: FAIL - Significant discrepancies: {', '.join(issues[:3])}")
     
-    report_text = "\n".join(lines[:15])
+    report_text = "\n".join(lines[:12])
     return report_text, status
 
 
