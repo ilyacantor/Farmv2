@@ -382,6 +382,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         'idp_present': False,
         'cmdb_present': False,
         'finance_present': False,
+        'has_ongoing_finance': False,
         'cloud_present': False,
         'discovery_present': False,
         'activity_present': False,
@@ -461,20 +462,30 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         product = normalize_name(contract.get('product', '') or '')
         
         for key, cand in candidates.items():
+            matched = False
             if vendor and any(vendor in normalize_name(n) or normalize_name(n) in vendor for n in cand['names']):
-                cand['finance_present'] = True
+                matched = True
             if vendor and any(vendor == normalize_name(v) for v in cand['vendors']):
-                cand['finance_present'] = True
+                matched = True
             if product and any(product in normalize_name(n) or normalize_name(n) in product for n in cand['names']):
+                matched = True
+            if matched:
                 cand['finance_present'] = True
+                cand['has_ongoing_finance'] = True
     
     for txn in transactions:
         vendor = normalize_name(txn.get('vendor_name', ''))
+        is_recurring = txn.get('is_recurring', False)
         for key, cand in candidates.items():
+            matched = False
             if vendor and any(vendor in normalize_name(n) or normalize_name(n) in vendor for n in cand['names']):
-                cand['finance_present'] = True
+                matched = True
             if vendor and any(vendor == normalize_name(v) for v in cand['vendors']):
+                matched = True
+            if matched:
                 cand['finance_present'] = True
+                if is_recurring:
+                    cand['has_ongoing_finance'] = True
     
     return dict(candidates)
 
@@ -494,6 +505,8 @@ def derive_reason_codes(cand: dict) -> list[str]:
         codes.append('NO_CMDB')
     if cand.get('finance_present'):
         codes.append('HAS_FINANCE')
+    if cand.get('has_ongoing_finance'):
+        codes.append('HAS_ONGOING_FINANCE')
     if cand.get('cloud_present'):
         codes.append('HAS_CLOUD')
     if cand.get('activity_present'):
@@ -529,7 +542,7 @@ def compute_expected_block(snapshot: dict, window_days: int = 90) -> dict:
         reasons = derive_reason_codes(cand)
         expected_reasons[key] = reasons
         
-        is_shadow = (cand['finance_present'] or cand['cloud_present']) and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present']
+        is_shadow = (cand['has_ongoing_finance'] or cand['cloud_present']) and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present']
         is_zombie = (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
         
         if is_shadow:
@@ -567,7 +580,7 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
     zombie_keys = []
     
     for key, cand in candidates.items():
-        if (cand['finance_present'] or cand['cloud_present']) and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present']:
+        if (cand['has_ongoing_finance'] or cand['cloud_present']) and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present']:
             shadow_keys.append(key)
         elif (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0:
             zombie_keys.append(key)

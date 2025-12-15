@@ -691,25 +691,29 @@ class EnterpriseGenerator:
                     currency="USD",
                     date=self._random_date(365),
                     payment_type=self.rng.choice(list(PaymentTypeEnum)),
+                    is_recurring=True,
                     memo=f"License renewal" if self.rng.random() > 0.5 else None,
                 ))
         
-        for shadow_app in self._shadow_apps:
+        for i, shadow_app in enumerate(self._shadow_apps):
             vendor_name = self._apply_name_drift(shadow_app["vendor"])
             vendors.append(FinanceVendor(
                 vendor_id=f"VND-{self._generate_uuid()[:8].upper()}",
                 vendor_name=vendor_name,
             ))
             
+            has_ongoing_finance = (i % 3) != 0
+            
             owner = self.rng.choice(self._employees) if self._employees else None
-            contracts.append(FinanceContract(
-                contract_id=f"CTR-{self._generate_uuid()[:8].upper()}",
-                vendor_name=vendor_name,
-                product=shadow_app["name"] if self.rng.random() > 0.2 else None,
-                start_date=self._random_date(730),
-                end_date=self._random_future_date(365) if self.rng.random() > 0.3 else None,
-                owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
-            ))
+            if has_ongoing_finance:
+                contracts.append(FinanceContract(
+                    contract_id=f"CTR-{self._generate_uuid()[:8].upper()}",
+                    vendor_name=vendor_name,
+                    product=shadow_app["name"] if self.rng.random() > 0.2 else None,
+                    start_date=self._random_date(730),
+                    end_date=self._random_future_date(365) if self.rng.random() > 0.3 else None,
+                    owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
+                ))
             
             num_txns = self.rng.randint(1, 3) * mult
             for _ in range(num_txns):
@@ -720,6 +724,7 @@ class EnterpriseGenerator:
                     currency="USD",
                     date=self._random_date(365),
                     payment_type=self.rng.choice(list(PaymentTypeEnum)),
+                    is_recurring=has_ongoing_finance,
                     memo=f"Shadow IT expense" if self.rng.random() > 0.7 else None,
                 ))
         

@@ -187,6 +187,7 @@ class FinanceTransaction(BaseModel):
     currency: str = "USD"
     date: str
     payment_type: PaymentTypeEnum
+    is_recurring: bool = False
     memo: Optional[str] = None
 
 
