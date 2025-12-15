@@ -1263,13 +1263,34 @@
         }
 
         function renderAssetCard(asset, colorClass, showExplanation = true) {
+            const farmReasons = asset.farm_reason_codes || asset.reason_codes || [];
+            const aodReasons = asset.aod_reason_codes || [];
+            const aodAdmission = asset.aod_admission;
+            const hasAodData = aodReasons.length > 0 || aodAdmission;
+            
             return `
                 <div class="bg-slate-950/50 rounded-lg p-3 border border-slate-800">
                     <div class="flex items-start justify-between mb-2">
                         <span class="${colorClass} font-medium text-sm">${asset.asset_key}</span>
-                        ${asset.rca_hint ? `<span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400">${asset.rca_hint}</span>` : ''}
+                        <div class="flex items-center gap-2">
+                            ${aodAdmission ? `<span class="text-xs px-2 py-0.5 rounded ${aodAdmission === 'admitted' ? 'bg-green-900/50 text-green-300' : 'bg-red-900/50 text-red-300'}">${aodAdmission}</span>` : ''}
+                            ${asset.rca_hint ? `<span class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400">${asset.rca_hint}</span>` : ''}
+                        </div>
                     </div>
-                    <div class="flex flex-wrap gap-1 mb-2">${renderReasonBadges(asset.reason_codes)}</div>
+                    ${hasAodData ? `
+                        <div class="grid grid-cols-2 gap-2 mb-2 text-xs">
+                            <div>
+                                <span class="text-cyan-500 font-medium">Farm:</span>
+                                <div class="flex flex-wrap gap-1 mt-1">${renderReasonBadges(farmReasons)}</div>
+                            </div>
+                            <div>
+                                <span class="text-purple-500 font-medium">AOD:</span>
+                                <div class="flex flex-wrap gap-1 mt-1">${renderReasonBadges(aodReasons)}</div>
+                            </div>
+                        </div>
+                    ` : `
+                        <div class="flex flex-wrap gap-1 mb-2">${renderReasonBadges(farmReasons)}</div>
+                    `}
                     ${showExplanation && asset.explanation ? `<p class="text-xs text-slate-400 leading-relaxed">${asset.explanation}</p>` : ''}
                 </div>
             `;

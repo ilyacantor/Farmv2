@@ -826,6 +826,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     aod_lists = aod_payload.get('aod_lists', {})
     aod_shadows = set(aod_lists.get('shadow_assets', []))
     aod_zombies = set(aod_lists.get('zombie_assets', []))
+    aod_reason_codes = aod_lists.get('actual_reason_codes', {})
+    aod_admission = aod_lists.get('admission_actual', {})
     
     def norm(s):
         """Normalize asset key for comparison - extract core name, remove suffixes."""
@@ -862,20 +864,43 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         'false_positive_zombies': [],
     }
     
+    def get_aod_reasons(key):
+        """Get AOD's reason codes for a key, checking normalized variants."""
+        if key in aod_reason_codes:
+            return aod_reason_codes[key]
+        for aod_key in aod_reason_codes:
+            if norm(aod_key) == norm(key):
+                return aod_reason_codes[aod_key]
+        return []
+    
+    def get_aod_admission(key):
+        """Get AOD's admission status for a key, checking normalized variants."""
+        if key in aod_admission:
+            return aod_admission[key]
+        for aod_key in aod_admission:
+            if norm(aod_key) == norm(key):
+                return aod_admission[aod_key]
+        return None
+    
     for key in farm_shadows:
         reasons = expected_reasons.get(key, [])
         rca = expected_rca.get(key)
-        if find_match(key, aod_shadows):
+        aod_matched = find_match(key, aod_shadows)
+        if aod_matched:
             analysis['matched_shadows'].append({
                 'asset_key': key,
-                'reason_codes': reasons,
+                'farm_reason_codes': reasons,
+                'aod_reason_codes': get_aod_reasons(aod_matched or key),
+                'aod_admission': get_aod_admission(aod_matched or key),
                 'rca_hint': rca,
                 'explanation': EXPLANATION_TEMPLATES['matched']['shadow'].format(key=key),
             })
         else:
             analysis['missed_shadows'].append({
                 'asset_key': key,
-                'reason_codes': reasons,
+                'farm_reason_codes': reasons,
+                'aod_reason_codes': [],
+                'aod_admission': None,
                 'rca_hint': rca,
                 'explanation': get_explanation('shadow_missed', key, reasons, rca),
             })
@@ -883,41 +908,50 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     for key in farm_zombies:
         reasons = expected_reasons.get(key, [])
         rca = expected_rca.get(key)
-        if find_match(key, aod_zombies):
+        aod_matched = find_match(key, aod_zombies)
+        if aod_matched:
             analysis['matched_zombies'].append({
                 'asset_key': key,
-                'reason_codes': reasons,
+                'farm_reason_codes': reasons,
+                'aod_reason_codes': get_aod_reasons(aod_matched or key),
+                'aod_admission': get_aod_admission(aod_matched or key),
                 'rca_hint': rca,
                 'explanation': EXPLANATION_TEMPLATES['matched']['zombie'].format(key=key),
             })
         else:
             analysis['missed_zombies'].append({
                 'asset_key': key,
-                'reason_codes': reasons,
+                'farm_reason_codes': reasons,
+                'aod_reason_codes': [],
+                'aod_admission': None,
                 'rca_hint': rca,
                 'explanation': get_explanation('zombie_missed', key, reasons, rca),
             })
     
     for aod_key in aod_shadows:
         if not find_match(aod_key, farm_shadows):
-            reasons = expected_reasons.get(aod_key, [])
+            farm_reasons = expected_reasons.get(aod_key, [])
             farm_class = 'zombie' if aod_key in farm_zombies else ('clean' if aod_key in farm_clean else 'unknown')
             analysis['false_positive_shadows'].append({
                 'asset_key': aod_key,
                 'farm_classification': farm_class,
-                'reason_codes': reasons,
-                'explanation': get_explanation('false_positive_shadow', aod_key, reasons),
+                'farm_reason_codes': farm_reasons,
+                'aod_reason_codes': get_aod_reasons(aod_key),
+                'aod_admission': get_aod_admission(aod_key),
+                'explanation': get_explanation('false_positive_shadow', aod_key, farm_reasons),
             })
     
     for aod_key in aod_zombies:
         if not find_match(aod_key, farm_zombies):
-            reasons = expected_reasons.get(aod_key, [])
+            farm_reasons = expected_reasons.get(aod_key, [])
             farm_class = 'shadow' if aod_key in farm_shadows else ('clean' if aod_key in farm_clean else 'unknown')
             analysis['false_positive_zombies'].append({
                 'asset_key': aod_key,
                 'farm_classification': farm_class,
-                'reason_codes': reasons,
-                'explanation': get_explanation('false_positive_zombie', aod_key, reasons),
+                'farm_reason_codes': farm_reasons,
+                'aod_reason_codes': get_aod_reasons(aod_key),
+                'aod_admission': get_aod_admission(aod_key),
+                'explanation': get_explanation('false_positive_zombie', aod_key, farm_reasons),
             })
     
     total_expected = len(farm_shadows) + len(farm_zombies)

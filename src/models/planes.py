@@ -300,6 +300,8 @@ class AODLists(BaseModel):
     zombie_assets: list[str] = Field(default_factory=list)
     shadow_assets: list[str] = Field(default_factory=list)
     high_severity_findings: list[str] = Field(default_factory=list)
+    actual_reason_codes: dict[str, list[str]] = Field(default_factory=dict)
+    admission_actual: dict[str, str] = Field(default_factory=dict)
 
 
 class ReconcileRequest(BaseModel):
