@@ -138,8 +138,8 @@
                         <div class="flex items-center justify-between p-4 border-b border-slate-700">
                             <h2 class="text-lg font-semibold text-purple-400">Snapshot Browser</h2>
                             <div class="flex items-center gap-3">
-                                <button onclick="cleanupOldSnapshots()" id="cleanupBtn" class="text-xs px-2 py-1 bg-red-900/40 hover:bg-red-800/60 text-red-400 rounded border border-red-800/50 transition-colors">
-                                    Erase Old
+                                <button onclick="eraseAllSnapshots()" id="cleanupBtn" class="text-xs px-2 py-1 bg-red-900/40 hover:bg-red-800/60 text-red-400 rounded border border-red-800/50 transition-colors">
+                                    Erase All
                                 </button>
                                 <span class="text-xs text-slate-500"><span id="configSnapshotCount">0</span> snapshots</span>
                             </div>
@@ -762,40 +762,27 @@
             });
         }
 
-        async function cleanupOldSnapshots() {
+        async function eraseAllSnapshots() {
             const count = snapshotsCache.length;
-            if (count <= 3) {
-                alert('Only ' + count + ' snapshots exist. Nothing to clean up.');
-                return;
-            }
+            if (count === 0) return;
             
-            const toDelete = count - 3;
-            if (!confirm(`Delete ${toDelete} old snapshot${toDelete > 1 ? 's' : ''}, keeping the 3 most recent?`)) {
-                return;
-            }
+            if (!confirm(`Erase all ${count} snapshot${count > 1 ? 's' : ''}?`)) return;
             
             const btn = document.getElementById('cleanupBtn');
             btn.disabled = true;
             btn.textContent = 'Erasing...';
             
             try {
-                const response = await fetch('/api/snapshots/cleanup?keep=3', { method: 'DELETE' });
-                const result = await response.json();
-                
-                if (response.ok) {
-                    alert(`Deleted ${result.deleted_count} snapshot${result.deleted_count !== 1 ? 's' : ''}. ${result.remaining_count} remaining.`);
-                    expandedSnapshots = {};
-                    snapshotDataCache = {};
-                    expectationsCache = {};
-                    await refreshData();
-                } else {
-                    alert('Failed to cleanup: ' + (result.detail || 'Unknown error'));
-                }
+                await fetch('/api/snapshots/cleanup?keep=0', { method: 'DELETE' });
+                expandedSnapshots = {};
+                snapshotDataCache = {};
+                expectationsCache = {};
+                await refreshData();
             } catch (e) {
-                alert('Error: ' + e.message);
+                console.error('Erase failed:', e);
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Erase Old';
+                btn.textContent = 'Erase All';
             }
         }
 
