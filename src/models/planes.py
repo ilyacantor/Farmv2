@@ -307,9 +307,14 @@ class AODSummary(BaseModel):
     shadows: int = 0
 
 
+class AODAsset(BaseModel):
+    vendor_key: str
+    display_name: Optional[str] = None
+
+
 class AODLists(BaseModel):
-    zombie_assets: list[str] = Field(default_factory=list)
-    shadow_assets: list[str] = Field(default_factory=list)
+    zombie_assets: list[AODAsset] = Field(default_factory=list)
+    shadow_assets: list[AODAsset] = Field(default_factory=list)
     top_findings: list[str] = Field(default_factory=list)
 
 

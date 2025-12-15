@@ -515,62 +515,82 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
     farm_zombies = farm_expectations.expected_zombies
     farm_shadows = farm_expectations.expected_shadows
     
-    lines.append(f"AOD reported {aod_zombies} zombies, Farm expected {farm_zombies}.")
-    lines.append(f"AOD reported {aod_shadows} shadows, Farm expected {farm_shadows}.")
+    aod_zombie_keys = [asset.vendor_key for asset in aod_lists.zombie_assets]
+    aod_shadow_keys = [asset.vendor_key for asset in aod_lists.shadow_assets]
+    aod_zombie_payload_count = len(aod_zombie_keys)
+    aod_shadow_payload_count = len(aod_shadow_keys)
     
-    zombie_diff = abs(aod_zombies - farm_zombies)
-    shadow_diff = abs(aod_shadows - farm_shadows)
+    lines.append(f"AOD summary: {aod_zombies} zombies, {aod_shadows} shadows")
+    lines.append(f"AOD payload: {aod_zombie_payload_count} zombie keys, {aod_shadow_payload_count} shadow keys")
+    lines.append(f"Farm expected: {farm_zombies} zombies, {farm_shadows} shadows")
     
-    if zombie_diff == 0 and shadow_diff == 0:
-        lines.append("Counts match exactly.")
-    else:
-        if zombie_diff > 0:
-            issues.append(f"Zombie count off by {zombie_diff}")
-        if shadow_diff > 0:
-            issues.append(f"Shadow count off by {shadow_diff}")
-    
-    aod_zombie_set = set(normalize_name(k) for k in aod_lists.zombie_assets)
-    aod_shadow_set = set(normalize_name(k) for k in aod_lists.shadow_assets)
+    aod_zombie_set = set(normalize_name(k) for k in aod_zombie_keys)
+    aod_shadow_set = set(normalize_name(k) for k in aod_shadow_keys)
     farm_zombie_set = set(normalize_name(k) for k in farm_expectations.zombie_keys)
     farm_shadow_set = set(normalize_name(k) for k in farm_expectations.shadow_keys)
     
     zombie_overlap = len(aod_zombie_set & farm_zombie_set)
     shadow_overlap = len(aod_shadow_set & farm_shadow_set)
     
-    if farm_zombie_set:
-        lines.append(f"Zombie key overlap: {zombie_overlap}/{len(farm_zombie_set)} expected keys found in AOD.")
-    if farm_shadow_set:
-        lines.append(f"Shadow key overlap: {shadow_overlap}/{len(farm_shadow_set)} expected keys found in AOD.")
+    zombie_key_mismatch = aod_zombie_payload_count > 0 and zombie_overlap == 0 and farm_zombies > 0
+    shadow_key_mismatch = aod_shadow_payload_count > 0 and shadow_overlap == 0 and farm_shadows > 0
     
-    zombie_missed = farm_zombie_set - aod_zombie_set
-    shadow_missed = farm_shadow_set - aod_shadow_set
+    if zombie_key_mismatch:
+        lines.append(f"ZOMBIE KEY_FORMAT_MISMATCH: AOD sent {aod_zombie_payload_count} keys but 0 overlap with Farm expected keys")
+        lines.append(f"  AOD keys: {aod_zombie_keys[:3]}")
+        lines.append(f"  Farm keys: {farm_expectations.zombie_keys[:3]}")
+        issues.append("zombie key_format_mismatch")
+    elif farm_zombie_set:
+        lines.append(f"Zombie overlap: {zombie_overlap}/{len(farm_zombie_set)} expected keys matched")
     
-    if zombie_missed:
-        lines.append(f"Missed zombies: {list(zombie_missed)[:5]}")
-        issues.append(f"Missed {len(zombie_missed)} zombie keys")
-    if shadow_missed:
-        lines.append(f"Missed shadows: {list(shadow_missed)[:5]}")
-        issues.append(f"Missed {len(shadow_missed)} shadow keys")
+    if shadow_key_mismatch:
+        lines.append(f"SHADOW KEY_FORMAT_MISMATCH: AOD sent {aod_shadow_payload_count} keys but 0 overlap with Farm expected keys")
+        lines.append(f"  AOD keys: {aod_shadow_keys[:3]}")
+        lines.append(f"  Farm keys: {farm_expectations.shadow_keys[:3]}")
+        issues.append("shadow key_format_mismatch")
+    elif farm_shadow_set:
+        lines.append(f"Shadow overlap: {shadow_overlap}/{len(farm_shadow_set)} expected keys matched")
     
-    zombie_extra = aod_zombie_set - farm_zombie_set
-    shadow_extra = aod_shadow_set - farm_shadow_set
+    zombie_diff = abs(aod_zombies - farm_zombies)
+    shadow_diff = abs(aod_shadows - farm_shadows)
     
-    if zombie_extra:
-        lines.append(f"Extra zombies in AOD: {list(zombie_extra)[:5]}")
-    if shadow_extra:
-        lines.append(f"Extra shadows in AOD: {list(shadow_extra)[:5]}")
+    if zombie_diff > 0 and not zombie_key_mismatch:
+        issues.append(f"Zombie count off by {zombie_diff}")
+    if shadow_diff > 0 and not shadow_key_mismatch:
+        issues.append(f"Shadow count off by {shadow_diff}")
+    
+    if not zombie_key_mismatch:
+        zombie_missed = farm_zombie_set - aod_zombie_set
+        zombie_extra = aod_zombie_set - farm_zombie_set
+        if zombie_missed:
+            lines.append(f"Missed zombies: {list(zombie_missed)[:5]}")
+            issues.append(f"Missed {len(zombie_missed)} zombie keys")
+        if zombie_extra:
+            lines.append(f"Extra zombies in AOD: {list(zombie_extra)[:5]}")
+    
+    if not shadow_key_mismatch:
+        shadow_missed = farm_shadow_set - aod_shadow_set
+        shadow_extra = aod_shadow_set - farm_shadow_set
+        if shadow_missed:
+            lines.append(f"Missed shadows: {list(shadow_missed)[:5]}")
+            issues.append(f"Missed {len(shadow_missed)} shadow keys")
+        if shadow_extra:
+            lines.append(f"Extra shadows in AOD: {list(shadow_extra)[:5]}")
     
     if not issues:
         status = ReconcileStatusEnum.PASS
         lines.append("RESULT: PASS - All expectations met.")
-    elif (zombie_diff <= 2 and shadow_diff <= 2) and len(zombie_missed) <= 2 and len(shadow_missed) <= 2:
+    elif zombie_key_mismatch or shadow_key_mismatch:
+        status = ReconcileStatusEnum.FAIL
+        lines.append(f"RESULT: FAIL - Key format mismatch detected. AOD must send canonical vendor_key (domain-style like 'yammercom').")
+    elif (zombie_diff <= 2 and shadow_diff <= 2):
         status = ReconcileStatusEnum.WARN
         lines.append(f"RESULT: WARN - Minor discrepancies: {', '.join(issues[:3])}")
     else:
         status = ReconcileStatusEnum.FAIL
         lines.append(f"RESULT: FAIL - Significant discrepancies: {', '.join(issues[:3])}")
     
-    report_text = "\n".join(lines[:12])
+    report_text = "\n".join(lines[:15])
     return report_text, status
 
 
