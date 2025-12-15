@@ -213,3 +213,72 @@ pytest tests/ -v
   - 25% within 8-30 days (recent)
   - 10% within 31-90 days (stale)
   - 5% within 91-365 days (zombie candidates)
+
+## Vendor Identity Contract (IRL-correct)
+
+### Identity vs Evidence
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `vendor_key` | **IDENTITY** | Canonical internal ID. Stable, source-agnostic, deterministic. Used for reconciliation. |
+| `domains[]` | evidence | Known domains for this vendor. Optional, messy, variable by source. |
+| `display_name` | evidence | Human-readable name. Optional, may vary by plane. |
+| `display_names[]` | evidence | All observed names across planes. |
+
+### Canonicalization Rule
+
+```
+vendor_key = normalize(vendor_hint) if vendor_hint else normalize(observed_name)
+normalize(s) = lowercase + strip all non-alphanumeric
+```
+
+Examples:
+- "Microsoft" → `microsoft`
+- "Atlassian" → `atlassian`  
+- "Yammer" → `yammer` (NOT `yammercom`)
+
+### Reconciliation Contract
+
+- **Farm** derives expected zombies/shadows as `vendor_key` lists
+- **AOD** must emit `vendor_key` for each zombie/shadow asset
+- Comparison is **only** on `vendor_key`
+- Evidence fields are for display/debugging, never for matching
+
+### AOD Payload Contract
+
+```json
+{
+  "aod_lists": {
+    "zombie_assets": [
+      {"vendor_key": "atlassian", "display_name": "Hipchat"}
+    ],
+    "shadow_assets": [
+      {"vendor_key": "grammarly", "display_name": "Grammarly"}
+    ]
+  }
+}
+```
+
+Required: `vendor_key`
+Optional: `display_name`
+
+### Farm Expectations Contract
+
+```json
+{
+  "zombie_assets": [
+    {
+      "vendor_key": "atlassian",
+      "domains": ["hipchat.com"],
+      "display_names": ["Hipchat", "Hipchat-prod"]
+    }
+  ]
+}
+```
+
+### Forbidden Patterns
+
+- Keying on domain (e.g., `yammercom`) - domains are evidence, not identity
+- Keying on display name - names vary by source
+- Plane-specific hacks for matching
+- `.com` munging as identity
