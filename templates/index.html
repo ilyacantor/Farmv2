@@ -556,18 +556,24 @@
                 const analysisData = await analysisResp.json();
                 const analysis = analysisData.analysis || {};
                 
-                const farmZombieCount = rec.farm_expectations?.expected_zombies || 0;
-                const farmShadowCount = rec.farm_expectations?.expected_shadows || 0;
-                const aodZombieCount = rec.aod_summary?.zombie_count || 0;
-                const aodShadowCount = rec.aod_summary?.shadow_count || 0;
+                const summary = analysis.summary || {};
+                const farmZombieCount = summary.farm_zombies || rec.farm_expectations?.expected_zombies || 0;
+                const farmShadowCount = summary.farm_shadows || rec.farm_expectations?.expected_shadows || 0;
+                const aodZombieCount = summary.aod_zombies || rec.aod_summary?.zombie_count || 0;
+                const aodShadowCount = summary.aod_shadows || rec.aod_summary?.shadow_count || 0;
                 
-                const farmZombies = rec.farm_expectations?.zombie_keys || [];
-                const farmShadows = rec.farm_expectations?.shadow_keys || [];
-                const aodZombies = rec.aod_lists?.zombie_assets || [];
-                const aodShadows = rec.aod_lists?.shadow_assets || [];
-                
-                const zombieAlign = computeMisalignment(farmZombies, aodZombies, aodZombieCount);
-                const shadowAlign = computeMisalignment(farmShadows, aodShadows, aodShadowCount);
+                const zombieAlign = {
+                    matched: (analysis.matched_zombies || []).map(a => a.asset_key),
+                    missed: (analysis.missed_zombies || []).map(a => a.asset_key),
+                    extraKeys: (analysis.false_positive_zombies || []).map(a => a.asset_key),
+                    extraCount: (analysis.false_positive_zombies || []).length
+                };
+                const shadowAlign = {
+                    matched: (analysis.matched_shadows || []).map(a => a.asset_key),
+                    missed: (analysis.missed_shadows || []).map(a => a.asset_key),
+                    extraKeys: (analysis.false_positive_shadows || []).map(a => a.asset_key),
+                    extraCount: (analysis.false_positive_shadows || []).length
+                };
                 
                 const hasMismatches = (analysis.missed_shadows?.length || 0) + (analysis.missed_zombies?.length || 0) + 
                                      (analysis.false_positive_shadows?.length || 0) + (analysis.false_positive_zombies?.length || 0) > 0;
