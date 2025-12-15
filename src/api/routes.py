@@ -195,6 +195,9 @@ async def create_snapshot(request: SnapshotRequest):
     snapshot.meta.snapshot_id = unique_snapshot_id
     snapshot_dict = snapshot.model_dump()
     
+    expected_block = compute_expected_block(snapshot_dict)
+    snapshot_dict['__expected__'] = expected_block
+    
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute("""
@@ -248,6 +251,21 @@ async def get_snapshot_expectations(snapshot_id: str):
         snapshot = json.loads(row["snapshot_json"])
         expectations = analyze_snapshot_for_expectations(snapshot)
         return expectations.model_dump()
+
+
+@router.get("/api/snapshots/{snapshot_id}/expected")
+async def get_snapshot_expected_block(snapshot_id: str):
+    """Get the __expected__ block with detailed classifications, reason codes, and RCA hints."""
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+        snapshot = json.loads(row["snapshot_json"])
+        expected_block = compute_expected_block(snapshot)
+        return expected_block
 
 
 @router.get("/api/snapshots", response_model=list[SnapshotMetadata])
@@ -350,7 +368,8 @@ def is_stale(ts: Optional[str], window_days: int, reference: datetime) -> bool:
     return (reference - dt).days > window_days
 
 
-def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> FarmExpectations:
+def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
+    """Build candidate flags from snapshot planes. Returns {key: {flags...}}."""
     meta = snapshot.get('meta', {})
     planes = snapshot.get('planes', {})
     reference = parse_timestamp(meta.get('created_at')) or datetime.utcnow()
@@ -364,6 +383,7 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
         'cmdb_present': False,
         'finance_present': False,
         'cloud_present': False,
+        'discovery_present': False,
         'activity_present': False,
         'stale_timestamps': [],
     })
@@ -378,6 +398,7 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
         
         candidates[key]['key'] = key
         candidates[key]['names'].add(name)
+        candidates[key]['discovery_present'] = True
         if domain:
             candidates[key]['domains'].add(domain)
         vendor_hint = obs.get('vendor_hint')
@@ -454,6 +475,93 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
                 cand['finance_present'] = True
             if vendor and any(vendor == normalize_name(v) for v in cand['vendors']):
                 cand['finance_present'] = True
+    
+    return dict(candidates)
+
+
+def derive_reason_codes(cand: dict) -> list[str]:
+    """Derive canonical reason codes from candidate flags."""
+    codes = []
+    if cand.get('discovery_present'):
+        codes.append('HAS_DISCOVERY')
+    if cand.get('idp_present'):
+        codes.append('HAS_IDP')
+    else:
+        codes.append('NO_IDP')
+    if cand.get('cmdb_present'):
+        codes.append('HAS_CMDB')
+    else:
+        codes.append('NO_CMDB')
+    if cand.get('finance_present'):
+        codes.append('HAS_FINANCE')
+    if cand.get('cloud_present'):
+        codes.append('HAS_CLOUD')
+    if cand.get('activity_present'):
+        codes.append('RECENT_ACTIVITY')
+    elif cand.get('stale_timestamps'):
+        codes.append('STALE_ACTIVITY')
+    return codes
+
+
+def derive_rca_hint(classification: str, cand: dict) -> Optional[str]:
+    """Derive RCA hint for debugging."""
+    if classification == 'shadow':
+        if not cand.get('idp_present') and not cand.get('cmdb_present'):
+            return 'UNGOVERNED_WITH_SPEND'
+    elif classification == 'zombie':
+        if cand.get('stale_timestamps'):
+            return 'STALE_NO_RECENT_USE'
+    return None
+
+
+def compute_expected_block(snapshot: dict, window_days: int = 90) -> dict:
+    """Compute the __expected__ block with classifications, reasons, and RCA hints."""
+    candidates = build_candidate_flags(snapshot, window_days)
+    
+    shadow_expected = []
+    zombie_expected = []
+    clean_expected = []
+    expected_reasons = {}
+    expected_admission = {}
+    expected_rca_hint = {}
+    
+    for key, cand in candidates.items():
+        reasons = derive_reason_codes(cand)
+        expected_reasons[key] = reasons
+        
+        is_shadow = (cand['finance_present'] or cand['cloud_present']) and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present']
+        is_zombie = (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
+        
+        if is_shadow:
+            shadow_expected.append({'asset_key': key})
+            expected_admission[key] = 'admitted'
+            rca = derive_rca_hint('shadow', cand)
+            if rca:
+                expected_rca_hint[key] = rca
+        elif is_zombie:
+            zombie_expected.append({'asset_key': key})
+            expected_admission[key] = 'admitted'
+            rca = derive_rca_hint('zombie', cand)
+            if rca:
+                expected_rca_hint[key] = rca
+        else:
+            if cand['discovery_present']:
+                clean_expected.append({'asset_key': key})
+                expected_admission[key] = 'admitted'
+    
+    return {
+        'shadow_expected': shadow_expected,
+        'zombie_expected': zombie_expected,
+        'clean_expected': clean_expected,
+        'expected_reasons': expected_reasons,
+        'expected_admission': expected_admission,
+        'expected_rca_hint': expected_rca_hint,
+    }
+
+
+def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> FarmExpectations:
+    """Legacy function for backward compatibility."""
+    candidates = build_candidate_flags(snapshot, window_days)
     
     shadow_keys = []
     zombie_keys = []
