@@ -360,8 +360,8 @@
         
         function parseReportSummary(reportText) {
             const result = { aodZombies: '-', farmZombies: '-', aodShadows: '-', farmShadows: '-' };
-            const zombieMatch = reportText.match(/AOD reported (\d+) zombies, Farm expected (\d+)/);
-            const shadowMatch = reportText.match(/AOD reported (\d+) shadows, Farm expected (\d+)/);
+            const zombieMatch = reportText.match(/Zombie count: \w+ \(AOD (\d+) [<>=] Farm (\d+)\)/);
+            const shadowMatch = reportText.match(/Shadow count: \w+ \(AOD (\d+) [<>=] Farm (\d+)\)/);
             if (zombieMatch) { result.aodZombies = zombieMatch[1]; result.farmZombies = zombieMatch[2]; }
             if (shadowMatch) { result.aodShadows = shadowMatch[1]; result.farmShadows = shadowMatch[2]; }
             return result;
