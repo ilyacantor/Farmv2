@@ -1010,6 +1010,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     expected_rca = expected_block.get('expected_rca_hint', {})
     
     aod_lists = aod_payload.get('aod_lists', {})
+    aod_summary = aod_payload.get('aod_summary', {})
     aod_shadows = set(aod_lists.get('shadow_assets', []))
     aod_zombies = set(aod_lists.get('zombie_assets', []))
     aod_reason_codes = (
@@ -1023,6 +1024,21 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         aod_lists.get('admission') or 
         {}
     )
+    
+    shadow_count_reported = aod_summary.get('shadow_count', 0)
+    shadow_keys_received = len(aod_shadows)
+    zombie_count_reported = aod_summary.get('zombie_count', 0)
+    zombie_keys_received = len(aod_zombies)
+    
+    payload_health = {
+        'shadow_count_reported': shadow_count_reported,
+        'shadow_keys_received': shadow_keys_received,
+        'shadow_mismatch': shadow_count_reported != shadow_keys_received,
+        'zombie_count_reported': zombie_count_reported,
+        'zombie_keys_received': zombie_keys_received,
+        'zombie_mismatch': zombie_count_reported != zombie_keys_received,
+        'has_issues': (shadow_count_reported != shadow_keys_received) or (zombie_count_reported != zombie_keys_received),
+    }
     
     def norm(s):
         """Normalize asset key for comparison - extract core name, remove suffixes."""
@@ -1051,6 +1067,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'aod_shadows': len(aod_shadows),
             'aod_zombies': len(aod_zombies),
         },
+        'payload_health': payload_health,
         'matched_shadows': [],
         'matched_zombies': [],
         'missed_shadows': [],

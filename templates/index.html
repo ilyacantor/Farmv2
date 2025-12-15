@@ -578,12 +578,16 @@
                 const hasMismatches = (analysis.missed_shadows?.length || 0) + (analysis.missed_zombies?.length || 0) + 
                                      (analysis.false_positive_shadows?.length || 0) + (analysis.false_positive_zombies?.length || 0) > 0;
                 
+                const payloadHealth = analysis.payload_health || {};
+                const hasPayloadIssues = payloadHealth.has_issues;
+                
                 const modal = document.getElementById('detailModal');
                 document.getElementById('detailContent').innerHTML = `
                     <div class="space-y-4">
                         <div class="flex items-center gap-3">
                             ${getStatusBadge(rec.status, 'large')}
                             <span class="text-lg text-white">${rec.tenant_id}</span>
+                            ${hasPayloadIssues ? '<span class="px-2 py-1 text-xs rounded bg-orange-900 text-orange-300">AOD payload: count != keys</span>' : ''}
                         </div>
                         <div class="grid grid-cols-2 gap-4 text-sm">
                             <div><span class="text-slate-400">Snapshot:</span> <span class="text-white">${rec.snapshot_id}</span></div>
