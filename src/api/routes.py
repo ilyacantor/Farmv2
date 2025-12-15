@@ -532,8 +532,8 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
     zombie_overlap = len(aod_zombie_set & farm_zombie_set)
     shadow_overlap = len(aod_shadow_set & farm_shadow_set)
     
-    zombie_key_mismatch = aod_zombie_payload_count > 0 and zombie_overlap == 0 and farm_zombies > 0
-    shadow_key_mismatch = aod_shadow_payload_count > 0 and shadow_overlap == 0 and farm_shadows > 0
+    zombie_key_mismatch = aod_zombie_payload_count > 0 and zombie_overlap == 0 and len(farm_zombie_set) > 0
+    shadow_key_mismatch = aod_shadow_payload_count > 0 and shadow_overlap == 0 and len(farm_shadow_set) > 0
     
     if zombie_key_mismatch:
         lines.append(f"ZOMBIE KEY_FORMAT_MISMATCH: AOD sent {aod_zombie_payload_count} keys but 0 overlap with Farm expected keys")
