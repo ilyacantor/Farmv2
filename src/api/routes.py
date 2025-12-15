@@ -313,21 +313,24 @@ def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
         return None
 
 
-def is_within_window(ts: Optional[str], window_days: int, reference: datetime) -> bool:
+ZOMBIE_WINDOW_DAYS = 90
+
+
+def is_within_window(ts: Optional[str], reference: datetime) -> bool:
     dt = parse_timestamp(ts)
     if not dt:
         return False
-    return (reference - dt).days <= window_days
+    return (reference - dt).days <= ZOMBIE_WINDOW_DAYS
 
 
-def is_stale(ts: Optional[str], window_days: int, reference: datetime) -> bool:
+def is_stale(ts: Optional[str], reference: datetime) -> bool:
     dt = parse_timestamp(ts)
     if not dt:
         return False
-    return (reference - dt).days > window_days
+    return (reference - dt).days > ZOMBIE_WINDOW_DAYS
 
 
-def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> FarmExpectations:
+def analyze_snapshot_for_expectations(snapshot: dict) -> FarmExpectations:
     meta = snapshot.get('meta', {})
     planes = snapshot.get('planes', {})
     reference = parse_timestamp(meta.get('created_at')) or datetime.utcnow()
@@ -363,9 +366,9 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
         
         ts = obs.get('observed_at')
         if ts:
-            if is_within_window(ts, window_days, reference):
+            if is_within_window(ts, reference):
                 candidates[key]['activity_present'] = True
-            elif is_stale(ts, window_days, reference):
+            elif is_stale(ts, reference):
                 candidates[key]['stale_timestamps'].append(ts)
     
     idp_objects = planes.get('idp', {}).get('objects', [])
@@ -386,9 +389,9 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 30) -> 
         if ts and matched_keys:
             for key in matched_keys:
                 cand = candidates[key]
-                if is_within_window(ts, window_days, reference):
+                if is_within_window(ts, reference):
                     cand['activity_present'] = True
-                elif is_stale(ts, window_days, reference):
+                elif is_stale(ts, reference):
                     cand['stale_timestamps'].append(ts)
     
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])
@@ -764,13 +767,13 @@ async def check_aod_run_status(
             )
 
 
-def compute_expected_zombies_v0(snapshot_data: dict, window_days: int) -> list[str]:
+def compute_expected_zombies_v0(snapshot_data: dict) -> list[str]:
     """
     Zombie v0 Grader: Compute expected zombie asset_ids from snapshot data.
     
     Rule: zombie = exists_in_sor AND NOT activity_in_window
     - exists_in_sor = present in IdP or CMDB (by asset_id)
-    - activity_in_window = observed_at within window_days of snapshot creation
+    - activity_in_window = observed_at within 90 days of snapshot creation
     """
     meta = snapshot_data.get('meta', {})
     planes = snapshot_data.get('planes', {})
@@ -797,7 +800,7 @@ def compute_expected_zombies_v0(snapshot_data: dict, window_days: int) -> list[s
         asset_id = obs.get('asset_id')
         observed_at = obs.get('observed_at')
         if asset_id and observed_at:
-            if is_within_window(observed_at, window_days, reference):
+            if is_within_window(observed_at, reference):
                 active_asset_ids.add(asset_id)
     
     zombie_asset_ids = sor_asset_ids - active_asset_ids
@@ -807,12 +810,12 @@ def compute_expected_zombies_v0(snapshot_data: dict, window_days: int) -> list[s
 @router.get("/v0/grade/zombies")
 async def grade_zombies_v0(
     run_id: str = Query(..., description="Run ID to grade"),
-    window_days: int = Query(30, ge=1, le=365, description="Activity window in days"),
     aod_url: Optional[str] = Query(None, description="AOD base URL (uses AOD_BASE_URL env if not provided)")
 ):
     """
     Zombie v0 Grader - Walled off from existing reconciliation logic.
     Compares Farm expected zombies vs AOD reported zombies by asset_id only.
+    Uses fixed 90-day activity window.
     """
     pool = await get_pool()
     
@@ -826,7 +829,7 @@ async def grade_zombies_v0(
         
         snapshot_data = json.loads(row["snapshot_json"])
     
-    expected_zombies = compute_expected_zombies_v0(snapshot_data, window_days)
+    expected_zombies = compute_expected_zombies_v0(snapshot_data)
     
     if not aod_url:
         aod_url = os.environ.get("AOD_URL") or os.environ.get("AOD_BASE_URL", "")
@@ -848,7 +851,7 @@ async def grade_zombies_v0(
         try:
             resp = await client.get(
                 f"{aod_url}/v0/zombies",
-                params={"run_id": run_id, "window_days": window_days},
+                params={"run_id": run_id},
                 headers=headers
             )
             
@@ -877,7 +880,7 @@ async def grade_zombies_v0(
     
     return {
         "run_id": run_id,
-        "window_days": window_days,
+        "window_days": ZOMBIE_WINDOW_DAYS,
         "aod_url": aod_url,
         "result": "PASS" if passed else "FAIL",
         "aod_error": aod_error,
