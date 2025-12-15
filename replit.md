@@ -129,7 +129,7 @@ templates/
 tests/
 └── test_farm.py         # Test suite
 
-data/                    # Generated snapshots (gitignored)
+data/                    # SQLite database (farm.db)
 ```
 
 ## Data Planes
@@ -173,11 +173,6 @@ Farm generates 7 independent planes:
   - Errors: 400 (not configured), 404 (no AOD run), 502 (AOD unreachable)
 - `GET /api/reconcile?snapshot_id=...` - List reconciliation metadata
 - `GET /api/reconcile/{id}` - Get full reconciliation report
-
-### Legacy API
-- `POST /api/snapshot` - Generate a new enterprise snapshot (full response)
-- `GET /api/runs` - List all run history
-- `GET /api/runs/{run_id}` - Download specific snapshot
 
 ## Schema Version
 

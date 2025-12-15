@@ -261,18 +261,6 @@ class SnapshotResponse(BaseModel):
     planes: AllPlanes
 
 
-class RunRecord(BaseModel):
-    run_id: str
-    tenant_id: str
-    seed: int
-    scale: str
-    enterprise_profile: str
-    realism_profile: str
-    generated_at: str
-    counts: dict[str, int]
-    file_path: Optional[str] = None
-
-
 class SnapshotCreateResponse(BaseModel):
     snapshot_id: str
     snapshot_fingerprint: str
