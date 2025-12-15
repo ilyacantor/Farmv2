@@ -430,33 +430,72 @@
             return { matched, missed, extraKeys, extraCount };
         }
         
+        let assetListIdCounter = 0;
+        const MAX_VISIBLE = 8;
+        
+        function showAssetDetail(key) {
+            alert(`Asset: ${key}\n\nThis is the asset key used for matching between Farm expectations and AOD results.`);
+        }
+        
+        function toggleAssetList(id) {
+            const container = document.getElementById(`asset-list-${id}`);
+            const btn = document.getElementById(`asset-btn-${id}`);
+            if (container.classList.contains('hidden')) {
+                container.classList.remove('hidden');
+                btn.textContent = 'show less';
+            } else {
+                container.classList.add('hidden');
+                btn.textContent = btn.dataset.showText;
+            }
+        }
+        
         function renderAssetList(title, items, colorClass) {
             if (!items || items.length === 0) return '';
+            const id = assetListIdCounter++;
+            const visible = items.slice(0, MAX_VISIBLE);
+            const hidden = items.slice(MAX_VISIBLE);
+            const hasMore = hidden.length > 0;
+            
             return `
                 <div class="mb-2">
                     <span class="text-xs font-medium ${colorClass}">${title} (${items.length}):</span>
                     <div class="flex flex-wrap gap-1 mt-1">
-                        ${items.map(k => `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 ${colorClass}">${k}</span>`).join('')}
+                        ${visible.map(k => `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 ${colorClass} cursor-pointer hover:ring-1 hover:ring-white/30" onclick="showAssetDetail('${k.replace(/'/g, "\\'")}')">${k}</span>`).join('')}
+                        <div id="asset-list-${id}" class="hidden flex flex-wrap gap-1">
+                            ${hidden.map(k => `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 ${colorClass} cursor-pointer hover:ring-1 hover:ring-white/30" onclick="showAssetDetail('${k.replace(/'/g, "\\'")}')">${k}</span>`).join('')}
+                        </div>
                     </div>
+                    ${hasMore ? `<button id="asset-btn-${id}" data-show-text="+ ${hidden.length} more" onclick="toggleAssetList(${id})" class="text-xs ${colorClass} hover:underline mt-1">+ ${hidden.length} more</button>` : ''}
                 </div>
             `;
         }
         
         function renderAssetListWithCount(title, items, count, colorClass) {
             if (count === 0) return '';
-            const showing = items.length < count ? ` (showing ${items.length})` : '';
+            const id = assetListIdCounter++;
+            const visible = items.slice(0, MAX_VISIBLE);
+            const hidden = items.slice(MAX_VISIBLE);
+            const hasMoreKeys = hidden.length > 0;
+            const notShown = count - items.length;
+            
             return `
                 <div class="mb-2">
-                    <span class="text-xs font-medium ${colorClass}">${title} (${count})${showing}:</span>
+                    <span class="text-xs font-medium ${colorClass}">${title} (${count}):</span>
                     <div class="flex flex-wrap gap-1 mt-1">
-                        ${items.map(k => `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 ${colorClass}">${k}</span>`).join('')}
+                        ${visible.map(k => `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 ${colorClass} cursor-pointer hover:ring-1 hover:ring-white/30" onclick="showAssetDetail('${k.replace(/'/g, "\\'")}')">${k}</span>`).join('')}
+                        <div id="asset-list-${id}" class="hidden flex flex-wrap gap-1">
+                            ${hidden.map(k => `<span class="text-xs px-1.5 py-0.5 rounded bg-slate-800 ${colorClass} cursor-pointer hover:ring-1 hover:ring-white/30" onclick="showAssetDetail('${k.replace(/'/g, "\\'")}')">${k}</span>`).join('')}
+                        </div>
                     </div>
+                    ${hasMoreKeys ? `<button id="asset-btn-${id}" data-show-text="+ ${hidden.length} more keys" onclick="toggleAssetList(${id})" class="text-xs ${colorClass} hover:underline mt-1">+ ${hidden.length} more keys</button>` : ''}
+                    ${notShown > 0 ? `<div class="text-xs text-slate-500 mt-1">${notShown} additional not sent by AOD</div>` : ''}
                 </div>
             `;
         }
         
         async function viewReconciliationReport(reconciliationId) {
             try {
+                assetListIdCounter = 0;
                 const response = await fetch(`/api/reconcile/${reconciliationId}`);
                 const rec = await response.json();
                 
