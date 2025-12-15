@@ -762,6 +762,214 @@ async def get_reconciliation(reconciliation_id: str):
         )
 
 
+EXPLANATION_TEMPLATES = {
+    'shadow_missed': {
+        'default': "AOD failed to identify {key} as shadow IT.",
+        'UNGOVERNED_WITH_SPEND': "AOD missed {key}: has finance spend but no governance record in IdP/CMDB. This is classic shadow IT - money going out for an app that IT doesn't know about.",
+        'HAS_FINANCE+NO_IDP+NO_CMDB': "AOD missed {key}: appears in finance records with active spend, but missing from both IdP and CMDB. Users are paying for something IT hasn't approved.",
+        'HAS_CLOUD+NO_IDP+NO_CMDB': "AOD missed {key}: found in cloud resources but not in identity or asset management systems. Someone spun up a cloud service outside IT governance.",
+    },
+    'zombie_missed': {
+        'default': "AOD failed to identify {key} as a zombie asset.",
+        'STALE_NO_RECENT_USE': "AOD missed {key}: exists in IdP/CMDB but has no recent activity. License costs continue but nobody's using it.",
+        'HAS_IDP+STALE_ACTIVITY': "AOD missed {key}: still provisioned in IdP but activity is stale (90+ days old). This app might be abandoned.",
+        'HAS_CMDB+STALE_ACTIVITY': "AOD missed {key}: still in CMDB as managed asset but no recent usage detected. Potential cost savings by decommissioning.",
+    },
+    'false_positive_shadow': {
+        'default': "AOD incorrectly flagged {key} as shadow IT, but Farm expected it to be clean.",
+        'HAS_IDP': "AOD false positive on {key}: this app is actually governed - it appears in IdP. Not shadow IT.",
+        'HAS_CMDB': "AOD false positive on {key}: this app is tracked in CMDB as a managed asset. Not shadow IT.",
+        'HAS_IDP+HAS_CMDB': "AOD false positive on {key}: fully governed - appears in both IdP and CMDB. Definitely not shadow IT.",
+    },
+    'false_positive_zombie': {
+        'default': "AOD incorrectly flagged {key} as zombie, but Farm expected it to be active.",
+        'RECENT_ACTIVITY': "AOD false positive on {key}: this app has recent activity within the detection window. Users are actively using it.",
+        'HAS_DISCOVERY+RECENT_ACTIVITY': "AOD false positive on {key}: we see recent discovery observations showing active usage. Not a zombie.",
+    },
+    'matched': {
+        'shadow': "Correctly identified {key} as shadow IT.",
+        'zombie': "Correctly identified {key} as zombie asset.",
+    }
+}
+
+
+def get_explanation(mismatch_type: str, key: str, reason_codes: list, rca_hint: str = None) -> str:
+    """Generate plain English explanation for a mismatch."""
+    templates = EXPLANATION_TEMPLATES.get(mismatch_type, {})
+    
+    if rca_hint and rca_hint in templates:
+        return templates[rca_hint].format(key=key)
+    
+    code_combo = '+'.join(sorted(reason_codes[:3]))
+    if code_combo in templates:
+        return templates[code_combo].format(key=key)
+    
+    for code in reason_codes:
+        if code in templates:
+            return templates[code].format(key=key)
+    
+    return templates.get('default', f"Mismatch on {key}").format(key=key)
+
+
+def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> dict:
+    """Build detailed reconciliation analysis comparing Farm expectations vs AOD results."""
+    expected_block = snapshot.get('__expected__', {})
+    if not expected_block:
+        expected_block = compute_expected_block(snapshot)
+    
+    farm_shadows = {a['asset_key'] for a in expected_block.get('shadow_expected', [])}
+    farm_zombies = {a['asset_key'] for a in expected_block.get('zombie_expected', [])}
+    farm_clean = {a['asset_key'] for a in expected_block.get('clean_expected', [])}
+    expected_reasons = expected_block.get('expected_reasons', {})
+    expected_rca = expected_block.get('expected_rca_hint', {})
+    
+    aod_lists = aod_payload.get('aod_lists', {})
+    aod_shadows = set(aod_lists.get('shadow_assets', []))
+    aod_zombies = set(aod_lists.get('zombie_assets', []))
+    
+    def norm(s):
+        """Normalize asset key for comparison - extract core name, remove suffixes."""
+        s = s.lower().strip()
+        s = re.sub(r'[^a-z0-9]', '', s)
+        for suffix in ['com', 'io', 'app', 'net', 'org', 'co']:
+            if s.endswith(suffix) and len(s) > len(suffix) + 2:
+                s = s[:-len(suffix)]
+        return s
+    
+    def find_match(key, target_set):
+        """Find matching key in target set using normalized comparison."""
+        nk = norm(key)
+        for t in target_set:
+            nt = norm(t)
+            if nk == nt:
+                return t
+            if nk in nt or nt in nk:
+                return t
+        return None
+    
+    analysis = {
+        'summary': {
+            'farm_shadows': len(farm_shadows),
+            'farm_zombies': len(farm_zombies),
+            'aod_shadows': len(aod_shadows),
+            'aod_zombies': len(aod_zombies),
+        },
+        'matched_shadows': [],
+        'matched_zombies': [],
+        'missed_shadows': [],
+        'missed_zombies': [],
+        'false_positive_shadows': [],
+        'false_positive_zombies': [],
+    }
+    
+    for key in farm_shadows:
+        reasons = expected_reasons.get(key, [])
+        rca = expected_rca.get(key)
+        if find_match(key, aod_shadows):
+            analysis['matched_shadows'].append({
+                'asset_key': key,
+                'reason_codes': reasons,
+                'rca_hint': rca,
+                'explanation': EXPLANATION_TEMPLATES['matched']['shadow'].format(key=key),
+            })
+        else:
+            analysis['missed_shadows'].append({
+                'asset_key': key,
+                'reason_codes': reasons,
+                'rca_hint': rca,
+                'explanation': get_explanation('shadow_missed', key, reasons, rca),
+            })
+    
+    for key in farm_zombies:
+        reasons = expected_reasons.get(key, [])
+        rca = expected_rca.get(key)
+        if find_match(key, aod_zombies):
+            analysis['matched_zombies'].append({
+                'asset_key': key,
+                'reason_codes': reasons,
+                'rca_hint': rca,
+                'explanation': EXPLANATION_TEMPLATES['matched']['zombie'].format(key=key),
+            })
+        else:
+            analysis['missed_zombies'].append({
+                'asset_key': key,
+                'reason_codes': reasons,
+                'rca_hint': rca,
+                'explanation': get_explanation('zombie_missed', key, reasons, rca),
+            })
+    
+    for aod_key in aod_shadows:
+        if not find_match(aod_key, farm_shadows):
+            reasons = expected_reasons.get(aod_key, [])
+            farm_class = 'zombie' if aod_key in farm_zombies else ('clean' if aod_key in farm_clean else 'unknown')
+            analysis['false_positive_shadows'].append({
+                'asset_key': aod_key,
+                'farm_classification': farm_class,
+                'reason_codes': reasons,
+                'explanation': get_explanation('false_positive_shadow', aod_key, reasons),
+            })
+    
+    for aod_key in aod_zombies:
+        if not find_match(aod_key, farm_zombies):
+            reasons = expected_reasons.get(aod_key, [])
+            farm_class = 'shadow' if aod_key in farm_shadows else ('clean' if aod_key in farm_clean else 'unknown')
+            analysis['false_positive_zombies'].append({
+                'asset_key': aod_key,
+                'farm_classification': farm_class,
+                'reason_codes': reasons,
+                'explanation': get_explanation('false_positive_zombie', aod_key, reasons),
+            })
+    
+    total_expected = len(farm_shadows) + len(farm_zombies)
+    total_matched = len(analysis['matched_shadows']) + len(analysis['matched_zombies'])
+    total_missed = len(analysis['missed_shadows']) + len(analysis['missed_zombies'])
+    total_fp = len(analysis['false_positive_shadows']) + len(analysis['false_positive_zombies'])
+    
+    if total_missed == 0 and total_fp == 0:
+        verdict = "PERFECT - AOD correctly identified all expected anomalies with no false positives."
+    elif total_missed == 0:
+        verdict = f"GOOD - AOD found all expected anomalies, but flagged {total_fp} extra items (false positives)."
+    elif total_fp == 0:
+        verdict = f"NEEDS WORK - AOD missed {total_missed} of {total_expected} expected anomalies."
+    else:
+        verdict = f"NEEDS WORK - AOD missed {total_missed} expected anomalies and had {total_fp} false positives."
+    
+    analysis['verdict'] = verdict
+    analysis['accuracy'] = round(total_matched / total_expected * 100, 1) if total_expected > 0 else 100.0
+    
+    return analysis
+
+
+@router.get("/api/reconcile/{reconciliation_id}/analysis")
+async def get_reconciliation_analysis(reconciliation_id: str):
+    """Get detailed analysis comparing Farm expectations vs AOD results with plain English explanations."""
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        rec_row = await conn.fetchrow("SELECT * FROM reconciliations WHERE reconciliation_id = $1", reconciliation_id)
+        if not rec_row:
+            raise HTTPException(status_code=404, detail="Reconciliation not found")
+        
+        snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
+        if not snap_row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+        snapshot = json.loads(snap_row["snapshot_json"])
+        aod_payload = json.loads(rec_row["aod_payload_json"])
+        farm_exp = json.loads(rec_row["farm_expectations_json"])
+        
+        analysis = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
+        
+        return {
+            'reconciliation_id': reconciliation_id,
+            'snapshot_id': rec_row["snapshot_id"],
+            'tenant_id': rec_row["tenant_id"],
+            'aod_run_id': rec_row["aod_run_id"],
+            'status': rec_row["status"],
+            'analysis': analysis,
+        }
+
+
 @router.post("/api/reconcile/auto", response_model=AutoReconcileResponse)
 async def auto_reconcile(request: AutoReconcileRequest):
     aod_url = os.environ.get("AOD_URL") or os.environ.get("AOD_BASE_URL", "")
