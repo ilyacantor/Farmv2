@@ -1011,8 +1011,16 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     
     aod_lists = aod_payload.get('aod_lists', {})
     aod_summary = aod_payload.get('aod_summary', {})
-    aod_shadows = set(aod_lists.get('shadow_assets', []))
-    aod_zombies = set(aod_lists.get('zombie_assets', []))
+    aod_shadows = set(
+        aod_lists.get('shadow_asset_keys') or 
+        aod_lists.get('shadow_asset_keys_sample') or 
+        aod_lists.get('shadow_assets', [])
+    )
+    aod_zombies = set(
+        aod_lists.get('zombie_asset_keys') or 
+        aod_lists.get('zombie_asset_keys_sample') or 
+        aod_lists.get('zombie_assets', [])
+    )
     aod_reason_codes = (
         aod_lists.get('actual_reason_codes') or 
         aod_lists.get('reason_codes') or 
@@ -1351,8 +1359,8 @@ async def auto_reconcile(request: AutoReconcileRequest):
         zombie_count=aod_summary_data.get("zombie_count", 0),
     )
     aod_lists = AODLists(
-        zombie_assets=aod_lists_data.get("zombie_assets", []),
-        shadow_assets=aod_lists_data.get("shadow_assets", []),
+        zombie_assets=aod_lists_data.get("zombie_asset_keys") or aod_lists_data.get("zombie_asset_keys_sample") or aod_lists_data.get("zombie_assets", []),
+        shadow_assets=aod_lists_data.get("shadow_asset_keys") or aod_lists_data.get("shadow_asset_keys_sample") or aod_lists_data.get("shadow_assets", []),
         high_severity_findings=aod_lists_data.get("high_severity_findings", []),
         actual_reason_codes=aod_lists_data.get("actual_reason_codes", {}),
         admission_actual=aod_lists_data.get("admission_actual", {}),
