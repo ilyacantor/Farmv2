@@ -9,6 +9,7 @@ Exit codes:
 """
 
 import hashlib
+import json
 import os
 import sqlite3
 import sys
@@ -63,6 +64,21 @@ def sha256_dir_listing(path: Path) -> str:
         return f"ERROR:{e}"
 
 
+def find_key_recursive(obj, key_name):
+    """Recursively search for a key in nested dict/list structures."""
+    if isinstance(obj, dict):
+        if key_name in obj:
+            return True
+        for v in obj.values():
+            if find_key_recursive(v, key_name):
+                return True
+    elif isinstance(obj, list):
+        for item in obj:
+            if find_key_recursive(item, key_name):
+                return True
+    return False
+
+
 class SanityChecker:
     def __init__(self, repo_root: Path):
         self.repo_root = repo_root
@@ -70,6 +86,7 @@ class SanityChecker:
         self.warnings = []
         self.checks_passed = 0
         self.checks_failed = 0
+        self.table_counts = {}
 
     def print_header(self):
         print("=" * 60)
@@ -173,6 +190,7 @@ class SanityChecker:
                 try:
                     cursor.execute(f"SELECT COUNT(*) FROM {table};")
                     count = cursor.fetchone()[0]
+                    self.table_counts[table] = count
                     print(f"    {table}: {count} rows")
                 except Exception as e:
                     print(f"    {table}: ERROR counting ({e})")
@@ -182,6 +200,101 @@ class SanityChecker:
             
         except Exception as e:
             self.check_fail("sqlite_integrity", f"Could not open/query farm.db: {e}")
+
+    def check_run_provenance(self):
+        """Check: Run provenance - snapshots must have corresponding runs."""
+        print("\n--- Check: Run Provenance ---")
+        
+        snapshots_count = self.table_counts.get("snapshots", 0)
+        runs_count = self.table_counts.get("runs", 0)
+        
+        print(f"  snapshots: {snapshots_count} rows")
+        print(f"  runs: {runs_count} rows")
+        
+        if snapshots_count > 0 and runs_count == 0:
+            self.check_fail(
+                "run_provenance",
+                f"snapshots table has {snapshots_count} rows but runs table has 0 rows. "
+                f"Orphaned snapshots without provenance."
+            )
+        else:
+            self.check_pass("run_provenance")
+
+    def check_observed_at_coverage(self):
+        """Check: observed_at field presence in snapshot payloads."""
+        print("\n--- Check: observed_at Coverage ---")
+        
+        db_path = self.repo_root / "data" / "farm.db"
+        
+        if not db_path.exists():
+            self.check_pass("observed_at_coverage", "no farm.db present")
+            return
+        
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            cursor = conn.cursor()
+            
+            cursor.execute("PRAGMA table_info(snapshots);")
+            columns = [(row[1], row[2]) for row in cursor.fetchall()]
+            print(f"  snapshots columns: {[(c[0], c[1]) for c in columns]}")
+            
+            json_col = None
+            for col_name, col_type in columns:
+                if "json" in col_name.lower() or "payload" in col_name.lower() or "blob" in col_name.lower():
+                    json_col = col_name
+                    break
+            if not json_col:
+                for col_name, col_type in columns:
+                    if col_type.upper() == "TEXT" and col_name not in ("snapshot_id", "tenant_id", "scale", "enterprise_profile", "realism_profile", "created_at", "schema_version", "snapshot_fingerprint"):
+                        json_col = col_name
+                        break
+            
+            if not json_col:
+                self.check_fail("observed_at_coverage", "Could not identify JSON payload column in snapshots table")
+                conn.close()
+                return
+            
+            print(f"  JSON payload column: {json_col}")
+            
+            cursor.execute(f"SELECT snapshot_id, {json_col} FROM snapshots LIMIT 10;")
+            rows = cursor.fetchall()
+            
+            if not rows:
+                self.check_pass("observed_at_coverage", "no snapshots to check")
+                conn.close()
+                return
+            
+            print(f"  Sampling {len(rows)} snapshots...")
+            
+            missing_observed_at = []
+            for snapshot_id, payload in rows:
+                try:
+                    data = json.loads(payload)
+                except Exception as e:
+                    self.check_fail("observed_at_coverage", f"Snapshot {snapshot_id[:8]} has unparseable JSON: {e}")
+                    conn.close()
+                    return
+                
+                has_observed_at = find_key_recursive(data, "observed_at")
+                
+                if not has_observed_at:
+                    top_keys = list(data.keys())[:10] if isinstance(data, dict) else ["<not a dict>"]
+                    missing_observed_at.append((snapshot_id, top_keys))
+            
+            conn.close()
+            
+            if missing_observed_at:
+                for sid, keys in missing_observed_at[:3]:
+                    print(f"    {sid[:8]}: missing observed_at, top keys: {keys}")
+                self.check_fail(
+                    "observed_at_coverage",
+                    f"{len(missing_observed_at)}/{len(rows)} sampled snapshots missing observed_at field"
+                )
+            else:
+                self.check_pass("observed_at_coverage", f"all {len(rows)} sampled snapshots have observed_at")
+            
+        except Exception as e:
+            self.check_fail("observed_at_coverage", f"Error checking snapshots: {e}")
 
     def check_immutability_hash(self):
         """Check 3: Snapshot immutability hint (hash summary)."""
@@ -228,13 +341,21 @@ class SanityChecker:
                 
                 for table in tables:
                     cursor.execute(f"PRAGMA table_info({table});")
-                    columns = [row[1] for row in cursor.fetchall()]
+                    col_info = [(row[1], row[2]) for row in cursor.fetchall()]
                     
-                    for col in columns:
-                        col_lower = col.lower()
+                    for col_name, col_type in col_info:
+                        col_lower = col_name.lower()
                         for pattern in suspicious_patterns:
                             if pattern in col_lower:
-                                found_suspicious.append(f"{table}.{col}")
+                                example_val = None
+                                try:
+                                    cursor.execute(f"SELECT {col_name} FROM {table} LIMIT 1;")
+                                    row = cursor.fetchone()
+                                    if row:
+                                        example_val = str(row[0])[:50]
+                                except:
+                                    example_val = "<error>"
+                                found_suspicious.append((table, col_name, col_type, example_val))
                 
                 conn.close()
             except Exception as e:
@@ -246,7 +367,6 @@ class SanityChecker:
                 print(f"  WARNING: Legacy JSON files exist (already a FAIL condition)")
                 for jf in json_files:
                     try:
-                        import json
                         with open(jf, 'r') as f:
                             data = json.load(f)
                         if isinstance(data, dict):
@@ -256,8 +376,11 @@ class SanityChecker:
                         pass
         
         if found_suspicious:
-            for col in found_suspicious:
-                self.check_warn("schema_smell", f"Suspicious column: {col}")
+            for table, col, col_type, example in found_suspicious:
+                self.check_warn(
+                    "schema_smell", 
+                    f"{table}.{col} (type={col_type}, example={example})"
+                )
         else:
             print("  No suspicious column names found")
         
@@ -290,6 +413,8 @@ def main():
         checker.print_header()
         checker.check_dual_storage()
         checker.check_sqlite_integrity()
+        checker.check_run_provenance()
+        checker.check_observed_at_coverage()
         checker.check_immutability_hash()
         checker.check_schema_smell()
         
