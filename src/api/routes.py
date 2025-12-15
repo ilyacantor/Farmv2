@@ -7,6 +7,7 @@ import asyncpg
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from src.generators.enterprise import EnterpriseGenerator
 from src.models.planes import (
@@ -282,6 +283,29 @@ async def list_snapshots(
             )
             for row in rows
         ]
+
+
+class CleanupResponse(BaseModel):
+    deleted_count: int
+    remaining_count: int
+
+
+@router.delete("/api/snapshots/cleanup")
+async def cleanup_old_snapshots(keep: int = Query(3, ge=1, le=100, description="Number of recent snapshots to keep")):
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        result = await conn.execute("""
+            DELETE FROM snapshots 
+            WHERE snapshot_id NOT IN (
+                SELECT snapshot_id FROM snapshots ORDER BY created_at DESC LIMIT $1
+            )
+        """, keep)
+        deleted_count = int(result.split()[-1]) if result else 0
+        
+        remaining = await conn.fetchval("SELECT COUNT(*) FROM snapshots")
+        
+        return CleanupResponse(deleted_count=deleted_count, remaining_count=remaining)
 
 
 def normalize_name(name: str) -> str:
