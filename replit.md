@@ -281,6 +281,57 @@ Farm generates 7 independent planes:
 - `rca_code` per mismatch - deterministic plain-English explanation
 - Side-by-side: `farm_reason_codes` vs `aod_reason_codes` per asset
 
+### AOD Non-Flag Explain Contract
+
+When AOD **doesn't** flag an asset, Farm can query for the decision trace.
+
+**Request:** `POST {AOD_URL}/reconcile/explain-nonflag`
+```json
+{
+  "snapshot_id": "...",
+  "asset_keys": ["app1.com", "legacy-tool"],
+  "ask": "shadow"  // or "zombie" or "both"
+}
+```
+
+**Response (per key):**
+```json
+{
+  "app1.com": {
+    "present_in_aod": true,
+    "decision": "ADMITTED_NOT_SHADOW",
+    "reason_codes": ["HAS_IDP", "HAS_CMDB"]
+  },
+  "legacy-tool": {
+    "present_in_aod": false,
+    "decision": "UNKNOWN_KEY",
+    "reason_codes": ["NO_CANDIDATE"]
+  }
+}
+```
+
+**Decision Enums:**
+- `UNKNOWN_KEY` - AOD never saw it / couldn't form candidate
+- `NOT_ADMITTED` - Saw it, but no admission gate satisfied
+- `ADMITTED_NOT_SHADOW` - Admitted, but fails shadow conditions (has governance)
+- `ADMITTED_NOT_ZOMBIE` - Admitted, but not stale / still active
+
+**Reason Codes (AOD-side):**
+- `NO_CANDIDATE`, `NO_EVIDENCE_INGESTED` - for UNKNOWN_KEY
+- `REJECTED_NO_GATE`, `INSUFFICIENT_DISCOVERY_SOURCES`, `STALE_ACTIVITY` - for NOT_ADMITTED
+- `HAS_IDP`, `HAS_CMDB`, `NO_PRESENCE_EVIDENCE` - for ADMITTED_NOT_SHADOW
+- `RECENT_ACTIVITY`, `HAS_ACTIVE_USERS` - for ADMITTED_NOT_ZOMBIE
+
+**Guardrail:** AOD must never read Farm expected/rca data. Farm only sends keys + snapshot_id + ask-type.
+
+**Fallback:** If endpoint unavailable, Farm uses `decision="UNKNOWN_KEY"` + `reason_codes=["NO_EXPLAIN_ENDPOINT"]`
+
+**Config:** `USE_AOD_EXPLAIN_STUB=true` enables local stub for testing without real AOD.
+
+> **This endpoint is diagnostic-only. It must not influence admission, classification, or policy.**
+
+***DO NOT CHANGE CLASSIFICATION/ADMISSION CODE in response to reconciliation diffs.*** Reconciliation is diagnostics only.
+
 ## Schema Version
 
 All snapshots include `meta.schema_version = "farm.v1"`
