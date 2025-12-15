@@ -259,18 +259,19 @@ async def list_snapshots(
     async with pool.acquire() as conn:
         if tenant_id:
             rows = await conn.fetch(
-                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2",
+                "SELECT snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2",
                 tenant_id, limit
             )
         else:
             rows = await conn.fetch(
-                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT $1",
+                "SELECT snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT $1",
                 limit
             )
         
         return [
             SnapshotMetadata(
                 snapshot_id=row["snapshot_id"],
+                run_id=row["run_id"],
                 snapshot_fingerprint=row["snapshot_fingerprint"],
                 tenant_id=row["tenant_id"],
                 seed=row["seed"],
