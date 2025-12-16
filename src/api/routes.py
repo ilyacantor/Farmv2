@@ -1878,6 +1878,115 @@ async def auto_reconcile(request: AutoReconcileRequest):
     )
 
 
+@router.patch("/api/reconcile/{reconciliation_id}/refresh")
+async def refresh_reconciliation(reconciliation_id: str):
+    """Refresh a reconciliation by re-fetching data from AOD.
+    
+    Use this to update old reconciliations that were created before asset_summaries support.
+    """
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        rec_row = await conn.fetchrow(
+            "SELECT aod_run_id, snapshot_id, tenant_id FROM reconciliations WHERE reconciliation_id = $1",
+            reconciliation_id
+        )
+        if not rec_row:
+            raise HTTPException(status_code=404, detail="Reconciliation not found")
+    
+    aod_url = os.environ.get("AOD_URL") or os.environ.get("AOD_BASE_URL", "")
+    aod_url = aod_url.rstrip("/")
+    aod_secret = os.environ.get("AOD_SHARED_SECRET", "")
+    
+    if not aod_url:
+        raise HTTPException(status_code=400, detail="AOD_URL not configured - cannot refresh")
+    
+    headers = {}
+    if aod_secret:
+        headers["Authorization"] = f"Bearer {aod_secret}"
+    
+    aod_run_id = rec_row["aod_run_id"]
+    snapshot_id = rec_row["snapshot_id"]
+    tenant_id = rec_row["tenant_id"]
+    
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        reconcile_url = f"{aod_url}/api/runs/{aod_run_id}/reconcile-payload"
+        resp = await client.get(reconcile_url, headers=headers)
+        
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to fetch reconcile payload from AOD: {resp.status_code}"
+            )
+        
+        payload = resp.json()
+    
+    aod_lists_data = payload.get("aod_lists", payload)
+    aod_summary_data = payload.get("aod_summary", payload)
+    
+    # Check if asset_summaries is present
+    has_asset_summaries = bool(aod_lists_data.get("asset_summaries"))
+    asset_summaries_count = len(aod_lists_data.get("asset_summaries", {}))
+    shadow_from_summaries = sum(1 for v in aod_lists_data.get("asset_summaries", {}).values() 
+                                 if isinstance(v, dict) and v.get("is_shadow"))
+    
+    # Build fresh aod_payload
+    aod_payload = {
+        "aod_summary": aod_summary_data,
+        "aod_lists": aod_lists_data,
+    }
+    
+    # Get snapshot for expectations
+    async with pool.acquire() as conn:
+        snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
+        if snap_row:
+            snapshot = json.loads(snap_row["snapshot_json"])
+        else:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+    
+    farm_expectations = analyze_snapshot_for_expectations(snapshot)
+    
+    # Re-generate report with fresh data
+    aod_summary = AODSummary(
+        observations_in=aod_summary_data.get("observations_in", 0),
+        candidates_out=aod_summary_data.get("candidates_out", 0),
+        assets_admitted=aod_summary_data.get("assets_admitted", 0),
+        shadow_count=aod_summary_data.get("shadow_count", 0),
+        zombie_count=aod_summary_data.get("zombie_count", 0),
+    )
+    aod_lists = AODLists(
+        zombie_assets=aod_lists_data.get("zombie_asset_keys") or aod_lists_data.get("zombie_asset_keys_sample") or aod_lists_data.get("zombie_assets", []),
+        shadow_assets=aod_lists_data.get("shadow_asset_keys") or aod_lists_data.get("shadow_asset_keys_sample") or aod_lists_data.get("shadow_assets", []),
+        high_severity_findings=aod_lists_data.get("high_severity_findings", []),
+        actual_reason_codes=aod_lists_data.get("actual_reason_codes", {}),
+        admission_actual=aod_lists_data.get("admission_actual", {}),
+        asset_summaries=aod_lists_data.get("asset_summaries", {}),
+    )
+    
+    report_text, status = generate_reconcile_report(aod_summary, aod_lists, farm_expectations)
+    
+    # Update stored data
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE reconciliations 
+            SET aod_payload_json = $1, 
+                farm_expectations_json = $2,
+                report_text = $3,
+                status = $4
+            WHERE reconciliation_id = $5
+        """, json.dumps(aod_payload), json.dumps(farm_expectations.model_dump()),
+            report_text, status.value, reconciliation_id)
+    
+    return {
+        "reconciliation_id": reconciliation_id,
+        "refreshed": True,
+        "has_asset_summaries": has_asset_summaries,
+        "asset_summaries_count": asset_summaries_count,
+        "shadow_from_summaries": shadow_from_summaries,
+        "status": status.value,
+    }
+
+
 @router.get("/api/aod/run-status", response_model=AODRunStatusResponse)
 async def check_aod_run_status(
     snapshot_id: str = Query(..., description="Snapshot ID to check"),
