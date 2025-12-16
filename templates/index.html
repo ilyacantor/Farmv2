@@ -573,6 +573,164 @@
             `;
         }
 
+        function renderPill(text, tone = 'neutral') {
+            const cls = tone === 'good' ? 'bg-emerald-500/10 text-emerald-300 ring-1 ring-emerald-500/20'
+                      : tone === 'warn' ? 'bg-amber-500/10 text-amber-300 ring-1 ring-amber-500/20'
+                      : tone === 'bad' ? 'bg-rose-500/10 text-rose-300 ring-1 ring-rose-500/20'
+                      : 'bg-white/5 text-slate-200 ring-1 ring-white/10';
+            return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs ${cls}">${text}</span>`;
+        }
+        
+        function renderMetric(label, value, hint, tone = 'neutral') {
+            const toneCls = tone === 'good' ? 'text-emerald-200'
+                          : tone === 'warn' ? 'text-amber-200'
+                          : tone === 'bad' ? 'text-rose-200'
+                          : 'text-slate-100';
+            return `
+                <div class="rounded-xl bg-black/20 p-3 ring-1 ring-white/10">
+                    <div class="text-xs text-slate-400">${label}</div>
+                    <div class="mt-1 text-2xl font-semibold ${toneCls}">${value}</div>
+                    ${hint ? `<div class="mt-1 text-xs text-slate-500">${hint}</div>` : ''}
+                </div>
+            `;
+        }
+        
+        function renderAssetCard(asset, bucket) {
+            const farmCodes = (asset.farm_reason_codes || []).map(c => renderPill(c)).join(' ');
+            const aodCodes = (asset.aod_reason_codes || []).map(c => renderPill(c)).join(' ');
+            const variants = asset.aod_variants;
+            const variantsBadge = variants && variants.length > 1 
+                ? `<span class="text-xs px-1.5 py-0.5 rounded bg-blue-900 text-blue-300" title="${variants.join(', ')}">${variants.length} variants</span>` 
+                : '';
+            
+            const investigation = asset.farm_investigation;
+            const investigationHtml = investigation ? `
+                <div class="mt-3 pt-3 border-t border-white/10">
+                    <div class="text-orange-400 font-medium text-xs mb-1">Farm Investigation:</div>
+                    <div class="text-slate-300 text-xs">${investigation.conclusion || ''}</div>
+                    <ul class="mt-1 text-xs text-slate-400 list-disc list-inside">
+                        ${(investigation.findings || []).map(f => `<li>${f}</li>`).join('')}
+                    </ul>
+                </div>
+            ` : '';
+            
+            const aodExplain = asset.aod_explain;
+            const aodExplainHtml = aodExplain ? `
+                <div class="mt-3 pt-3 border-t border-white/10">
+                    <div class="text-purple-400 font-medium text-xs mb-1">AOD Explain:</div>
+                    <div class="text-slate-300 text-xs">Decision: ${aodExplain.decision || 'N/A'}</div>
+                    <div class="mt-1 flex flex-wrap gap-1">${(aodExplain.reason_codes || []).map(c => renderPill(c)).join(' ') || '<span class="text-slate-500">no codes</span>'}</div>
+                </div>
+            ` : '';
+            
+            const bucketRing = bucket === 'confirmed' ? 'ring-emerald-500/20'
+                             : bucket === 'aod_only' ? 'ring-rose-500/20'
+                             : 'ring-amber-500/20';
+            
+            return `
+                <div class="rounded-2xl bg-white/5 p-4 shadow-sm ring-1 ${bucketRing} mb-3">
+                    <div class="flex items-start justify-between gap-2 mb-2">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-sm font-semibold text-slate-100">${asset.asset_key}</span>
+                            ${variantsBadge}
+                            ${asset.rca_hint ? renderPill(asset.rca_hint, 'neutral') : ''}
+                        </div>
+                    </div>
+                    ${asset.headline ? `<div class="text-xs text-slate-400 mb-2">${asset.headline}</div>` : ''}
+                    <div class="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                            <div class="text-cyan-400 font-medium mb-1">Farm:</div>
+                            <div class="text-slate-300">${asset.farm_detail || 'N/A'}</div>
+                            <div class="mt-1 flex flex-wrap gap-1">${farmCodes || '<span class="text-slate-500">—</span>'}</div>
+                        </div>
+                        <div>
+                            <div class="text-purple-400 font-medium mb-1">AOD:</div>
+                            <div class="text-slate-300">${asset.aod_detail || 'N/A'}</div>
+                            <div class="mt-1 flex flex-wrap gap-1">${aodCodes || '<span class="text-slate-500">—</span>'}</div>
+                        </div>
+                    </div>
+                    ${investigationHtml}
+                    ${aodExplainHtml}
+                </div>
+            `;
+        }
+        
+        function renderReconciliationSection(title, type, analysis, rec, reconciliationId) {
+            const isShadow = type === 'shadow';
+            const matched = isShadow ? (analysis.matched_shadows || []) : (analysis.matched_zombies || []);
+            const missed = isShadow ? (analysis.missed_shadows || []) : (analysis.missed_zombies || []);
+            const falsePos = isShadow ? (analysis.false_positive_shadows || []) : (analysis.false_positive_zombies || []);
+            
+            const summary = analysis.summary || {};
+            const expected = isShadow ? summary.farm_shadows : summary.farm_zombies;
+            const found = isShadow ? summary.aod_shadows : summary.aod_zombies;
+            const correct = matched.length;
+            const fpCount = falsePos.length;
+            const missedCount = missed.length;
+            const misaligned = fpCount + missedCount;
+            const accuracy = expected > 0 ? Math.round(correct / expected * 100) : 100;
+            
+            const titleColor = isShadow ? 'text-purple-400' : 'text-red-400';
+            
+            return `
+                <div class="rounded-3xl bg-white/3 p-5 ring-1 ring-white/10 mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="text-lg font-semibold ${titleColor}">${title}</div>
+                        <div class="flex gap-2">
+                            ${renderPill(rec.status, rec.status === 'PASS' ? 'good' : rec.status === 'WARN' ? 'warn' : 'bad')}
+                        </div>
+                    </div>
+                    
+                    <!-- Scorecard -->
+                    <div class="grid grid-cols-7 gap-2 mb-6">
+                        ${renderMetric('Expected', expected, 'Farm')}
+                        ${renderMetric('Found', found, 'AOD')}
+                        ${renderMetric('Correct', correct, 'Matched', 'good')}
+                        ${renderMetric('Misaligned', misaligned, 'FP + missed', misaligned > 0 ? 'warn' : 'good')}
+                        ${renderMetric('False Pos', fpCount, 'AOD-only', fpCount > 0 ? 'bad' : 'good')}
+                        ${renderMetric('Missed', missedCount, 'Farm-only', missedCount > 0 ? 'warn' : 'good')}
+                        ${renderMetric('Accuracy', accuracy + '%', '', accuracy === 100 ? 'good' : accuracy >= 80 ? 'warn' : 'bad')}
+                    </div>
+                    
+                    <!-- Three-column layout -->
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <!-- AOD-only (False Positives) -->
+                        <div class="rounded-2xl bg-rose-500/5 p-4 ring-1 ring-rose-500/20">
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="text-sm font-semibold text-rose-300">AOD-only (False Positives)</div>
+                                ${renderPill(fpCount, fpCount > 0 ? 'bad' : 'good')}
+                            </div>
+                            ${falsePos.length === 0 
+                                ? '<div class="text-xs text-slate-500">None</div>' 
+                                : falsePos.map(a => renderAssetCard(a, 'aod_only')).join('')}
+                        </div>
+                        
+                        <!-- Confirmed (Matched) -->
+                        <div class="rounded-2xl bg-emerald-500/5 p-4 ring-1 ring-emerald-500/20">
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="text-sm font-semibold text-emerald-300">Confirmed</div>
+                                ${renderPill(correct, 'good')}
+                            </div>
+                            ${matched.length === 0 
+                                ? '<div class="text-xs text-slate-500">None</div>' 
+                                : matched.map(a => renderAssetCard(a, 'confirmed')).join('')}
+                        </div>
+                        
+                        <!-- Farm-only (Missed) -->
+                        <div class="rounded-2xl bg-amber-500/5 p-4 ring-1 ring-amber-500/20">
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="text-sm font-semibold text-amber-300">Farm-only (Missed by AOD)</div>
+                                ${renderPill(missedCount, missedCount > 0 ? 'warn' : 'good')}
+                            </div>
+                            ${missed.length === 0 
+                                ? '<div class="text-xs text-slate-500">None</div>' 
+                                : missed.map(a => renderAssetCard(a, 'farm_only')).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
         async function viewReconciliationReport(reconciliationId) {
             try {
                 assetListIdCounter = 0;
@@ -584,79 +742,50 @@
                 const analysisData = await analysisResp.json();
                 const analysis = analysisData.analysis || {};
                 
-                const summary = analysis.summary || {};
-                const farmZombieCount = summary.farm_zombies || rec.farm_expectations?.expected_zombies || 0;
-                const farmShadowCount = summary.farm_shadows || rec.farm_expectations?.expected_shadows || 0;
-                const aodZombieCount = summary.aod_zombies || rec.aod_summary?.zombie_count || 0;
-                const aodShadowCount = summary.aod_shadows || rec.aod_summary?.shadow_count || 0;
-                
-                const zombieAlign = {
-                    matched: (analysis.matched_zombies || []).map(a => a.asset_key),
-                    missed: (analysis.missed_zombies || []).map(a => a.asset_key),
-                    extraKeys: (analysis.false_positive_zombies || []).map(a => a.asset_key),
-                    extraCount: (analysis.false_positive_zombies || []).length
-                };
-                const shadowAlign = {
-                    matched: (analysis.matched_shadows || []).map(a => a.asset_key),
-                    missed: (analysis.missed_shadows || []).map(a => a.asset_key),
-                    extraKeys: (analysis.false_positive_shadows || []).map(a => a.asset_key),
-                    extraCount: (analysis.false_positive_shadows || []).length
-                };
-                
-                const hasMismatches = (analysis.missed_shadows?.length || 0) + (analysis.missed_zombies?.length || 0) + 
-                                     (analysis.false_positive_shadows?.length || 0) + (analysis.false_positive_zombies?.length || 0) > 0;
-                
                 const payloadHealth = analysis.payload_health || {};
                 const hasPayloadIssues = payloadHealth.has_issues;
+                const verdict = analysis.verdict || '';
                 
                 const modal = document.getElementById('detailModal');
                 document.getElementById('detailContent').innerHTML = `
-                    <div class="space-y-4">
-                        <div class="flex items-center gap-3">
-                            ${getStatusBadge(rec.status, 'large')}
-                            <span class="text-lg text-white">${rec.tenant_id}</span>
-                            ${hasPayloadIssues ? '<span class="px-2 py-1 text-xs rounded bg-orange-900 text-orange-300">AOD payload: count != keys</span>' : ''}
-                        </div>
-                        <div class="grid grid-cols-2 gap-4 text-sm">
-                            <div><span class="text-slate-400">Snapshot:</span> <span class="text-white">${rec.snapshot_id}</span></div>
-                            <div><span class="text-slate-400">AOD Run:</span> <span class="text-white">${rec.aod_run_id || 'N/A'}</span></div>
-                            <div><span class="text-slate-400">Created:</span> <span class="text-white">${new Date(rec.created_at).toLocaleString()}</span></div>
+                    <div class="space-y-6">
+                        <!-- Header -->
+                        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+                            <div>
+                                <div class="flex items-center gap-3 flex-wrap">
+                                    <div class="text-2xl font-semibold text-slate-50">Reconciliation Report</div>
+                                    ${renderPill(rec.status, rec.status === 'PASS' ? 'good' : rec.status === 'WARN' ? 'warn' : 'bad')}
+                                    ${hasPayloadIssues ? renderPill('Payload issues', 'warn') : ''}
+                                </div>
+                                <div class="mt-1 text-sm text-slate-400">Farm = expected. AOD = actual.</div>
+                                ${verdict ? `<div class="mt-2 text-sm text-slate-300">${verdict}</div>` : ''}
+                            </div>
                             <div class="flex gap-2">
                                 <a href="/api/reconcile/${reconciliationId}/download?format=csv" 
-                                   class="px-2 py-1 text-xs rounded bg-blue-900 text-blue-300 hover:bg-blue-800">Download CSV</a>
+                                   class="px-3 py-1.5 text-xs rounded-xl bg-blue-900 text-blue-300 hover:bg-blue-800 ring-1 ring-blue-500/20">Download CSV</a>
                                 <a href="/api/reconcile/${reconciliationId}/download?format=json" 
-                                   class="px-2 py-1 text-xs rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Download JSON</a>
+                                   class="px-3 py-1.5 text-xs rounded-xl bg-slate-700 text-slate-300 hover:bg-slate-600 ring-1 ring-white/10">Download JSON</a>
                             </div>
                         </div>
                         
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="bg-slate-900 rounded-lg p-4">
-                                <h4 class="text-sm font-medium text-red-400 mb-3">Zombies (AOD ${aodZombieCount} / Farm ${farmZombieCount})</h4>
-                                ${renderAssetList('Matched', zombieAlign.matched, 'text-green-400')}
-                                ${renderAssetList('Missed by AOD', zombieAlign.missed, 'text-red-400')}
-                                ${renderAssetListWithCount('Extra in AOD', zombieAlign.extraKeys, zombieAlign.extraCount, 'text-yellow-400')}
-                                ${zombieAlign.matched.length === 0 && zombieAlign.missed.length === 0 && zombieAlign.extraCount === 0 ? '<span class="text-xs text-slate-500">No zombies</span>' : ''}
-                            </div>
-                            <div class="bg-slate-900 rounded-lg p-4">
-                                <h4 class="text-sm font-medium text-purple-400 mb-3">Shadows (AOD ${aodShadowCount} / Farm ${farmShadowCount})</h4>
-                                ${renderAssetList('Matched', shadowAlign.matched, 'text-green-400')}
-                                ${renderAssetList('Missed by AOD', shadowAlign.missed, 'text-red-400')}
-                                ${renderAssetListWithCount('Extra in AOD', shadowAlign.extraKeys, shadowAlign.extraCount, 'text-yellow-400')}
-                                ${shadowAlign.matched.length === 0 && shadowAlign.missed.length === 0 && shadowAlign.extraCount === 0 ? '<span class="text-xs text-slate-500">No shadows</span>' : ''}
+                        <!-- Metadata -->
+                        <div class="rounded-2xl bg-black/20 p-4 text-sm ring-1 ring-white/10">
+                            <div class="flex flex-wrap items-center gap-2">
+                                ${renderPill('tenant: ' + rec.tenant_id)}
+                                ${renderPill('run: ' + (rec.aod_run_id || 'N/A'))}
+                                ${renderPill('snapshot: ' + rec.snapshot_id.slice(0, 8))}
+                                ${renderPill(new Date(rec.created_at).toLocaleString())}
                             </div>
                         </div>
                         
-                        ${hasMismatches ? `
-                        <div class="bg-slate-900 rounded-lg p-4">
-                            <h4 class="text-sm font-medium text-cyan-400 mb-4">Detailed Analysis</h4>
-                            ${renderExplanationSection('Shadows Missed by AOD', analysis.missed_shadows, 'text-red-400')}
-                            ${renderExplanationSection('Zombies Missed by AOD', analysis.missed_zombies, 'text-red-400')}
-                            ${renderExplanationSection('False Positive Shadows', analysis.false_positive_shadows, 'text-yellow-400')}
-                            ${renderExplanationSection('False Positive Zombies', analysis.false_positive_zombies, 'text-yellow-400')}
-                        </div>
-                        ` : ''}
+                        <!-- Shadow Reconciliation -->
+                        ${renderReconciliationSection('Shadow Reconciliation', 'shadow', analysis, rec, reconciliationId)}
                         
-                        <details class="bg-slate-900 rounded-lg p-4">
+                        <!-- Zombie Reconciliation -->
+                        ${renderReconciliationSection('Zombie Reconciliation', 'zombie', analysis, rec, reconciliationId)}
+                        
+                        <!-- Raw Report -->
+                        <details class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
                             <summary class="text-sm font-medium text-slate-300 cursor-pointer">Raw Report</summary>
                             <pre class="text-xs text-slate-400 whitespace-pre-wrap overflow-auto max-h-64 mt-2">${rec.report_text || 'No report available'}</pre>
                         </details>
