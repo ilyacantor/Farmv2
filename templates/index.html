@@ -667,6 +667,47 @@
                 .sort((a, b) => b.items.length - a.items.length);
         }
         
+        function renderRcaChart(grouped, total) {
+            if (grouped.length === 0) return '';
+            
+            const maxCount = Math.max(...grouped.map(g => g.items.length));
+            const colors = [
+                'bg-amber-500', 'bg-rose-500', 'bg-purple-500', 'bg-blue-500', 
+                'bg-cyan-500', 'bg-emerald-500', 'bg-orange-500', 'bg-pink-500'
+            ];
+            
+            const bars = grouped.map(({rca, items}, i) => {
+                const pct = maxCount > 0 ? (items.length / maxCount) * 100 : 0;
+                const color = colors[i % colors.length];
+                const farmOnly = items.filter(a => a.bucket === 'farm_only').length;
+                const aodOnly = items.filter(a => a.bucket === 'aod_only').length;
+                return `
+                    <div class="flex items-center gap-3 mb-2">
+                        <div class="w-32 text-xs text-slate-300 truncate" title="${rca}">${rca}</div>
+                        <div class="flex-1 h-6 bg-white/5 rounded-lg overflow-hidden relative">
+                            <div class="${color} h-full rounded-lg transition-all" style="width: ${pct}%"></div>
+                            <div class="absolute inset-0 flex items-center px-2">
+                                <span class="text-xs font-medium text-white drop-shadow">${items.length}</span>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-500 w-24 text-right">
+                            <span class="text-amber-400">${farmOnly} missed</span> / <span class="text-rose-400">${aodOnly} FP</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            return `
+                <div class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10 mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="text-sm font-semibold text-slate-100">Misalignments by Root Cause</div>
+                        <div class="text-xs text-slate-400">${total} total</div>
+                    </div>
+                    ${bars}
+                </div>
+            `;
+        }
+        
         function renderRcaView(matched, missed, falsePos) {
             const allMisaligned = [...missed.map(a => ({...a, bucket: 'farm_only'})), ...falsePos.map(a => ({...a, bucket: 'aod_only'}))];
             const grouped = groupByRca(allMisaligned);
@@ -675,7 +716,9 @@
                 return '<div class="text-sm text-slate-500">No misalignments to analyze by root cause.</div>';
             }
             
-            return grouped.map(({rca, items}) => `
+            const chart = renderRcaChart(grouped, allMisaligned.length);
+            
+            const details = grouped.map(({rca, items}) => `
                 <div class="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10 mb-4">
                     <div class="flex items-center justify-between mb-3">
                         <div class="text-sm font-semibold text-slate-100">${rca}</div>
@@ -686,6 +729,8 @@
                     </div>
                 </div>
             `).join('');
+            
+            return chart + details;
         }
         
         function renderAssetView(matched, missed, falsePos) {
