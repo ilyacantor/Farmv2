@@ -435,6 +435,57 @@ def extract_domain(text: str) -> Optional[str]:
     return text if '.' in text else None
 
 
+def to_domain_key(entity_key: str) -> str:
+    """
+    Convert an entity key to its domain key for roll-up.
+    e.g. "Microsoft 365" -> "microsoft.com" (if domain present)
+         "calendly.com" -> "calendly.com"
+         "Slack" -> "slack" (normalized name)
+    """
+    if not entity_key:
+        return ""
+    
+    # If it already looks like a domain, use it
+    if '.' in entity_key and ' ' not in entity_key:
+        domain = extract_domain(entity_key)
+        if domain:
+            return domain.lower()
+        return entity_key.lower()
+    
+    # Otherwise normalize the name
+    return normalize_name(entity_key)
+
+
+def roll_up_to_domains(entity_keys: set, reason_codes: dict = None) -> dict:
+    """
+    Roll up entity-level keys to domain-level.
+    Returns: {domain_key: {'variants': [original_keys], 'reason_codes': merged_codes}}
+    
+    Domain roll-up rule:
+    - domain.has_X = OR(entities.has_X) for each flag
+    - Variants are tracked for display
+    """
+    domains = defaultdict(lambda: {'variants': [], 'reason_codes': set()})
+    
+    for key in entity_keys:
+        domain_key = to_domain_key(key)
+        if not domain_key:
+            continue
+        
+        domains[domain_key]['variants'].append(key)
+        
+        if reason_codes and key in reason_codes:
+            codes = reason_codes[key]
+            if isinstance(codes, list):
+                domains[domain_key]['reason_codes'].update(codes)
+    
+    # Convert sets to lists
+    for dk in domains:
+        domains[dk]['reason_codes'] = list(domains[dk]['reason_codes'])
+    
+    return dict(domains)
+
+
 def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
     if not ts:
         return None
@@ -1128,6 +1179,23 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         {}
     )
     
+    # Domain roll-up: Convert entity-level AOD results to domain-level
+    # This handles cases like "Microsoft 365", "Microsoft_365", "Microsoft-365" → "microsoft.com"
+    aod_shadow_domains = roll_up_to_domains(aod_shadows, aod_reason_codes)
+    aod_zombie_domains = roll_up_to_domains(aod_zombies, aod_reason_codes)
+    
+    # Build reverse lookup: domain_key → original entity keys
+    shadow_domain_variants = {dk: info['variants'] for dk, info in aod_shadow_domains.items()}
+    zombie_domain_variants = {dk: info['variants'] for dk, info in aod_zombie_domains.items()}
+    
+    # Merged reason codes per domain (OR of all entity reason codes)
+    shadow_domain_reasons = {dk: info['reason_codes'] for dk, info in aod_shadow_domains.items()}
+    zombie_domain_reasons = {dk: info['reason_codes'] for dk, info in aod_zombie_domains.items()}
+    
+    # Domain-level sets for comparison
+    aod_shadow_domain_keys = set(aod_shadow_domains.keys())
+    aod_zombie_domain_keys = set(aod_zombie_domains.keys())
+    
     shadow_count_reported = aod_summary.get('shadow_count', 0)
     shadow_keys_received = len(aod_shadows)
     zombie_count_reported = aod_summary.get('zombie_count', 0)
@@ -1169,8 +1237,15 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'farm_zombies': len(farm_zombies),
             'aod_shadows': len(aod_shadows),
             'aod_zombies': len(aod_zombies),
+            # Domain-level counts (for reconciliation - collapses duplicates)
+            'aod_shadow_domains': len(aod_shadow_domain_keys),
+            'aod_zombie_domains': len(aod_zombie_domain_keys),
         },
         'payload_health': payload_health,
+        'domain_roll_up': {
+            'shadow_variants': shadow_domain_variants,
+            'zombie_variants': zombie_domain_variants,
+        },
         'matched_shadows': [],
         'matched_zombies': [],
         'missed_shadows': [],
@@ -1200,20 +1275,26 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     for key in farm_shadows:
         reasons = expected_reasons.get(key, [])
         rca = expected_rca.get(key)
-        aod_matched = find_match(key, aod_shadows)
-        if aod_matched:
-            aod_key_reasons = get_aod_reasons(aod_matched or key)
+        # Use domain-level matching
+        farm_domain_key = to_domain_key(key)
+        aod_domain_matched = find_match(farm_domain_key, aod_shadow_domain_keys)
+        
+        if aod_domain_matched:
+            # Get merged reason codes from all variants under this domain
+            aod_key_reasons = shadow_domain_reasons.get(aod_domain_matched, [])
+            variants = shadow_domain_variants.get(aod_domain_matched, [])
             asset_analysis = generate_asset_analysis('matched_shadow', key, reasons, rca, aod_key_reasons)
             analysis['matched_shadows'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': aod_key_reasons,
-                'aod_admission': get_aod_admission(aod_matched or key),
+                'aod_admission': get_aod_admission(variants[0] if variants else key),
                 'rca_hint': rca,
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('matched_shadow', key, reasons, rca, aod_reasons=aod_key_reasons),
+                'aod_variants': variants if len(variants) > 1 else None,
             })
         else:
             asset_analysis = generate_asset_analysis('shadow_missed', key, reasons, rca, [])
@@ -1232,20 +1313,26 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     for key in farm_zombies:
         reasons = expected_reasons.get(key, [])
         rca = expected_rca.get(key)
-        aod_matched = find_match(key, aod_zombies)
-        if aod_matched:
-            aod_key_reasons = get_aod_reasons(aod_matched or key)
+        # Use domain-level matching
+        farm_domain_key = to_domain_key(key)
+        aod_domain_matched = find_match(farm_domain_key, aod_zombie_domain_keys)
+        
+        if aod_domain_matched:
+            # Get merged reason codes from all variants under this domain
+            aod_key_reasons = zombie_domain_reasons.get(aod_domain_matched, [])
+            variants = zombie_domain_variants.get(aod_domain_matched, [])
             asset_analysis = generate_asset_analysis('matched_zombie', key, reasons, rca, aod_key_reasons)
             analysis['matched_zombies'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': aod_key_reasons,
-                'aod_admission': get_aod_admission(aod_matched or key),
+                'aod_admission': get_aod_admission(variants[0] if variants else key),
                 'rca_hint': rca,
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('matched_zombie', key, reasons, rca, aod_reasons=aod_key_reasons),
+                'aod_variants': variants if len(variants) > 1 else None,
             })
         else:
             asset_analysis = generate_asset_analysis('zombie_missed', key, reasons, rca, [])
@@ -1261,44 +1348,58 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'explanation': get_explanation('zombie_missed', key, reasons, rca),
             })
     
-    for aod_key in aod_shadows:
-        if not find_match(aod_key, farm_shadows):
-            farm_reasons = expected_reasons.get(aod_key, [])
-            aod_key_reasons = get_aod_reasons(aod_key)
-            farm_class = 'zombie' if aod_key in farm_zombies else ('clean' if aod_key in farm_clean else 'unknown')
-            asset_analysis = generate_asset_analysis('false_positive_shadow', aod_key, farm_reasons, None, aod_key_reasons)
-            investigation = investigate_fp_shadow(aod_key, aod_key_reasons, snapshot) if aod_key_reasons else None
+    # False positives: iterate over domain keys to collapse duplicates
+    # Convert farm keys to domain keys for comparison
+    farm_shadow_domain_keys = {to_domain_key(k) for k in farm_shadows}
+    farm_zombie_domain_keys = {to_domain_key(k) for k in farm_zombies}
+    farm_clean_domain_keys = {to_domain_key(k) for k in farm_clean}
+    
+    for domain_key, domain_info in aod_shadow_domains.items():
+        if not find_match(domain_key, farm_shadow_domain_keys):
+            variants = domain_info['variants']
+            aod_key_reasons = domain_info['reason_codes']
+            # Use first variant as representative key
+            rep_key = variants[0] if variants else domain_key
+            farm_reasons = expected_reasons.get(rep_key, [])
+            farm_class = 'zombie' if domain_key in farm_zombie_domain_keys else ('clean' if domain_key in farm_clean_domain_keys else 'unknown')
+            asset_analysis = generate_asset_analysis('false_positive_shadow', domain_key, farm_reasons, None, aod_key_reasons)
+            investigation = investigate_fp_shadow(domain_key, aod_key_reasons, snapshot) if aod_key_reasons else None
             analysis['false_positive_shadows'].append({
-                'asset_key': aod_key,
+                'asset_key': domain_key,
                 'farm_classification': farm_class,
                 'farm_reason_codes': farm_reasons,
                 'aod_reason_codes': aod_key_reasons,
-                'aod_admission': get_aod_admission(aod_key),
+                'aod_admission': get_aod_admission(rep_key),
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
                 'farm_investigation': investigation,
-                'explanation': get_explanation('false_positive_shadow', aod_key, farm_reasons, aod_reasons=aod_key_reasons),
+                'explanation': get_explanation('false_positive_shadow', domain_key, farm_reasons, aod_reasons=aod_key_reasons),
+                'aod_variants': variants if len(variants) > 1 else None,
             })
     
-    for aod_key in aod_zombies:
-        if not find_match(aod_key, farm_zombies):
-            farm_reasons = expected_reasons.get(aod_key, [])
-            aod_key_reasons = get_aod_reasons(aod_key)
-            farm_class = 'shadow' if aod_key in farm_shadows else ('clean' if aod_key in farm_clean else 'unknown')
-            asset_analysis = generate_asset_analysis('false_positive_zombie', aod_key, farm_reasons, None, aod_key_reasons)
-            investigation = investigate_fp_zombie(aod_key, aod_key_reasons, snapshot) if aod_key_reasons else None
+    for domain_key, domain_info in aod_zombie_domains.items():
+        if not find_match(domain_key, farm_zombie_domain_keys):
+            variants = domain_info['variants']
+            aod_key_reasons = domain_info['reason_codes']
+            # Use first variant as representative key
+            rep_key = variants[0] if variants else domain_key
+            farm_reasons = expected_reasons.get(rep_key, [])
+            farm_class = 'shadow' if domain_key in farm_shadow_domain_keys else ('clean' if domain_key in farm_clean_domain_keys else 'unknown')
+            asset_analysis = generate_asset_analysis('false_positive_zombie', domain_key, farm_reasons, None, aod_key_reasons)
+            investigation = investigate_fp_zombie(domain_key, aod_key_reasons, snapshot) if aod_key_reasons else None
             analysis['false_positive_zombies'].append({
-                'asset_key': aod_key,
+                'asset_key': domain_key,
                 'farm_classification': farm_class,
                 'farm_reason_codes': farm_reasons,
                 'aod_reason_codes': aod_key_reasons,
-                'aod_admission': get_aod_admission(aod_key),
+                'aod_admission': get_aod_admission(rep_key),
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
                 'farm_investigation': investigation,
-                'explanation': get_explanation('false_positive_zombie', aod_key, farm_reasons, aod_reasons=aod_key_reasons),
+                'explanation': get_explanation('false_positive_zombie', domain_key, farm_reasons, aod_reasons=aod_key_reasons),
+                'aod_variants': variants if len(variants) > 1 else None,
             })
     
     total_expected = len(farm_shadows) + len(farm_zombies)
