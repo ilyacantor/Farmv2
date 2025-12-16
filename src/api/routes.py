@@ -1555,6 +1555,14 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     analysis['verdict'] = verdict
     analysis['accuracy'] = round(total_matched / total_expected * 100, 1) if total_expected > 0 else 100.0
     
+    # Contract status: STALE_CONTRACT if payload predates asset_summaries
+    has_asset_summaries = bool(asset_summaries)
+    if has_asset_summaries:
+        analysis['contract_status'] = 'CURRENT'
+    else:
+        analysis['contract_status'] = 'STALE_CONTRACT'
+        analysis['contract_message'] = 'Payload predates asset_summaries contract. Re-run reconciliation required for accurate grading.'
+    
     return analysis
 
 
@@ -1924,10 +1932,19 @@ async def refresh_reconciliation(reconciliation_id: str):
     aod_lists_data = payload.get("aod_lists", payload)
     aod_summary_data = payload.get("aod_summary", payload)
     
-    # Check if asset_summaries is present
-    has_asset_summaries = bool(aod_lists_data.get("asset_summaries"))
-    asset_summaries_count = len(aod_lists_data.get("asset_summaries", {}))
-    shadow_from_summaries = sum(1 for v in aod_lists_data.get("asset_summaries", {}).values() 
+    # Validate asset_summaries presence - reject refresh if still using legacy contract
+    asset_summaries = aod_lists_data.get("asset_summaries", {})
+    has_asset_summaries = bool(asset_summaries)
+    
+    if not has_asset_summaries:
+        raise HTTPException(
+            status_code=400,
+            detail="AOD reconcile-payload still uses legacy contract (no asset_summaries). "
+                   "Re-run AOD on this snapshot to generate a new run with current contract."
+        )
+    
+    asset_summaries_count = len(asset_summaries)
+    shadow_from_summaries = sum(1 for v in asset_summaries.values() 
                                  if isinstance(v, dict) and v.get("is_shadow"))
     
     # Build fresh aod_payload
