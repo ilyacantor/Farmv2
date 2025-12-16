@@ -667,31 +667,56 @@
                 .sort((a, b) => b.items.length - a.items.length);
         }
         
-        function renderRcaChart(grouped, total) {
-            if (grouped.length === 0) return '';
+        function groupByReasonCode(assets) {
+            const codeMap = {};
+            for (const a of assets) {
+                const codes = [...(a.farm_reason_codes || []), ...(a.aod_reason_codes || [])];
+                const uniqueCodes = [...new Set(codes)];
+                for (const code of uniqueCodes) {
+                    if (!codeMap[code]) codeMap[code] = { farm: 0, aod: 0, total: 0 };
+                    codeMap[code].total++;
+                    if (a.bucket === 'farm_only') codeMap[code].farm++;
+                    if (a.bucket === 'aod_only') codeMap[code].aod++;
+                }
+            }
+            return Object.entries(codeMap)
+                .map(([code, counts]) => ({ code, ...counts }))
+                .sort((a, b) => b.total - a.total);
+        }
+        
+        function renderReasonCodeChart(assets) {
+            const byCode = groupByReasonCode(assets);
+            if (byCode.length === 0) return '';
             
-            const maxCount = Math.max(...grouped.map(g => g.items.length));
-            const colors = [
-                'bg-amber-500', 'bg-rose-500', 'bg-purple-500', 'bg-blue-500', 
-                'bg-cyan-500', 'bg-emerald-500', 'bg-orange-500', 'bg-pink-500'
-            ];
+            const maxCount = Math.max(...byCode.map(c => c.total));
+            const colors = {
+                'HAS_DISCOVERY': 'bg-cyan-500',
+                'NO_IDP': 'bg-rose-500',
+                'HAS_IDP': 'bg-emerald-500',
+                'NO_CMDB': 'bg-amber-500',
+                'HAS_CMDB': 'bg-emerald-500',
+                'HAS_FINANCE': 'bg-purple-500',
+                'HAS_ONGOING_FINANCE': 'bg-purple-600',
+                'HAS_CLOUD': 'bg-blue-500',
+                'RECENT_ACTIVITY': 'bg-emerald-400',
+                'STALE_ACTIVITY': 'bg-orange-500',
+            };
+            const defaultColor = 'bg-slate-500';
             
-            const bars = grouped.map(({rca, items}, i) => {
-                const pct = maxCount > 0 ? (items.length / maxCount) * 100 : 0;
-                const color = colors[i % colors.length];
-                const farmOnly = items.filter(a => a.bucket === 'farm_only').length;
-                const aodOnly = items.filter(a => a.bucket === 'aod_only').length;
+            const bars = byCode.map(({code, farm, aod, total}) => {
+                const pct = maxCount > 0 ? (total / maxCount) * 100 : 0;
+                const color = colors[code] || defaultColor;
                 return `
                     <div class="flex items-center gap-3 mb-2">
-                        <div class="w-32 text-xs text-slate-300 truncate" title="${rca}">${rca}</div>
+                        <div class="w-40 text-xs text-slate-300 truncate font-mono" title="${code}">${code}</div>
                         <div class="flex-1 h-6 bg-white/5 rounded-lg overflow-hidden relative">
                             <div class="${color} h-full rounded-lg transition-all" style="width: ${pct}%"></div>
                             <div class="absolute inset-0 flex items-center px-2">
-                                <span class="text-xs font-medium text-white drop-shadow">${items.length}</span>
+                                <span class="text-xs font-medium text-white drop-shadow">${total}</span>
                             </div>
                         </div>
                         <div class="text-xs text-slate-500 w-24 text-right">
-                            <span class="text-amber-400">${farmOnly} missed</span> / <span class="text-rose-400">${aodOnly} FP</span>
+                            <span class="text-amber-400">${farm} missed</span> / <span class="text-rose-400">${aod} FP</span>
                         </div>
                     </div>
                 `;
@@ -700,8 +725,8 @@
             return `
                 <div class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10 mb-6">
                     <div class="flex items-center justify-between mb-4">
-                        <div class="text-sm font-semibold text-slate-100">Misalignments by Root Cause</div>
-                        <div class="text-xs text-slate-400">${total} total</div>
+                        <div class="text-sm font-semibold text-slate-100">Reason Code Distribution</div>
+                        <div class="text-xs text-slate-400">${byCode.length} codes across ${assets.length} assets</div>
                     </div>
                     ${bars}
                 </div>
@@ -716,7 +741,7 @@
                 return '<div class="text-sm text-slate-500">No misalignments to analyze by root cause.</div>';
             }
             
-            const chart = renderRcaChart(grouped, allMisaligned.length);
+            const chart = renderReasonCodeChart(allMisaligned);
             
             const details = grouped.map(({rca, items}) => `
                 <div class="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10 mb-4">
