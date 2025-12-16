@@ -1855,6 +1855,7 @@ async def auto_reconcile(request: AutoReconcileRequest):
         high_severity_findings=aod_lists_data.get("high_severity_findings", []),
         actual_reason_codes=aod_lists_data.get("actual_reason_codes", {}),
         admission_actual=aod_lists_data.get("admission_actual", {}),
+        asset_summaries=aod_lists_data.get("asset_summaries", {}),
     )
     
     reconcile_request = ReconcileRequest(

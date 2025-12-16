@@ -306,6 +306,7 @@ class AODLists(BaseModel):
     reason_codes: dict[str, list[str]] = Field(default_factory=dict)
     admission: dict[str, str] = Field(default_factory=dict)
     aod_reason_codes: dict[str, list[str]] = Field(default_factory=dict)
+    asset_summaries: dict[str, dict] = Field(default_factory=dict)
     
     def get_reason_codes(self) -> dict[str, list[str]]:
         """Get reason codes from whichever field AOD populated."""
