@@ -894,17 +894,23 @@ async def list_reconciliations(
     async with pool.acquire() as conn:
         if snapshot_id:
             rows = await conn.fetch(
-                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text FROM reconciliations WHERE snapshot_id = $1 ORDER BY created_at DESC LIMIT $2",
+                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text, aod_payload_json FROM reconciliations WHERE snapshot_id = $1 ORDER BY created_at DESC LIMIT $2",
                 snapshot_id, limit
             )
         else:
             rows = await conn.fetch(
-                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text FROM reconciliations ORDER BY created_at DESC LIMIT $1",
+                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text, aod_payload_json FROM reconciliations ORDER BY created_at DESC LIMIT $1",
                 limit
             )
         
-        return [
-            ReconcileMetadata(
+        results = []
+        for row in rows:
+            aod_payload = json.loads(row["aod_payload_json"]) if row["aod_payload_json"] else {}
+            aod_lists = aod_payload.get("aod_lists", {})
+            asset_summaries = aod_lists.get("asset_summaries", {})
+            is_stale = not bool(asset_summaries)
+            
+            results.append(ReconcileMetadata(
                 reconciliation_id=row["reconciliation_id"],
                 snapshot_id=row["snapshot_id"],
                 tenant_id=row["tenant_id"],
@@ -912,9 +918,9 @@ async def list_reconciliations(
                 created_at=row["created_at"],
                 status=row["status"],
                 report_text=row["report_text"] or "",
-            )
-            for row in rows
-        ]
+                is_stale=is_stale,
+            ))
+        return results
 
 
 @router.get("/api/reconcile/{reconciliation_id}", response_model=ReconcileResponse)

@@ -399,22 +399,21 @@
             container.innerHTML = filtered.map(rec => {
                 const created = new Date(rec.created_at);
                 const timeAgo = getTimeAgo(created);
-                const summary = parseReportSummary(rec.report_text || '');
+                const isStale = rec.is_stale === true;
                 
                 return `
                     <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
                         <div class="flex items-start justify-between gap-4">
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-center gap-2 mb-1">
-                                    ${getStatusBadge(rec.status)}
+                                    ${isStale 
+                                        ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-900/50 text-amber-400 ring-1 ring-amber-500/30">STALE</span>'
+                                        : getStatusBadge(rec.status)}
                                     <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
-                                </div>
-                                <div class="flex items-center gap-4 text-xs mt-1">
-                                    <span class="text-slate-400">Zombies: <span class="text-red-400">${summary.aodZombies}/${summary.farmZombies}</span></span>
-                                    <span class="text-slate-400">Shadows: <span class="text-purple-400">${summary.aodShadows}/${summary.farmShadows}</span></span>
                                 </div>
                                 <div class="text-xs text-slate-600 mt-1">
                                     ${rec.snapshot_id.substring(0, 8)} | AOD: ${rec.aod_run_id || 'N/A'}
+                                    ${isStale ? '<span class="text-amber-500 ml-2">Legacy payload - rerun required</span>' : ''}
                                 </div>
                             </div>
                             <div class="text-xs text-slate-500">${timeAgo}</div>
@@ -874,6 +873,19 @@
             const accuracy = expected > 0 ? Math.round(correct / expected * 100) : 100;
             
             const contentId = isShadow ? 'shadowAssetContent' : 'zombieAssetContent';
+            const gradeable = analysis.gradeable !== false;
+            
+            if (!gradeable) {
+                return `
+                    <div class="text-center py-8 text-slate-500">
+                        <div class="text-sm">Grading disabled for stale contract.</div>
+                        <div class="text-xs mt-1">Re-run AOD on this snapshot to enable grading.</div>
+                    </div>
+                    <div id="${contentId}">
+                        ${renderAssetView(matched, missed, falsePos)}
+                    </div>
+                `;
+            }
             
             return `
                 <!-- Scorecard -->
@@ -909,17 +921,27 @@
                 
                 const payloadHealth = analysis.payload_health || {};
                 const hasPayloadIssues = payloadHealth.has_issues;
-                const verdict = analysis.verdict || '';
+                const gradeable = analysis.gradeable !== false;
+                const contractBanner = analysis.contract_banner || '';
+                const verdict = gradeable ? (analysis.verdict || '') : '';
                 
                 const modal = document.getElementById('detailModal');
                 document.getElementById('detailContent').innerHTML = `
                     <div class="space-y-6">
+                        ${!gradeable ? `
+                        <div class="rounded-xl bg-amber-900/30 border border-amber-600/50 p-4 text-amber-200 text-sm">
+                            <div class="font-medium mb-1">Stale Contract</div>
+                            <div class="text-amber-300/80">${contractBanner || 'This reconciliation uses a legacy payload. Re-run AOD to enable grading.'}</div>
+                        </div>
+                        ` : ''}
                         <!-- Header -->
                         <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
                             <div>
                                 <div class="flex items-center gap-3 flex-wrap">
                                     <div class="text-2xl font-semibold text-slate-50">Reconciliation Report</div>
-                                    ${renderPill(rec.status, rec.status === 'PASS' ? 'good' : rec.status === 'WARN' ? 'warn' : 'bad')}
+                                    ${gradeable 
+                                        ? renderPill(rec.status, rec.status === 'PASS' ? 'good' : rec.status === 'WARN' ? 'warn' : 'bad')
+                                        : renderPill('NOT GRADEABLE', 'warn')}
                                     ${hasPayloadIssues ? renderPill('Payload issues', 'warn') : ''}
                                 </div>
                                 <div class="mt-1 text-sm text-slate-400">Farm = expected. AOD = actual.</div>
