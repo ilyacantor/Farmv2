@@ -612,6 +612,12 @@
                             <div><span class="text-slate-400">Snapshot:</span> <span class="text-white">${rec.snapshot_id}</span></div>
                             <div><span class="text-slate-400">AOD Run:</span> <span class="text-white">${rec.aod_run_id || 'N/A'}</span></div>
                             <div><span class="text-slate-400">Created:</span> <span class="text-white">${new Date(rec.created_at).toLocaleString()}</span></div>
+                            <div class="flex gap-2">
+                                <a href="/api/reconcile/${reconciliationId}/download?format=csv" 
+                                   class="px-2 py-1 text-xs rounded bg-blue-900 text-blue-300 hover:bg-blue-800">Download CSV</a>
+                                <a href="/api/reconcile/${reconciliationId}/download?format=json" 
+                                   class="px-2 py-1 text-xs rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Download JSON</a>
+                            </div>
                         </div>
                         
                         <div class="grid grid-cols-2 gap-4">

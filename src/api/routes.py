@@ -6,7 +6,7 @@ from typing import Optional
 import asyncpg
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from src.generators.enterprise import EnterpriseGenerator
@@ -1381,6 +1381,160 @@ async def get_reconciliation_analysis(reconciliation_id: str):
             'status': rec_row["status"],
             'analysis': analysis,
         }
+
+
+@router.get("/api/reconcile/{reconciliation_id}/download")
+async def download_reconciliation_diff(
+    reconciliation_id: str,
+    format: str = Query("csv", description="Export format: csv or json")
+):
+    """Download full reconciliation diff report with all differences and causes."""
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        rec_row = await conn.fetchrow("SELECT * FROM reconciliations WHERE reconciliation_id = $1", reconciliation_id)
+        if not rec_row:
+            raise HTTPException(status_code=404, detail="Reconciliation not found")
+        
+        aod_payload = json.loads(rec_row["aod_payload_json"])
+        farm_exp = json.loads(rec_row["farm_expectations_json"])
+        
+        snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
+        if snap_row:
+            snapshot = json.loads(snap_row["snapshot_json"])
+        else:
+            snapshot = {'__expected__': farm_exp}
+        
+        analysis = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
+    
+    rows = []
+    
+    for item in analysis.get('matched_shadows', []):
+        rows.append({
+            'category': 'shadow',
+            'result': 'matched',
+            'asset_key': item.get('asset_key', ''),
+            'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
+            'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
+            'rca_hint': item.get('rca_hint', ''),
+            'headline': item.get('headline', ''),
+            'farm_detail': item.get('farm_detail', ''),
+            'aod_detail': item.get('aod_detail', ''),
+        })
+    
+    for item in analysis.get('matched_zombies', []):
+        rows.append({
+            'category': 'zombie',
+            'result': 'matched',
+            'asset_key': item.get('asset_key', ''),
+            'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
+            'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
+            'rca_hint': item.get('rca_hint', ''),
+            'headline': item.get('headline', ''),
+            'farm_detail': item.get('farm_detail', ''),
+            'aod_detail': item.get('aod_detail', ''),
+        })
+    
+    for item in analysis.get('missed_shadows', []):
+        rows.append({
+            'category': 'shadow',
+            'result': 'missed_by_aod',
+            'asset_key': item.get('asset_key', ''),
+            'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
+            'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
+            'rca_hint': item.get('rca_hint', ''),
+            'headline': item.get('headline', ''),
+            'farm_detail': item.get('farm_detail', ''),
+            'aod_detail': item.get('aod_detail', ''),
+            'aod_decision': item.get('aod_explain', {}).get('decision', ''),
+        })
+    
+    for item in analysis.get('missed_zombies', []):
+        rows.append({
+            'category': 'zombie',
+            'result': 'missed_by_aod',
+            'asset_key': item.get('asset_key', ''),
+            'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
+            'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
+            'rca_hint': item.get('rca_hint', ''),
+            'headline': item.get('headline', ''),
+            'farm_detail': item.get('farm_detail', ''),
+            'aod_detail': item.get('aod_detail', ''),
+            'aod_decision': item.get('aod_explain', {}).get('decision', ''),
+        })
+    
+    for item in analysis.get('false_positive_shadows', []):
+        investigation = item.get('farm_investigation', {})
+        rows.append({
+            'category': 'shadow',
+            'result': 'false_positive',
+            'asset_key': item.get('asset_key', ''),
+            'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
+            'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
+            'rca_hint': item.get('rca_hint', ''),
+            'headline': item.get('headline', ''),
+            'farm_detail': item.get('farm_detail', ''),
+            'aod_detail': item.get('aod_detail', ''),
+            'farm_investigation': investigation.get('conclusion', ''),
+            'investigation_findings': '; '.join(investigation.get('findings', [])),
+        })
+    
+    for item in analysis.get('false_positive_zombies', []):
+        investigation = item.get('farm_investigation', {})
+        rows.append({
+            'category': 'zombie',
+            'result': 'false_positive',
+            'asset_key': item.get('asset_key', ''),
+            'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
+            'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
+            'rca_hint': item.get('rca_hint', ''),
+            'headline': item.get('headline', ''),
+            'farm_detail': item.get('farm_detail', ''),
+            'aod_detail': item.get('aod_detail', ''),
+            'farm_investigation': investigation.get('conclusion', ''),
+            'investigation_findings': '; '.join(investigation.get('findings', [])),
+        })
+    
+    if format == "json":
+        report = {
+            'reconciliation_id': reconciliation_id,
+            'snapshot_id': rec_row["snapshot_id"],
+            'tenant_id': rec_row["tenant_id"],
+            'aod_run_id': rec_row["aod_run_id"],
+            'status': rec_row["status"],
+            'created_at': rec_row["created_at"],
+            'summary': analysis.get('summary', {}),
+            'verdict': analysis.get('verdict', ''),
+            'accuracy': analysis.get('accuracy', 0),
+            'differences': rows,
+        }
+        return Response(
+            content=json.dumps(report, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": f"attachment; filename=reconcile_{reconciliation_id}.json"}
+        )
+    
+    headers = ['category', 'result', 'asset_key', 'farm_reason_codes', 'aod_reason_codes', 
+               'rca_hint', 'headline', 'farm_detail', 'aod_detail', 'aod_decision',
+               'farm_investigation', 'investigation_findings']
+    
+    csv_lines = [','.join(headers)]
+    for row in rows:
+        values = []
+        for h in headers:
+            val = str(row.get(h, '')).replace('"', '""')
+            if ',' in val or '"' in val or '\n' in val:
+                val = f'"{val}"'
+            values.append(val)
+        csv_lines.append(','.join(values))
+    
+    csv_content = '\n'.join(csv_lines)
+    
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=reconcile_{reconciliation_id}.csv"}
+    )
 
 
 @router.post("/api/reconcile/auto", response_model=AutoReconcileResponse)
