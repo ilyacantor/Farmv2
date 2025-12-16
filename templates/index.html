@@ -655,7 +655,134 @@
             `;
         }
         
-        function renderReconciliationSection(title, type, analysis, rec, reconciliationId) {
+        function groupByRca(assets) {
+            const map = {};
+            for (const a of assets) {
+                const key = a.rca_hint || '(no rca)';
+                if (!map[key]) map[key] = [];
+                map[key].push(a);
+            }
+            return Object.entries(map)
+                .map(([rca, items]) => ({ rca, items }))
+                .sort((a, b) => b.items.length - a.items.length);
+        }
+        
+        function renderRcaView(matched, missed, falsePos) {
+            const allMisaligned = [...missed.map(a => ({...a, bucket: 'farm_only'})), ...falsePos.map(a => ({...a, bucket: 'aod_only'}))];
+            const grouped = groupByRca(allMisaligned);
+            
+            if (grouped.length === 0) {
+                return '<div class="text-sm text-slate-500">No misalignments to analyze by root cause.</div>';
+            }
+            
+            return grouped.map(({rca, items}) => `
+                <div class="rounded-2xl bg-white/5 p-4 ring-1 ring-white/10 mb-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="text-sm font-semibold text-slate-100">${rca}</div>
+                        ${renderPill(items.length + ' assets', 'warn')}
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        ${items.map(a => renderAssetCard(a, a.bucket)).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function renderAssetView(matched, missed, falsePos) {
+            const correct = matched.length;
+            const fpCount = falsePos.length;
+            const missedCount = missed.length;
+            
+            return `
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Left column: AOD-only + Confirmed -->
+                    <div class="space-y-4">
+                        <div class="rounded-2xl bg-emerald-500/5 p-4 ring-1 ring-emerald-500/20">
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="text-sm font-semibold text-emerald-300">Confirmed</div>
+                                ${renderPill(correct, 'good')}
+                            </div>
+                            ${matched.length === 0 
+                                ? '<div class="text-xs text-slate-500">None</div>' 
+                                : matched.map(a => renderAssetCard(a, 'confirmed')).join('')}
+                        </div>
+                        <div class="rounded-2xl bg-rose-500/5 p-4 ring-1 ring-rose-500/20">
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="text-sm font-semibold text-rose-300">AOD-only (False Positives)</div>
+                                ${renderPill(fpCount, fpCount > 0 ? 'bad' : 'good')}
+                            </div>
+                            ${falsePos.length === 0 
+                                ? '<div class="text-xs text-slate-500">None</div>' 
+                                : falsePos.map(a => renderAssetCard(a, 'aod_only')).join('')}
+                        </div>
+                    </div>
+                    
+                    <!-- Right column: Farm-only -->
+                    <div class="rounded-2xl bg-amber-500/5 p-4 ring-1 ring-amber-500/20">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="text-sm font-semibold text-amber-300">Farm-only (Missed by AOD)</div>
+                            ${renderPill(missedCount, missedCount > 0 ? 'warn' : 'good')}
+                        </div>
+                        ${missed.length === 0 
+                            ? '<div class="text-xs text-slate-500">None</div>' 
+                            : missed.map(a => renderAssetCard(a, 'farm_only')).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        let currentRecData = null;
+        
+        function switchRecTab(tab) {
+            document.querySelectorAll('[data-rec-tab]').forEach(el => {
+                el.classList.toggle('bg-white/10', el.dataset.recTab === tab);
+                el.classList.toggle('text-slate-50', el.dataset.recTab === tab);
+                el.classList.toggle('text-slate-300', el.dataset.recTab !== tab);
+            });
+            document.querySelectorAll('[data-rec-content]').forEach(el => {
+                el.classList.toggle('hidden', el.dataset.recContent !== tab);
+            });
+        }
+        
+        function switchRecView(view) {
+            if (!currentRecData) return;
+            const { analysis } = currentRecData;
+            
+            document.querySelectorAll('[data-view-btn]').forEach(el => {
+                el.classList.toggle('bg-white/10', el.dataset.viewBtn === view);
+                el.classList.toggle('text-slate-50', el.dataset.viewBtn === view);
+                el.classList.toggle('text-slate-300', el.dataset.viewBtn !== view);
+            });
+            
+            const shadowContent = document.getElementById('shadowAssetContent');
+            const zombieContent = document.getElementById('zombieAssetContent');
+            
+            if (view === 'asset') {
+                shadowContent.innerHTML = renderAssetView(
+                    analysis.matched_shadows || [],
+                    analysis.missed_shadows || [],
+                    analysis.false_positive_shadows || []
+                );
+                zombieContent.innerHTML = renderAssetView(
+                    analysis.matched_zombies || [],
+                    analysis.missed_zombies || [],
+                    analysis.false_positive_zombies || []
+                );
+            } else {
+                shadowContent.innerHTML = renderRcaView(
+                    analysis.matched_shadows || [],
+                    analysis.missed_shadows || [],
+                    analysis.false_positive_shadows || []
+                );
+                zombieContent.innerHTML = renderRcaView(
+                    analysis.matched_zombies || [],
+                    analysis.missed_zombies || [],
+                    analysis.false_positive_zombies || []
+                );
+            }
+        }
+        
+        function renderReconciliationTabContent(type, analysis, rec) {
             const isShadow = type === 'shadow';
             const matched = isShadow ? (analysis.matched_shadows || []) : (analysis.matched_zombies || []);
             const missed = isShadow ? (analysis.missed_shadows || []) : (analysis.missed_zombies || []);
@@ -670,63 +797,23 @@
             const misaligned = fpCount + missedCount;
             const accuracy = expected > 0 ? Math.round(correct / expected * 100) : 100;
             
-            const titleColor = isShadow ? 'text-purple-400' : 'text-red-400';
+            const contentId = isShadow ? 'shadowAssetContent' : 'zombieAssetContent';
             
             return `
-                <div class="rounded-3xl bg-white/3 p-5 ring-1 ring-white/10 mb-6">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="text-lg font-semibold ${titleColor}">${title}</div>
-                        <div class="flex gap-2">
-                            ${renderPill(rec.status, rec.status === 'PASS' ? 'good' : rec.status === 'WARN' ? 'warn' : 'bad')}
-                        </div>
-                    </div>
-                    
-                    <!-- Scorecard -->
-                    <div class="grid grid-cols-7 gap-2 mb-6">
-                        ${renderMetric('Expected', expected, 'Farm')}
-                        ${renderMetric('Found', found, 'AOD')}
-                        ${renderMetric('Correct', correct, 'Matched', 'good')}
-                        ${renderMetric('Misaligned', misaligned, 'FP + missed', misaligned > 0 ? 'warn' : 'good')}
-                        ${renderMetric('False Pos', fpCount, 'AOD-only', fpCount > 0 ? 'bad' : 'good')}
-                        ${renderMetric('Missed', missedCount, 'Farm-only', missedCount > 0 ? 'warn' : 'good')}
-                        ${renderMetric('Accuracy', accuracy + '%', '', accuracy === 100 ? 'good' : accuracy >= 80 ? 'warn' : 'bad')}
-                    </div>
-                    
-                    <!-- Three-column layout -->
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <!-- AOD-only (False Positives) -->
-                        <div class="rounded-2xl bg-rose-500/5 p-4 ring-1 ring-rose-500/20">
-                            <div class="flex items-center justify-between mb-3">
-                                <div class="text-sm font-semibold text-rose-300">AOD-only (False Positives)</div>
-                                ${renderPill(fpCount, fpCount > 0 ? 'bad' : 'good')}
-                            </div>
-                            ${falsePos.length === 0 
-                                ? '<div class="text-xs text-slate-500">None</div>' 
-                                : falsePos.map(a => renderAssetCard(a, 'aod_only')).join('')}
-                        </div>
-                        
-                        <!-- Confirmed (Matched) -->
-                        <div class="rounded-2xl bg-emerald-500/5 p-4 ring-1 ring-emerald-500/20">
-                            <div class="flex items-center justify-between mb-3">
-                                <div class="text-sm font-semibold text-emerald-300">Confirmed</div>
-                                ${renderPill(correct, 'good')}
-                            </div>
-                            ${matched.length === 0 
-                                ? '<div class="text-xs text-slate-500">None</div>' 
-                                : matched.map(a => renderAssetCard(a, 'confirmed')).join('')}
-                        </div>
-                        
-                        <!-- Farm-only (Missed) -->
-                        <div class="rounded-2xl bg-amber-500/5 p-4 ring-1 ring-amber-500/20">
-                            <div class="flex items-center justify-between mb-3">
-                                <div class="text-sm font-semibold text-amber-300">Farm-only (Missed by AOD)</div>
-                                ${renderPill(missedCount, missedCount > 0 ? 'warn' : 'good')}
-                            </div>
-                            ${missed.length === 0 
-                                ? '<div class="text-xs text-slate-500">None</div>' 
-                                : missed.map(a => renderAssetCard(a, 'farm_only')).join('')}
-                        </div>
-                    </div>
+                <!-- Scorecard -->
+                <div class="grid grid-cols-7 gap-2 mb-6">
+                    ${renderMetric('Expected', expected, 'Farm')}
+                    ${renderMetric('Found', found, 'AOD')}
+                    ${renderMetric('Correct', correct, 'Matched', 'good')}
+                    ${renderMetric('Misaligned', misaligned, 'FP + missed', misaligned > 0 ? 'warn' : 'good')}
+                    ${renderMetric('False Pos', fpCount, 'AOD-only', fpCount > 0 ? 'bad' : 'good')}
+                    ${renderMetric('Missed', missedCount, 'Farm-only', missedCount > 0 ? 'warn' : 'good')}
+                    ${renderMetric('Accuracy', accuracy + '%', '', accuracy === 100 ? 'good' : accuracy >= 80 ? 'warn' : 'bad')}
+                </div>
+                
+                <!-- Asset content (will be populated by view toggle) -->
+                <div id="${contentId}">
+                    ${renderAssetView(matched, missed, falsePos)}
                 </div>
             `;
         }
@@ -741,6 +828,8 @@
                 const rec = await recResp.json();
                 const analysisData = await analysisResp.json();
                 const analysis = analysisData.analysis || {};
+                
+                currentRecData = { rec, analysis };
                 
                 const payloadHealth = analysis.payload_health || {};
                 const hasPayloadIssues = payloadHealth.has_issues;
@@ -760,7 +849,14 @@
                                 <div class="mt-1 text-sm text-slate-400">Farm = expected. AOD = actual.</div>
                                 ${verdict ? `<div class="mt-2 text-sm text-slate-300">${verdict}</div>` : ''}
                             </div>
-                            <div class="flex gap-2">
+                            <div class="flex items-center gap-3">
+                                <!-- View toggle -->
+                                <div class="flex items-center gap-1 rounded-2xl bg-white/5 p-1 ring-1 ring-white/10">
+                                    <button onclick="switchRecView('asset')" data-view-btn="asset"
+                                        class="rounded-xl px-3 py-1.5 text-sm bg-white/10 text-slate-50">View by Asset</button>
+                                    <button onclick="switchRecView('rca')" data-view-btn="rca"
+                                        class="rounded-xl px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5">View by Root Cause</button>
+                                </div>
                                 <a href="/api/reconcile/${reconciliationId}/download?format=csv" 
                                    class="px-3 py-1.5 text-xs rounded-xl bg-blue-900 text-blue-300 hover:bg-blue-800 ring-1 ring-blue-500/20">Download CSV</a>
                                 <a href="/api/reconcile/${reconciliationId}/download?format=json" 
@@ -778,11 +874,27 @@
                             </div>
                         </div>
                         
-                        <!-- Shadow Reconciliation -->
-                        ${renderReconciliationSection('Shadow Reconciliation', 'shadow', analysis, rec, reconciliationId)}
+                        <!-- Shadow/Zombie Tabs -->
+                        <div class="flex items-center gap-1 rounded-2xl bg-white/5 p-1 ring-1 ring-white/10 w-fit">
+                            <button onclick="switchRecTab('shadow')" data-rec-tab="shadow"
+                                class="rounded-xl px-4 py-2 text-sm font-medium bg-white/10 text-slate-50">
+                                Shadow
+                            </button>
+                            <button onclick="switchRecTab('zombie')" data-rec-tab="zombie"
+                                class="rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/5">
+                                Zombie
+                            </button>
+                        </div>
                         
-                        <!-- Zombie Reconciliation -->
-                        ${renderReconciliationSection('Zombie Reconciliation', 'zombie', analysis, rec, reconciliationId)}
+                        <!-- Shadow Tab Content -->
+                        <div data-rec-content="shadow" class="rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
+                            ${renderReconciliationTabContent('shadow', analysis, rec)}
+                        </div>
+                        
+                        <!-- Zombie Tab Content -->
+                        <div data-rec-content="zombie" class="hidden rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
+                            ${renderReconciliationTabContent('zombie', analysis, rec)}
+                        </div>
                         
                         <!-- Raw Report -->
                         <details class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
