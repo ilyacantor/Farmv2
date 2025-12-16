@@ -363,7 +363,7 @@ class ReconcileMetadata(BaseModel):
     created_at: str
     status: str
     report_text: str = ""
-    is_stale: bool = False
+    contract_status: str = "UNKNOWN"
 
 
 class AutoReconcileRequest(BaseModel):

@@ -908,7 +908,24 @@ async def list_reconciliations(
             aod_payload = json.loads(row["aod_payload_json"]) if row["aod_payload_json"] else {}
             aod_lists = aod_payload.get("aod_lists", {})
             asset_summaries = aod_lists.get("asset_summaries", {})
-            is_stale = not bool(asset_summaries)
+            
+            # Determine contract_status
+            if not asset_summaries:
+                contract_status = "STALE_CONTRACT"
+            else:
+                # Check consistency
+                summaries_shadow_count = sum(1 for v in asset_summaries.values() if isinstance(v, dict) and v.get('is_shadow'))
+                summaries_zombie_count = sum(1 for v in asset_summaries.values() if isinstance(v, dict) and v.get('is_zombie'))
+                legacy_shadow_keys = aod_lists.get('shadow_asset_keys') or aod_lists.get('shadow_asset_keys_sample') or aod_lists.get('shadow_assets') or []
+                legacy_zombie_keys = aod_lists.get('zombie_asset_keys') or aod_lists.get('zombie_asset_keys_sample') or aod_lists.get('zombie_assets') or []
+                
+                has_mismatch = False
+                if legacy_shadow_keys and len(legacy_shadow_keys) != summaries_shadow_count:
+                    has_mismatch = True
+                if legacy_zombie_keys and len(legacy_zombie_keys) != summaries_zombie_count:
+                    has_mismatch = True
+                
+                contract_status = "INCONSISTENT_CONTRACT" if has_mismatch else "CURRENT"
             
             results.append(ReconcileMetadata(
                 reconciliation_id=row["reconciliation_id"],
@@ -918,7 +935,7 @@ async def list_reconciliations(
                 created_at=row["created_at"],
                 status=row["status"],
                 report_text=row["report_text"] or "",
-                is_stale=is_stale,
+                contract_status=contract_status,
             ))
         return results
 
@@ -1558,20 +1575,47 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     else:
         verdict = f"NEEDS WORK - AOD missed {total_missed} expected anomalies and had {total_fp} false positives."
     
-    # Contract status: STALE_CONTRACT if payload predates asset_summaries
+    # Contract validation
     has_asset_summaries = bool(asset_summaries)
+    payload_version = aod_payload.get('payload_version') or aod_lists.get('payload_version')
+    
+    # Consistency check: compare legacy list counts vs asset_summaries counts
+    consistency_errors = []
     if has_asset_summaries:
-        analysis['contract_status'] = 'CURRENT'
-        analysis['gradeable'] = True
-        analysis['verdict'] = verdict
-        analysis['accuracy'] = round(total_matched / total_expected * 100, 1) if total_expected > 0 else 100.0
-    else:
-        # Stale contract = non-gradeable
+        # Count shadows/zombies from asset_summaries
+        summaries_shadow_count = sum(1 for v in asset_summaries.values() if isinstance(v, dict) and v.get('is_shadow'))
+        summaries_zombie_count = sum(1 for v in asset_summaries.values() if isinstance(v, dict) and v.get('is_zombie'))
+        
+        # Count from legacy lists (if present)
+        legacy_shadow_keys = aod_lists.get('shadow_asset_keys') or aod_lists.get('shadow_asset_keys_sample') or aod_lists.get('shadow_assets') or []
+        legacy_zombie_keys = aod_lists.get('zombie_asset_keys') or aod_lists.get('zombie_asset_keys_sample') or aod_lists.get('zombie_assets') or []
+        
+        # Only check consistency if legacy lists are provided
+        if legacy_shadow_keys and len(legacy_shadow_keys) != summaries_shadow_count:
+            consistency_errors.append(f"Shadow count mismatch: legacy list has {len(legacy_shadow_keys)}, asset_summaries has {summaries_shadow_count}")
+        if legacy_zombie_keys and len(legacy_zombie_keys) != summaries_zombie_count:
+            consistency_errors.append(f"Zombie count mismatch: legacy list has {len(legacy_zombie_keys)}, asset_summaries has {summaries_zombie_count}")
+    
+    # Determine gradeability
+    if not has_asset_summaries:
         analysis['contract_status'] = 'STALE_CONTRACT'
         analysis['gradeable'] = False
         analysis['contract_banner'] = 'This reconciliation uses a legacy payload without asset_summaries. Grading is disabled. Re-run AOD on this snapshot to generate accurate results.'
         analysis['verdict'] = 'NOT_GRADEABLE'
         analysis['accuracy'] = None
+    elif consistency_errors:
+        analysis['contract_status'] = 'INCONSISTENT_CONTRACT'
+        analysis['gradeable'] = False
+        analysis['consistency_errors'] = consistency_errors
+        analysis['contract_banner'] = f"Payload inconsistency detected: {'; '.join(consistency_errors)}. Grading refused."
+        analysis['verdict'] = 'NOT_GRADEABLE'
+        analysis['accuracy'] = None
+    else:
+        analysis['contract_status'] = 'CURRENT'
+        analysis['gradeable'] = True
+        analysis['payload_version'] = payload_version
+        analysis['verdict'] = verdict
+        analysis['accuracy'] = round(total_matched / total_expected * 100, 1) if total_expected > 0 else 100.0
     
     return analysis
 

@@ -399,21 +399,32 @@
             container.innerHTML = filtered.map(rec => {
                 const created = new Date(rec.created_at);
                 const timeAgo = getTimeAgo(created);
-                const isStale = rec.is_stale === true;
+                const contractStatus = rec.contract_status || 'UNKNOWN';
+                const isGradeable = contractStatus === 'CURRENT';
+                
+                const contractBadge = contractStatus === 'STALE_CONTRACT' 
+                    ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-900/50 text-amber-400 ring-1 ring-amber-500/30">STALE</span>'
+                    : contractStatus === 'INCONSISTENT_CONTRACT'
+                    ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-red-900/50 text-red-400 ring-1 ring-red-500/30">INCONSISTENT</span>'
+                    : getStatusBadge(rec.status);
+                
+                const contractMsg = contractStatus === 'STALE_CONTRACT' 
+                    ? '<span class="text-amber-500 ml-2">Legacy payload - rerun required</span>'
+                    : contractStatus === 'INCONSISTENT_CONTRACT'
+                    ? '<span class="text-red-500 ml-2">Count mismatch - rerun required</span>'
+                    : '';
                 
                 return `
                     <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
                         <div class="flex items-start justify-between gap-4">
                             <div class="flex-1 min-w-0">
                                 <div class="flex items-center gap-2 mb-1">
-                                    ${isStale 
-                                        ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-900/50 text-amber-400 ring-1 ring-amber-500/30">STALE</span>'
-                                        : getStatusBadge(rec.status)}
+                                    ${contractBadge}
                                     <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
                                 </div>
                                 <div class="text-xs text-slate-600 mt-1">
                                     ${rec.snapshot_id.substring(0, 8)} | AOD: ${rec.aod_run_id || 'N/A'}
-                                    ${isStale ? '<span class="text-amber-500 ml-2">Legacy payload - rerun required</span>' : ''}
+                                    ${contractMsg}
                                 </div>
                             </div>
                             <div class="text-xs text-slate-500">${timeAgo}</div>
@@ -922,16 +933,23 @@
                 const payloadHealth = analysis.payload_health || {};
                 const hasPayloadIssues = payloadHealth.has_issues;
                 const gradeable = analysis.gradeable !== false;
+                const contractStatus = analysis.contract_status || 'UNKNOWN';
                 const contractBanner = analysis.contract_banner || '';
                 const verdict = gradeable ? (analysis.verdict || '') : '';
+                
+                const bannerStyle = contractStatus === 'INCONSISTENT_CONTRACT' 
+                    ? 'bg-red-900/30 border-red-600/50 text-red-200' 
+                    : 'bg-amber-900/30 border-amber-600/50 text-amber-200';
+                const bannerTitle = contractStatus === 'INCONSISTENT_CONTRACT' ? 'Inconsistent Contract' : 'Stale Contract';
+                const bannerTextStyle = contractStatus === 'INCONSISTENT_CONTRACT' ? 'text-red-300/80' : 'text-amber-300/80';
                 
                 const modal = document.getElementById('detailModal');
                 document.getElementById('detailContent').innerHTML = `
                     <div class="space-y-6">
                         ${!gradeable ? `
-                        <div class="rounded-xl bg-amber-900/30 border border-amber-600/50 p-4 text-amber-200 text-sm">
-                            <div class="font-medium mb-1">Stale Contract</div>
-                            <div class="text-amber-300/80">${contractBanner || 'This reconciliation uses a legacy payload. Re-run AOD to enable grading.'}</div>
+                        <div class="rounded-xl ${bannerStyle} border p-4 text-sm">
+                            <div class="font-medium mb-1">${bannerTitle}</div>
+                            <div class="${bannerTextStyle}">${contractBanner || 'This reconciliation cannot be graded. Re-run AOD to enable grading.'}</div>
                         </div>
                         ` : ''}
                         <!-- Header -->
