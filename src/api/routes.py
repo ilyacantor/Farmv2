@@ -913,11 +913,11 @@ async def list_reconciliations(
             if not asset_summaries:
                 contract_status = "STALE_CONTRACT"
             else:
-                # Check consistency
+                # Check consistency (only compare full lists, not samples)
                 summaries_shadow_count = sum(1 for v in asset_summaries.values() if isinstance(v, dict) and v.get('is_shadow'))
                 summaries_zombie_count = sum(1 for v in asset_summaries.values() if isinstance(v, dict) and v.get('is_zombie'))
-                legacy_shadow_keys = aod_lists.get('shadow_asset_keys') or aod_lists.get('shadow_asset_keys_sample') or aod_lists.get('shadow_assets') or []
-                legacy_zombie_keys = aod_lists.get('zombie_asset_keys') or aod_lists.get('zombie_asset_keys_sample') or aod_lists.get('zombie_assets') or []
+                legacy_shadow_keys = aod_lists.get('shadow_asset_keys') or aod_lists.get('shadow_assets') or []
+                legacy_zombie_keys = aod_lists.get('zombie_asset_keys') or aod_lists.get('zombie_assets') or []
                 
                 has_mismatch = False
                 if legacy_shadow_keys and len(legacy_shadow_keys) != summaries_shadow_count:
@@ -1580,17 +1580,19 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     payload_version = aod_payload.get('payload_version') or aod_lists.get('payload_version')
     
     # Consistency check: compare legacy list counts vs asset_summaries counts
+    # Note: *_sample fields are samples, not exhaustive lists, so skip those
     consistency_errors = []
     if has_asset_summaries:
         # Count shadows/zombies from asset_summaries
         summaries_shadow_count = sum(1 for v in asset_summaries.values() if isinstance(v, dict) and v.get('is_shadow'))
         summaries_zombie_count = sum(1 for v in asset_summaries.values() if isinstance(v, dict) and v.get('is_zombie'))
         
-        # Count from legacy lists (if present)
-        legacy_shadow_keys = aod_lists.get('shadow_asset_keys') or aod_lists.get('shadow_asset_keys_sample') or aod_lists.get('shadow_assets') or []
-        legacy_zombie_keys = aod_lists.get('zombie_asset_keys') or aod_lists.get('zombie_asset_keys_sample') or aod_lists.get('zombie_assets') or []
+        # Only compare full lists (not samples) for consistency check
+        # shadow_asset_keys_sample and zombie_asset_keys_sample are explicitly samples
+        legacy_shadow_keys = aod_lists.get('shadow_asset_keys') or aod_lists.get('shadow_assets') or []
+        legacy_zombie_keys = aod_lists.get('zombie_asset_keys') or aod_lists.get('zombie_assets') or []
         
-        # Only check consistency if legacy lists are provided
+        # Only check consistency if full (non-sample) legacy lists are provided
         if legacy_shadow_keys and len(legacy_shadow_keys) != summaries_shadow_count:
             consistency_errors.append(f"Shadow count mismatch: legacy list has {len(legacy_shadow_keys)}, asset_summaries has {summaries_shadow_count}")
         if legacy_zombie_keys and len(legacy_zombie_keys) != summaries_zombie_count:
