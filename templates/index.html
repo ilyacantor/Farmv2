@@ -670,7 +670,13 @@
         function groupByReasonCode(assets) {
             const codeMap = {};
             for (const a of assets) {
-                const codes = [...(a.farm_reason_codes || []), ...(a.aod_reason_codes || [])];
+                const farmCodes = typeof a.farm_reason_codes === 'string' 
+                    ? a.farm_reason_codes.split(',').filter(c => c.trim()) 
+                    : (a.farm_reason_codes || []);
+                const aodCodes = typeof a.aod_reason_codes === 'string' 
+                    ? a.aod_reason_codes.split(',').filter(c => c.trim()) 
+                    : (a.aod_reason_codes || []);
+                const codes = [...farmCodes, ...aodCodes];
                 const uniqueCodes = [...new Set(codes)];
                 for (const code of uniqueCodes) {
                     if (!codeMap[code]) codeMap[code] = { farm: 0, aod: 0, total: 0 };
