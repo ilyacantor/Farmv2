@@ -206,6 +206,21 @@ Farm generates 7 independent planes:
 ### RCA Hint Codes
 - `UNGOVERNED_WITH_SPEND` - Shadow: in finance/cloud but not in IdP/CMDB
 - `STALE_NO_RECENT_USE` - Zombie: in IdP/CMDB but no recent activity
+- `KEY_NORMALIZATION_MISMATCH` - AOD has evidence for the domain (in URLs/asset_summaries) but did not normalize to domain-keyed asset
+
+### AOD asset_summaries Contract (preferred)
+When AOD provides `asset_summaries` (domain-keyed), Farm uses `is_shadow`/`is_zombie` flags:
+```json
+{
+  "aod_lists": {
+    "asset_summaries": {
+      "notion.so": {"is_shadow": true, "is_zombie": false, "domain": "notion.so", ...},
+      "slack.com": {"is_shadow": false, "is_zombie": true, ...}
+    }
+  }
+}
+```
+Farm prefers `asset_summaries` over legacy `shadow_assets`/`zombie_assets` lists.
 
 ### AOD Status API
 - `GET /api/aod/run-status?snapshot_id=...&tenant_id=...` - Check if AOD has processed a snapshot

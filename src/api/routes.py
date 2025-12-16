@@ -950,12 +950,14 @@ EXPLANATION_TEMPLATES = {
         'UNGOVERNED_WITH_SPEND': "AOD missed {key}: has finance spend but no governance record in IdP/CMDB. This is classic shadow IT - money going out for an app that IT doesn't know about.",
         'HAS_FINANCE+NO_IDP+NO_CMDB': "AOD missed {key}: appears in finance records with active spend, but missing from both IdP and CMDB. Users are paying for something IT hasn't approved.",
         'HAS_CLOUD+NO_IDP+NO_CMDB': "AOD missed {key}: found in cloud resources but not in identity or asset management systems. Someone spun up a cloud service outside IT governance.",
+        'KEY_NORMALIZATION_MISMATCH': "AOD missed {key}: the domain exists in AOD's ingested evidence (URLs, asset_summaries) but was not normalized to a domain-keyed asset. AOD should use domain as the canonical key.",
     },
     'zombie_missed': {
         'default': "AOD failed to identify {key} as a zombie asset.",
         'STALE_NO_RECENT_USE': "AOD missed {key}: exists in IdP/CMDB but has no recent activity. License costs continue but nobody's using it.",
         'HAS_IDP+STALE_ACTIVITY': "AOD missed {key}: still provisioned in IdP but activity is stale (90+ days old). This app might be abandoned.",
         'HAS_CMDB+STALE_ACTIVITY': "AOD missed {key}: still in CMDB as managed asset but no recent usage detected. Potential cost savings by decommissioning.",
+        'KEY_NORMALIZATION_MISMATCH': "AOD missed {key}: the domain exists in AOD's ingested evidence (URLs, asset_summaries) but was not normalized to a domain-keyed asset. AOD should use domain as the canonical key.",
     },
     'false_positive_shadow': {
         'default': "AOD incorrectly flagged {key} as shadow IT, but Farm expected it to be clean.",
@@ -989,21 +991,31 @@ def generate_asset_analysis(mismatch_type: str, key: str, farm_reasons: list, rc
     
     if mismatch_type == 'shadow_missed':
         headline = f"AOD missed {key} as shadow IT"
-        if 'HAS_FINANCE' in farm_reasons and 'NO_IDP' in farm_reasons:
+        if rca_hint == 'KEY_NORMALIZATION_MISMATCH':
+            headline += " - domain exists in AOD evidence but not used as canonical key"
+        elif 'HAS_FINANCE' in farm_reasons and 'NO_IDP' in farm_reasons:
             headline += " - has finance spend but missing from governance systems"
         elif rca_hint == 'UNGOVERNED_WITH_SPEND':
             headline += " - money going out but IT doesn't know about it"
         farm_detail = f"Farm expected SHADOW because: {farm_reasons_str}"
-        aod_detail = "AOD did not flag this asset" if not aod_reasons else f"AOD saw: {aod_reasons_str} but didn't classify as shadow"
+        if rca_hint == 'KEY_NORMALIZATION_MISMATCH':
+            aod_detail = f"AOD has evidence for {key} but did not normalize to domain key"
+        else:
+            aod_detail = "AOD did not flag this asset" if not aod_reasons else f"AOD saw: {aod_reasons_str} but didn't classify as shadow"
         
     elif mismatch_type == 'zombie_missed':
         headline = f"AOD missed {key} as zombie"
-        if 'STALE_ACTIVITY' in farm_reasons:
+        if rca_hint == 'KEY_NORMALIZATION_MISMATCH':
+            headline += " - domain exists in AOD evidence but not used as canonical key"
+        elif 'STALE_ACTIVITY' in farm_reasons:
             headline += " - registered but no recent usage"
         elif rca_hint == 'STALE_NO_RECENT_USE':
             headline += " - paying for something nobody's using"
         farm_detail = f"Farm expected ZOMBIE because: {farm_reasons_str}"
-        aod_detail = "AOD did not flag this asset" if not aod_reasons else f"AOD saw: {aod_reasons_str} but didn't classify as zombie"
+        if rca_hint == 'KEY_NORMALIZATION_MISMATCH':
+            aod_detail = f"AOD has evidence for {key} but did not normalize to domain key"
+        else:
+            aod_detail = "AOD did not flag this asset" if not aod_reasons else f"AOD saw: {aod_reasons_str} but didn't classify as zombie"
         
     elif mismatch_type == 'false_positive_shadow':
         headline = f"AOD incorrectly flagged {key} as shadow"
@@ -1143,6 +1155,105 @@ def investigate_fp_zombie(asset_key: str, aod_reasons: list, snapshot: dict) -> 
     }
 
 
+def extract_aod_evidence_domains(aod_payload: dict) -> set:
+    """Extract all domains/URLs referenced in AOD's asset_summaries and evidence.
+    
+    Recursively traverses all nested structures to find domain references.
+    Returns a set of lowercase domain strings.
+    """
+    domains = set()
+    
+    def extract_domains_from_string(s: str):
+        """Extract potential domain from a string (URL or domain)."""
+        s = str(s).lower().strip()
+        if not s:
+            return
+        # Extract domain from URL
+        if '://' in s:
+            try:
+                from urllib.parse import urlparse
+                parsed = urlparse(s)
+                if parsed.netloc:
+                    domains.add(parsed.netloc)
+            except:
+                pass
+        # Also add the raw string if it looks like a domain
+        if '.' in s and not s.startswith('http'):
+            domains.add(s)
+    
+    def traverse(obj):
+        """Recursively traverse dict/list to find domain strings."""
+        if isinstance(obj, str):
+            extract_domains_from_string(obj)
+        elif isinstance(obj, dict):
+            for key, val in obj.items():
+                # Add dict keys if they look like domains
+                if isinstance(key, str) and '.' in key:
+                    domains.add(key.lower())
+                traverse(val)
+        elif isinstance(obj, list):
+            for item in obj:
+                traverse(item)
+    
+    aod_lists = aod_payload.get('aod_lists', {})
+    asset_summaries = aod_lists.get('asset_summaries', {})
+    
+    # Traverse asset_summaries
+    if isinstance(asset_summaries, dict):
+        for key, summary in asset_summaries.items():
+            if isinstance(key, str):
+                domains.add(key.lower())
+            traverse(summary)
+    
+    # Also check reason_codes and other lists for domain references
+    for list_key in ['actual_reason_codes', 'reason_codes', 'evidence']:
+        data = aod_lists.get(list_key)
+        if data:
+            traverse(data)
+    
+    return domains
+
+
+def check_key_in_aod_evidence(key: str, aod_evidence_domains: set) -> bool:
+    """Check if a Farm-expected key appears anywhere in AOD's evidence.
+    
+    Uses normalized matching to handle variations like:
+    - notion.so vs techworks.notion.so
+    - slack.com vs slack
+    """
+    if not key or not aod_evidence_domains:
+        return False
+        
+    key_lower = key.lower().strip()
+    # Extract core domain (e.g., "notion" from "notion.so")
+    key_core = re.sub(r'\.(com|io|so|app|net|org|co|ai)$', '', key_lower)
+    key_norm = re.sub(r'[^a-z0-9]', '', key_lower)
+    key_core_norm = re.sub(r'[^a-z0-9]', '', key_core)
+    
+    for domain in aod_evidence_domains:
+        if not isinstance(domain, str):
+            continue
+        domain_lower = domain.lower().strip()
+        domain_core = re.sub(r'\.(com|io|so|app|net|org|co|ai)$', '', domain_lower)
+        domain_norm = re.sub(r'[^a-z0-9]', '', domain_lower)
+        domain_core_norm = re.sub(r'[^a-z0-9]', '', domain_core)
+        
+        # Exact match
+        if key_lower == domain_lower:
+            return True
+        # Subdomain match (e.g., techworks.notion.so contains notion.so)
+        if key_lower in domain_lower or domain_lower.endswith('.' + key_lower):
+            return True
+        # Core name match (e.g., notion matches notion.so or notion.com)
+        if key_core_norm == domain_core_norm and len(key_core_norm) >= 3:
+            return True
+        # Normalized containment for longer keys
+        if len(key_norm) >= 5 and (key_norm in domain_norm or domain_norm in key_norm):
+            return True
+    
+    return False
+
+
 def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> dict:
     """Build detailed reconciliation analysis comparing Farm expectations vs AOD results."""
     expected_block = snapshot.get('__expected__', {})
@@ -1157,16 +1268,33 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     
     aod_lists = aod_payload.get('aod_lists', {})
     aod_summary = aod_payload.get('aod_summary', {})
-    aod_shadows = set(
-        aod_lists.get('shadow_asset_keys') or 
-        aod_lists.get('shadow_asset_keys_sample') or 
-        aod_lists.get('shadow_assets', [])
-    )
-    aod_zombies = set(
-        aod_lists.get('zombie_asset_keys') or 
-        aod_lists.get('zombie_asset_keys_sample') or 
-        aod_lists.get('zombie_assets', [])
-    )
+    
+    # Extract all domains referenced in AOD evidence for KEY_NORMALIZATION_MISMATCH detection
+    aod_evidence_domains = extract_aod_evidence_domains(aod_payload)
+    
+    # Prefer asset_summaries if available (domain-keyed with is_shadow/is_zombie flags)
+    asset_summaries = aod_lists.get('asset_summaries', {})
+    if asset_summaries:
+        aod_shadows = set()
+        aod_zombies = set()
+        for key, summary in asset_summaries.items():
+            if isinstance(summary, dict):
+                if summary.get('is_shadow'):
+                    aod_shadows.add(key)
+                if summary.get('is_zombie'):
+                    aod_zombies.add(key)
+    else:
+        # Fall back to legacy lists
+        aod_shadows = set(
+            aod_lists.get('shadow_asset_keys') or 
+            aod_lists.get('shadow_asset_keys_sample') or 
+            aod_lists.get('shadow_assets', [])
+        )
+        aod_zombies = set(
+            aod_lists.get('zombie_asset_keys') or 
+            aod_lists.get('zombie_asset_keys_sample') or 
+            aod_lists.get('zombie_assets', [])
+        )
     aod_reason_codes = (
         aod_lists.get('actual_reason_codes') or 
         aod_lists.get('reason_codes') or 
@@ -1297,17 +1425,21 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'aod_variants': variants if len(variants) > 1 else None,
             })
         else:
-            asset_analysis = generate_asset_analysis('shadow_missed', key, reasons, rca, [])
+            # Check for KEY_NORMALIZATION_MISMATCH: key exists in AOD evidence but not as output key
+            is_key_drift = check_key_in_aod_evidence(key, aod_evidence_domains)
+            effective_rca = 'KEY_NORMALIZATION_MISMATCH' if is_key_drift else rca
+            asset_analysis = generate_asset_analysis('shadow_missed', key, reasons, effective_rca, [])
             analysis['missed_shadows'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': [],
                 'aod_admission': None,
-                'rca_hint': rca,
+                'rca_hint': effective_rca,
+                'is_key_drift': is_key_drift,
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
-                'explanation': get_explanation('shadow_missed', key, reasons, rca),
+                'explanation': get_explanation('shadow_missed', key, reasons, effective_rca),
             })
     
     for key in farm_zombies:
@@ -1335,17 +1467,21 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'aod_variants': variants if len(variants) > 1 else None,
             })
         else:
-            asset_analysis = generate_asset_analysis('zombie_missed', key, reasons, rca, [])
+            # Check for KEY_NORMALIZATION_MISMATCH: key exists in AOD evidence but not as output key
+            is_key_drift = check_key_in_aod_evidence(key, aod_evidence_domains)
+            effective_rca = 'KEY_NORMALIZATION_MISMATCH' if is_key_drift else rca
+            asset_analysis = generate_asset_analysis('zombie_missed', key, reasons, effective_rca, [])
             analysis['missed_zombies'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': [],
                 'aod_admission': None,
-                'rca_hint': rca,
+                'rca_hint': effective_rca,
+                'is_key_drift': is_key_drift,
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
-                'explanation': get_explanation('zombie_missed', key, reasons, rca),
+                'explanation': get_explanation('zombie_missed', key, reasons, effective_rca),
             })
     
     # False positives: iterate over domain keys to collapse duplicates
