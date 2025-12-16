@@ -1552,16 +1552,20 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     else:
         verdict = f"NEEDS WORK - AOD missed {total_missed} expected anomalies and had {total_fp} false positives."
     
-    analysis['verdict'] = verdict
-    analysis['accuracy'] = round(total_matched / total_expected * 100, 1) if total_expected > 0 else 100.0
-    
     # Contract status: STALE_CONTRACT if payload predates asset_summaries
     has_asset_summaries = bool(asset_summaries)
     if has_asset_summaries:
         analysis['contract_status'] = 'CURRENT'
+        analysis['gradeable'] = True
+        analysis['verdict'] = verdict
+        analysis['accuracy'] = round(total_matched / total_expected * 100, 1) if total_expected > 0 else 100.0
     else:
+        # Stale contract = non-gradeable
         analysis['contract_status'] = 'STALE_CONTRACT'
-        analysis['contract_message'] = 'Payload predates asset_summaries contract. Re-run reconciliation required for accurate grading.'
+        analysis['gradeable'] = False
+        analysis['contract_banner'] = 'This reconciliation uses a legacy payload without asset_summaries. Grading is disabled. Re-run AOD on this snapshot to generate accurate results.'
+        analysis['verdict'] = 'NOT_GRADEABLE'
+        analysis['accuracy'] = None
     
     return analysis
 
