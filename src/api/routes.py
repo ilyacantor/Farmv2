@@ -39,6 +39,7 @@ INFRASTRUCTURE_DOMAINS = {
     'mysql.com',
     'apache.org',
     'redis.io',
+    'redis.com',
     'mongodb.com',
     'elastic.co',
     'kafka.apache.org',

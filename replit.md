@@ -191,7 +191,7 @@ is_clean = NOT is_shadow AND NOT is_zombie AND discovery_present
 
 ### Infrastructure Exclusions
 The following domains are excluded from shadow classification (not SaaS candidates):
-- postgresql.org, mysql.com, apache.org, redis.io, mongodb.com
+- postgresql.org, mysql.com, apache.org, redis.io, redis.com, mongodb.com
 - docker.com, kubernetes.io, nginx.org
 - python.org, nodejs.org, golang.org, rust-lang.org, ruby-lang.org
 - linux.org, gnu.org, elastic.co, kafka.apache.org
