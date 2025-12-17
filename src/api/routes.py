@@ -54,6 +54,28 @@ INFRASTRUCTURE_DOMAINS = {
     'ruby-lang.org',
 }
 
+EXTERNAL_DOMAIN_TLDS = {
+    '.com', '.io', '.org', '.net', '.co', '.ai', '.app', '.dev',
+    '.us', '.cloud', '.so', '.me', '.info', '.biz', '.tech', '.ly',
+    '.gg', '.tv', '.fm', '.to', '.cc', '.xyz', '.online', '.site',
+    '.co.uk', '.com.au', '.co.nz', '.co.jp', '.com.br', '.co.in',
+    '.de', '.fr', '.it', '.es', '.nl', '.be', '.ch', '.at', '.pl',
+    '.se', '.no', '.dk', '.fi', '.ie', '.pt', '.ru', '.jp', '.cn',
+    '.kr', '.au', '.nz', '.in', '.sg', '.hk', '.tw', '.mx', '.ca',
+}
+
+
+def is_external_domain(key: str) -> bool:
+    """Check if key looks like an external SaaS domain (has a valid TLD).
+    
+    Internal service names (authservice, billing-api, etc.) are not external domains.
+    Supports compound TLDs like .co.uk, .com.au.
+    """
+    key_lower = key.lower()
+    if '.' not in key_lower:
+        return False
+    return any(key_lower.endswith(tld) for tld in EXTERNAL_DOMAIN_TLDS)
+
 
 async def call_aod_explain_nonflag(
     snapshot_id: str,
@@ -786,7 +808,8 @@ def compute_expected_block(snapshot: dict, window_days: int = 90) -> dict:
             }
         
         is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
-        is_shadow = cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present'] and not is_infra_excluded
+        is_external = is_external_domain(key)
+        is_shadow = is_external and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present'] and not is_infra_excluded
         is_zombie = (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
         
         if is_shadow:
@@ -826,7 +849,8 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
     
     for key, cand in candidates.items():
         is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
-        if cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present'] and not is_infra_excluded:
+        is_external = is_external_domain(key)
+        if is_external and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present'] and not is_infra_excluded:
             shadow_keys.append(key)
         elif (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0:
             zombie_keys.append(key)

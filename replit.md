@@ -159,14 +159,17 @@ Farm classifies assets into three buckets based on evidence flags:
 
 ### Shadow (Ungoverned App Sprawl)
 ```
-is_shadow = activity_present 
+is_shadow = is_external_domain
+            AND activity_present 
             AND NOT idp_present 
             AND NOT cmdb_present
             AND NOT is_infrastructure_domain
 ```
+- Must be an external SaaS domain (ends with .com, .io, .org, .net, etc.)
 - Must have recent activity within detection window
 - Must lack governance (no IdP, no CMDB)
 - Excludes infrastructure/open-source project domains (mysql.com, postgresql.org, etc.)
+- Excludes internal service names (authservice, billing-api, etc.)
 - **Finance is NOT a gate** - finance is context/priority scoring only
 
 ### Zombie (Governed but Stale)
