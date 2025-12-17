@@ -1486,19 +1486,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     }
     
     def get_aod_reasons(key):
-        """Get AOD's reason codes for a key, checking asset_summaries first, then legacy dict."""
-        # Check asset_summaries first (preferred source)
-        if key in asset_summaries and isinstance(asset_summaries[key], dict):
-            codes = asset_summaries[key].get('aod_reason_codes', [])
-            if codes:
-                return codes
-        # Check normalized variants in asset_summaries
-        for aod_key, summary in asset_summaries.items():
-            if norm(aod_key) == norm(key) and isinstance(summary, dict):
-                codes = summary.get('aod_reason_codes', [])
-                if codes:
-                    return codes
-        # Fall back to legacy dict
+        """Get AOD's reason codes for a key, checking normalized variants."""
         if key in aod_reason_codes:
             return aod_reason_codes[key]
         for aod_key in aod_reason_codes:
@@ -1543,20 +1531,18 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             # Check for KEY_NORMALIZATION_MISMATCH: key exists in AOD evidence but not as output key
             is_key_drift = check_key_in_aod_evidence(key, aod_evidence_domains)
             effective_rca = 'KEY_NORMALIZATION_MISMATCH' if is_key_drift else rca
-            # Get AOD's reason codes for this asset (even if not flagged as shadow)
-            aod_key_reasons = get_aod_reasons(key)
-            asset_analysis = generate_asset_analysis('shadow_missed', key, reasons, effective_rca, aod_key_reasons)
+            asset_analysis = generate_asset_analysis('shadow_missed', key, reasons, effective_rca, [])
             analysis['missed_shadows'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
-                'aod_reason_codes': aod_key_reasons,
-                'aod_admission': get_aod_admission(key),
+                'aod_reason_codes': [],
+                'aod_admission': None,
                 'rca_hint': effective_rca,
                 'is_key_drift': is_key_drift,
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
-                'explanation': get_explanation('shadow_missed', key, reasons, effective_rca, aod_reasons=aod_key_reasons),
+                'explanation': get_explanation('shadow_missed', key, reasons, effective_rca),
             })
     
     for key in farm_zombies:
@@ -1587,20 +1573,18 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             # Check for KEY_NORMALIZATION_MISMATCH: key exists in AOD evidence but not as output key
             is_key_drift = check_key_in_aod_evidence(key, aod_evidence_domains)
             effective_rca = 'KEY_NORMALIZATION_MISMATCH' if is_key_drift else rca
-            # Get AOD's reason codes for this asset (even if not flagged as zombie)
-            aod_key_reasons = get_aod_reasons(key)
-            asset_analysis = generate_asset_analysis('zombie_missed', key, reasons, effective_rca, aod_key_reasons)
+            asset_analysis = generate_asset_analysis('zombie_missed', key, reasons, effective_rca, [])
             analysis['missed_zombies'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
-                'aod_reason_codes': aod_key_reasons,
-                'aod_admission': get_aod_admission(key),
+                'aod_reason_codes': [],
+                'aod_admission': None,
                 'rca_hint': effective_rca,
                 'is_key_drift': is_key_drift,
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
-                'explanation': get_explanation('zombie_missed', key, reasons, effective_rca, aod_reasons=aod_key_reasons),
+                'explanation': get_explanation('zombie_missed', key, reasons, effective_rca),
             })
     
     # False positives: iterate over domain keys to collapse duplicates
