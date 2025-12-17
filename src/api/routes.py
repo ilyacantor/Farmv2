@@ -1376,10 +1376,12 @@ def check_key_in_aod_evidence(key: str, aod_evidence_domains: set) -> bool:
 
 
 def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> dict:
-    """Build detailed reconciliation analysis comparing Farm expectations vs AOD results."""
-    expected_block = snapshot.get('__expected__', {})
-    if not expected_block:
-        expected_block = compute_expected_block(snapshot)
+    """Build detailed reconciliation analysis comparing Farm expectations vs AOD results.
+    
+    Always recomputes expected_block with current policy to ensure reconciliations
+    reflect the latest classification rules, even for older snapshots.
+    """
+    expected_block = compute_expected_block(snapshot)
     
     farm_shadows = {a['asset_key'] for a in expected_block.get('shadow_expected', [])}
     farm_zombies = {a['asset_key'] for a in expected_block.get('zombie_expected', [])}
