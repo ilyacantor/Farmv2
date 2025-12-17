@@ -525,6 +525,8 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         'vendors': set(),
         'idp_present': False,
         'cmdb_present': False,
+        'cmdb_matches': [],  # List of matched CI metadata for ambiguity detection
+        'cmdb_resolution_reason': 'NONE',  # NONE | MULTI_ENV | LEGACY | DUPLICATE | PARENT_VENDOR
         'finance_present': False,
         'has_ongoing_finance': False,
         'cloud_present': False,
@@ -586,10 +588,20 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         domain = extract_domain(ci.get('external_ref', ''))
         
         for key, cand in candidates.items():
+            matched = False
             if name and (name == normalize_name(key) or any(name == normalize_name(n) for n in cand['names'])):
-                cand['cmdb_present'] = True
+                matched = True
             if domain and (domain == key or domain in cand['domains']):
+                matched = True
+            if matched:
                 cand['cmdb_present'] = True
+                cand['cmdb_matches'].append({
+                    'ci_id': ci.get('ci_id'),
+                    'name': ci.get('name'),
+                    'lifecycle': ci.get('lifecycle'),
+                    'vendor': ci.get('vendor'),
+                    'ci_type': ci.get('ci_type'),
+                })
     
     cloud_resources = planes.get('cloud', {}).get('resources', [])
     for res in cloud_resources:
@@ -631,7 +643,56 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
                 if is_recurring:
                     cand['has_ongoing_finance'] = True
     
+    for key, cand in candidates.items():
+        cand['cmdb_resolution_reason'] = determine_cmdb_resolution_reason(cand['cmdb_matches'], cand['vendors'])
+    
     return dict(candidates)
+
+
+def determine_cmdb_resolution_reason(cmdb_matches: list, candidate_vendors: set) -> str:
+    """Determine CMDB resolution reason based on matched CIs.
+    
+    Returns one of:
+    - NONE: Single clear match or no matches
+    - MULTI_ENV: Same app in dev/staging/prod CIs
+    - LEGACY: Old/deprecated CI alongside current  
+    - DUPLICATE: True duplicate records (same name, or multiple CIs without clear differentiation)
+    - PARENT_VENDOR: CMDB vendor is broader parent (e.g., matched "Atlassian" for "Trello")
+    """
+    if len(cmdb_matches) <= 1:
+        return 'NONE'
+    
+    names = [m.get('name', '').lower() for m in cmdb_matches]
+    lifecycles = [m.get('lifecycle', '').lower() for m in cmdb_matches]
+    cmdb_vendors = [(m.get('vendor') or '').lower() for m in cmdb_matches]
+    
+    unique_names = set(names)
+    unique_lifecycles = set(lc for lc in lifecycles if lc)
+    
+    deprecated_keywords = ['legacy', 'old', 'deprecated', 'archive', 'retired']
+    has_deprecated = any(
+        any(kw in (m.get('name', '') or '').lower() for kw in deprecated_keywords) or
+        any(kw in (m.get('lifecycle', '') or '').lower() for kw in deprecated_keywords)
+        for m in cmdb_matches
+    )
+    if has_deprecated:
+        return 'LEGACY'
+    
+    if len(unique_names) == 1 and len(unique_lifecycles) > 1:
+        return 'MULTI_ENV'
+    
+    candidate_vendors_lower = set(v.lower() for v in candidate_vendors if v)
+    matched_vendors = set(v for v in cmdb_vendors if v)
+    if candidate_vendors_lower and matched_vendors:
+        for cmdb_v in matched_vendors:
+            for cand_v in candidate_vendors_lower:
+                if cmdb_v != cand_v and cand_v in cmdb_v:
+                    return 'PARENT_VENDOR'
+    
+    if len(cmdb_matches) > 1:
+        return 'DUPLICATE'
+    
+    return 'NONE'
 
 
 def derive_reason_codes(cand: dict) -> list[str]:
@@ -681,10 +742,19 @@ def compute_expected_block(snapshot: dict, window_days: int = 90) -> dict:
     expected_reasons = {}
     expected_admission = {}
     expected_rca_hint = {}
+    expected_cmdb_resolution = {}
     
     for key, cand in candidates.items():
         reasons = derive_reason_codes(cand)
         expected_reasons[key] = reasons
+        
+        cmdb_resolution = cand.get('cmdb_resolution_reason', 'NONE')
+        if cmdb_resolution != 'NONE':
+            expected_cmdb_resolution[key] = {
+                'reason': cmdb_resolution,
+                'match_count': len(cand.get('cmdb_matches', [])),
+                'matches': cand.get('cmdb_matches', []),
+            }
         
         is_shadow = (cand['has_ongoing_finance'] or cand['cloud_present']) and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present']
         is_zombie = (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
@@ -713,6 +783,7 @@ def compute_expected_block(snapshot: dict, window_days: int = 90) -> dict:
         'expected_reasons': expected_reasons,
         'expected_admission': expected_admission,
         'expected_rca_hint': expected_rca_hint,
+        'expected_cmdb_resolution': expected_cmdb_resolution,
     }
 
 

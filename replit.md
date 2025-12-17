@@ -185,6 +185,23 @@ is_clean = NOT is_shadow AND NOT is_zombie AND discovery_present
 - Not shadow, not zombie
 - Has discovery evidence
 
+## CMDB Resolution Reason Codes
+
+When Farm matches multiple CMDB configuration items to a single asset, it emits a `cmdb_resolution_reason` explaining the ambiguity:
+
+| Code | Description |
+|------|-------------|
+| `NONE` | Single clear match or no matches |
+| `MULTI_ENV` | Same app name appears in different lifecycle environments (dev/staging/prod) |
+| `LEGACY` | Deprecated/legacy CI exists alongside current version |
+| `DUPLICATE` | True duplicate records or multiple CIs without clear differentiation |
+| `PARENT_VENDOR` | CMDB vendor is broader parent vendor, not specific product |
+
+**CMDB Matching Rules (IRL-correct):**
+- Farm matches CMDB by **name** OR **external_ref domain** ONLY
+- Farm does NOT match CMDB by vendor (vendor-based matching is incorrect)
+- AOD should use the same matching rules to align with Farm expectations
+
 ## Known Ground Truth Issue (BLOCKING)
 
 **Problem:** CLEAN bucket is too broad. Assets can be marked CLEAN while having:
