@@ -157,16 +157,17 @@ A simple Farm Console UI is provided via `templates/index.html`.
 
 Farm classifies assets into three buckets based on evidence flags:
 
-### Shadow (Ungoverned with Operational Spend)
+### Shadow (Ungoverned App Sprawl)
 ```
-is_shadow = (has_ongoing_finance OR cloud_present) 
-            AND activity_present 
+is_shadow = activity_present 
             AND NOT idp_present 
             AND NOT cmdb_present
+            AND NOT is_infrastructure_domain
 ```
-- Requires ongoing financial commitment (not just one-time payment)
-- Must have recent activity
+- Must have recent activity within detection window
 - Must lack governance (no IdP, no CMDB)
+- Excludes infrastructure/open-source project domains (mysql.com, postgresql.org, etc.)
+- **Finance is NOT a gate** - finance is context/priority scoring only
 
 ### Zombie (Governed but Stale)
 ```
@@ -184,6 +185,13 @@ is_clean = NOT is_shadow AND NOT is_zombie AND discovery_present
 ```
 - Not shadow, not zombie
 - Has discovery evidence
+
+### Infrastructure Exclusions
+The following domains are excluded from shadow classification (not SaaS candidates):
+- postgresql.org, mysql.com, apache.org, redis.io, mongodb.com
+- docker.com, kubernetes.io, nginx.org
+- python.org, nodejs.org, golang.org, rust-lang.org, ruby-lang.org
+- linux.org, gnu.org, elastic.co, kafka.apache.org
 
 ## CMDB Resolution Reason Codes
 
@@ -206,19 +214,3 @@ When Farm matches multiple CMDB configuration items to a single asset, it emits 
 **Current Limitations:**
 - `MULTI_ENV` requires identical CMDB names; variant naming (e.g., "Trello Prod" vs "Trello Dev") falls to DUPLICATE
 
-## Known Ground Truth Issue (BLOCKING)
-
-**Problem:** CLEAN bucket is too broad. Assets can be marked CLEAN while having:
-- `NO_IDP + NO_CMDB` (no governance)
-- `HAS_DISCOVERY + HAS_FINANCE` (but not ongoing finance)
-
-This creates incoherent ground truth - asset is ungoverned but classified as CLEAN.
-
-**Root cause:** Shadow requires `has_ongoing_finance`, so assets with one-time finance payments fall through to CLEAN despite being ungoverned.
-
-**Options to resolve:**
-1. **Tighten CLEAN** - Require `HAS_IDP OR HAS_CMDB` for CLEAN classification
-2. **Add UNGOVERNED bucket** - New category for discovered-but-ungoverned assets
-3. **Accept current policy** - Document that "no ongoing spend = not actionable"
-
-**Status:** Grading may produce training noise until ground truth policy is decided.

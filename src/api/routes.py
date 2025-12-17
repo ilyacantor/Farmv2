@@ -34,6 +34,26 @@ from collections import defaultdict
 
 router = APIRouter()
 
+INFRASTRUCTURE_DOMAINS = {
+    'postgresql.org',
+    'mysql.com',
+    'apache.org',
+    'redis.io',
+    'mongodb.com',
+    'elastic.co',
+    'kafka.apache.org',
+    'nginx.org',
+    'docker.com',
+    'kubernetes.io',
+    'linux.org',
+    'gnu.org',
+    'python.org',
+    'nodejs.org',
+    'golang.org',
+    'rust-lang.org',
+    'ruby-lang.org',
+}
+
 
 async def call_aod_explain_nonflag(
     snapshot_id: str,
@@ -734,7 +754,7 @@ def derive_rca_hint(classification: str, cand: dict) -> Optional[str]:
     """Derive RCA hint for debugging."""
     if classification == 'shadow':
         if not cand.get('idp_present') and not cand.get('cmdb_present'):
-            return 'UNGOVERNED_WITH_SPEND'
+            return 'UNGOVERNED_ACTIVE'
     elif classification == 'zombie':
         if cand.get('stale_timestamps'):
             return 'STALE_NO_RECENT_USE'
@@ -765,7 +785,8 @@ def compute_expected_block(snapshot: dict, window_days: int = 90) -> dict:
                 'matches': cand.get('cmdb_matches', []),
             }
         
-        is_shadow = (cand['has_ongoing_finance'] or cand['cloud_present']) and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present']
+        is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
+        is_shadow = cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present'] and not is_infra_excluded
         is_zombie = (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
         
         if is_shadow:
@@ -804,7 +825,8 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
     zombie_keys = []
     
     for key, cand in candidates.items():
-        if (cand['has_ongoing_finance'] or cand['cloud_present']) and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present']:
+        is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
+        if cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present'] and not is_infra_excluded:
             shadow_keys.append(key)
         elif (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0:
             zombie_keys.append(key)
@@ -1050,9 +1072,7 @@ async def get_reconciliation(reconciliation_id: str):
 EXPLANATION_TEMPLATES = {
     'shadow_missed': {
         'default': "AOD failed to identify {key} as shadow IT.",
-        'UNGOVERNED_WITH_SPEND': "AOD missed {key}: has finance spend but no governance record in IdP/CMDB. This is classic shadow IT - money going out for an app that IT doesn't know about.",
-        'HAS_FINANCE+NO_IDP+NO_CMDB': "AOD missed {key}: appears in finance records with active spend, but missing from both IdP and CMDB. Users are paying for something IT hasn't approved.",
-        'HAS_CLOUD+NO_IDP+NO_CMDB': "AOD missed {key}: found in cloud resources but not in identity or asset management systems. Someone spun up a cloud service outside IT governance.",
+        'UNGOVERNED_ACTIVE': "AOD missed {key}: has recent activity but no governance record in IdP/CMDB. This is ungoverned app sprawl.",
         'KEY_NORMALIZATION_MISMATCH': "AOD missed {key}: the domain exists in AOD's ingested evidence (URLs, asset_summaries) but was not normalized to a domain-keyed asset. AOD should use domain as the canonical key.",
     },
     'zombie_missed': {
@@ -1075,7 +1095,7 @@ EXPLANATION_TEMPLATES = {
     },
     'matched_shadow': {
         'default': "Both Farm and AOD agree {key} is shadow IT.",
-        'UNGOVERNED_WITH_SPEND': "{key} is shadow IT: has finance spend ({farm_reasons}) but missing from IdP/CMDB governance.",
+        'UNGOVERNED_ACTIVE': "{key} is shadow IT: has recent activity ({farm_reasons}) but missing from IdP/CMDB governance.",
     },
     'matched_zombie': {
         'default': "Both Farm and AOD agree {key} is a zombie asset.",
@@ -1096,10 +1116,8 @@ def generate_asset_analysis(mismatch_type: str, key: str, farm_reasons: list, rc
         headline = f"AOD missed {key} as shadow IT"
         if rca_hint == 'KEY_NORMALIZATION_MISMATCH':
             headline += " - domain exists in AOD evidence but not used as canonical key"
-        elif 'HAS_FINANCE' in farm_reasons and 'NO_IDP' in farm_reasons:
-            headline += " - has finance spend but missing from governance systems"
-        elif rca_hint == 'UNGOVERNED_WITH_SPEND':
-            headline += " - money going out but IT doesn't know about it"
+        elif rca_hint == 'UNGOVERNED_ACTIVE':
+            headline += " - active but missing from governance systems"
         farm_detail = f"Farm expected SHADOW because: {farm_reasons_str}"
         if rca_hint == 'KEY_NORMALIZATION_MISMATCH':
             aod_detail = f"AOD has evidence for {key} but did not normalize to domain key"
