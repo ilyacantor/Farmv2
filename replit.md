@@ -197,14 +197,14 @@ When Farm matches multiple CMDB configuration items to a single asset, it emits 
 | `DUPLICATE` | True duplicate records or multiple CIs without clear differentiation |
 | `PARENT_VENDOR` | CMDB vendor is broader parent vendor, not specific product |
 
-**CMDB Matching Rules (IRL-correct):**
-- Farm matches CMDB by **name** OR **external_ref domain** ONLY
-- Farm does NOT match CMDB by vendor (vendor-based matching is incorrect)
+**CMDB Matching Rules:**
+- Farm matches CMDB by **name** OR **external_ref domain** OR **vendor** (parent-vendor relationship)
+- Vendor matching: If discovery `vendor_hint` matches CMDB `vendor`, the asset is considered governed
+- Example: slack.com with `vendor_hint: "Salesforce"` matches CMDB entry with `vendor: "Salesforce"`
 - AOD should use the same matching rules to align with Farm expectations
 
 **Current Limitations:**
 - `MULTI_ENV` requires identical CMDB names; variant naming (e.g., "Trello Prod" vs "Trello Dev") falls to DUPLICATE
-- `PARENT_VENDOR` is a future-facing sentinel; requires substring match between candidate/CMDB vendors
 
 ## Known Ground Truth Issue (BLOCKING)
 

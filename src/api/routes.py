@@ -586,14 +586,21 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
     for ci in cmdb_cis:
         name = normalize_name(ci.get('name', ''))
         domain = extract_domain(ci.get('external_ref', ''))
+        ci_vendor = normalize_name(ci.get('vendor', '') or '')
         
         for key, cand in candidates.items():
-            matched = False
+            matched_by_name_or_domain = False
+            matched_by_vendor_only = False
+            
             if name and (name == normalize_name(key) or any(name == normalize_name(n) for n in cand['names'])):
-                matched = True
+                matched_by_name_or_domain = True
             if domain and (domain == key or domain in cand['domains']):
-                matched = True
-            if matched:
+                matched_by_name_or_domain = True
+            if ci_vendor and any(ci_vendor == normalize_name(v) for v in cand['vendors']):
+                if not matched_by_name_or_domain:
+                    matched_by_vendor_only = True
+            
+            if matched_by_name_or_domain or matched_by_vendor_only:
                 cand['cmdb_present'] = True
                 cand['cmdb_matches'].append({
                     'ci_id': ci.get('ci_id'),
@@ -601,6 +608,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
                     'lifecycle': ci.get('lifecycle'),
                     'vendor': ci.get('vendor'),
                     'ci_type': ci.get('ci_type'),
+                    'matched_via_vendor': matched_by_vendor_only,
                 })
     
     cloud_resources = planes.get('cloud', {}).get('resources', [])
@@ -657,14 +665,20 @@ def determine_cmdb_resolution_reason(cmdb_matches: list, candidate_vendors: set)
     - MULTI_ENV: Same app in dev/staging/prod CIs
     - LEGACY: Old/deprecated CI alongside current  
     - DUPLICATE: True duplicate records (same name, or multiple CIs without clear differentiation)
-    - PARENT_VENDOR: CMDB vendor is broader parent (e.g., matched "Atlassian" for "Trello")
+    - PARENT_VENDOR: Matched via parent vendor relationship (e.g., Slack matched to Salesforce CMDB entry)
     """
-    if len(cmdb_matches) <= 1:
+    if len(cmdb_matches) == 0:
+        return 'NONE'
+    
+    has_vendor_match = any(m.get('matched_via_vendor') for m in cmdb_matches)
+    
+    if len(cmdb_matches) == 1:
+        if has_vendor_match:
+            return 'PARENT_VENDOR'
         return 'NONE'
     
     names = [m.get('name', '').lower() for m in cmdb_matches]
     lifecycles = [m.get('lifecycle', '').lower() for m in cmdb_matches]
-    cmdb_vendors = [(m.get('vendor') or '').lower() for m in cmdb_matches]
     
     unique_names = set(names)
     unique_lifecycles = set(lc for lc in lifecycles if lc)
@@ -678,16 +692,11 @@ def determine_cmdb_resolution_reason(cmdb_matches: list, candidate_vendors: set)
     if has_deprecated:
         return 'LEGACY'
     
+    if has_vendor_match:
+        return 'PARENT_VENDOR'
+    
     if len(unique_names) == 1 and len(unique_lifecycles) > 1:
         return 'MULTI_ENV'
-    
-    candidate_vendors_lower = set(v.lower() for v in candidate_vendors if v)
-    matched_vendors = set(v for v in cmdb_vendors if v)
-    if candidate_vendors_lower and matched_vendors:
-        for cmdb_v in matched_vendors:
-            for cand_v in candidate_vendors_lower:
-                if cmdb_v != cand_v and cand_v in cmdb_v:
-                    return 'PARENT_VENDOR'
     
     if len(cmdb_matches) > 1:
         return 'DUPLICATE'
