@@ -202,6 +202,10 @@ When Farm matches multiple CMDB configuration items to a single asset, it emits 
 - Farm does NOT match CMDB by vendor (vendor-based matching is incorrect)
 - AOD should use the same matching rules to align with Farm expectations
 
+**Current Limitations:**
+- `MULTI_ENV` requires identical CMDB names; variant naming (e.g., "Trello Prod" vs "Trello Dev") falls to DUPLICATE
+- `PARENT_VENDOR` is a future-facing sentinel; requires substring match between candidate/CMDB vendors
+
 ## Known Ground Truth Issue (BLOCKING)
 
 **Problem:** CLEAN bucket is too broad. Assets can be marked CLEAN while having:
