@@ -390,8 +390,17 @@ async def get_snapshot_expectations(snapshot_id: str):
 
 
 @router.get("/api/snapshots/{snapshot_id}/expected")
-async def get_snapshot_expected_block(snapshot_id: str):
-    """Get the __expected__ block with detailed classifications, reason codes, and RCA hints."""
+async def get_snapshot_expected_block(snapshot_id: str, mode: str = "sprawl"):
+    """Get the __expected__ block with detailed classifications, reason codes, and RCA hints.
+    
+    Mode controls which assets are eligible for reconciliation:
+    - sprawl: External SaaS domains only (shadow IT detection) - DEFAULT
+    - infra: Internal services only (infrastructure sprawl)
+    - all: All assets regardless of type
+    """
+    if mode not in ("sprawl", "infra", "all"):
+        raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}. Must be 'sprawl', 'infra', or 'all'")
+    
     pool = await get_pool()
     
     async with pool.acquire() as conn:
@@ -400,7 +409,8 @@ async def get_snapshot_expected_block(snapshot_id: str):
             raise HTTPException(status_code=404, detail="Snapshot not found")
         
         snapshot = json.loads(row["snapshot_json"])
-        expected_block = compute_expected_block(snapshot)
+        expected_block = compute_expected_block(snapshot, mode=mode)
+        expected_block['reconciliation_mode'] = mode
         return expected_block
 
 
@@ -784,8 +794,14 @@ def derive_rca_hint(classification: str, cand: dict) -> Optional[str]:
     return None
 
 
-def compute_expected_block(snapshot: dict, window_days: int = 90) -> dict:
-    """Compute the __expected__ block with classifications, reasons, and RCA hints."""
+def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "sprawl") -> dict:
+    """Compute the __expected__ block with classifications, reasons, and RCA hints.
+    
+    Mode controls eligibility:
+    - sprawl: Only external SaaS domains (shadow IT detection)
+    - infra: Only internal services (infrastructure monitoring)
+    - all: All assets
+    """
     candidates = build_candidate_flags(snapshot, window_days)
     
     shadow_expected = []
@@ -795,8 +811,18 @@ def compute_expected_block(snapshot: dict, window_days: int = 90) -> dict:
     expected_admission = {}
     expected_rca_hint = {}
     expected_cmdb_resolution = {}
+    excluded_by_mode = []
     
     for key, cand in candidates.items():
+        is_external = is_external_domain(key)
+        
+        if mode == "sprawl" and not is_external:
+            excluded_by_mode.append(key)
+            continue
+        elif mode == "infra" and is_external:
+            excluded_by_mode.append(key)
+            continue
+        
         reasons = derive_reason_codes(cand)
         expected_reasons[key] = reasons
         
@@ -809,7 +835,6 @@ def compute_expected_block(snapshot: dict, window_days: int = 90) -> dict:
             }
         
         is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
-        is_external = is_external_domain(key)
         is_shadow = is_external and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present'] and not is_infra_excluded
         is_zombie = (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
         
@@ -838,6 +863,7 @@ def compute_expected_block(snapshot: dict, window_days: int = 90) -> dict:
         'expected_admission': expected_admission,
         'expected_rca_hint': expected_rca_hint,
         'expected_cmdb_resolution': expected_cmdb_resolution,
+        'excluded_by_mode': excluded_by_mode,
     }
 
 
@@ -970,6 +996,9 @@ async def create_reconciliation(request: Request):
     print(f"[DEBUG] Raw actual_reason_codes: {list(raw_aod_lists.get('actual_reason_codes', {}).keys())[:5]}")
     
     parsed_request = ReconcileRequest(**raw_json)
+    mode = parsed_request.mode
+    if mode not in ("sprawl", "infra", "all"):
+        raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}. Must be 'sprawl', 'infra', or 'all'")
     pool = await get_pool()
     
     async with pool.acquire() as conn:
@@ -978,7 +1007,13 @@ async def create_reconciliation(request: Request):
             raise HTTPException(status_code=404, detail="Snapshot not found")
         snapshot = json.loads(row["snapshot_json"])
     
-    farm_expectations = analyze_snapshot_for_expectations(snapshot)
+    expected_block = compute_expected_block(snapshot, mode=mode)
+    farm_expectations = FarmExpectations(
+        expected_shadows=len(expected_block['shadow_expected']),
+        expected_zombies=len(expected_block['zombie_expected']),
+        shadow_keys=[s['asset_key'] for s in expected_block['shadow_expected'][:20]],
+        zombie_keys=[z['asset_key'] for z in expected_block['zombie_expected'][:20]],
+    )
     report_text, status = generate_reconcile_report(parsed_request.aod_summary, parsed_request.aod_lists, farm_expectations)
     
     reconciliation_id = str(uuid.uuid4())

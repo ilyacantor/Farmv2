@@ -208,12 +208,37 @@ When Farm matches multiple CMDB configuration items to a single asset, it emits 
 | `DUPLICATE` | True duplicate records or multiple CIs without clear differentiation |
 | `PARENT_VENDOR` | CMDB vendor is broader parent vendor, not specific product |
 
-**CMDB Matching Rules:**
-- Farm matches CMDB by **name** OR **external_ref domain** OR **vendor** (parent-vendor relationship)
-- Vendor matching: If discovery `vendor_hint` matches CMDB `vendor`, the asset is considered governed
-- Example: slack.com with `vendor_hint: "Salesforce"` matches CMDB entry with `vendor: "Salesforce"`
-- AOD should use the same matching rules to align with Farm expectations
+**CMDB Matching Rules (Deterministic Order):**
+1. **Exact name match** - CMDB CI name matches asset key or discovered names (normalized)
+2. **Exact domain match** - CMDB CI `external_ref` domain matches asset domain
+3. **Vendor fallback** - Only if no name/domain match: `vendor_hint` matches CMDB `vendor`
+
+The `matched_via_vendor` flag is set to `true` only when vendor is the sole reason for the match.
+
+Example: slack.com with `vendor_hint: "Salesforce"` matches CMDB entry with `vendor: "Salesforce"` → `matched_via_vendor: true`
 
 **Current Limitations:**
 - `MULTI_ENV` requires identical CMDB names; variant naming (e.g., "Trello Prod" vs "Trello Dev") falls to DUPLICATE
+
+## Reconciliation Modes
+
+Reconciliation eligibility is mode-based to support different use cases:
+
+| Mode | Description | Eligible Assets |
+|------|-------------|-----------------|
+| `sprawl` (default) | Shadow IT / SaaS sprawl detection | External domains only (.com, .io, .org, etc.) |
+| `infra` | Infrastructure monitoring | Internal services only (no TLD) |
+| `all` | Full asset coverage | All assets regardless of type |
+
+**API Usage:**
+- `GET /api/snapshots/{id}/expected?mode=sprawl` - Default: only external SaaS domains
+- `GET /api/snapshots/{id}/expected?mode=infra` - Only internal service names
+- `GET /api/snapshots/{id}/expected?mode=all` - All assets
+
+**Reconciliation Request:**
+Include `"mode": "sprawl"` (or `infra`/`all`) in the reconcile POST request body.
+
+**Canonical Key Rules:**
+- Domain-first: When an asset has a domain, use that as the canonical key
+- Internal services use normalized name as key (lowercase, alphanumeric only)
 

@@ -333,6 +333,7 @@ class ReconcileRequest(BaseModel):
     tenant_id: str
     aod_summary: AODSummary
     aod_lists: AODLists
+    mode: str = "sprawl"  # sprawl (default), infra, or all
 
 
 class FarmExpectations(BaseModel):
