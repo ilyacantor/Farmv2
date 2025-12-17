@@ -1,12 +1,12 @@
 # AOS Farm
 
-Synthetic Enterprise Data Generator for AutonomOS AOD (Discover) module.
-
 ## Overview
 
-AOS Farm generates IRL-plausible enterprise source-of-truth planes and raw observation streams for testing AOD. Farm outputs raw evidence streams, not conclusions.
+AOS Farm is a synthetic enterprise data generator designed to create realistic source-of-truth data planes and raw observation streams. Its primary purpose is to provide robust testing data for the AutonomOS AOD (Discover) module, focusing on generating raw evidence rather than pre-concluded insights. The project aims to eliminate "green-test theater" by enforcing strict rules against superficial fixes and ensuring that all changes preserve real-world semantics, are provable with real-world output, and include negative tests.
 
-## Non-negotiables
+The business vision is to provide high-fidelity, plausible enterprise data for rigorous testing of AOD's discovery capabilities, thereby improving the accuracy and reliability of anomaly detection in complex enterprise environments.
+
+## User Preferences
 
 Guardrail: No “green-test theater” (Stop optimizing for “done without errors”) The anti-pattern we are eliminating
 
@@ -108,276 +108,96 @@ Explicit errors over silent fallbacks
 
 Evidence-only derivations over labels
 
-## Prompt shortcuts
-**DCCE or dcce** - don't change code, explain
+## System Architecture
 
-## Project Structure
+The project is structured around a FastAPI application, serving as the entry point, with dedicated modules for API routes, Pydantic models for data planes, and deterministic data generators.
 
+**UI/UX Decisions:**
+A simple Farm Console UI is provided via `templates/index.html`.
+
+**Technical Implementations:**
+- **Core Framework:** FastAPI for the web API.
+- **Data Generation:** Deterministic data generators ensure reproducible results based on a given seed, scale, and enterprise/realism profiles.
+- **Data Planes:** Generates 7 independent data planes: Discovery, IdP, CMDB, Cloud, Endpoint, Network, and Finance. These planes are designed to be independent, correlating only via realistic keys.
+- **API Design:** RESTful API endpoints for managing snapshots, reconciling AOD results, and querying status.
+- **Schema Versioning:** All snapshots include a `meta.schema_version = "farm.v1"` for consistency.
+- **Design Principles:**
+    - Independence of data planes.
+    - No "conclusions" fields (e.g., no pre-computed shadow flags).
+    - Deterministic generation based on seed and configuration.
+    - Timestamps anchor to snapshot creation time with realistic recency distributions (active, recent, stale, zombie candidates).
+
+**Feature Specifications:**
+- **Snapshot Management:** API to generate, retrieve, list, and delete data snapshots. Each snapshot includes an `__expected__` block for grading metadata, which AOD should ignore.
+- **Reconciliation System:**
+    - Allows comparison of AOD results against Farm's expectations.
+    - Supports manual and auto-reconciliation, fetching AOD results if `AOD_URL` is configured.
+    - Reconciliations have a `contract_status` (`CURRENT`, `STALE_CONTRACT`, `INCONSISTENT_CONTRACT`) to indicate gradeability based on the presence and consistency of `asset_summaries`.
+    - Grading logic prioritizes `asset_summaries` for deriving counts and accuracy metrics.
+- **AOD Interaction:** Defines clear contracts for AOD output and an optional `explain-nonflag` endpoint for diagnostic purposes, ensuring AOD never consumes Farm's expected data directly.
+- **Finance Evidence Rules:** Specific rules for classifying assets based on finance data, emphasizing `HAS_ONGOING_FINANCE` for shadow classification.
+
+**System Design Choices:**
+- **Ownership Boundaries:** AOD never consumes Farm's expected/RCA data; Farm owns the reconciliation UI; AOD owns structured actual output.
+- **Error Handling:** Emphasizes failing loudly with explicit error statuses (e.g., `UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`) instead of silent fallbacks.
+- **Configuration:** Supports `Scale` (small, medium, large, enterprise), `Enterprise Profile` (modern_saas, regulated_finance, healthcare_provider, global_manufacturing), and `Realism Profile` (clean, typical, messy).
+
+## External Dependencies
+
+- **Database:** Supabase Postgres (exclusively).
+    - Environment variables: `SUPABASE_DB_URL` (priority), `DATABASE_URL`.
+    - Replit DB URLs are ignored if `IGNORE_REPLIT_DB=true`.
+    - Schema includes `runs`, `snapshots`, and `reconciliations` tables.
+- **AOD Module (AutonomOS Discover):**
+    - Interacts via defined API contracts for snapshot generation, status checks, and reconciliation.
+    - Requires `AOD_URL` and optionally `AOD_SHARED_SECRET` for auto-reconciliation.
+    - `USE_AOD_EXPLAIN_STUB=true` enables a local stub for testing without a live AOD instance.
+
+## Ground Truth Classification Definitions
+
+Farm classifies assets into three buckets based on evidence flags:
+
+### Shadow (Ungoverned with Operational Spend)
 ```
-src/
-├── main.py              # FastAPI entry point
-├── api/
-│   └── routes.py        # API endpoints (asyncpg/Postgres)
-├── models/
-│   └── planes.py        # Pydantic models for all data planes
-└── generators/
-    └── enterprise.py    # Deterministic data generators
-
-templates/
-└── index.html           # Farm Console UI
-
-tests/
-└── test_farm.py         # Test suite
-
-tools/
-└── sanity/
-    └── farm_sanity_check.py  # Supabase-only validation harness
+is_shadow = (has_ongoing_finance OR cloud_present) 
+            AND activity_present 
+            AND NOT idp_present 
+            AND NOT cmdb_present
 ```
+- Requires ongoing financial commitment (not just one-time payment)
+- Must have recent activity
+- Must lack governance (no IdP, no CMDB)
 
-## Database
-
-**Supabase Postgres only** - No SQLite, no JSON disk storage.
-
-- `SUPABASE_DB_URL` takes priority, else `DATABASE_URL`
-- If `IGNORE_REPLIT_DB=true`, Replit DB URLs are ignored
-- DB provider is logged at startup
-
-### Schema
-
-**runs table:**
-- `run_id` (TEXT, PK) - UUID for each generation run
-- `run_fingerprint` - stable hash of config + seed
-- `tenant_id`, `seed`, `scale`, `enterprise_profile`, `realism_profile`
-- `created_at`, `schema_version`
-
-**snapshots table:**
-- `snapshot_id` (TEXT, PK)
-- `run_id` (FK → runs.run_id, NOT NULL) - provenance link
-- `sequence` (INTEGER, default 0)
-- `snapshot_fingerprint`, `snapshot_json`
-- All config metadata columns
-
-**reconciliations table:**
-- Stores AOD comparison results
-
-## Data Planes
-
-Farm generates 7 independent planes:
-
-1. **Discovery** - Raw observations from scanners/logs
-2. **IdP** - Okta/Entra-like identity view
-3. **CMDB** - ServiceNow-like IT inventory
-4. **Cloud** - AWS/Azure/GCP resources
-5. **Endpoint** - Devices and installed apps
-6. **Network** - DNS, proxy logs, certificates
-7. **Finance** - Vendors, contracts, transactions
-
-## API Endpoints
-
-### New Snapshot API (for AOD)
-- `POST /api/snapshots` - Generate snapshot, returns:
-  - `snapshot_id`: Unique run ID (UUID, always unique per generation)
-  - `snapshot_fingerprint`: Deterministic hash from params (same seed = same fingerprint)
-  - `duplicate_of_snapshot_id`: If fingerprint exists, references first snapshot with that fingerprint
-  - `tenant_id`, `created_at`, `schema_version`
-  - Snapshot now includes `__expected__` block for grading metadata (AOD should ignore)
-- `GET /api/snapshots/{snapshot_id}` - Get full snapshot JSON (includes `__expected__`)
-- `GET /api/snapshots/{snapshot_id}/expectations` - Legacy: get summary counts
-- `GET /api/snapshots/{snapshot_id}/expected` - Get detailed `__expected__` block:
-  - `shadow_expected[]`: `{asset_key}` for each expected shadow
-  - `zombie_expected[]`: `{asset_key}` for each expected zombie
-  - `clean_expected[]`: `{asset_key}` for admitted non-anomalous assets
-  - `expected_reasons[key]`: Canonical reason codes per asset
-  - `expected_admission[key]`: `"admitted"` or `"rejected"`
-  - `expected_rca_hint[key]`: Optional RCA hint for debugging
-- `GET /api/snapshots?tenant_id=...&limit=...` - List snapshot metadata only (no blob)
-- `DELETE /api/snapshots/cleanup?keep=3` - Delete old snapshots, keep most recent N
-
-### Canonical Reason Codes
-- `HAS_DISCOVERY`, `HAS_IDP`, `NO_IDP`, `HAS_CMDB`, `NO_CMDB`
-- `HAS_FINANCE`, `HAS_ONGOING_FINANCE`, `HAS_CLOUD`, `RECENT_ACTIVITY`, `STALE_ACTIVITY`
-
-### Finance Evidence Rules
-- `HAS_FINANCE` - Any finance record (contract, transaction, vendor) matches
-- `HAS_ONGOING_FINANCE` - Contract exists OR transaction has `is_recurring=true`
-- **Shadow classification requires `HAS_ONGOING_FINANCE`** (not just `HAS_FINANCE`)
-- One-time payments alone do NOT qualify as shadow evidence (IRL: not proof of operational existence)
-
-### RCA Hint Codes
-- `UNGOVERNED_WITH_SPEND` - Shadow: in finance/cloud but not in IdP/CMDB
-- `STALE_NO_RECENT_USE` - Zombie: in IdP/CMDB but no recent activity
-- `KEY_NORMALIZATION_MISMATCH` - AOD has evidence for the domain (in URLs/asset_summaries) but did not normalize to domain-keyed asset
-
-### AOD asset_summaries Contract (preferred)
-When AOD provides `asset_summaries` (domain-keyed), Farm uses `is_shadow`/`is_zombie` flags:
-```json
-{
-  "aod_lists": {
-    "asset_summaries": {
-      "notion.so": {"is_shadow": true, "is_zombie": false, "domain": "notion.so", ...},
-      "slack.com": {"is_shadow": false, "is_zombie": true, ...}
-    }
-  }
-}
+### Zombie (Governed but Stale)
 ```
-Farm prefers `asset_summaries` over legacy `shadow_assets`/`zombie_assets` lists.
-
-### AOD Status API
-- `GET /api/aod/run-status?snapshot_id=...&tenant_id=...` - Check if AOD has processed a snapshot
-  - Returns: `{status: "PROCESSED", run_id: "..."}` if AOD has a run for this snapshot
-  - Returns: `{status: "NOT_PROCESSED"}` if no matching run (AOD 404 or 200 without run_id)
-  - Returns: `{status: "AOD_ERROR", message: "..."}` if AOD unreachable/misconfigured
-
-### Reconciliation API (for AOD comparison)
-- `POST /api/reconcile` - Compare AOD results against Farm expectations (manual)
-  - Request: `{snapshot_id, aod_run_id, tenant_id, aod_summary, aod_lists}`
-  - Response: `{reconciliation_id, status: PASS/WARN/FAIL, report_text, farm_expectations}`
-- `POST /api/reconcile/auto` - One-click auto-reconciliation (fetches from AOD)
-  - Request: `{snapshot_id, tenant_id}`
-  - Requires: `AOD_URL` env var (optional: `AOD_SHARED_SECRET`)
-  - Behavior: Fetches latest AOD run, gets reconcile payload, creates reconciliation
-  - Response: `{reconciliation_id, snapshot_id, tenant_id, aod_run_id, status, report_text}`
-  - Errors: 400 (not configured), 404 (no AOD run), 502 (AOD unreachable)
-- `GET /api/reconcile?snapshot_id=...` - List reconciliation metadata
-- `GET /api/reconcile/{id}` - Get full reconciliation report
-- `GET /api/reconcile/{id}/analysis` - Get detailed side-by-side analysis with plain English explanations
-
-## Data Flow Architecture
-
-### Ownership Boundaries (Hard Rule)
-- **AOD never consumes Farm expected/rca data** - AOD only emits its own "actual + reasons"
-- **Farm owns reconciliation UI** - has expected + actual + diffs
-- **AOD owns structured actual output** - status + reason codes + admission outcome
-
-### AOD Output Contract (what AOD publishes)
-```json
-{
-  "aod_summary": {
-    "observations_in": 100,
-    "candidates_out": 50,
-    "assets_admitted": 45,
-    "shadow_count": 3,
-    "zombie_count": 4
-  },
-  "aod_lists": {
-    "shadow_assets": ["app1.com", "app2.io"],
-    "zombie_assets": ["legacy-tool", "old-saas"],
-    "actual_reason_codes": {
-      "app1.com": ["HAS_DISCOVERY", "NO_IDP", "HAS_FINANCE"],
-      "legacy-tool": ["HAS_IDP", "HAS_CMDB", "STALE_ACTIVITY"]
-    },
-    "admission_actual": {
-      "app1.com": "rejected",
-      "legacy-tool": "rejected",
-      "known-app": "admitted"
-    }
-  }
-}
+is_zombie = (idp_present OR cmdb_present) 
+            AND NOT activity_present 
+            AND stale_timestamps > 0
 ```
+- Has governance presence
+- No recent activity
+- Has stale timestamps (>90 days)
 
-### Farm Expected Contract (what Farm computes)
-```json
-{
-  "shadow_expected": [{"asset_key": "app1.com"}],
-  "zombie_expected": [{"asset_key": "legacy-tool"}],
-  "clean_expected": [{"asset_key": "known-app"}],
-  "expected_reasons": {
-    "app1.com": ["HAS_DISCOVERY", "NO_IDP", "NO_CMDB", "HAS_FINANCE"]
-  },
-  "expected_admission": {"app1.com": "rejected"},
-  "expected_rca_hint": {"app1.com": "UNGOVERNED_WITH_SPEND"}
-}
+### Clean (Governed and Active)
 ```
-
-### Farm Computes (reconciliation)
-- `matched_shadows`, `matched_zombies` - AOD got it right
-- `missed_shadows`, `missed_zombies` - AOD false negatives
-- `false_positive_shadows`, `false_positive_zombies` - AOD false positives
-- `rca_code` per mismatch - deterministic plain-English explanation
-- Side-by-side: `farm_reason_codes` vs `aod_reason_codes` per asset
-
-### AOD Non-Flag Explain Contract
-
-When AOD **doesn't** flag an asset, Farm can query for the decision trace.
-
-**Request:** `POST {AOD_URL}/reconcile/explain-nonflag`
-```json
-{
-  "snapshot_id": "...",
-  "asset_keys": ["app1.com", "legacy-tool"],
-  "ask": "shadow"  // or "zombie" or "both"
-}
+is_clean = NOT is_shadow AND NOT is_zombie AND discovery_present
 ```
+- Not shadow, not zombie
+- Has discovery evidence
 
-**Response (per key):**
-```json
-{
-  "app1.com": {
-    "present_in_aod": true,
-    "decision": "ADMITTED_NOT_SHADOW",
-    "reason_codes": ["HAS_IDP", "HAS_CMDB"]
-  },
-  "legacy-tool": {
-    "present_in_aod": false,
-    "decision": "UNKNOWN_KEY",
-    "reason_codes": ["NO_CANDIDATE"]
-  }
-}
-```
+## Known Ground Truth Issue (BLOCKING)
 
-**Decision Enums:**
-- `UNKNOWN_KEY` - AOD never saw it / couldn't form candidate
-- `NOT_ADMITTED` - Saw it, but no admission gate satisfied
-- `ADMITTED_NOT_SHADOW` - Admitted, but fails shadow conditions (has governance)
-- `ADMITTED_NOT_ZOMBIE` - Admitted, but not stale / still active
+**Problem:** CLEAN bucket is too broad. Assets can be marked CLEAN while having:
+- `NO_IDP + NO_CMDB` (no governance)
+- `HAS_DISCOVERY + HAS_FINANCE` (but not ongoing finance)
 
-**Reason Codes (AOD-side):**
-- `NO_CANDIDATE`, `NO_EVIDENCE_INGESTED` - for UNKNOWN_KEY
-- `REJECTED_NO_GATE`, `INSUFFICIENT_DISCOVERY_SOURCES`, `STALE_ACTIVITY` - for NOT_ADMITTED
-- `HAS_IDP`, `HAS_CMDB`, `NO_PRESENCE_EVIDENCE` - for ADMITTED_NOT_SHADOW
-- `RECENT_ACTIVITY`, `HAS_ACTIVE_USERS` - for ADMITTED_NOT_ZOMBIE
+This creates incoherent ground truth - asset is ungoverned but classified as CLEAN.
 
-**Guardrail:** AOD must never read Farm expected/rca data. Farm only sends keys + snapshot_id + ask-type.
+**Root cause:** Shadow requires `has_ongoing_finance`, so assets with one-time finance payments fall through to CLEAN despite being ungoverned.
 
-**Fallback:** If endpoint unavailable, Farm uses `decision="UNKNOWN_KEY"` + `reason_codes=["NO_EXPLAIN_ENDPOINT"]`
+**Options to resolve:**
+1. **Tighten CLEAN** - Require `HAS_IDP OR HAS_CMDB` for CLEAN classification
+2. **Add UNGOVERNED bucket** - New category for discovered-but-ungoverned assets
+3. **Accept current policy** - Document that "no ongoing spend = not actionable"
 
-**Config:** `USE_AOD_EXPLAIN_STUB=true` enables local stub for testing without real AOD.
-
-> **This endpoint is diagnostic-only. It must not influence admission, classification, or policy.**
-
-***DO NOT CHANGE CLASSIFICATION/ADMISSION CODE in response to reconciliation diffs.*** Reconciliation is diagnostics only.
-
-## Schema Version
-
-All snapshots include `meta.schema_version = "farm.v1"`
-
-## Configuration
-
-- **Scale**: small, medium, large, enterprise
-- **Enterprise Profile**: modern_saas, regulated_finance, healthcare_provider, global_manufacturing
-- **Realism Profile**: clean, typical, messy
-
-## Running
-
-```bash
-python -m uvicorn src.main:app --host 0.0.0.0 --port 5000 --reload
-```
-
-## Testing
-
-```bash
-pytest tests/ -v
-```
-
-## Design Principles
-
-- All planes are independent (different IDs, coverage, naming)
-- Correlation only via realistic keys (names, domains, hostnames)
-- No "conclusions" fields (no shadow flags, labels, or verdicts)
-- Deterministic generation by seed (when `snapshot_time` is fixed)
-- Timestamps anchor to snapshot creation time (not fixed dates)
-- Activity timestamps follow realistic recency distribution:
-  - 60% within last 7 days (active)
-  - 25% within 8-30 days (recent)
-  - 10% within 31-90 days (stale)
-  - 5% within 91-365 days (zombie candidates)
+**Status:** Grading may produce training noise until ground truth policy is decided.
