@@ -80,6 +80,56 @@ class RealismProfileEnum(str, Enum):
     messy = "messy"
 
 
+class DataPresetEnum(str, Enum):
+    clean_baseline = "clean_baseline"
+    enterprise_mess = "enterprise_mess"
+    adversarial = "adversarial"
+
+
+class PresetConfig(BaseModel):
+    """Configuration knobs for data generation presets."""
+    name: str
+    description: str
+    domain_coverage: float = Field(ge=0.0, le=1.0, description="% of assets with domain present")
+    conflict_rate: float = Field(ge=0.0, le=1.0, description="% cross-plane disagreement")
+    junk_domain_count: int = Field(ge=0, description="Number of noise/junk domains")
+    aliasing_rate: float = Field(ge=0.0, le=1.0, description="% multi-domain products")
+    near_collision_count: int = Field(ge=0, description="Near-collision names for adversarial")
+    
+    @classmethod
+    def from_preset(cls, preset: DataPresetEnum) -> "PresetConfig":
+        configs = {
+            DataPresetEnum.clean_baseline: cls(
+                name="Clean Baseline",
+                description="Heuristics baseline - minimal noise",
+                domain_coverage=0.95,
+                conflict_rate=0.05,
+                junk_domain_count=0,
+                aliasing_rate=0.0,
+                near_collision_count=0,
+            ),
+            DataPresetEnum.enterprise_mess: cls(
+                name="Enterprise Mess",
+                description="Realistic enterprise chaos - moderate conflicts",
+                domain_coverage=0.70,
+                conflict_rate=0.20,
+                junk_domain_count=200,
+                aliasing_rate=0.10,
+                near_collision_count=0,
+            ),
+            DataPresetEnum.adversarial: cls(
+                name="Adversarial",
+                description="LLM torture test - heavy ambiguity",
+                domain_coverage=0.50,
+                conflict_rate=0.35,
+                junk_domain_count=750,
+                aliasing_rate=0.25,
+                near_collision_count=50,
+            ),
+        }
+        return configs[preset]
+
+
 class DiscoveryObservation(BaseModel):
     observation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     observed_at: str
