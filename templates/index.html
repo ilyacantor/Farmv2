@@ -854,7 +854,6 @@
             const correct = matched.length;
             const fpCount = falsePos.length;
             const missedCount = missed.length;
-            const misaligned = fpCount + missedCount;
             const accuracy = expected > 0 ? Math.round(correct / expected * 100) : 100;
             
             const contentId = isShadow ? 'shadowAssetContent' : 'zombieAssetContent';
@@ -874,14 +873,13 @@
             
             return `
                 <!-- Scorecard -->
-                <div class="grid grid-cols-7 gap-2 mb-6">
+                <div class="grid grid-cols-6 gap-2 mb-6">
                     ${renderMetric('Expected', expected, 'Farm')}
                     ${renderMetric('Found', found, 'AOD')}
                     ${renderMetric('Correct', correct, 'Matched', 'good')}
-                    ${renderMetric('Misaligned', misaligned, 'FP + missed', misaligned > 0 ? 'warn' : 'good')}
                     ${renderMetric('False Pos', fpCount, 'AOD-only', fpCount > 0 ? 'bad' : 'good')}
                     ${renderMetric('Missed', missedCount, 'Farm-only', missedCount > 0 ? 'warn' : 'good')}
-                    ${renderMetric('Accuracy', accuracy + '%', '', accuracy === 100 ? 'good' : accuracy >= 80 ? 'warn' : 'bad')}
+                    ${renderMetric('Accuracy', accuracy + '%', '', accuracy >= 91 ? 'good' : accuracy >= 81 ? 'warn' : 'bad')}
                 </div>
                 
                 <!-- Asset content (will be populated by view toggle) -->
