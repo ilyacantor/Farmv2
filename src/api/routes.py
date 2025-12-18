@@ -18,6 +18,7 @@ from src.models.planes import (
     ReconcileRequest,
     ReconcileResponse,
     ReconcileMetadata,
+    ReconcileSummary,
     ReconcileStatusEnum,
     FarmExpectations,
     AODSummary,
@@ -509,6 +510,13 @@ def to_domain_key(entity_key: str) -> str:
     
     # Otherwise normalize the name
     return normalize_name(entity_key)
+
+
+def normalize_asset_key(key: str) -> str:
+    """Normalize an asset key for matching (case-insensitive, alphanumeric only)."""
+    if not key:
+        return ""
+    return to_domain_key(key)
 
 
 def roll_up_to_domains(entity_keys: set, reason_codes: dict = None) -> dict:
@@ -1020,19 +1028,25 @@ async def create_reconciliation(request: Request):
     
     # Derive status from the same analysis as verdict (domain-first normalization)
     analysis = build_reconciliation_analysis(snapshot, raw_json, expected_block)
-    total_missed = len(analysis.get('missed_shadows', [])) + len(analysis.get('missed_zombies', []))
-    total_fp = len(analysis.get('false_positive_shadows', [])) + len(analysis.get('false_positive_zombies', []))
     
-    # Status logic aligned with verdict:
-    # PASS = PERFECT (0 missed, 0 FP)
-    # WARN = GOOD (0 missed, has FP) 
-    # FAIL = NEEDS WORK (has missed)
-    if total_missed > 0:
-        status = ReconcileStatusEnum.FAIL
-    elif total_fp > 0:
+    # Calculate accuracy percentage
+    matched_shadows = len(analysis.get('matched_shadows', []))
+    matched_zombies = len(analysis.get('matched_zombies', []))
+    total_matched = matched_shadows + matched_zombies
+    
+    farm_shadows = len(expected_block.get('shadow_expected', []))
+    farm_zombies = len(expected_block.get('zombie_expected', []))
+    total_expected = farm_shadows + farm_zombies
+    
+    accuracy = (total_matched / total_expected * 100) if total_expected > 0 else 100
+    
+    # Status thresholds: Red 0-70%, Warn 71-90%, Green 91%+
+    if accuracy >= 91:
+        status = ReconcileStatusEnum.PASS
+    elif accuracy >= 71:
         status = ReconcileStatusEnum.WARN
     else:
-        status = ReconcileStatusEnum.PASS
+        status = ReconcileStatusEnum.FAIL
     
     reconciliation_id = str(uuid.uuid4())
     created_at = datetime.utcnow().isoformat() + "Z"
@@ -1107,6 +1121,53 @@ async def list_reconciliations(
                 
                 contract_status = "INCONSISTENT_CONTRACT" if has_mismatch else "CURRENT"
             
+            # Compute summary from stored data
+            summary = None
+            if asset_summaries and contract_status == "CURRENT":
+                # Get snapshot to compute expected counts
+                snapshot_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", row["snapshot_id"])
+                if snapshot_row:
+                    try:
+                        snapshot = json.loads(snapshot_row["snapshot_json"])
+                        expected_block = compute_expected_block(snapshot)
+                        farm_shadows = len(expected_block.get('shadow_expected', []))
+                        farm_zombies = len(expected_block.get('zombie_expected', []))
+                        
+                        aod_shadow_count = sum(1 for v in asset_summaries.values() if isinstance(v, dict) and v.get('is_shadow'))
+                        aod_zombie_count = sum(1 for v in asset_summaries.values() if isinstance(v, dict) and v.get('is_zombie'))
+                        
+                        # Build sets for matching
+                        farm_shadow_set = {normalize_asset_key(s['asset_key']) for s in expected_block.get('shadow_expected', [])}
+                        farm_zombie_set = {normalize_asset_key(z['asset_key']) for z in expected_block.get('zombie_expected', [])}
+                        
+                        aod_shadow_set = {normalize_asset_key(k) for k, v in asset_summaries.items() if isinstance(v, dict) and v.get('is_shadow')}
+                        aod_zombie_set = {normalize_asset_key(k) for k, v in asset_summaries.items() if isinstance(v, dict) and v.get('is_zombie')}
+                        
+                        matched_shadows = len(farm_shadow_set & aod_shadow_set)
+                        matched_zombies = len(farm_zombie_set & aod_zombie_set)
+                        missed_shadows = len(farm_shadow_set - aod_shadow_set)
+                        missed_zombies = len(farm_zombie_set - aod_zombie_set)
+                        fp_shadows = len(aod_shadow_set - farm_shadow_set)
+                        fp_zombies = len(aod_zombie_set - farm_zombie_set)
+                        
+                        total_expected = farm_shadows + farm_zombies
+                        total_matched = matched_shadows + matched_zombies
+                        accuracy = (total_matched / total_expected * 100) if total_expected > 0 else 100
+                        
+                        summary = ReconcileSummary(
+                            farm_shadows=farm_shadows,
+                            farm_zombies=farm_zombies,
+                            matched_shadows=matched_shadows,
+                            matched_zombies=matched_zombies,
+                            missed_shadows=missed_shadows,
+                            missed_zombies=missed_zombies,
+                            fp_shadows=fp_shadows,
+                            fp_zombies=fp_zombies,
+                            accuracy=round(accuracy, 1)
+                        )
+                    except Exception as e:
+                        print(f"[WARN] Failed to compute summary for {row['reconciliation_id']}: {e}")
+            
             results.append(ReconcileMetadata(
                 reconciliation_id=row["reconciliation_id"],
                 snapshot_id=row["snapshot_id"],
@@ -1116,6 +1177,7 @@ async def list_reconciliations(
                 status=row["status"],
                 report_text=row["report_text"] or "",
                 contract_status=contract_status,
+                summary=summary,
             ))
         return results
 

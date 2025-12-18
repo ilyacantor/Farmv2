@@ -376,29 +376,53 @@
                 const contractStatus = rec.contract_status || 'UNKNOWN';
                 const isGradeable = contractStatus === 'CURRENT';
                 
+                // Calculate accuracy from counts if available
+                const summary = rec.summary || {};
+                const matchedShadows = summary.matched_shadows || 0;
+                const matchedZombies = summary.matched_zombies || 0;
+                const farmShadows = summary.farm_shadows || 0;
+                const farmZombies = summary.farm_zombies || 0;
+                const totalMatched = matchedShadows + matchedZombies;
+                const totalExpected = farmShadows + farmZombies;
+                const accuracy = totalExpected > 0 ? Math.round(totalMatched / totalExpected * 100) : null;
+                
+                const accuracyColor = accuracy === null ? 'text-slate-500' 
+                    : accuracy >= 91 ? 'text-emerald-400' 
+                    : accuracy >= 71 ? 'text-amber-400' 
+                    : 'text-red-400';
+                const accuracyBg = accuracy === null ? 'bg-slate-800' 
+                    : accuracy >= 91 ? 'bg-emerald-900/40' 
+                    : accuracy >= 71 ? 'bg-amber-900/40' 
+                    : 'bg-red-900/40';
+                
                 const contractBadge = contractStatus === 'STALE_CONTRACT' 
                     ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-900/50 text-amber-400 ring-1 ring-amber-500/30">STALE</span>'
                     : contractStatus === 'INCONSISTENT_CONTRACT'
                     ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-red-900/50 text-red-400 ring-1 ring-red-500/30">INCONSISTENT</span>'
                     : getStatusBadge(rec.status);
                 
-                const contractMsg = contractStatus === 'STALE_CONTRACT' 
-                    ? '<span class="text-amber-500 ml-2">Legacy payload - rerun required</span>'
-                    : contractStatus === 'INCONSISTENT_CONTRACT'
-                    ? '<span class="text-red-500 ml-2">Count mismatch - rerun required</span>'
-                    : '';
+                const missedCount = (summary.missed_shadows || 0) + (summary.missed_zombies || 0);
+                const fpCount = (summary.fp_shadows || 0) + (summary.fp_zombies || 0);
                 
                 return `
-                    <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
-                        <div class="flex items-start justify-between gap-4">
-                            <div class="flex-1 min-w-0">
-                                <div class="flex items-center gap-2 mb-1">
-                                    ${contractBadge}
-                                    <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
+                    <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer border-l-4 ${accuracy >= 91 ? 'border-emerald-500' : accuracy >= 71 ? 'border-amber-500' : accuracy !== null ? 'border-red-500' : 'border-slate-600'}" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
+                        <div class="flex items-center justify-between gap-4">
+                            <div class="flex items-center gap-3">
+                                <div class="${accuracyBg} rounded-lg px-3 py-2 text-center min-w-[60px]">
+                                    <div class="${accuracyColor} font-bold text-lg">${accuracy !== null ? accuracy + '%' : '-'}</div>
+                                    <div class="text-[10px] text-slate-500 uppercase">Accuracy</div>
                                 </div>
-                                <div class="text-xs text-slate-600 mt-1">
-                                    ${rec.snapshot_id.substring(0, 8)} | AOD: ${rec.aod_run_id || 'N/A'}
-                                    ${contractMsg}
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        ${contractBadge}
+                                        <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
+                                    </div>
+                                    <div class="text-xs text-slate-500 flex items-center gap-3">
+                                        <span>${rec.snapshot_id.substring(0, 8)}</span>
+                                        ${totalExpected > 0 ? `<span class="text-emerald-400">${totalMatched} correct</span>` : ''}
+                                        ${missedCount > 0 ? `<span class="text-amber-400">${missedCount} missed</span>` : ''}
+                                        ${fpCount > 0 ? `<span class="text-red-400">${fpCount} FP</span>` : ''}
+                                    </div>
                                 </div>
                             </div>
                             <div class="text-xs text-slate-500">${timeAgo}</div>
@@ -874,14 +898,13 @@
             
             return `
                 <!-- Scorecard -->
-                <div class="grid grid-cols-7 gap-2 mb-6">
+                <div class="grid grid-cols-6 gap-2 mb-6">
                     ${renderMetric('Expected', expected, 'Farm')}
                     ${renderMetric('Found', found, 'AOD')}
                     ${renderMetric('Correct', correct, 'Matched', 'good')}
-                    ${renderMetric('Misaligned', misaligned, 'FP + missed', misaligned > 0 ? 'warn' : 'good')}
                     ${renderMetric('False Pos', fpCount, 'AOD-only', fpCount > 0 ? 'bad' : 'good')}
                     ${renderMetric('Missed', missedCount, 'Farm-only', missedCount > 0 ? 'warn' : 'good')}
-                    ${renderMetric('Accuracy', accuracy + '%', '', accuracy === 100 ? 'good' : accuracy >= 80 ? 'warn' : 'bad')}
+                    ${renderMetric('Accuracy', accuracy + '%', '', accuracy >= 91 ? 'good' : accuracy >= 71 ? 'warn' : 'bad')}
                 </div>
                 
                 <!-- Asset content (will be populated by view toggle) -->

@@ -407,6 +407,18 @@ class ReconcileResponse(BaseModel):
     farm_expectations: FarmExpectations
 
 
+class ReconcileSummary(BaseModel):
+    farm_shadows: int = 0
+    farm_zombies: int = 0
+    matched_shadows: int = 0
+    matched_zombies: int = 0
+    missed_shadows: int = 0
+    missed_zombies: int = 0
+    fp_shadows: int = 0
+    fp_zombies: int = 0
+    accuracy: Optional[float] = None
+
+
 class ReconcileMetadata(BaseModel):
     reconciliation_id: str
     snapshot_id: str
@@ -416,6 +428,7 @@ class ReconcileMetadata(BaseModel):
     status: str
     report_text: str = ""
     contract_status: str = "UNKNOWN"
+    summary: Optional[ReconcileSummary] = None
 
 
 class AutoReconcileRequest(BaseModel):
