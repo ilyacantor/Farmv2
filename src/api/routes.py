@@ -222,8 +222,8 @@ async def get_pool() -> asyncpg.Pool:
     return _db_pool
 
 
-def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profile: str, realism_profile: str) -> str:
-    data = f"{tenant_id}:{seed}:{scale}:{enterprise_profile}:{realism_profile}"
+def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profile: str, realism_profile: str, data_preset: str = "") -> str:
+    data = f"{tenant_id}:{seed}:{scale}:{enterprise_profile}:{realism_profile}:{data_preset}"
     return hashlib.sha256(data.encode()).hexdigest()[:16]
 
 
@@ -297,6 +297,7 @@ async def create_snapshot(request: SnapshotRequest):
         request.scale.value,
         request.enterprise_profile.value,
         request.realism_profile.value,
+        request.data_preset.value if request.data_preset else "",
     )
     
     async with pool.acquire() as conn:
