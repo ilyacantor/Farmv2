@@ -67,20 +67,30 @@
         </nav>
 
         <div id="testingTab">
-            <div class="bg-slate-800/60 rounded-xl border border-slate-700">
-                <div class="flex items-center justify-between p-4 border-b border-slate-700">
-                    <h2 class="text-lg font-semibold text-purple-400">Reconciliation Results</h2>
-                    <div class="flex gap-2">
-                        <select id="filterReconcileStatus" onchange="renderReconciliationsList()" class="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
-                            <option value="">All Status</option>
-                            <option value="PASS">Pass</option>
-                            <option value="WARN">Warn</option>
-                            <option value="FAIL">Fail</option>
-                        </select>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div class="bg-slate-800/60 rounded-xl border border-slate-700">
+                    <div class="flex items-center justify-between p-4 border-b border-slate-700">
+                        <h2 class="text-lg font-semibold text-purple-400">Reconciliation Results</h2>
+                        <div class="flex gap-2">
+                            <select id="filterReconcileStatus" onchange="renderReconciliationsList()" class="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
+                                <option value="">All Status</option>
+                                <option value="PASS">Pass</option>
+                                <option value="WARN">Warn</option>
+                                <option value="FAIL">Fail</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="reconciliationsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-220px)] overflow-y-auto">
+                        <div class="text-slate-500 text-center py-12">Loading reconciliations...</div>
                     </div>
                 </div>
-                <div id="reconciliationsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-220px)] overflow-y-auto">
-                    <div class="text-slate-500 text-center py-12">Loading reconciliations...</div>
+                <div id="testingDetailPanel" class="bg-slate-800/60 rounded-xl border border-slate-700">
+                    <div class="p-4 border-b border-slate-700">
+                        <h2 class="text-lg font-semibold text-cyan-400">Details</h2>
+                    </div>
+                    <div id="testingDetailContent" class="p-4 max-h-[calc(100vh-220px)] overflow-y-auto">
+                        <div class="text-slate-500 text-center py-12">Select a reconciliation to view details</div>
+                    </div>
                 </div>
             </div>
         </div>
