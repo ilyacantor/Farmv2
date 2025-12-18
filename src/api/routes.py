@@ -281,7 +281,8 @@ async def init_db():
                 aod_payload_json TEXT NOT NULL,
                 farm_expectations_json TEXT NOT NULL,
                 report_text TEXT NOT NULL,
-                status TEXT NOT NULL
+                status TEXT NOT NULL,
+                analysis_json TEXT
             )
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_snapshot ON reconciliations(snapshot_id)")
@@ -1457,10 +1458,13 @@ def check_key_in_aod_evidence(key: str, aod_evidence_domains: set) -> bool:
 def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> dict:
     """Build detailed reconciliation analysis comparing Farm expectations vs AOD results.
     
-    Always recomputes expected_block with current policy to ensure reconciliations
-    reflect the latest classification rules, even for older snapshots.
+    Uses stored __expected__ block from snapshot if available (fast path).
+    Only recomputes if __expected__ is missing (legacy snapshots).
     """
-    expected_block = compute_expected_block(snapshot)
+    if '__expected__' in snapshot and snapshot['__expected__'].get('shadow_expected'):
+        expected_block = snapshot['__expected__']
+    else:
+        expected_block = compute_expected_block(snapshot)
     
     farm_shadows = {a['asset_key'] for a in expected_block.get('shadow_expected', [])}
     farm_zombies = {a['asset_key'] for a in expected_block.get('zombie_expected', [])}
@@ -1802,8 +1806,11 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
 
 
 @router.get("/api/reconcile/{reconciliation_id}/analysis")
-async def get_reconciliation_analysis(reconciliation_id: str):
-    """Get detailed analysis comparing Farm expectations vs AOD results with plain English explanations."""
+async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: bool = Query(False)):
+    """Get detailed analysis comparing Farm expectations vs AOD results with plain English explanations.
+    
+    Uses cached analysis_json if available (fast path). Set force_recompute=true to bypass cache.
+    """
     pool = await get_pool()
     
     async with pool.acquire() as conn:
@@ -1811,47 +1818,30 @@ async def get_reconciliation_analysis(reconciliation_id: str):
         if not rec_row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
         
-        aod_payload = json.loads(rec_row["aod_payload_json"])
-        farm_exp = json.loads(rec_row["farm_expectations_json"])
-        
-        snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
-        if snap_row:
-            snapshot = json.loads(snap_row["snapshot_json"])
+        cached_analysis = None
+        if not force_recompute:
+            try:
+                cached_analysis = rec_row["analysis_json"]
+            except (KeyError, TypeError):
+                pass
+        if cached_analysis:
+            analysis = json.loads(cached_analysis)
         else:
-            snapshot = {'__expected__': farm_exp}
-        
-        analysis = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
-        
-        missed_shadow_keys = [m['asset_key'] for m in analysis.get('missed_shadows', [])]
-        missed_zombie_keys = [m['asset_key'] for m in analysis.get('missed_zombies', [])]
-        
-        if missed_shadow_keys:
-            shadow_explains = await call_aod_explain_nonflag(
-                rec_row["snapshot_id"], missed_shadow_keys, ask="shadow"
+            aod_payload = json.loads(rec_row["aod_payload_json"])
+            farm_exp = json.loads(rec_row["farm_expectations_json"])
+            
+            snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
+            if snap_row:
+                snapshot = json.loads(snap_row["snapshot_json"])
+            else:
+                snapshot = {'__expected__': farm_exp}
+            
+            analysis = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
+            
+            await conn.execute(
+                "UPDATE reconciliations SET analysis_json = $1 WHERE reconciliation_id = $2",
+                json.dumps(analysis), reconciliation_id
             )
-            for item in analysis['missed_shadows']:
-                key = item['asset_key']
-                if key in shadow_explains:
-                    explain = shadow_explains[key]
-                    item['aod_explain'] = explain
-                    decision = explain.get('decision', 'UNKNOWN_KEY')
-                    codes = explain.get('reason_codes', [])
-                    if codes and codes != ["NO_EXPLAIN_ENDPOINT"]:
-                        item['aod_detail'] = f"AOD decision: {decision}, reasons: {', '.join(codes)}"
-        
-        if missed_zombie_keys:
-            zombie_explains = await call_aod_explain_nonflag(
-                rec_row["snapshot_id"], missed_zombie_keys, ask="zombie"
-            )
-            for item in analysis['missed_zombies']:
-                key = item['asset_key']
-                if key in zombie_explains:
-                    explain = zombie_explains[key]
-                    item['aod_explain'] = explain
-                    decision = explain.get('decision', 'UNKNOWN_KEY')
-                    codes = explain.get('reason_codes', [])
-                    if codes and codes != ["NO_EXPLAIN_ENDPOINT"]:
-                        item['aod_detail'] = f"AOD decision: {decision}, reasons: {', '.join(codes)}"
         
         return {
             'reconciliation_id': reconciliation_id,
@@ -1861,6 +1851,45 @@ async def get_reconciliation_analysis(reconciliation_id: str):
             'status': rec_row["status"],
             'analysis': analysis,
         }
+
+
+@router.get("/api/reconcile/{reconciliation_id}/explain")
+async def get_reconciliation_explain(
+    reconciliation_id: str,
+    asset_keys: str = Query(..., description="Comma-separated asset keys to explain"),
+    ask: str = Query("shadow", description="What to ask about: shadow or zombie")
+):
+    """Lazy-load AOD explains for specific missed assets. Called on-demand when user expands an asset."""
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        rec_row = await conn.fetchrow("SELECT snapshot_id FROM reconciliations WHERE reconciliation_id = $1", reconciliation_id)
+        if not rec_row:
+            raise HTTPException(status_code=404, detail="Reconciliation not found")
+        
+        keys = [k.strip() for k in asset_keys.split(',') if k.strip()]
+        if not keys:
+            return {'explains': {}}
+        
+        explains = await call_aod_explain_nonflag(rec_row["snapshot_id"], keys, ask=ask)
+        
+        result = {}
+        for key in keys:
+            if key in explains:
+                explain = explains[key]
+                decision = explain.get('decision', 'UNKNOWN_KEY')
+                codes = explain.get('reason_codes', [])
+                detail = None
+                if codes and codes != ["NO_EXPLAIN_ENDPOINT"]:
+                    detail = f"AOD decision: {decision}, reasons: {', '.join(codes)}"
+                result[key] = {
+                    'aod_explain': explain,
+                    'aod_detail': detail,
+                }
+            else:
+                result[key] = {'aod_explain': None, 'aod_detail': None}
+        
+        return {'explains': result}
 
 
 @router.get("/api/reconcile/{reconciliation_id}/download")
@@ -1876,16 +1905,25 @@ async def download_reconciliation_diff(
         if not rec_row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
         
-        aod_payload = json.loads(rec_row["aod_payload_json"])
-        farm_exp = json.loads(rec_row["farm_expectations_json"])
+        cached_analysis = None
+        try:
+            cached_analysis = rec_row["analysis_json"]
+        except (KeyError, TypeError):
+            pass
         
-        snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
-        if snap_row:
-            snapshot = json.loads(snap_row["snapshot_json"])
+        if cached_analysis:
+            analysis = json.loads(cached_analysis)
         else:
-            snapshot = {'__expected__': farm_exp}
-        
-        analysis = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
+            aod_payload = json.loads(rec_row["aod_payload_json"])
+            farm_exp = json.loads(rec_row["farm_expectations_json"])
+            
+            snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
+            if snap_row:
+                snapshot = json.loads(snap_row["snapshot_json"])
+            else:
+                snapshot = {'__expected__': farm_exp}
+            
+            analysis = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
     
     rows = []
     
