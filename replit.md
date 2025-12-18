@@ -226,7 +226,7 @@ The following domains are excluded from shadow classification (not SaaS candidat
 - postgresql.org, mysql.com, apache.org, redis.io, redis.com, mongodb.com
 - docker.com, kubernetes.io, nginx.org
 - python.org, nodejs.org, golang.org, rust-lang.org, ruby-lang.org
-- linux.org, gnu.org, elastic.co, kafka.apache.org
+- linux.org, gnu.org, elastic.co, elasticsearch.com, kafka.apache.org
 
 ## CMDB Resolution Reason Codes
 
