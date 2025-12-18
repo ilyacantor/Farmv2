@@ -97,6 +97,17 @@
                             </div>
                         </div>
                         
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Data Preset <span class="text-slate-500">(AOD challenge level)</span></label>
+                            <select id="dataPreset" 
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                <option value="">None (default)</option>
+                                <option value="clean_baseline">Clean Baseline (95% coverage, minimal noise)</option>
+                                <option value="enterprise_mess">Enterprise Mess (70% coverage, junk domains)</option>
+                                <option value="adversarial">Adversarial (50% coverage, near-collisions)</option>
+                            </select>
+                        </div>
+                        
                         <button type="submit" id="generateBtn"
                             class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 cyan-glow">
                             Generate Snapshot
@@ -1488,20 +1499,25 @@
             }
         }
 
-        async function generateSnapshot(tenantId, seed, scale, enterpriseProfile, realismProfile) {
-            addLogEntry(`Generating ${tenantId} seed:${seed}...`, 'info');
+        async function generateSnapshot(tenantId, seed, scale, enterpriseProfile, realismProfile, dataPreset) {
+            addLogEntry(`Generating ${tenantId} seed:${seed}${dataPreset ? ` [${dataPreset}]` : ''}...`, 'info');
             
             try {
+                const body = {
+                    tenant_id: tenantId,
+                    seed: parseInt(seed),
+                    scale: scale,
+                    enterprise_profile: enterpriseProfile,
+                    realism_profile: realismProfile,
+                };
+                if (dataPreset) {
+                    body.data_preset = dataPreset;
+                }
+                
                 const response = await fetch('/api/snapshots', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        tenant_id: tenantId,
-                        seed: parseInt(seed),
-                        scale: scale,
-                        enterprise_profile: enterpriseProfile,
-                        realism_profile: realismProfile,
-                    })
+                    body: JSON.stringify(body)
                 });
                 
                 const data = await response.json();
@@ -1526,7 +1542,8 @@
                     generateSeed(),
                     document.getElementById('scale').value,
                     document.getElementById('enterpriseProfile').value,
-                    document.getElementById('realismProfile').value
+                    document.getElementById('realismProfile').value,
+                    document.getElementById('dataPreset').value || null
                 );
             } finally {
                 btn.disabled = false;

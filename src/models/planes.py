@@ -305,6 +305,7 @@ class SnapshotRequest(BaseModel):
     scale: ScaleEnum = ScaleEnum.medium
     enterprise_profile: EnterpriseProfileEnum = EnterpriseProfileEnum.modern_saas
     realism_profile: RealismProfileEnum = RealismProfileEnum.typical
+    data_preset: Optional[DataPresetEnum] = None
 
 
 class SnapshotResponse(BaseModel):

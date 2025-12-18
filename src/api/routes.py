@@ -325,6 +325,7 @@ async def create_snapshot(request: SnapshotRequest):
         scale=request.scale,
         enterprise_profile=request.enterprise_profile,
         realism_profile=request.realism_profile,
+        data_preset=request.data_preset,
     )
     
     snapshot = generator.generate()
