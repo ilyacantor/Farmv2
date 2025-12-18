@@ -804,9 +804,11 @@
             });
         }
         
+        let currentRecView = 'asset';
+        
         function switchRecView(view) {
             if (!currentRecData) return;
-            const { analysis } = currentRecData;
+            currentRecView = view;
             
             document.querySelectorAll('[data-view-btn]').forEach(el => {
                 el.classList.toggle('bg-white/10', el.dataset.viewBtn === view);
@@ -817,29 +819,122 @@
             const shadowContent = document.getElementById('shadowAssetContent');
             const zombieContent = document.getElementById('zombieAssetContent');
             
-            if (view === 'asset') {
-                shadowContent.innerHTML = renderAssetView(
-                    analysis.matched_shadows || [],
-                    analysis.missed_shadows || [],
-                    analysis.false_positive_shadows || []
-                );
-                zombieContent.innerHTML = renderAssetView(
-                    analysis.matched_zombies || [],
-                    analysis.missed_zombies || [],
-                    analysis.false_positive_zombies || []
-                );
-            } else {
-                shadowContent.innerHTML = renderRcaView(
-                    analysis.matched_shadows || [],
-                    analysis.missed_shadows || [],
-                    analysis.false_positive_shadows || []
-                );
-                zombieContent.innerHTML = renderRcaView(
-                    analysis.matched_zombies || [],
-                    analysis.missed_zombies || [],
-                    analysis.false_positive_zombies || []
-                );
+            if (shadowContent && shadowContent.dataset.activeCategory) {
+                toggleAssetCategory('shadow', shadowContent.dataset.activeCategory);
             }
+            if (zombieContent && zombieContent.dataset.activeCategory) {
+                toggleAssetCategory('zombie', zombieContent.dataset.activeCategory);
+            }
+        }
+        
+        function renderClickableMetric(label, value, sublabel, style, category, type) {
+            const styles = {
+                good: 'bg-emerald-500/10 ring-emerald-500/30 text-emerald-400',
+                bad: 'bg-rose-500/10 ring-rose-500/30 text-rose-400',
+                warn: 'bg-amber-500/10 ring-amber-500/30 text-amber-400',
+                default: 'bg-white/5 ring-white/10 text-slate-300'
+            };
+            const s = styles[style] || styles.default;
+            const isClickable = category && (value > 0 || value !== '0');
+            const clickAttr = isClickable ? `onclick="toggleAssetCategory('${type}', '${category}')" style="cursor:pointer"` : '';
+            const hoverClass = isClickable ? 'hover:ring-2 hover:ring-offset-1 hover:ring-offset-slate-900 transition-all' : '';
+            return `
+                <div class="rounded-xl ${s} ring-1 p-3 text-center ${hoverClass}" ${clickAttr} data-kpi="${type}-${category}">
+                    <div class="text-2xl font-bold">${value}</div>
+                    <div class="text-xs opacity-70">${label}</div>
+                    ${sublabel ? `<div class="text-[10px] opacity-50">${sublabel}</div>` : ''}
+                </div>
+            `;
+        }
+        
+        function toggleAssetCategory(type, category) {
+            if (!currentRecData) return;
+            const { analysis } = currentRecData;
+            const isShadow = type === 'shadow';
+            const contentId = isShadow ? 'shadowAssetContent' : 'zombieAssetContent';
+            const container = document.getElementById(contentId);
+            if (!container) return;
+            
+            const currentCategory = container.dataset.activeCategory;
+            if (currentCategory === category) {
+                container.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Click a metric above to view assets</div>';
+                container.dataset.activeCategory = '';
+                return;
+            }
+            
+            let items = [];
+            let cardType = '';
+            let title = '';
+            let colorClass = '';
+            
+            if (category === 'correct') {
+                items = isShadow ? (analysis.matched_shadows || []) : (analysis.matched_zombies || []);
+                cardType = 'confirmed';
+                title = 'Confirmed';
+                colorClass = 'emerald';
+            } else if (category === 'fp') {
+                items = isShadow ? (analysis.false_positive_shadows || []) : (analysis.false_positive_zombies || []);
+                cardType = 'aod_only';
+                title = 'False Positives (AOD-only)';
+                colorClass = 'rose';
+            } else if (category === 'missed') {
+                items = isShadow ? (analysis.missed_shadows || []) : (analysis.missed_zombies || []);
+                cardType = 'farm_only';
+                title = 'Missed by AOD (Farm-only)';
+                colorClass = 'amber';
+            }
+            
+            container.dataset.activeCategory = category;
+            
+            if (items.length === 0) {
+                container.innerHTML = `<div class="text-center py-8 text-slate-500 text-sm">No ${title.toLowerCase()} assets</div>`;
+                return;
+            }
+            
+            if (currentRecView === 'rca') {
+                container.innerHTML = `
+                    <div class="rounded-2xl bg-${colorClass}-500/5 p-4 ring-1 ring-${colorClass}-500/20">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="text-sm font-semibold text-${colorClass}-300">${title} (by Root Cause)</div>
+                            ${renderPill(items.length, cardType === 'confirmed' ? 'good' : cardType === 'aod_only' ? 'bad' : 'warn')}
+                        </div>
+                        ${renderRcaGroupedList(items, cardType)}
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="rounded-2xl bg-${colorClass}-500/5 p-4 ring-1 ring-${colorClass}-500/20">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="text-sm font-semibold text-${colorClass}-300">${title}</div>
+                            ${renderPill(items.length, cardType === 'confirmed' ? 'good' : cardType === 'aod_only' ? 'bad' : 'warn')}
+                        </div>
+                        ${items.map(a => renderAssetCard(a, cardType)).join('')}
+                    </div>
+                `;
+            }
+        }
+        
+        function renderRcaGroupedList(items, cardType) {
+            const groups = {};
+            items.forEach(a => {
+                const rca = a.rca_hint || 'UNCATEGORIZED';
+                if (!groups[rca]) groups[rca] = [];
+                groups[rca].push(a);
+            });
+            
+            const sortedRcas = Object.keys(groups).sort((a, b) => groups[b].length - groups[a].length);
+            
+            return sortedRcas.map(rca => `
+                <div class="mb-4 last:mb-0">
+                    <div class="text-xs font-medium text-slate-400 mb-2 flex items-center gap-2">
+                        <span class="px-2 py-0.5 rounded bg-slate-700/50">${rca}</span>
+                        <span class="text-slate-500">(${groups[rca].length})</span>
+                    </div>
+                    <div class="space-y-1 pl-2 border-l border-slate-700">
+                        ${groups[rca].map(a => renderAssetCard(a, cardType)).join('')}
+                    </div>
+                </div>
+            `).join('');
         }
         
         function renderReconciliationTabContent(type, analysis, rec) {
@@ -865,31 +960,63 @@
                         <div class="text-sm">Grading disabled for stale contract.</div>
                         <div class="text-xs mt-1">Re-run AOD on this snapshot to enable grading.</div>
                     </div>
-                    <div id="${contentId}">
-                        ${renderAssetView(matched, missed, falsePos)}
+                    <div id="${contentId}" data-active-category="">
                     </div>
                 `;
             }
             
             return `
-                <!-- Scorecard -->
+                <!-- Scorecard - Click metrics to view assets -->
                 <div class="grid grid-cols-6 gap-2 mb-6">
                     ${renderMetric('Expected', expected, 'Farm')}
                     ${renderMetric('Found', found, 'AOD')}
-                    ${renderMetric('Correct', correct, 'Matched', 'good')}
-                    ${renderMetric('False Pos', fpCount, 'AOD-only', fpCount > 0 ? 'bad' : 'good')}
-                    ${renderMetric('Missed', missedCount, 'Farm-only', missedCount > 0 ? 'warn' : 'good')}
+                    ${renderClickableMetric('Correct', correct, 'Matched', 'good', 'correct', type)}
+                    ${renderClickableMetric('False Pos', fpCount, 'AOD-only', fpCount > 0 ? 'bad' : 'good', 'fp', type)}
+                    ${renderClickableMetric('Missed', missedCount, 'Farm-only', missedCount > 0 ? 'warn' : 'good', 'missed', type)}
                     ${renderMetric('Accuracy', accuracy + '%', '', accuracy >= 91 ? 'good' : accuracy >= 81 ? 'warn' : 'bad')}
                 </div>
                 
-                <!-- Asset content (will be populated by view toggle) -->
-                <div id="${contentId}">
-                    ${renderAssetView(matched, missed, falsePos)}
+                <!-- Asset content - populated on KPI click -->
+                <div id="${contentId}" data-active-category="">
+                    <div class="text-center py-8 text-slate-500 text-sm">Click a metric above to view assets</div>
+                </div>
+            `;
+        }
+
+        function renderSkeleton() {
+            return `
+                <div class="space-y-6 animate-pulse">
+                    <div class="flex items-center gap-3">
+                        <div class="h-8 w-64 bg-slate-700 rounded-xl"></div>
+                        <div class="h-6 w-16 bg-slate-700 rounded-full"></div>
+                    </div>
+                    <div class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
+                        <div class="flex gap-2">
+                            <div class="h-5 w-24 bg-slate-700 rounded-full"></div>
+                            <div class="h-5 w-20 bg-slate-700 rounded-full"></div>
+                            <div class="h-5 w-28 bg-slate-700 rounded-full"></div>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <div class="h-10 w-24 bg-slate-700 rounded-xl"></div>
+                        <div class="h-10 w-24 bg-slate-700 rounded-xl"></div>
+                    </div>
+                    <div class="rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
+                        <div class="grid grid-cols-6 gap-2 mb-6">
+                            ${[...Array(6)].map(() => '<div class="h-16 bg-slate-700/50 rounded-xl"></div>').join('')}
+                        </div>
+                        <div class="h-32 bg-slate-700/30 rounded-xl"></div>
+                    </div>
                 </div>
             `;
         }
 
         async function viewReconciliationReport(reconciliationId) {
+            const modal = document.getElementById('detailModal');
+            document.getElementById('detailModalTitle').classList.add('hidden');
+            document.getElementById('detailContent').innerHTML = renderSkeleton();
+            modal.classList.remove('hidden');
+            
             try {
                 assetListIdCounter = 0;
                 const [recResp, analysisResp] = await Promise.all([
@@ -915,8 +1042,6 @@
                 const bannerTitle = contractStatus === 'INCONSISTENT_CONTRACT' ? 'Inconsistent Contract' : 'Stale Contract';
                 const bannerTextStyle = contractStatus === 'INCONSISTENT_CONTRACT' ? 'text-red-300/80' : 'text-amber-300/80';
                 
-                const modal = document.getElementById('detailModal');
-                document.getElementById('detailModalTitle').classList.add('hidden');
                 document.getElementById('detailContent').innerHTML = `
                     <div class="space-y-6">
                         ${!gradeable ? `
@@ -992,9 +1117,14 @@
                         </details>
                     </div>
                 `;
-                modal.classList.remove('hidden');
             } catch (e) {
                 console.error('Failed to load reconciliation:', e);
+                document.getElementById('detailContent').innerHTML = `
+                    <div class="text-center py-12 text-red-400">
+                        <div class="text-lg font-medium">Failed to load reconciliation</div>
+                        <div class="text-sm text-slate-500 mt-2">${e.message || 'Unknown error'}</div>
+                    </div>
+                `;
             }
         }
 
