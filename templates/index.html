@@ -374,20 +374,32 @@
                 const created = new Date(rec.created_at);
                 const timeAgo = getTimeAgo(created);
                 const contractStatus = rec.contract_status || 'UNKNOWN';
+                const isGradeable = contractStatus === 'CURRENT';
                 
-                const statusBadge = contractStatus === 'STALE_CONTRACT' 
+                const contractBadge = contractStatus === 'STALE_CONTRACT' 
                     ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-900/50 text-amber-400 ring-1 ring-amber-500/30">STALE</span>'
                     : contractStatus === 'INCONSISTENT_CONTRACT'
                     ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-red-900/50 text-red-400 ring-1 ring-red-500/30">INCONSISTENT</span>'
                     : getStatusBadge(rec.status);
                 
+                const contractMsg = contractStatus === 'STALE_CONTRACT' 
+                    ? '<span class="text-amber-500 ml-2">Legacy payload - rerun required</span>'
+                    : contractStatus === 'INCONSISTENT_CONTRACT'
+                    ? '<span class="text-red-500 ml-2">Count mismatch - rerun required</span>'
+                    : '';
+                
                 return `
-                    <div class="p-3 hover:bg-slate-900/40 transition-colors cursor-pointer border-l-4 border-slate-600 hover:border-cyan-500" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
-                        <div class="flex items-center justify-between gap-4">
-                            <div class="flex items-center gap-3">
-                                ${statusBadge}
-                                <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
-                                <span class="text-slate-600 text-xs">${rec.snapshot_id.substring(0, 8)}</span>
+                    <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
+                        <div class="flex items-start justify-between gap-4">
+                            <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-2 mb-1">
+                                    ${contractBadge}
+                                    <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
+                                </div>
+                                <div class="text-xs text-slate-600 mt-1">
+                                    ${rec.snapshot_id.substring(0, 8)} | AOD: ${rec.aod_run_id || 'N/A'}
+                                    ${contractMsg}
+                                </div>
                             </div>
                             <div class="text-xs text-slate-500">${timeAgo}</div>
                         </div>
@@ -862,13 +874,14 @@
             
             return `
                 <!-- Scorecard -->
-                <div class="grid grid-cols-6 gap-2 mb-6">
+                <div class="grid grid-cols-7 gap-2 mb-6">
                     ${renderMetric('Expected', expected, 'Farm')}
                     ${renderMetric('Found', found, 'AOD')}
                     ${renderMetric('Correct', correct, 'Matched', 'good')}
+                    ${renderMetric('Misaligned', misaligned, 'FP + missed', misaligned > 0 ? 'warn' : 'good')}
                     ${renderMetric('False Pos', fpCount, 'AOD-only', fpCount > 0 ? 'bad' : 'good')}
                     ${renderMetric('Missed', missedCount, 'Farm-only', missedCount > 0 ? 'warn' : 'good')}
-                    ${renderMetric('Accuracy', accuracy + '%', '', accuracy >= 91 ? 'good' : accuracy >= 71 ? 'warn' : 'bad')}
+                    ${renderMetric('Accuracy', accuracy + '%', '', accuracy === 100 ? 'good' : accuracy >= 80 ? 'warn' : 'bad')}
                 </div>
                 
                 <!-- Asset content (will be populated by view toggle) -->
@@ -876,77 +889,6 @@
                     ${renderAssetView(matched, missed, falsePos)}
                 </div>
             `;
-        }
-
-        function renderKpiBox(label, value, subtitle, type, category, assets, clickable = true) {
-            const colorMap = {
-                good: { bg: 'bg-emerald-900/30', border: 'border-emerald-500/40', text: 'text-emerald-400', hover: 'hover:border-emerald-400' },
-                bad: { bg: 'bg-red-900/30', border: 'border-red-500/40', text: 'text-red-400', hover: 'hover:border-red-400' },
-                warn: { bg: 'bg-amber-900/30', border: 'border-amber-500/40', text: 'text-amber-400', hover: 'hover:border-amber-400' },
-                neutral: { bg: 'bg-slate-800/50', border: 'border-slate-600/40', text: 'text-slate-300', hover: 'hover:border-slate-400' }
-            };
-            const c = colorMap[type] || colorMap.neutral;
-            const cursor = clickable && assets.length > 0 ? 'cursor-pointer' : '';
-            const hoverClass = clickable && assets.length > 0 ? c.hover : '';
-            const dataAttr = clickable ? `data-kpi-category="${category}"` : '';
-            
-            return `
-                <div ${dataAttr} class="${c.bg} ${c.border} border-2 rounded-xl p-4 text-center transition-all ${cursor} ${hoverClass}">
-                    <div class="${c.text} text-3xl font-bold">${value}</div>
-                    <div class="text-sm font-medium text-slate-200 mt-1">${label}</div>
-                    ${subtitle ? `<div class="text-xs text-slate-500 mt-0.5">${subtitle}</div>` : ''}
-                </div>
-            `;
-        }
-        
-        function showKpiDetails(category) {
-            if (!currentRecData) return;
-            const { analysis } = currentRecData;
-            
-            const categoryMap = {
-                'shadow-correct': { title: 'Correct Shadows', assets: analysis.matched_shadows || [], type: 'confirmed' },
-                'shadow-fp': { title: 'False Positive Shadows', assets: analysis.false_positive_shadows || [], type: 'aod_only' },
-                'shadow-missed': { title: 'Missed Shadows', assets: analysis.missed_shadows || [], type: 'farm_only' },
-                'zombie-correct': { title: 'Correct Zombies', assets: analysis.matched_zombies || [], type: 'confirmed' },
-                'zombie-fp': { title: 'False Positive Zombies', assets: analysis.false_positive_zombies || [], type: 'aod_only' },
-                'zombie-missed': { title: 'Missed Zombies', assets: analysis.missed_zombies || [], type: 'farm_only' }
-            };
-            
-            const data = categoryMap[category];
-            if (!data || data.assets.length === 0) return;
-            
-            const detailContainer = document.getElementById('kpiDetailContent');
-            const colorMap = {
-                confirmed: { bg: 'bg-emerald-500/10', ring: 'ring-emerald-500/30', title: 'text-emerald-300' },
-                aod_only: { bg: 'bg-red-500/10', ring: 'ring-red-500/30', title: 'text-red-300' },
-                farm_only: { bg: 'bg-amber-500/10', ring: 'ring-amber-500/30', title: 'text-amber-300' }
-            };
-            const c = colorMap[data.type];
-            
-            detailContainer.innerHTML = `
-                <div class="${c.bg} rounded-2xl p-4 ring-1 ${c.ring}">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="${c.title} font-semibold">${data.title} (${data.assets.length})</div>
-                        <button onclick="hideKpiDetails()" class="text-slate-400 hover:text-white text-sm">Close</button>
-                    </div>
-                    <div class="space-y-2 max-h-80 overflow-y-auto">
-                        ${data.assets.map(a => renderAssetCard(a, data.type)).join('')}
-                    </div>
-                </div>
-            `;
-            detailContainer.classList.remove('hidden');
-            
-            document.querySelectorAll('[data-kpi-category]').forEach(el => {
-                el.classList.toggle('ring-2', el.dataset.kpiCategory === category);
-                el.classList.toggle('ring-white/50', el.dataset.kpiCategory === category);
-            });
-        }
-        
-        function hideKpiDetails() {
-            document.getElementById('kpiDetailContent').classList.add('hidden');
-            document.querySelectorAll('[data-kpi-category]').forEach(el => {
-                el.classList.remove('ring-2', 'ring-white/50');
-            });
         }
 
         async function viewReconciliationReport(reconciliationId) {
@@ -962,88 +904,95 @@
                 
                 currentRecData = { rec, analysis };
                 
+                const payloadHealth = analysis.payload_health || {};
+                const hasPayloadIssues = payloadHealth.has_issues;
                 const gradeable = analysis.gradeable !== false;
-                const summary = analysis.summary || {};
+                const contractStatus = analysis.contract_status || 'UNKNOWN';
+                const contractBanner = analysis.contract_banner || '';
+                const verdict = gradeable ? (analysis.verdict || '') : '';
                 
-                const shadowExpected = summary.farm_shadows || 0;
-                const shadowFound = summary.aod_shadows || 0;
-                const shadowCorrect = (analysis.matched_shadows || []).length;
-                const shadowFp = (analysis.false_positive_shadows || []).length;
-                const shadowMissed = (analysis.missed_shadows || []).length;
-                const shadowAcc = shadowExpected > 0 ? Math.round(shadowCorrect / shadowExpected * 100) : 100;
-                
-                const zombieExpected = summary.farm_zombies || 0;
-                const zombieFound = summary.aod_zombies || 0;
-                const zombieCorrect = (analysis.matched_zombies || []).length;
-                const zombieFp = (analysis.false_positive_zombies || []).length;
-                const zombieMissed = (analysis.missed_zombies || []).length;
-                const zombieAcc = zombieExpected > 0 ? Math.round(zombieCorrect / zombieExpected * 100) : 100;
-                
-                const totalExpected = shadowExpected + zombieExpected;
-                const totalCorrect = shadowCorrect + zombieCorrect;
-                const overallAcc = totalExpected > 0 ? Math.round(totalCorrect / totalExpected * 100) : 100;
-                const accType = overallAcc >= 91 ? 'good' : overallAcc >= 71 ? 'warn' : 'bad';
+                const bannerStyle = contractStatus === 'INCONSISTENT_CONTRACT' 
+                    ? 'bg-red-900/30 border-red-600/50 text-red-200' 
+                    : 'bg-amber-900/30 border-amber-600/50 text-amber-200';
+                const bannerTitle = contractStatus === 'INCONSISTENT_CONTRACT' ? 'Inconsistent Contract' : 'Stale Contract';
+                const bannerTextStyle = contractStatus === 'INCONSISTENT_CONTRACT' ? 'text-red-300/80' : 'text-amber-300/80';
                 
                 const modal = document.getElementById('detailModal');
                 document.getElementById('detailContent').innerHTML = `
                     <div class="space-y-6">
+                        ${!gradeable ? `
+                        <div class="rounded-xl ${bannerStyle} border p-4 text-sm">
+                            <div class="font-medium mb-1">${bannerTitle}</div>
+                            <div class="${bannerTextStyle}">${contractBanner || 'This reconciliation cannot be graded. Re-run AOD to enable grading.'}</div>
+                        </div>
+                        ` : ''}
                         <!-- Header -->
-                        <div class="flex items-center justify-between">
+                        <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+                            <div>
+                                <div class="flex items-center gap-3 flex-wrap">
+                                    <div class="text-2xl font-semibold text-slate-50">Reconciliation Report</div>
+                                    ${gradeable 
+                                        ? renderPill(rec.status, rec.status === 'PASS' ? 'good' : rec.status === 'WARN' ? 'warn' : 'bad')
+                                        : renderPill('NOT GRADEABLE', 'warn')}
+                                    ${hasPayloadIssues ? renderPill('Payload issues', 'warn') : ''}
+                                </div>
+                                <div class="mt-1 text-sm text-slate-400">Farm = expected. AOD = actual.</div>
+                                ${verdict ? `<div class="mt-2 text-sm text-slate-300">${verdict}</div>` : ''}
+                            </div>
                             <div class="flex items-center gap-3">
-                                <span class="text-slate-400 text-sm">${rec.tenant_id}</span>
-                                <span class="text-slate-600">|</span>
-                                <span class="text-slate-500 text-xs">${rec.snapshot_id.slice(0, 8)}</span>
-                            </div>
-                            <div class="flex items-center gap-2">
+                                <!-- View toggle -->
+                                <div class="flex items-center gap-1 rounded-2xl bg-white/5 p-1 ring-1 ring-white/10">
+                                    <button onclick="switchRecView('asset')" data-view-btn="asset"
+                                        class="rounded-xl px-3 py-1.5 text-sm bg-white/10 text-slate-50">View by Asset</button>
+                                    <button onclick="switchRecView('rca')" data-view-btn="rca"
+                                        class="rounded-xl px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5">View by Root Cause</button>
+                                </div>
                                 <a href="/api/reconcile/${reconciliationId}/download?format=csv" 
-                                   class="px-2 py-1 text-xs rounded bg-slate-700 text-slate-300 hover:bg-slate-600">CSV</a>
+                                   class="px-3 py-1.5 text-xs rounded-xl bg-blue-900 text-blue-300 hover:bg-blue-800 ring-1 ring-blue-500/20">Download CSV</a>
                                 <a href="/api/reconcile/${reconciliationId}/download?format=json" 
-                                   class="px-2 py-1 text-xs rounded bg-slate-700 text-slate-300 hover:bg-slate-600">JSON</a>
+                                   class="px-3 py-1.5 text-xs rounded-xl bg-slate-700 text-slate-300 hover:bg-slate-600 ring-1 ring-white/10">Download JSON</a>
                             </div>
                         </div>
                         
-                        <!-- Overall Accuracy - compact inline -->
-                        <div class="flex items-center justify-center gap-3 py-2 px-4 rounded-lg bg-slate-800/50">
-                            <span class="text-slate-400 text-sm">Accuracy:</span>
-                            <span class="${accType === 'good' ? 'text-emerald-400' : accType === 'warn' ? 'text-amber-400' : 'text-red-400'} text-2xl font-bold">${overallAcc}%</span>
-                            <span class="text-slate-500 text-xs">(${totalCorrect}/${totalExpected})</span>
-                        </div>
-                        
-                        <!-- Shadow KPIs -->
-                        <div>
-                            <div class="text-purple-400 font-medium mb-3 flex items-center gap-2">
-                                <span>Shadow IT</span>
-                                <span class="text-xs text-slate-500">(${shadowExpected} expected, ${shadowFound} found)</span>
-                            </div>
-                            <div class="grid grid-cols-3 gap-3">
-                                ${renderKpiBox('Correct', shadowCorrect, 'Matched', 'good', 'shadow-correct', analysis.matched_shadows || [])}
-                                ${renderKpiBox('False Pos', shadowFp, 'AOD-only', shadowFp > 0 ? 'bad' : 'good', 'shadow-fp', analysis.false_positive_shadows || [])}
-                                ${renderKpiBox('Missed', shadowMissed, 'Farm-only', shadowMissed > 0 ? 'warn' : 'good', 'shadow-missed', analysis.missed_shadows || [])}
+                        <!-- Metadata -->
+                        <div class="rounded-2xl bg-black/20 p-4 text-sm ring-1 ring-white/10">
+                            <div class="flex flex-wrap items-center gap-2">
+                                ${renderPill('tenant: ' + rec.tenant_id)}
+                                ${renderPill('run: ' + (rec.aod_run_id || 'N/A'))}
+                                ${renderPill('snapshot: ' + rec.snapshot_id.slice(0, 8))}
+                                ${renderPill(new Date(rec.created_at).toLocaleString())}
                             </div>
                         </div>
                         
-                        <!-- Zombie KPIs -->
-                        <div>
-                            <div class="text-cyan-400 font-medium mb-3 flex items-center gap-2">
-                                <span>Zombies</span>
-                                <span class="text-xs text-slate-500">(${zombieExpected} expected, ${zombieFound} found)</span>
-                            </div>
-                            <div class="grid grid-cols-3 gap-3">
-                                ${renderKpiBox('Correct', zombieCorrect, 'Matched', 'good', 'zombie-correct', analysis.matched_zombies || [])}
-                                ${renderKpiBox('False Pos', zombieFp, 'AOD-only', zombieFp > 0 ? 'bad' : 'good', 'zombie-fp', analysis.false_positive_zombies || [])}
-                                ${renderKpiBox('Missed', zombieMissed, 'Farm-only', zombieMissed > 0 ? 'warn' : 'good', 'zombie-missed', analysis.missed_zombies || [])}
-                            </div>
+                        <!-- Shadow/Zombie Tabs -->
+                        <div class="flex items-center gap-1 rounded-2xl bg-white/5 p-1 ring-1 ring-white/10 w-fit">
+                            <button onclick="switchRecTab('shadow')" data-rec-tab="shadow"
+                                class="rounded-xl px-4 py-2 text-sm font-medium bg-white/10 text-slate-50">
+                                Shadow
+                            </button>
+                            <button onclick="switchRecTab('zombie')" data-rec-tab="zombie"
+                                class="rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/5">
+                                Zombie
+                            </button>
                         </div>
                         
-                        <!-- Detail Panel (hidden by default) -->
-                        <div id="kpiDetailContent" class="hidden"></div>
+                        <!-- Shadow Tab Content -->
+                        <div data-rec-content="shadow" class="rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
+                            ${renderReconciliationTabContent('shadow', analysis, rec)}
+                        </div>
+                        
+                        <!-- Zombie Tab Content -->
+                        <div data-rec-content="zombie" class="hidden rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
+                            ${renderReconciliationTabContent('zombie', analysis, rec)}
+                        </div>
+                        
+                        <!-- Raw Report -->
+                        <details class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
+                            <summary class="text-sm font-medium text-slate-300 cursor-pointer">Raw Report</summary>
+                            <pre class="text-xs text-slate-400 whitespace-pre-wrap overflow-auto max-h-64 mt-2">${rec.report_text || 'No report available'}</pre>
+                        </details>
                     </div>
                 `;
-                
-                document.querySelectorAll('[data-kpi-category]').forEach(el => {
-                    el.addEventListener('click', () => showKpiDetails(el.dataset.kpiCategory));
-                });
-                
                 modal.classList.remove('hidden');
             } catch (e) {
                 console.error('Failed to load reconciliation:', e);
