@@ -374,56 +374,20 @@
                 const created = new Date(rec.created_at);
                 const timeAgo = getTimeAgo(created);
                 const contractStatus = rec.contract_status || 'UNKNOWN';
-                const isGradeable = contractStatus === 'CURRENT';
                 
-                // Calculate accuracy from counts if available
-                const summary = rec.summary || {};
-                const matchedShadows = summary.matched_shadows || 0;
-                const matchedZombies = summary.matched_zombies || 0;
-                const farmShadows = summary.farm_shadows || 0;
-                const farmZombies = summary.farm_zombies || 0;
-                const totalMatched = matchedShadows + matchedZombies;
-                const totalExpected = farmShadows + farmZombies;
-                const accuracy = totalExpected > 0 ? Math.round(totalMatched / totalExpected * 100) : null;
-                
-                const accuracyColor = accuracy === null ? 'text-slate-500' 
-                    : accuracy >= 91 ? 'text-emerald-400' 
-                    : accuracy >= 71 ? 'text-amber-400' 
-                    : 'text-red-400';
-                const accuracyBg = accuracy === null ? 'bg-slate-800' 
-                    : accuracy >= 91 ? 'bg-emerald-900/40' 
-                    : accuracy >= 71 ? 'bg-amber-900/40' 
-                    : 'bg-red-900/40';
-                
-                const contractBadge = contractStatus === 'STALE_CONTRACT' 
+                const statusBadge = contractStatus === 'STALE_CONTRACT' 
                     ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-900/50 text-amber-400 ring-1 ring-amber-500/30">STALE</span>'
                     : contractStatus === 'INCONSISTENT_CONTRACT'
                     ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-red-900/50 text-red-400 ring-1 ring-red-500/30">INCONSISTENT</span>'
                     : getStatusBadge(rec.status);
                 
-                const missedCount = (summary.missed_shadows || 0) + (summary.missed_zombies || 0);
-                const fpCount = (summary.fp_shadows || 0) + (summary.fp_zombies || 0);
-                
                 return `
-                    <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer border-l-4 ${accuracy >= 91 ? 'border-emerald-500' : accuracy >= 71 ? 'border-amber-500' : accuracy !== null ? 'border-red-500' : 'border-slate-600'}" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
+                    <div class="p-3 hover:bg-slate-900/40 transition-colors cursor-pointer border-l-4 border-slate-600 hover:border-cyan-500" onclick="viewReconciliationReport('${rec.reconciliation_id}')">
                         <div class="flex items-center justify-between gap-4">
                             <div class="flex items-center gap-3">
-                                <div class="${accuracyBg} rounded-lg px-3 py-2 text-center min-w-[60px]">
-                                    <div class="${accuracyColor} font-bold text-lg">${accuracy !== null ? accuracy + '%' : '-'}</div>
-                                    <div class="text-[10px] text-slate-500 uppercase">Accuracy</div>
-                                </div>
-                                <div class="flex-1 min-w-0">
-                                    <div class="flex items-center gap-2 mb-1">
-                                        ${contractBadge}
-                                        <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
-                                    </div>
-                                    <div class="text-xs text-slate-500 flex items-center gap-3">
-                                        <span>${rec.snapshot_id.substring(0, 8)}</span>
-                                        ${totalExpected > 0 ? `<span class="text-emerald-400">${totalMatched} correct</span>` : ''}
-                                        ${missedCount > 0 ? `<span class="text-amber-400">${missedCount} missed</span>` : ''}
-                                        ${fpCount > 0 ? `<span class="text-red-400">${fpCount} FP</span>` : ''}
-                                    </div>
-                                </div>
+                                ${statusBadge}
+                                <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
+                                <span class="text-slate-600 text-xs">${rec.snapshot_id.substring(0, 8)}</span>
                             </div>
                             <div class="text-xs text-slate-500">${timeAgo}</div>
                         </div>
@@ -1038,10 +1002,11 @@
                             </div>
                         </div>
                         
-                        <!-- Overall Accuracy -->
-                        <div class="text-center py-4">
-                            <div class="${accType === 'good' ? 'text-emerald-400' : accType === 'warn' ? 'text-amber-400' : 'text-red-400'} text-5xl font-bold">${overallAcc}%</div>
-                            <div class="text-slate-400 text-sm mt-1">Overall Accuracy</div>
+                        <!-- Overall Accuracy - compact inline -->
+                        <div class="flex items-center justify-center gap-3 py-2 px-4 rounded-lg bg-slate-800/50">
+                            <span class="text-slate-400 text-sm">Accuracy:</span>
+                            <span class="${accType === 'good' ? 'text-emerald-400' : accType === 'warn' ? 'text-amber-400' : 'text-red-400'} text-2xl font-bold">${overallAcc}%</span>
+                            <span class="text-slate-500 text-xs">(${totalCorrect}/${totalExpected})</span>
                         </div>
                         
                         <!-- Shadow KPIs -->
