@@ -57,19 +57,79 @@
             </div>
         </header>
 
-        <nav class="flex gap-6 border-b border-slate-700 mb-6">
-            <button id="tabTesting" onclick="switchTab('testing')" class="pb-3 px-1 font-medium text-sm tab-active transition-colors">
-                Testing
-            </button>
-            <button id="tabConfig" onclick="switchTab('config')" class="pb-3 px-1 font-medium text-sm tab-inactive transition-colors">
-                Configuration
-            </button>
-        </nav>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div class="space-y-6">
+                <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
+                    <h2 class="text-lg font-semibold text-cyan-400 mb-4">Generate Snapshot</h2>
+                    
+                    <form id="snapshotForm" class="space-y-4">
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Scale</label>
+                                <select id="scale" 
+                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                    <option value="small">Small</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="large">Large</option>
+                                    <option value="enterprise">Enterprise</option>
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Enterprise</label>
+                                <select id="enterpriseProfile" 
+                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                    <option value="modern_saas" selected>Modern SaaS</option>
+                                    <option value="regulated_finance">Regulated Finance</option>
+                                    <option value="healthcare_provider">Healthcare</option>
+                                    <option value="global_manufacturing">Manufacturing</option>
+                                </select>
+                            </div>
+                            
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Realism</label>
+                                <select id="realismProfile" 
+                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                    <option value="clean">Clean</option>
+                                    <option value="typical" selected>Typical</option>
+                                    <option value="messy">Messy</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <button type="submit" id="generateBtn"
+                            class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 cyan-glow">
+                            Generate Snapshot
+                        </button>
+                    </form>
+                </div>
 
-        <div id="testingTab">
-            <div class="bg-slate-800/60 rounded-xl border border-slate-700 max-w-3xl">
+                <div class="bg-slate-800/60 rounded-xl border border-slate-700">
+                    <div class="flex items-center justify-between p-4 border-b border-slate-700">
+                        <h2 class="text-lg font-semibold text-purple-400">Snapshots</h2>
+                        <div class="flex items-center gap-3">
+                            <div id="eraseNormal">
+                                <button onclick="showEraseConfirm()" class="text-xs px-2 py-1 bg-red-900/40 hover:bg-red-800/60 text-red-400 rounded border border-red-800/50 transition-colors">
+                                    Erase All
+                                </button>
+                            </div>
+                            <div id="eraseConfirm" class="hidden flex items-center gap-2">
+                                <span class="text-xs text-red-400">Sure?</span>
+                                <button onclick="doEraseAll()" class="text-xs px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded transition-colors">Yes</button>
+                                <button onclick="hideEraseConfirm()" class="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors">No</button>
+                            </div>
+                            <span class="text-xs text-slate-500"><span id="configSnapshotCount">0</span></span>
+                        </div>
+                    </div>
+                    <div id="configSnapshotsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-420px)] overflow-y-auto">
+                        <div class="text-slate-500 text-center py-12">Loading snapshots...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-slate-800/60 rounded-xl border border-slate-700">
                 <div class="flex items-center justify-between p-4 border-b border-slate-700">
-                    <h2 class="text-lg font-semibold text-purple-400">Reconciliation Results</h2>
+                    <h2 class="text-lg font-semibold text-purple-400">Reconciliations</h2>
                     <div class="flex gap-2">
                         <select id="filterReconcileStatus" onchange="renderReconciliationsList()" class="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
                             <option value="">All Status</option>
@@ -81,80 +141,6 @@
                 </div>
                 <div id="reconciliationsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-220px)] overflow-y-auto">
                     <div class="text-slate-500 text-center py-12">Loading reconciliations...</div>
-                </div>
-            </div>
-        </div>
-
-
-        <div id="configTab" class="hidden">
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-1">
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700 sticky top-4">
-                        <h2 class="text-lg font-semibold text-cyan-400 mb-4">Generate Snapshot</h2>
-                        
-                        <form id="snapshotForm" class="space-y-4">
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Scale</label>
-                                <select id="scale" 
-                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="small">Small</option>
-                                    <option value="medium" selected>Medium</option>
-                                    <option value="large">Large</option>
-                                    <option value="enterprise">Enterprise</option>
-                                </select>
-                            </div>
-                            
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Enterprise Profile</label>
-                                <select id="enterpriseProfile" 
-                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="modern_saas" selected>Modern SaaS</option>
-                                    <option value="regulated_finance">Regulated Finance</option>
-                                    <option value="healthcare_provider">Healthcare Provider</option>
-                                    <option value="global_manufacturing">Global Manufacturing</option>
-                                </select>
-                            </div>
-                            
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Realism Profile</label>
-                                <select id="realismProfile" 
-                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="clean">Clean</option>
-                                    <option value="typical" selected>Typical</option>
-                                    <option value="messy">Messy</option>
-                                </select>
-                            </div>
-                            
-                            <button type="submit" id="generateBtn"
-                                class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 cyan-glow">
-                                Generate Snapshot
-                            </button>
-                        </form>
-                    </div>
-                </div>
-
-                <div class="lg:col-span-2">
-                    <div class="bg-slate-800/60 rounded-xl border border-slate-700">
-                        <div class="flex items-center justify-between p-4 border-b border-slate-700">
-                            <h2 class="text-lg font-semibold text-purple-400">Snapshot Browser</h2>
-                            <div class="flex items-center gap-3">
-                                <div id="eraseNormal">
-                                    <button onclick="showEraseConfirm()" class="text-xs px-2 py-1 bg-red-900/40 hover:bg-red-800/60 text-red-400 rounded border border-red-800/50 transition-colors">
-                                        Erase All
-                                    </button>
-                                </div>
-                                <div id="eraseConfirm" class="hidden flex items-center gap-2">
-                                    <span class="text-xs text-red-400">Sure?</span>
-                                    <button onclick="doEraseAll()" class="text-xs px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded transition-colors">Yes</button>
-                                    <button onclick="hideEraseConfirm()" class="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors">No</button>
-                                </div>
-                                <span class="text-xs text-slate-500"><span id="configSnapshotCount">0</span> snapshots</span>
-                            </div>
-                        </div>
-                        <div id="configSnapshotsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-200px)] overflow-y-auto">
-                            <div class="text-slate-500 text-center py-12">Loading snapshots...</div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
@@ -280,29 +266,6 @@
         
         function generateSeed() {
             return Math.floor(Math.random() * 1000000);
-        }
-
-        function switchTab(tab) {
-            const testingTab = document.getElementById('testingTab');
-            const configTab = document.getElementById('configTab');
-            const tabTesting = document.getElementById('tabTesting');
-            const tabConfig = document.getElementById('tabConfig');
-            
-            const inactive = 'pb-3 px-1 font-medium text-sm tab-inactive transition-colors';
-            const active = 'pb-3 px-1 font-medium text-sm tab-active transition-colors';
-            
-            testingTab.classList.add('hidden');
-            configTab.classList.add('hidden');
-            tabTesting.className = inactive;
-            tabConfig.className = inactive;
-            
-            if (tab === 'testing') {
-                testingTab.classList.remove('hidden');
-                tabTesting.className = active;
-            } else {
-                configTab.classList.remove('hidden');
-                tabConfig.className = active;
-            }
         }
 
         function closeModal(id) {
