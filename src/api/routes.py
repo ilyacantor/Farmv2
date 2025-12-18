@@ -271,6 +271,11 @@ async def init_db():
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_fingerprint ON runs(run_fingerprint)")
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_tenant ON runs(tenant_id)")
         
+        try:
+            await conn.execute("ALTER TABLE snapshots ADD COLUMN IF NOT EXISTS data_preset TEXT")
+        except Exception:
+            pass
+        
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS reconciliations (
                 reconciliation_id TEXT PRIMARY KEY,
@@ -345,11 +350,12 @@ async def create_snapshot(request: SnapshotRequest):
                 request.enterprise_profile.value, request.realism_profile.value, request.scale.value, request.tenant_id)
             
             await conn.execute("""
-                INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, data_preset, created_at, schema_version, snapshot_json)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             """, unique_snapshot_id, run_id, 0, fingerprint,
                 snapshot.meta.tenant_id, snapshot.meta.seed, snapshot.meta.scale.value,
                 snapshot.meta.enterprise_profile.value, snapshot.meta.realism_profile.value,
+                request.data_preset.value if request.data_preset else None,
                 snapshot.meta.created_at, SCHEMA_VERSION, json.dumps(snapshot_dict))
     
     return SnapshotCreateResponse(
@@ -426,12 +432,12 @@ async def list_snapshots(
     async with pool.acquire() as conn:
         if tenant_id:
             rows = await conn.fetch(
-                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2",
+                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, data_preset, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2",
                 tenant_id, limit
             )
         else:
             rows = await conn.fetch(
-                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT $1",
+                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, data_preset, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT $1",
                 limit
             )
         
@@ -444,6 +450,7 @@ async def list_snapshots(
                 scale=row["scale"],
                 enterprise_profile=row["enterprise_profile"],
                 realism_profile=row["realism_profile"],
+                data_preset=row["data_preset"],
                 created_at=row["created_at"],
                 schema_version=row["schema_version"],
             )

@@ -330,6 +330,7 @@ class SnapshotMetadata(BaseModel):
     scale: str
     enterprise_profile: str
     realism_profile: str
+    data_preset: Optional[str] = None
     created_at: str
     schema_version: str = SCHEMA_VERSION
 
