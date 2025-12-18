@@ -945,11 +945,14 @@
             
             const summary = analysis.summary || {};
             const expected = isShadow ? summary.farm_shadows : summary.farm_zombies;
-            const found = isShadow ? summary.aod_shadows : summary.aod_zombies;
+            // "Found" = AOD's effective contribution at domain level (matched + false positives)
             const correct = matched.length;
             const fpCount = falsePos.length;
+            const found = correct + fpCount;
             const missedCount = missed.length;
-            const accuracy = expected > 0 ? Math.round(correct / expected * 100) : 100;
+            // Accuracy: matched / (expected + false_positives) - FPs penalize the grade
+            const denominator = expected + fpCount;
+            const accuracy = denominator > 0 ? Math.round(correct / denominator * 100) : 100;
             
             const contentId = isShadow ? 'shadowAssetContent' : 'zombieAssetContent';
             const gradeable = analysis.gradeable !== false;
