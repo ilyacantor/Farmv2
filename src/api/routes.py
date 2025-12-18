@@ -1018,21 +1018,22 @@ async def create_reconciliation(request: Request):
     )
     report_text, _ = generate_reconcile_report(parsed_request.aod_summary, parsed_request.aod_lists, farm_expectations)
     
-    # Derive status from the same analysis as verdict (domain-first normalization)
+    # Derive status from accuracy percentage
     analysis = build_reconciliation_analysis(snapshot, raw_json, expected_block)
-    total_missed = len(analysis.get('missed_shadows', [])) + len(analysis.get('missed_zombies', []))
-    total_fp = len(analysis.get('false_positive_shadows', [])) + len(analysis.get('false_positive_zombies', []))
+    accuracy = analysis.get('accuracy')
     
-    # Status logic aligned with verdict:
-    # PASS = PERFECT (0 missed, 0 FP)
-    # WARN = GOOD (0 missed, has FP) 
-    # FAIL = NEEDS WORK (has missed)
-    if total_missed > 0:
+    # Status thresholds based on accuracy:
+    # PASS = 91%+ accuracy
+    # WARN = 81-90% accuracy
+    # FAIL = below 80% accuracy
+    if accuracy is None:
         status = ReconcileStatusEnum.FAIL
-    elif total_fp > 0:
+    elif accuracy >= 91:
+        status = ReconcileStatusEnum.PASS
+    elif accuracy >= 81:
         status = ReconcileStatusEnum.WARN
     else:
-        status = ReconcileStatusEnum.PASS
+        status = ReconcileStatusEnum.FAIL
     
     reconciliation_id = str(uuid.uuid4())
     created_at = datetime.utcnow().isoformat() + "Z"
