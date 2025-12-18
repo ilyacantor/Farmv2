@@ -1800,7 +1800,10 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         analysis['gradeable'] = True
         analysis['payload_version'] = payload_version
         analysis['verdict'] = verdict
-        analysis['accuracy'] = round(total_matched / total_expected * 100, 1) if total_expected > 0 else 100.0
+        # Accuracy formula: matched / (expected + false_positives)
+        # False positives dilute the denominator, reducing the grade
+        denominator = total_expected + total_fp
+        analysis['accuracy'] = round(total_matched / denominator * 100, 1) if denominator > 0 else 100.0
     
     return analysis
 
