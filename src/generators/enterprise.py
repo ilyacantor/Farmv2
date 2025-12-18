@@ -37,6 +37,8 @@ from src.models.planes import (
     ScaleEnum,
     EnterpriseProfileEnum,
     RealismProfileEnum,
+    DataPresetEnum,
+    PresetConfig,
 )
 
 
@@ -155,6 +157,49 @@ FIRST_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Hen
                "Kate", "Leo", "Maya", "Noah", "Olivia", "Peter", "Quinn", "Rachel", "Sam", "Tina"]
 LAST_NAMES = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis", "Rodriguez", "Martinez"]
 
+JUNK_DOMAIN_PREFIXES = [
+    "cdn", "static", "assets", "img", "images", "media", "cache", "api", "edge", "lb",
+    "tracker", "analytics", "pixel", "ads", "adserver", "tag", "beacon", "collect",
+    "telemetry", "metrics", "log", "crash", "error", "report", "sentry", "bugsnag",
+    "fonts", "script", "widget", "embed", "iframe", "sdk", "lib", "plugin",
+    "auth", "login", "sso", "oauth", "identity", "session", "token", "verify",
+]
+JUNK_DOMAIN_SUFFIXES = [
+    "cdn.com", "cloud.net", "services.io", "api.co", "platform.io", "tech.net",
+    "app.co", "data.io", "sys.net", "hub.io", "edge.com", "fast.io", "quick.net",
+    "global.com", "world.net", "smart.io", "pro.co", "plus.net", "max.io",
+]
+
+NEAR_COLLISION_PAIRS = [
+    ("slack.com", ["s1ack.com", "slackapp.com", "slack-hq.com", "slackteam.io"]),
+    ("salesforce.com", ["salesf0rce.com", "salesforce-crm.com", "sfdc.io", "salesforce.io"]),
+    ("dropbox.com", ["dr0pbox.com", "dropbox-files.com", "dropboxusercontent.io"]),
+    ("google.com", ["g00gle.com", "google-apis.io", "googleusercontent.net"]),
+    ("microsoft.com", ["micros0ft.com", "msft-cloud.com", "microsoft365.io"]),
+    ("atlassian.net", ["at1assian.com", "atlassian-jira.io", "confluence-atlassian.com"]),
+    ("zoom.us", ["z00m.us", "zoom-video.com", "zoomapp.io", "zoom-meetings.net"]),
+    ("hubspot.com", ["hubsp0t.com", "hubspot-crm.io", "hs-analytics.com"]),
+    ("github.com", ["g1thub.com", "github-api.io", "githubusercontent.net"]),
+    ("okta.com", ["0kta.com", "okta-sso.io", "okta-identity.com"]),
+]
+
+MULTI_DOMAIN_PRODUCTS = [
+    {"name": "Microsoft 365", "domains": ["microsoft.com", "office.com", "office365.com", "sharepoint.com", "outlook.com"]},
+    {"name": "Google Workspace", "domains": ["google.com", "googleapis.com", "gstatic.com", "googleusercontent.com"]},
+    {"name": "Salesforce", "domains": ["salesforce.com", "force.com", "salesforceliveagent.com", "lightning.force.com"]},
+    {"name": "Adobe Creative Cloud", "domains": ["adobe.com", "adobelogin.com", "typekit.net", "behance.net"]},
+    {"name": "Atlassian Suite", "domains": ["atlassian.net", "atlassian.com", "bitbucket.org", "trello.com"]},
+    {"name": "AWS", "domains": ["amazonaws.com", "aws.amazon.com", "awsstatic.com", "cloudfront.net"]},
+    {"name": "Cloudflare", "domains": ["cloudflare.com", "cloudflareinsights.com", "workers.dev", "pages.dev"]},
+]
+
+MARKETPLACE_RESELLERS = [
+    {"reseller": "CDW", "vendors": ["Microsoft", "Adobe", "Cisco", "VMware"]},
+    {"reseller": "SHI International", "vendors": ["Microsoft", "Adobe", "ServiceNow", "Splunk"]},
+    {"reseller": "Insight Enterprises", "vendors": ["Microsoft", "AWS", "Google", "VMware"]},
+    {"reseller": "Connection", "vendors": ["Microsoft", "Cisco", "Dell", "HP"]},
+]
+
 
 class EnterpriseGenerator:
     def __init__(
@@ -165,12 +210,15 @@ class EnterpriseGenerator:
         enterprise_profile: EnterpriseProfileEnum,
         realism_profile: RealismProfileEnum,
         snapshot_time: Optional[datetime] = None,
+        data_preset: Optional[DataPresetEnum] = None,
     ):
         self.tenant_id = tenant_id
         self.seed = seed
         self.scale = scale
         self.enterprise_profile = enterprise_profile
         self.realism_profile = realism_profile
+        self.data_preset = data_preset
+        self.preset_config = PresetConfig.from_preset(data_preset) if data_preset else None
         self.rng = random.Random(seed)
         self.run_id = self._generate_uuid()
         self.base_date = snapshot_time if snapshot_time else datetime.utcnow()
@@ -189,6 +237,9 @@ class EnterpriseGenerator:
         self._zombie_services: list[dict] = []
         self._internal_services: list[dict] = []
         self._datastores: list[dict] = []
+        self._junk_domains: list[dict] = []
+        self._near_collisions: list[dict] = []
+        self._aliased_products: list[dict] = []
 
     def _generate_uuid(self) -> str:
         return str(uuid.UUID(int=self.rng.getrandbits(128), version=4))
@@ -308,6 +359,67 @@ class EnterpriseGenerator:
         
         num_zombie_svcs = min(len(ZOMBIE_INTERNAL_SERVICES), max(2, mult // 2))
         self._zombie_services = self.rng.sample(ZOMBIE_INTERNAL_SERVICES, num_zombie_svcs)
+        
+        if self.preset_config:
+            self._init_preset_data()
+
+    def _init_preset_data(self):
+        """Initialize data based on preset configuration knobs."""
+        if not self.preset_config:
+            return
+            
+        config = self.preset_config
+        
+        for _ in range(config.junk_domain_count):
+            prefix = self.rng.choice(JUNK_DOMAIN_PREFIXES)
+            suffix = self.rng.choice(JUNK_DOMAIN_SUFFIXES)
+            rand_num = self.rng.randint(1, 999)
+            domain = f"{prefix}{rand_num}.{suffix}"
+            self._junk_domains.append({
+                "domain": domain,
+                "name": f"{prefix.title()}{rand_num}",
+                "category": "junk"
+            })
+        
+        if config.near_collision_count > 0:
+            pairs_to_use = self.rng.sample(NEAR_COLLISION_PAIRS, min(len(NEAR_COLLISION_PAIRS), config.near_collision_count // 4 + 1))
+            count = 0
+            for real_domain, collisions in pairs_to_use:
+                for collision in collisions:
+                    if count >= config.near_collision_count:
+                        break
+                    self._near_collisions.append({
+                        "domain": collision,
+                        "real_domain": real_domain,
+                        "name": collision.split('.')[0].replace('-', ' ').title(),
+                        "category": "near_collision"
+                    })
+                    count += 1
+        
+        if config.aliasing_rate > 0:
+            num_aliased = int(len(self._saas_selection) * config.aliasing_rate)
+            products_to_alias = self.rng.sample(MULTI_DOMAIN_PRODUCTS, min(len(MULTI_DOMAIN_PRODUCTS), num_aliased))
+            for product in products_to_alias:
+                extra_domains = product["domains"][1:]
+                for extra_domain in self.rng.sample(extra_domains, min(len(extra_domains), 2)):
+                    self._aliased_products.append({
+                        "name": product["name"],
+                        "domain": extra_domain,
+                        "primary_domain": product["domains"][0],
+                        "category": "alias"
+                    })
+
+    def _should_include_domain(self) -> bool:
+        """Determine if domain should be included based on preset coverage."""
+        if not self.preset_config:
+            return True
+        return self.rng.random() < self.preset_config.domain_coverage
+
+    def _should_create_conflict(self) -> bool:
+        """Determine if cross-plane conflict should be created based on preset."""
+        if not self.preset_config:
+            return False
+        return self.rng.random() < self.preset_config.conflict_rate
 
     def generate_discovery_plane(self) -> DiscoveryPlane:
         observations = []
@@ -407,6 +519,49 @@ class EnterpriseGenerator:
                 raw={"status": "deprecated"},
             )
             observations.append(obs)
+        
+        for junk in self._junk_domains:
+            num_obs = self.rng.randint(1, 3)
+            for _ in range(num_obs):
+                obs = DiscoveryObservation(
+                    observation_id=self._generate_uuid(),
+                    observed_at=self._random_activity_date(),
+                    source=self.rng.choice([SourceEnum.dns, SourceEnum.proxy, SourceEnum.browser]),
+                    observed_name=junk["name"],
+                    domain=junk["domain"] if self._should_include_domain() else None,
+                    category_hint=CategoryHintEnum.unknown,
+                    environment_hint=EnvironmentHintEnum.unknown,
+                    raw={"type": "junk", "bytes": self.rng.randint(100, 10000)},
+                )
+                observations.append(obs)
+        
+        for collision in self._near_collisions:
+            obs = DiscoveryObservation(
+                observation_id=self._generate_uuid(),
+                observed_at=self._random_activity_date(),
+                source=self.rng.choice([SourceEnum.dns, SourceEnum.browser]),
+                observed_name=collision["name"],
+                domain=collision["domain"],
+                category_hint=CategoryHintEnum.saas,
+                environment_hint=EnvironmentHintEnum.unknown,
+                raw={"type": "near_collision", "real_domain": collision["real_domain"]},
+            )
+            observations.append(obs)
+        
+        for alias in self._aliased_products:
+            num_obs = self.rng.randint(1, 3) * mult
+            for _ in range(num_obs):
+                obs = DiscoveryObservation(
+                    observation_id=self._generate_uuid(),
+                    observed_at=self._random_activity_date(),
+                    source=self.rng.choice(list(SourceEnum)),
+                    observed_name=self._apply_name_drift(alias["name"]),
+                    domain=alias["domain"],
+                    category_hint=CategoryHintEnum.saas,
+                    environment_hint=self.rng.choice(list(EnvironmentHintEnum)),
+                    raw={"type": "alias", "primary": alias["primary_domain"]},
+                )
+                observations.append(obs)
         
         return DiscoveryPlane(observations=observations)
 
