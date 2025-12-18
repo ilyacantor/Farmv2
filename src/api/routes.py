@@ -42,7 +42,6 @@ INFRASTRUCTURE_DOMAINS = {
     'redis.com',
     'mongodb.com',
     'elastic.co',
-    'elasticsearch.com',
     'kafka.apache.org',
     'nginx.org',
     'docker.com',
