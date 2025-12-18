@@ -142,6 +142,38 @@ A simple Farm Console UI is provided via `templates/index.html`.
 - **Error Handling:** Emphasizes failing loudly with explicit error statuses (e.g., `UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`) instead of silent fallbacks.
 - **Configuration:** Supports `Scale` (small, medium, large, enterprise), `Enterprise Profile` (modern_saas, regulated_finance, healthcare_provider, global_manufacturing), and `Realism Profile` (clean, typical, messy).
 
+## Data Presets
+
+Data presets provide 3-tier challenge levels for testing AOD detection quality under varying data quality conditions. Each preset controls 5 knobs:
+
+| Preset | Domain Coverage | Conflict Rate | Junk Domains | Near-Collisions | Aliasing Rate |
+|--------|----------------|---------------|--------------|-----------------|---------------|
+| `clean_baseline` | 95% | 5% | 0 | 0 | 0% |
+| `enterprise_mess` | 70% | 20% | 200 | 0 | 10% |
+| `adversarial` | 50% | 35% | 750 | 50 | 25% |
+
+**Knob Definitions:**
+- **Domain Coverage:** Probability that a domain field is populated in observations
+- **Conflict Rate:** Probability of cross-plane data conflicts (e.g., mismatched vendor names)
+- **Junk Domains:** Number of synthetic CDN/tracker/analytics domains to inject
+- **Near-Collisions:** Number of typosquat/phishing-like domains (e.g., `s1ack.com` vs `slack.com`)
+- **Aliasing Rate:** Probability of multi-domain product aliasing (e.g., `office.com` and `microsoft.com` being the same product)
+
+**Junk Domain Examples:**
+- CDN/static assets: `cdn123.cloud.net`, `static456.fast.io`
+- Trackers/analytics: `tracker789.data.io`, `pixel101.hub.io`
+- Auth/SSO services: `auth202.services.io`, `login303.platform.io`
+
+**Near-Collision Examples:**
+- `s1ack.com` (typosquat of `slack.com`)
+- `salesf0rce.com` (typosquat of `salesforce.com`)
+- `g1thub.com` (typosquat of `github.com`)
+
+**Multi-Domain Product Aliases:**
+- Microsoft 365: `microsoft.com`, `office.com`, `office365.com`, `sharepoint.com`, `outlook.com`
+- Google Workspace: `google.com`, `googleapis.com`, `gstatic.com`, `googleusercontent.com`
+- Atlassian Suite: `atlassian.net`, `atlassian.com`, `bitbucket.org`, `trello.com`
+
 ## External Dependencies
 
 - **Database:** Supabase Postgres (exclusively).
