@@ -1572,6 +1572,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'farm_zombies': len(farm_zombies),
             'aod_shadows': len(aod_shadows),
             'aod_zombies': len(aod_zombies),
+            # Domain-level counts (for reconciliation - collapses duplicates)
             'aod_shadow_domains': len(aod_shadow_domain_keys),
             'aod_zombie_domains': len(aod_zombie_domain_keys),
         },
@@ -1587,11 +1588,6 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         'false_positive_shadows': [],
         'false_positive_zombies': [],
     }
-    
-    asset_id_counter = [0]
-    def next_asset_id(prefix):
-        asset_id_counter[0] += 1
-        return f"{prefix}-{asset_id_counter[0]:04d}"
     
     def get_aod_reasons(key):
         """Get AOD's reason codes for a key, checking normalized variants."""
@@ -1624,7 +1620,6 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             variants = shadow_domain_variants.get(aod_domain_matched, [])
             asset_analysis = generate_asset_analysis('matched_shadow', key, reasons, rca, aod_key_reasons)
             analysis['matched_shadows'].append({
-                'asset_id': next_asset_id('ms'),
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': aod_key_reasons,
@@ -1642,7 +1637,6 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             effective_rca = 'KEY_NORMALIZATION_MISMATCH' if is_key_drift else rca
             asset_analysis = generate_asset_analysis('shadow_missed', key, reasons, effective_rca, [])
             analysis['missed_shadows'].append({
-                'asset_id': next_asset_id('xs'),
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': [],
@@ -1668,7 +1662,6 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             variants = zombie_domain_variants.get(aod_domain_matched, [])
             asset_analysis = generate_asset_analysis('matched_zombie', key, reasons, rca, aod_key_reasons)
             analysis['matched_zombies'].append({
-                'asset_id': next_asset_id('mz'),
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': aod_key_reasons,
@@ -1686,7 +1679,6 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             effective_rca = 'KEY_NORMALIZATION_MISMATCH' if is_key_drift else rca
             asset_analysis = generate_asset_analysis('zombie_missed', key, reasons, effective_rca, [])
             analysis['missed_zombies'].append({
-                'asset_id': next_asset_id('xz'),
                 'asset_key': key,
                 'farm_reason_codes': reasons,
                 'aod_reason_codes': [],
@@ -1716,7 +1708,6 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             asset_analysis = generate_asset_analysis('false_positive_shadow', domain_key, farm_reasons, None, aod_key_reasons)
             investigation = investigate_fp_shadow(domain_key, aod_key_reasons, snapshot) if aod_key_reasons else None
             analysis['false_positive_shadows'].append({
-                'asset_id': next_asset_id('fps'),
                 'asset_key': domain_key,
                 'farm_classification': farm_class,
                 'farm_reason_codes': farm_reasons,
@@ -1741,7 +1732,6 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             asset_analysis = generate_asset_analysis('false_positive_zombie', domain_key, farm_reasons, None, aod_key_reasons)
             investigation = investigate_fp_zombie(domain_key, aod_key_reasons, snapshot) if aod_key_reasons else None
             analysis['false_positive_zombies'].append({
-                'asset_id': next_asset_id('fpz'),
                 'asset_key': domain_key,
                 'farm_classification': farm_class,
                 'farm_reason_codes': farm_reasons,
@@ -1838,16 +1828,9 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
                 cached_analysis = rec_row["analysis_json"]
             except (KeyError, TypeError):
                 pass
-        
-        analysis = None
         if cached_analysis:
             analysis = json.loads(cached_analysis)
-            # Check if cache is stale (missing asset_id field added later)
-            matched = analysis.get('matched_shadows', [])
-            if matched and not matched[0].get('asset_id'):
-                analysis = None  # Force recompute
-        
-        if not analysis:
+        else:
             aod_payload = json.loads(rec_row["aod_payload_json"])
             farm_exp = json.loads(rec_row["farm_expectations_json"])
             
@@ -1932,15 +1915,9 @@ async def download_reconciliation_diff(
         except (KeyError, TypeError):
             pass
         
-        analysis = None
         if cached_analysis:
             analysis = json.loads(cached_analysis)
-            # Check if cache is stale (missing asset_id field)
-            matched = analysis.get('matched_shadows', [])
-            if matched and not matched[0].get('asset_id'):
-                analysis = None
-        
-        if not analysis:
+        else:
             aod_payload = json.loads(rec_row["aod_payload_json"])
             farm_exp = json.loads(rec_row["farm_expectations_json"])
             
@@ -1956,7 +1933,6 @@ async def download_reconciliation_diff(
     
     for item in analysis.get('matched_shadows', []):
         rows.append({
-            'asset_id': item.get('asset_id', ''),
             'category': 'shadow',
             'result': 'matched',
             'asset_key': item.get('asset_key', ''),
@@ -1970,7 +1946,6 @@ async def download_reconciliation_diff(
     
     for item in analysis.get('matched_zombies', []):
         rows.append({
-            'asset_id': item.get('asset_id', ''),
             'category': 'zombie',
             'result': 'matched',
             'asset_key': item.get('asset_key', ''),
@@ -1984,7 +1959,6 @@ async def download_reconciliation_diff(
     
     for item in analysis.get('missed_shadows', []):
         rows.append({
-            'asset_id': item.get('asset_id', ''),
             'category': 'shadow',
             'result': 'missed_by_aod',
             'asset_key': item.get('asset_key', ''),
@@ -1999,7 +1973,6 @@ async def download_reconciliation_diff(
     
     for item in analysis.get('missed_zombies', []):
         rows.append({
-            'asset_id': item.get('asset_id', ''),
             'category': 'zombie',
             'result': 'missed_by_aod',
             'asset_key': item.get('asset_key', ''),
@@ -2015,7 +1988,6 @@ async def download_reconciliation_diff(
     for item in analysis.get('false_positive_shadows', []):
         investigation = item.get('farm_investigation', {})
         rows.append({
-            'asset_id': item.get('asset_id', ''),
             'category': 'shadow',
             'result': 'false_positive',
             'asset_key': item.get('asset_key', ''),
@@ -2032,7 +2004,6 @@ async def download_reconciliation_diff(
     for item in analysis.get('false_positive_zombies', []):
         investigation = item.get('farm_investigation', {})
         rows.append({
-            'asset_id': item.get('asset_id', ''),
             'category': 'zombie',
             'result': 'false_positive',
             'asset_key': item.get('asset_key', ''),
@@ -2065,7 +2036,7 @@ async def download_reconciliation_diff(
             headers={"Content-Disposition": f"attachment; filename=reconcile_{reconciliation_id}.json"}
         )
     
-    headers = ['asset_id', 'category', 'result', 'asset_key', 'farm_reason_codes', 'aod_reason_codes', 
+    headers = ['category', 'result', 'asset_key', 'farm_reason_codes', 'aod_reason_codes', 
                'rca_hint', 'headline', 'farm_detail', 'aod_detail', 'aod_decision',
                'farm_investigation', 'investigation_findings']
     
