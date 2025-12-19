@@ -820,6 +820,7 @@
         function switchRecView(view) {
             if (!currentRecData) return;
             currentRecView = view;
+            const { analysis } = currentRecData;
             
             document.querySelectorAll('[data-view-btn]').forEach(el => {
                 el.classList.toggle('bg-white/10', el.dataset.viewBtn === view);
@@ -830,16 +831,34 @@
             const shadowContent = document.getElementById('shadowAssetContent');
             const zombieContent = document.getElementById('zombieAssetContent');
             
-            // Clear active category first, then re-render to force refresh with new view
-            if (shadowContent && shadowContent.dataset.activeCategory) {
-                const cat = shadowContent.dataset.activeCategory;
-                shadowContent.dataset.activeCategory = '';
-                toggleAssetCategory('shadow', cat);
-            }
-            if (zombieContent && zombieContent.dataset.activeCategory) {
-                const cat = zombieContent.dataset.activeCategory;
-                zombieContent.dataset.activeCategory = '';
-                toggleAssetCategory('zombie', cat);
+            // Reset active categories
+            activeShadowCategory = '';
+            activeZombieCategory = '';
+            
+            if (view === 'asset') {
+                // Show KPI-click prompt for asset view
+                if (shadowContent) {
+                    shadowContent.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Click a metric above to view assets</div>';
+                }
+                if (zombieContent) {
+                    zombieContent.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Click a metric above to view assets</div>';
+                }
+            } else {
+                // RCA view: show full chart + grouped misalignments
+                if (shadowContent) {
+                    shadowContent.innerHTML = renderRcaView(
+                        analysis.matched_shadows || [],
+                        analysis.missed_shadows || [],
+                        analysis.false_positive_shadows || []
+                    );
+                }
+                if (zombieContent) {
+                    zombieContent.innerHTML = renderRcaView(
+                        analysis.matched_zombies || [],
+                        analysis.missed_zombies || [],
+                        analysis.false_positive_zombies || []
+                    );
+                }
             }
         }
         
@@ -901,7 +920,9 @@
                 colorClass = 'amber';
             }
             
-            container.dataset.activeCategory = category;
+            // Update active category tracking
+            if (isShadow) activeShadowCategory = category;
+            else activeZombieCategory = category;
             
             if (items.length === 0) {
                 container.innerHTML = `<div class="text-center py-8 text-slate-500 text-sm">No ${title.toLowerCase()} assets</div>`;
