@@ -1838,9 +1838,16 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
                 cached_analysis = rec_row["analysis_json"]
             except (KeyError, TypeError):
                 pass
+        
+        analysis = None
         if cached_analysis:
             analysis = json.loads(cached_analysis)
-        else:
+            # Check if cache is stale (missing asset_id field added later)
+            matched = analysis.get('matched_shadows', [])
+            if matched and not matched[0].get('asset_id'):
+                analysis = None  # Force recompute
+        
+        if not analysis:
             aod_payload = json.loads(rec_row["aod_payload_json"])
             farm_exp = json.loads(rec_row["farm_expectations_json"])
             
@@ -1925,9 +1932,15 @@ async def download_reconciliation_diff(
         except (KeyError, TypeError):
             pass
         
+        analysis = None
         if cached_analysis:
             analysis = json.loads(cached_analysis)
-        else:
+            # Check if cache is stale (missing asset_id field)
+            matched = analysis.get('matched_shadows', [])
+            if matched and not matched[0].get('asset_id'):
+                analysis = None
+        
+        if not analysis:
             aod_payload = json.loads(rec_row["aod_payload_json"])
             farm_exp = json.loads(rec_row["farm_expectations_json"])
             
