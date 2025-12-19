@@ -828,11 +828,16 @@
             const shadowContent = document.getElementById('shadowAssetContent');
             const zombieContent = document.getElementById('zombieAssetContent');
             
+            // Clear active category first, then re-render to force refresh with new view
             if (shadowContent && shadowContent.dataset.activeCategory) {
-                toggleAssetCategory('shadow', shadowContent.dataset.activeCategory);
+                const cat = shadowContent.dataset.activeCategory;
+                shadowContent.dataset.activeCategory = '';
+                toggleAssetCategory('shadow', cat);
             }
             if (zombieContent && zombieContent.dataset.activeCategory) {
-                toggleAssetCategory('zombie', zombieContent.dataset.activeCategory);
+                const cat = zombieContent.dataset.activeCategory;
+                zombieContent.dataset.activeCategory = '';
+                toggleAssetCategory('zombie', cat);
             }
         }
         
