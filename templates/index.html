@@ -801,6 +801,8 @@
         }
         
         let currentRecData = null;
+        let activeShadowCategory = '';
+        let activeZombieCategory = '';
         
         function switchRecTab(tab) {
             document.querySelectorAll('[data-rec-tab]').forEach(el => {
@@ -861,7 +863,7 @@
             `;
         }
         
-        function toggleAssetCategory(type, category) {
+        function toggleAssetCategory(type, category, forceRender = false) {
             if (!currentRecData) return;
             const { analysis } = currentRecData;
             const isShadow = type === 'shadow';
@@ -869,10 +871,11 @@
             const container = document.getElementById(contentId);
             if (!container) return;
             
-            const currentCategory = container.dataset.activeCategory;
-            if (currentCategory === category) {
+            const currentCategory = isShadow ? activeShadowCategory : activeZombieCategory;
+            if (currentCategory === category && !forceRender) {
                 container.innerHTML = '<div class="text-center py-8 text-slate-500 text-sm">Click a metric above to view assets</div>';
-                container.dataset.activeCategory = '';
+                if (isShadow) activeShadowCategory = '';
+                else activeZombieCategory = '';
                 return;
             }
             
