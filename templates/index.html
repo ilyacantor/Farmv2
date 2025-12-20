@@ -412,14 +412,19 @@
                         aodAssetSummariesCache = fullRec.aod_lists?.asset_summaries || {};
                         
                         const farmShadows = new Set((fullRec.farm_expectations?.shadow_keys || []).map(k => k.toLowerCase()));
+                        const aodKnownKeys = new Set(Object.keys(aodAssetSummariesCache).map(k => k.toLowerCase()));
                         const aodShadows = new Set();
                         for (const [k, v] of Object.entries(aodAssetSummariesCache)) {
                             if (v && (v.is_shadow === true || v.classification === 'shadow')) {
                                 aodShadows.add(k.toLowerCase());
                             }
                         }
-                        farmShadows.forEach(k => { if (!aodShadows.has(k)) mismatchKeysCache.add(k); });
-                        aodShadows.forEach(k => { if (!farmShadows.has(k)) mismatchKeysCache.add(k); });
+                        farmShadows.forEach(k => { 
+                            if (aodKnownKeys.has(k) && !aodShadows.has(k)) mismatchKeysCache.add(k);
+                        });
+                        aodShadows.forEach(k => { 
+                            if (!farmShadows.has(k)) mismatchKeysCache.add(k);
+                        });
                     }
                 }
                 
