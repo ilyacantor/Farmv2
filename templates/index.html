@@ -202,10 +202,12 @@
                     </div>
                 </div>
                 
-                <div class="flex gap-2 mb-4">
+                <div class="flex gap-2 mb-4 items-center">
                     <button onclick="filterTraces('all')" id="traceFilterAll" class="px-3 py-1 text-xs rounded bg-cyan-600 text-white">All</button>
                     <button onclick="filterTraces('shadow')" id="traceFilterShadow" class="px-3 py-1 text-xs rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Shadows Only</button>
                     <button onclick="filterTraces('mismatch')" id="traceFilterMismatch" class="px-3 py-1 text-xs rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Mismatches</button>
+                    <span class="text-slate-600 mx-2">|</span>
+                    <button onclick="exportMismatches()" class="px-3 py-1 text-xs rounded bg-orange-600 hover:bg-orange-500 text-white">Export Mismatches</button>
                 </div>
             </div>
             
@@ -546,6 +548,29 @@
             } catch (e) {
                 alert('Invalid JSON: ' + e.message);
             }
+        }
+
+        function exportMismatches() {
+            if (mismatchKeysCache.size === 0) {
+                alert('No mismatches to export. Run a reconciliation first.');
+                return;
+            }
+            const mismatches = Array.from(mismatchKeysCache).map(key => {
+                const trace = decisionTracesCache[key] || { asset_key_used: key };
+                return trace;
+            });
+            const json = JSON.stringify({ 
+                snapshot_id: currentTestSnapshotId,
+                mismatch_count: mismatches.length,
+                mismatches: mismatches
+            }, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mismatches_${currentTestSnapshotId || 'export'}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
         }
 
         const companyPrefixes = ['Tech', 'Data', 'Cloud', 'Cyber', 'Net', 'Info', 'Sys', 'Core', 'Blue', 'Nova', 'Apex', 'Velo', 'Aero', 'Flux', 'Helix'];
