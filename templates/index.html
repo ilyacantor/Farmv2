@@ -409,11 +409,17 @@
                     const fullRecResp = await fetch(`/api/reconcile/${latestRecId}`);
                     if (fullRecResp.ok) {
                         const fullRec = await fullRecResp.json();
+                        aodAssetSummariesCache = fullRec.aod_lists?.asset_summaries || {};
+                        
                         const farmShadows = new Set((fullRec.farm_expectations?.shadow_keys || []).map(k => k.toLowerCase()));
-                        const aodShadows = new Set((fullRec.aod_lists?.shadow_assets || []).map(k => k.toLowerCase()));
+                        const aodShadows = new Set();
+                        for (const [k, v] of Object.entries(aodAssetSummariesCache)) {
+                            if (v && (v.is_shadow === true || v.classification === 'shadow')) {
+                                aodShadows.add(k.toLowerCase());
+                            }
+                        }
                         farmShadows.forEach(k => { if (!aodShadows.has(k)) mismatchKeysCache.add(k); });
                         aodShadows.forEach(k => { if (!farmShadows.has(k)) mismatchKeysCache.add(k); });
-                        aodAssetSummariesCache = fullRec.aod_lists?.asset_summaries || {};
                     }
                 }
                 
