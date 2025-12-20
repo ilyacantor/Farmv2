@@ -1472,7 +1472,6 @@
             const shadowCount = funnel.shadow_count || 0;
             const zombieCount = funnel.zombie_count || 0;
             const cleanCount = funnel.clean_count || 0;
-            const finalCatalog = funnel.final_cataloged || admittedCount;
             
             const entityLevelShadow = summary.entity_level_shadow_count || 0;
             const domainLevelShadow = summary.domain_level_shadow_count || 0;
@@ -1634,17 +1633,6 @@
                                     </p>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Summary -->
-                    <div class="rounded-xl bg-white/5 ring-1 ring-white/10 p-4">
-                        <div class="flex items-center justify-between">
-                            <div class="text-sm text-slate-300">Final Cataloged Assets</div>
-                            <div class="text-xl font-bold text-white">${finalCatalog}</div>
-                        </div>
-                        <div class="text-xs text-slate-500 mt-1">
-                            ${shadowCount} shadows + ${zombieCount} zombies + ${cleanCount} clean = ${shadowCount + zombieCount + cleanCount} total classifications
                         </div>
                     </div>
                 </div>
