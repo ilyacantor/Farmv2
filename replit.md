@@ -1,13 +1,9 @@
 # AOS Farm
 
 ## Overview
-
-AOS Farm is a synthetic enterprise data generator designed to create realistic source-of-truth data planes and raw observation streams. Its primary purpose is to provide robust testing data for the AutonomOS AOD (Discover) module, focusing on generating raw evidence rather than pre-concluded insights. The project aims to eliminate "green-test theater" by enforcing strict rules against superficial fixes and ensuring that all changes preserve real-world semantics, are provable with real-world output, and include negative tests.
-
-The business vision is to provide high-fidelity, plausible enterprise data for rigorous testing of AOD's discovery capabilities, thereby improving the accuracy and reliability of anomaly detection in complex enterprise environments.
+AOS Farm is a synthetic enterprise data generator that creates realistic source-of-truth data planes and raw observation streams. Its primary purpose is to generate robust testing data for the AutonomOS AOD (Discover) module, focusing on raw evidence rather than pre-concluded insights. The project aims to eliminate "green-test theater" by enforcing strict rules that ensure all changes preserve real-world semantics, are provable with real-world output, and include negative tests. The business vision is to provide high-fidelity, plausible enterprise data for rigorous testing of AOD's discovery capabilities, thereby improving the accuracy and reliability of anomaly detection in complex enterprise environments.
 
 ## User Preferences
-
 Guardrail: No “green-test theater” (Stop optimizing for “done without errors”) The anti-pattern we are eliminating
 
 Agents frequently “solve” problems by making the system look clean:
@@ -109,191 +105,33 @@ Explicit errors over silent fallbacks
 Evidence-only derivations over labels
 
 ## System Architecture
-
-The project is structured around a FastAPI application, serving as the entry point, with dedicated modules for API routes, Pydantic models for data planes, and deterministic data generators.
-
-**UI/UX Decisions:**
-A simple Farm Console UI is provided via `templates/index.html`.
+The project is structured around a FastAPI application. It features a simple Farm Console UI via `templates/index.html`.
 
 **Technical Implementations:**
 - **Core Framework:** FastAPI for the web API.
-- **Data Generation:** Deterministic data generators ensure reproducible results based on a given seed, scale, and enterprise/realism profiles.
-- **Data Planes:** Generates 7 independent data planes: Discovery, IdP, CMDB, Cloud, Endpoint, Network, and Finance. These planes are designed to be independent, correlating only via realistic keys.
-- **API Design:** RESTful API endpoints for managing snapshots, reconciling AOD results, and querying status.
-- **Schema Versioning:** All snapshots include a `meta.schema_version = "farm.v1"` for consistency.
-- **Design Principles:**
-    - Independence of data planes.
-    - No "conclusions" fields (e.g., no pre-computed shadow flags).
-    - Deterministic generation based on seed and configuration.
-    - Timestamps anchor to snapshot creation time with realistic recency distributions (active, recent, stale, zombie candidates).
+- **Data Generation:** Deterministic generators ensure reproducible results based on seed, scale, and enterprise/realism profiles.
+- **Data Planes:** Generates 7 independent data planes (Discovery, IdP, CMDB, Cloud, Endpoint, Network, Finance) designed to correlate only via realistic keys.
+- **API Design:** RESTful API for snapshot management, AOD reconciliation, and status queries.
+- **Schema Versioning:** All snapshots include `meta.schema_version = "farm.v1"`.
+- **Design Principles:** Independence of data planes, no "conclusions" fields, deterministic generation, and timestamps anchored to snapshot creation with realistic recency distributions.
 
 **Feature Specifications:**
-- **Snapshot Management:** API to generate, retrieve, list, and delete data snapshots. Each snapshot includes an `__expected__` block for grading metadata, which AOD should ignore.
-- **Reconciliation System:**
-    - Allows comparison of AOD results against Farm's expectations.
-    - Supports manual and auto-reconciliation, fetching AOD results if `AOD_URL` is configured.
-    - Reconciliations have a `contract_status` (`CURRENT`, `STALE_CONTRACT`, `INCONSISTENT_CONTRACT`) to indicate gradeability based on the presence and consistency of `asset_summaries`.
-    - Grading logic prioritizes `asset_summaries` for deriving counts and accuracy metrics.
-- **AOD Interaction:** Defines clear contracts for AOD output and an optional `explain-nonflag` endpoint for diagnostic purposes, ensuring AOD never consumes Farm's expected data directly.
-- **Finance Evidence Rules:** Specific rules for classifying assets based on finance data, emphasizing `HAS_ONGOING_FINANCE` for shadow classification.
+- **Snapshot Management:** API to generate, retrieve, list, and delete data snapshots, each including an `__expected__` block for grading metadata.
+- **Reconciliation System:** Compares AOD results against Farm's expectations, supporting manual and auto-reconciliation. Reconciliation `contract_status` indicates gradeability.
+- **AOD Interaction:** Defines clear contracts for AOD output and an optional `explain-nonflag` endpoint.
+- **Finance Evidence Rules:** Classifies assets based on finance data, emphasizing `HAS_ONGOING_FINANCE` for shadow classification.
 
 **System Design Choices:**
-- **Ownership Boundaries:** AOD never consumes Farm's expected/RCA data; Farm owns the reconciliation UI; AOD owns structured actual output.
-- **Error Handling:** Emphasizes failing loudly with explicit error statuses (e.g., `UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`) instead of silent fallbacks.
-- **Configuration:** Supports `Scale` (small, medium, large, enterprise), `Enterprise Profile` (modern_saas, regulated_finance, healthcare_provider, global_manufacturing), and `Realism Profile` (clean, typical, messy).
-
-## Data Presets
-
-Data presets provide 3-tier challenge levels for testing AOD detection quality under varying data quality conditions. Each preset controls 5 knobs:
-
-| Preset | Domain Coverage | Conflict Rate | Junk Domains | Near-Collisions | Aliasing Rate |
-|--------|----------------|---------------|--------------|-----------------|---------------|
-| `clean_baseline` | 95% | 5% | 0 | 0 | 0% |
-| `enterprise_mess` | 70% | 20% | 200 | 0 | 10% |
-| `adversarial` | 50% | 35% | 750 | 50 | 25% |
-
-**Knob Definitions:**
-- **Domain Coverage:** Probability that a domain field is populated in observations
-- **Conflict Rate:** Probability of cross-plane data conflicts (e.g., mismatched vendor names)
-- **Junk Domains:** Number of synthetic CDN/tracker/analytics domains to inject
-- **Near-Collisions:** Number of typosquat/phishing-like domains (e.g., `s1ack.com` vs `slack.com`)
-- **Aliasing Rate:** Probability of multi-domain product aliasing (e.g., `office.com` and `microsoft.com` being the same product)
-
-**Junk Domain Examples:**
-- CDN/static assets: `cdn123.cloud.net`, `static456.fast.io`
-- Trackers/analytics: `tracker789.data.io`, `pixel101.hub.io`
-- Auth/SSO services: `auth202.services.io`, `login303.platform.io`
-
-**Near-Collision Examples:**
-- `s1ack.com` (typosquat of `slack.com`)
-- `salesf0rce.com` (typosquat of `salesforce.com`)
-- `g1thub.com` (typosquat of `github.com`)
-
-**Multi-Domain Product Aliases:**
-- Microsoft 365: `microsoft.com`, `office.com`, `office365.com`, `sharepoint.com`, `outlook.com`
-- Google Workspace: `google.com`, `googleapis.com`, `gstatic.com`, `googleusercontent.com`
-- Atlassian Suite: `atlassian.net`, `atlassian.com`, `bitbucket.org`, `trello.com`
+- **Ownership Boundaries:** AOD never consumes Farm's expected data; Farm owns the reconciliation UI; AOD owns structured actual output.
+- **Error Handling:** Emphasizes failing loudly with explicit error statuses (e.g., `UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`).
+- **Configuration:** Supports `Scale` (small to enterprise), `Enterprise Profile` (e.g., modern_saas, regulated_finance), and `Realism Profile` (clean, typical, messy).
+- **Data Presets:** Provides 3-tier challenge levels (`clean_baseline`, `enterprise_mess`, `adversarial`) controlling domain coverage, conflict rate, junk domains, near-collisions, and aliasing rate.
+- **Canonical Key Rules:** Domain-first for assets with a domain; normalized name for internal services.
+- **CMDB Resolution:** Handles multiple CMDB matches with `cmdb_resolution_reason` codes (`NONE`, `MULTI_ENV`, `LEGACY`, `DUPLICATE`, `PARENT_VENDOR`). CMDB matching prioritizes exact name, then exact domain, then vendor fallback.
+- **Reconciliation Modes:** Supports `sprawl` (default, external domains), `infra` (internal services), and `all` for varying testing scopes.
+- **Admission Rules:** An entity is admitted for classification if it meets specific criteria (e.g., discovery strength ≥ 2 distinct sources, cloud evidence, IdP match, or CMDB match). Rejected entities are explicitly marked with `admitted: false` and a `rejection_reason`.
+- **Ground Truth Classification:** Admitted assets are classified as Shadow, Zombie, or Clean based on evidence flags and governance propagation logic across vendor domain sets. Exclusions are defined for infrastructure domains.
 
 ## External Dependencies
-
-- **Database:** Supabase Postgres (exclusively).
-    - Environment variables: `SUPABASE_DB_URL` (priority), `DATABASE_URL`.
-    - Replit DB URLs are ignored if `IGNORE_REPLIT_DB=true`.
-    - Schema includes `runs`, `snapshots`, and `reconciliations` tables.
-- **AOD Module (AutonomOS Discover):**
-    - Interacts via defined API contracts for snapshot generation, status checks, and reconciliation.
-    - Requires `AOD_URL` and optionally `AOD_SHARED_SECRET` for auto-reconciliation.
-    - `USE_AOD_EXPLAIN_STUB=true` enables a local stub for testing without a live AOD instance.
-
-## Ground Truth Classification Definitions
-
-Farm classifies assets into three buckets based on evidence flags:
-
-### Shadow (Ungoverned App Sprawl)
-```
-is_shadow = is_external_domain
-            AND activity_present 
-            AND NOT idp_present 
-            AND NOT cmdb_present
-            AND NOT is_infrastructure_domain
-```
-- Must be an external SaaS domain (ends with .com, .io, .org, .net, etc.)
-- Must have recent activity within detection window
-- Must lack governance (no IdP, no CMDB)
-- Excludes infrastructure/open-source project domains (mysql.com, postgresql.org, etc.)
-- Excludes internal service names (authservice, billing-api, etc.)
-- **Finance is NOT a gate** - finance is context/priority scoring only
-- **Governance propagation**: If ANY domain in a vendor's domain set is governed, ALL domains in that vendor's set are considered governed
-
-### Governance Propagation
-
-Vendor domain sets propagate governance across related domains:
-```
-If salesforce.com has IdP → salesforce.io, force.com, slack.com also marked governed
-If microsoft.com has CMDB → office365.com, sharepoint.com, github.com also marked governed
-```
-
-**Decision trace fields:**
-- `idp_present`: True if direct IdP match OR vendor propagated
-- `idp_present_direct`: True only if direct IdP match for this specific domain
-- `cmdb_present`: True if direct CMDB match OR vendor propagated
-- `cmdb_present_direct`: True only if direct CMDB match for this specific domain
-- `vendor_governance`: Vendor name if governance was propagated (e.g., "salesforce", "microsoft")
-
-**Supported vendor domain sets:**
-- Microsoft: microsoft.com, office.com, office365.com, sharepoint.com, outlook.com, github.com, yammer.com, etc.
-- Google: google.com, googleapis.com, gmail.com, youtube.com, etc.
-- Salesforce: salesforce.com, salesforce.io, force.com, slack.com, heroku.com, tableau.com, etc.
-- Atlassian: atlassian.net, atlassian.com, bitbucket.org, trello.com, jira.com, etc.
-- And 16 more vendor sets (Adobe, AWS, Cloudflare, Oracle, SAP, ServiceNow, Workday, Okta, Zoom, Cisco, VMware, Zendesk, HubSpot, Datadog, Snowflake, Dropbox)
-
-### Zombie (Governed but Stale)
-```
-is_zombie = (idp_present OR cmdb_present) 
-            AND NOT activity_present 
-            AND stale_timestamps > 0
-```
-- Has governance presence
-- No recent activity
-- Has stale timestamps (>90 days)
-
-### Clean (Governed and Active)
-```
-is_clean = NOT is_shadow AND NOT is_zombie AND discovery_present
-```
-- Not shadow, not zombie
-- Has discovery evidence
-
-### Infrastructure Exclusions
-The following domains are excluded from shadow classification (not SaaS candidates):
-- postgresql.org, mysql.com, apache.org, redis.io, redis.com, mongodb.com
-- docker.com, kubernetes.io, nginx.org
-- python.org, nodejs.org, golang.org, rust-lang.org, ruby-lang.org
-- linux.org, gnu.org, elastic.co, elasticsearch.com, kafka.apache.org
-
-## CMDB Resolution Reason Codes
-
-When Farm matches multiple CMDB configuration items to a single asset, it emits a `cmdb_resolution_reason` explaining the ambiguity:
-
-| Code | Description |
-|------|-------------|
-| `NONE` | Single clear match or no matches |
-| `MULTI_ENV` | Same app name appears in different lifecycle environments (dev/staging/prod) |
-| `LEGACY` | Deprecated/legacy CI exists alongside current version |
-| `DUPLICATE` | True duplicate records or multiple CIs without clear differentiation |
-| `PARENT_VENDOR` | CMDB vendor is broader parent vendor, not specific product |
-
-**CMDB Matching Rules (Deterministic Order):**
-1. **Exact name match** - CMDB CI name matches asset key or discovered names (normalized)
-2. **Exact domain match** - CMDB CI `external_ref` domain matches asset domain
-3. **Vendor fallback** - Only if no name/domain match: `vendor_hint` matches CMDB `vendor`
-
-The `matched_via_vendor` flag is set to `true` only when vendor is the sole reason for the match.
-
-Example: slack.com with `vendor_hint: "Salesforce"` matches CMDB entry with `vendor: "Salesforce"` → `matched_via_vendor: true`
-
-**Current Limitations:**
-- `MULTI_ENV` requires identical CMDB names; variant naming (e.g., "Trello Prod" vs "Trello Dev") falls to DUPLICATE
-
-## Reconciliation Modes
-
-Reconciliation eligibility is mode-based to support different use cases:
-
-| Mode | Description | Eligible Assets |
-|------|-------------|-----------------|
-| `sprawl` (default) | Shadow IT / SaaS sprawl detection | External domains only (.com, .io, .org, etc.) |
-| `infra` | Infrastructure monitoring | Internal services only (no TLD) |
-| `all` | Full asset coverage | All assets regardless of type |
-
-**API Usage:**
-- `GET /api/snapshots/{id}/expected?mode=sprawl` - Default: only external SaaS domains
-- `GET /api/snapshots/{id}/expected?mode=infra` - Only internal service names
-- `GET /api/snapshots/{id}/expected?mode=all` - All assets
-
-**Reconciliation Request:**
-Include `"mode": "sprawl"` (or `infra`/`all`) in the reconcile POST request body.
-
-**Canonical Key Rules:**
-- Domain-first: When an asset has a domain, use that as the canonical key
-- Internal services use normalized name as key (lowercase, alphanumeric only)
-
+- **Database:** Supabase Postgres (exclusively). Configured via `SUPABASE_DB_URL` or `DATABASE_URL`. Replit DB URLs are ignored if `IGNORE_REPLIT_DB=true`. Schema includes `runs`, `snapshots`, and `reconciliations` tables.
+- **AOD Module (AutonomOS Discover):** Interacts via defined API contracts. Requires `AOD_URL` and optionally `AOD_SHARED_SECRET` for auto-reconciliation. `USE_AOD_EXPLAIN_STUB=true` enables a local stub for testing.

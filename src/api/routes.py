@@ -652,6 +652,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         'activity_timestamps': [],  # All activity timestamps with source
         'latest_activity_at': None,
         'activity_source': 'none',
+        'discovery_sources': set(),  # Distinct sources within activity window
     })
     
     observations = planes.get('discovery', {}).get('observations', [])
@@ -677,6 +678,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             candidates[key]['activity_timestamps'].append({'ts': ts, 'source': source})
             if is_within_window(ts, window_days, reference):
                 candidates[key]['activity_present'] = True
+                candidates[key]['discovery_sources'].add(source)
                 ts_dt = parse_timestamp(ts)
                 latest = parse_timestamp(candidates[key]['latest_activity_at'])
                 if ts_dt and (not latest or ts_dt > latest):
@@ -967,8 +969,33 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
             reasons.append('GOVERNED_VIA_VENDOR')
         expected_reasons[key] = reasons
         
-        is_shadow = is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded
-        is_zombie = (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
+        discovery_sources = cand.get('discovery_sources', set())
+        discovery_sources_list = sorted(list(discovery_sources))
+        discovery_sources_count = len(discovery_sources)
+        
+        is_admitted = (
+            discovery_sources_count >= 2 or
+            cand['cloud_present'] or
+            idp_present or
+            cmdb_present
+        )
+        
+        is_shadow = False
+        is_zombie = False
+        rejection_reason = None
+        
+        if is_admitted:
+            is_shadow = is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded
+            is_zombie = (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
+        else:
+            if discovery_sources_count == 1 and 'dns' in discovery_sources:
+                rejection_reason = 'DNS-only'
+            elif discovery_sources_count == 1:
+                rejection_reason = f'Single source ({discovery_sources_list[0]})'
+            elif discovery_sources_count == 0:
+                rejection_reason = 'No discovery sources'
+            else:
+                rejection_reason = 'No admission criteria satisfied'
         
         raw_domains = list(cand.get('domains', set()))[:10]
         decision_traces[key] = {
@@ -986,9 +1013,17 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
             'cmdb_present_direct': cmdb_present_direct,
             'vendor_governance': vendor_name,
             'infra_excluded': is_infra_excluded,
+            'admitted': is_admitted,
+            'discovery_sources_count': discovery_sources_count,
+            'discovery_sources_list': discovery_sources_list,
+            'rejection_reason': rejection_reason,
             'is_shadow': is_shadow,
             'reason_codes': reasons,
         }
+        
+        if not is_admitted:
+            expected_admission[key] = 'rejected'
+            continue
         
         if is_shadow:
             shadow_expected.append({'asset_key': key})
@@ -1039,6 +1074,17 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
             vendor_has_idp, vendor_has_cmdb, _ = vendor_governance[key_lower]
             idp_present = idp_present or vendor_has_idp
             cmdb_present = cmdb_present or vendor_has_cmdb
+        
+        discovery_sources = cand.get('discovery_sources', set())
+        is_admitted = (
+            len(discovery_sources) >= 2 or
+            cand['cloud_present'] or
+            idp_present or
+            cmdb_present
+        )
+        
+        if not is_admitted:
+            continue
         
         if is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded:
             shadow_keys.append(key)
