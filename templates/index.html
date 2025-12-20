@@ -517,6 +517,7 @@
                         <div class="flex justify-between"><span class="text-slate-400">cmdb_present_direct:</span><span class="${trace.cmdb_present_direct ? 'text-green-400' : 'text-slate-500'}">${trace.cmdb_present_direct}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">vendor_governance:</span><span class="${trace.vendor_governance ? 'text-purple-400' : 'text-slate-500'}">${trace.vendor_governance || 'null'}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">infra_excluded:</span><span class="${trace.infra_excluded ? 'text-red-400' : 'text-green-400'}">${trace.infra_excluded}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">known_vendor_domain:</span><span class="${trace.known_vendor_domain ? 'text-cyan-400' : 'text-slate-500'}">${trace.known_vendor_domain}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">admitted:</span><span class="${trace.admitted ? 'text-green-400' : 'text-orange-400'}">${trace.admitted}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">discovery_sources_count:</span><span class="text-white">${trace.discovery_sources_count || 0}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">discovery_sources_list:</span><span class="text-white font-mono text-[10px]">${JSON.stringify(trace.discovery_sources_list || [])}</span></div>
