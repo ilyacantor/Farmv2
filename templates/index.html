@@ -553,46 +553,84 @@
         async function exportMismatches() {
             let snapshotId = currentTestSnapshotId;
             let mismatches = [];
+            let fullRec = null;
+            let farmTraces = {};
             
-            if (mismatchKeysCache.size > 0 && snapshotId) {
-                mismatches = Array.from(mismatchKeysCache).map(key => {
-                    return decisionTracesCache[key] || { asset_key_used: key };
-                });
-            } else {
-                if (reconciliationsListCache.length === 0) {
-                    alert('No reconciliations found.');
-                    return;
-                }
-                const latestRec = reconciliationsListCache[0];
-                snapshotId = latestRec.snapshot_id;
-                
-                const fullRecResp = await fetch(`/api/reconcile/${latestRec.reconciliation_id}`);
-                if (!fullRecResp.ok) {
-                    alert('Failed to load reconciliation.');
-                    return;
-                }
-                const fullRec = await fullRecResp.json();
-                const farmShadows = new Set((fullRec.farm_expectations?.shadow_keys || []).map(k => k.toLowerCase()));
-                const aodShadows = new Set((fullRec.aod_lists?.shadow_assets || []).map(k => k.toLowerCase()));
-                const mismatchKeys = new Set();
-                farmShadows.forEach(k => { if (!aodShadows.has(k)) mismatchKeys.add(k); });
-                aodShadows.forEach(k => { if (!farmShadows.has(k)) mismatchKeys.add(k); });
-                
-                const expectedResp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
-                const expectedData = expectedResp.ok ? await expectedResp.json() : {};
-                const traces = expectedData.decision_traces || {};
-                
-                mismatches = Array.from(mismatchKeys).map(key => traces[key] || { asset_key_used: key });
+            if (reconciliationsListCache.length === 0) {
+                alert('No reconciliations found.');
+                return;
             }
             
-            if (mismatches.length === 0) {
+            const latestRec = reconciliationsListCache[0];
+            if (!snapshotId) snapshotId = latestRec.snapshot_id;
+            
+            const fullRecResp = await fetch(`/api/reconcile/${latestRec.reconciliation_id}`);
+            if (!fullRecResp.ok) {
+                alert('Failed to load reconciliation.');
+                return;
+            }
+            fullRec = await fullRecResp.json();
+            
+            const expectedResp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
+            const expectedData = expectedResp.ok ? await expectedResp.json() : {};
+            farmTraces = expectedData.decision_traces || {};
+            
+            const farmShadows = new Set((fullRec.farm_expectations?.shadow_keys || []).map(k => k.toLowerCase()));
+            const aodShadows = new Set((fullRec.aod_lists?.shadow_assets || []).map(k => k.toLowerCase()));
+            const aodSummaries = fullRec.aod_lists?.asset_summaries || {};
+            
+            const mismatchKeys = new Set();
+            farmShadows.forEach(k => { if (!aodShadows.has(k)) mismatchKeys.add(k); });
+            aodShadows.forEach(k => { if (!farmShadows.has(k)) mismatchKeys.add(k); });
+            
+            if (mismatchKeys.size === 0) {
                 alert('No mismatches found.');
                 return;
             }
             
+            const compareFields = ['is_external', 'is_active', 'idp_present', 'cmdb_present', 'infra_excluded', 'is_shadow'];
+            
+            mismatches = Array.from(mismatchKeys).map(key => {
+                const farmTrace = farmTraces[key] || { asset_key_used: key };
+                const aodRaw = aodSummaries[key] || aodSummaries[key.toLowerCase()] || {};
+                const aodTrace = {
+                    asset_key_used: key,
+                    is_external: aodRaw.is_external ?? null,
+                    is_active: aodRaw.is_active ?? aodRaw.activity_present ?? null,
+                    idp_present: aodRaw.idp_present ?? aodRaw.has_idp ?? null,
+                    cmdb_present: aodRaw.cmdb_present ?? aodRaw.has_cmdb ?? null,
+                    infra_excluded: aodRaw.infra_excluded ?? aodRaw.is_infrastructure ?? null,
+                    is_shadow: aodShadows.has(key.toLowerCase()),
+                    reason_codes: aodRaw.reason_codes || []
+                };
+                
+                const diverged = [];
+                compareFields.forEach(f => {
+                    const farmVal = farmTrace[f];
+                    const aodVal = aodTrace[f];
+                    if (farmVal !== null && aodVal !== null && farmVal !== aodVal) {
+                        diverged.push(f);
+                    }
+                });
+                if (farmTrace.is_shadow !== aodTrace.is_shadow) {
+                    if (!diverged.includes('is_shadow')) diverged.push('is_shadow');
+                }
+                
+                return {
+                    asset_key: key,
+                    mismatch_type: farmShadows.has(key.toLowerCase()) ? 'false_negative' : 'false_positive',
+                    diverged_predicates: diverged,
+                    farm_trace: farmTrace,
+                    aod_trace: aodTrace
+                };
+            });
+            
             const json = JSON.stringify({ 
                 snapshot_id: snapshotId,
+                reconciliation_id: latestRec.reconciliation_id,
                 mismatch_count: mismatches.length,
+                false_negatives: mismatches.filter(m => m.mismatch_type === 'false_negative').length,
+                false_positives: mismatches.filter(m => m.mismatch_type === 'false_positive').length,
                 mismatches: mismatches
             }, null, 2);
             const blob = new Blob([json], { type: 'application/json' });
