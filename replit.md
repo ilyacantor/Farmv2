@@ -203,6 +203,29 @@ is_shadow = is_external_domain
 - Excludes infrastructure/open-source project domains (mysql.com, postgresql.org, etc.)
 - Excludes internal service names (authservice, billing-api, etc.)
 - **Finance is NOT a gate** - finance is context/priority scoring only
+- **Governance propagation**: If ANY domain in a vendor's domain set is governed, ALL domains in that vendor's set are considered governed
+
+### Governance Propagation
+
+Vendor domain sets propagate governance across related domains:
+```
+If salesforce.com has IdP → salesforce.io, force.com, slack.com also marked governed
+If microsoft.com has CMDB → office365.com, sharepoint.com, github.com also marked governed
+```
+
+**Decision trace fields:**
+- `idp_present`: True if direct IdP match OR vendor propagated
+- `idp_present_direct`: True only if direct IdP match for this specific domain
+- `cmdb_present`: True if direct CMDB match OR vendor propagated
+- `cmdb_present_direct`: True only if direct CMDB match for this specific domain
+- `vendor_governance`: Vendor name if governance was propagated (e.g., "salesforce", "microsoft")
+
+**Supported vendor domain sets:**
+- Microsoft: microsoft.com, office.com, office365.com, sharepoint.com, outlook.com, github.com, yammer.com, etc.
+- Google: google.com, googleapis.com, gmail.com, youtube.com, etc.
+- Salesforce: salesforce.com, salesforce.io, force.com, slack.com, heroku.com, tableau.com, etc.
+- Atlassian: atlassian.net, atlassian.com, bitbucket.org, trello.com, jira.com, etc.
+- And 16 more vendor sets (Adobe, AWS, Cloudflare, Oracle, SAP, ServiceNow, Workday, Okta, Zoom, Cisco, VMware, Zendesk, HubSpot, Datadog, Snowflake, Dropbox)
 
 ### Zombie (Governed but Stale)
 ```

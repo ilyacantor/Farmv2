@@ -56,6 +56,39 @@ INFRASTRUCTURE_DOMAINS = {
     'ruby-lang.org',
 }
 
+VENDOR_DOMAIN_SETS = {
+    'microsoft': {'microsoft.com', 'office.com', 'office365.com', 'sharepoint.com', 'outlook.com', 'live.com', 'azure.com', 'windows.com', 'onenote.com', 'onedrive.com', 'teams.microsoft.com', 'yammer.com', 'github.com'},
+    'google': {'google.com', 'googleapis.com', 'gstatic.com', 'googleusercontent.com', 'gmail.com', 'youtube.com', 'googledrive.com'},
+    'salesforce': {'salesforce.com', 'force.com', 'salesforceliveagent.com', 'lightning.force.com', 'salesforce.io', 'slack.com', 'heroku.com', 'tableau.com'},
+    'adobe': {'adobe.com', 'adobelogin.com', 'typekit.net', 'behance.net', 'creativecloud.com'},
+    'atlassian': {'atlassian.net', 'atlassian.com', 'bitbucket.org', 'trello.com', 'jira.com', 'confluence.com', 'statuspage.io'},
+    'aws': {'amazonaws.com', 'aws.amazon.com', 'awsstatic.com', 'cloudfront.net', 'amazon.com'},
+    'cloudflare': {'cloudflare.com', 'cloudflareinsights.com', 'workers.dev', 'pages.dev'},
+    'oracle': {'oracle.com', 'oraclecloud.com', 'java.com'},
+    'sap': {'sap.com', 'sapcloud.com', 'ariba.com', 'concur.com', 'successfactors.com'},
+    'servicenow': {'servicenow.com', 'service-now.com'},
+    'workday': {'workday.com', 'myworkday.com'},
+    'okta': {'okta.com', 'oktapreview.com', 'okta-emea.com'},
+    'zoom': {'zoom.us', 'zoom.com', 'zoomgov.com'},
+    'cisco': {'cisco.com', 'webex.com', 'ciscospark.com', 'meraki.com'},
+    'vmware': {'vmware.com', 'vmwareidentity.com', 'workspace-one.com'},
+    'zendesk': {'zendesk.com', 'zopim.com'},
+    'hubspot': {'hubspot.com', 'hubspotusercontent.com', 'hs-analytics.net'},
+    'datadog': {'datadoghq.com', 'datadog.com', 'datadoghq.eu'},
+    'snowflake': {'snowflakecomputing.com', 'snowflake.com'},
+    'dropbox': {'dropbox.com', 'dropboxusercontent.com'},
+}
+
+def get_domain_to_vendor_map() -> dict:
+    """Build reverse lookup: domain -> vendor."""
+    domain_to_vendor = {}
+    for vendor, domains in VENDOR_DOMAIN_SETS.items():
+        for domain in domains:
+            domain_to_vendor[domain.lower()] = vendor
+    return domain_to_vendor
+
+DOMAIN_TO_VENDOR = get_domain_to_vendor_map()
+
 EXTERNAL_DOMAIN_TLDS = {
     '.com', '.io', '.org', '.net', '.co', '.ai', '.app', '.dev',
     '.us', '.cloud', '.so', '.me', '.info', '.biz', '.tech', '.ly',
@@ -840,6 +873,37 @@ def derive_rca_hint(classification: str, cand: dict) -> Optional[str]:
     return None
 
 
+def propagate_vendor_governance(candidates: dict) -> dict:
+    """Propagate governance across vendor domain sets.
+    
+    If any domain in a vendor's set is governed (IdP or CMDB), 
+    all domains in that vendor's set are considered governed.
+    
+    Returns dict mapping domain -> (vendor_has_idp, vendor_has_cmdb, vendor_name)
+    """
+    vendor_governance = {}
+    
+    for vendor, domains in VENDOR_DOMAIN_SETS.items():
+        has_idp = False
+        has_cmdb = False
+        for domain in domains:
+            domain_lower = domain.lower()
+            if domain_lower in candidates:
+                cand = candidates[domain_lower]
+                if cand.get('idp_present'):
+                    has_idp = True
+                if cand.get('cmdb_present'):
+                    has_cmdb = True
+        vendor_governance[vendor] = (has_idp, has_cmdb)
+    
+    domain_governance = {}
+    for domain, vendor in DOMAIN_TO_VENDOR.items():
+        has_idp, has_cmdb = vendor_governance.get(vendor, (False, False))
+        domain_governance[domain] = (has_idp, has_cmdb, vendor)
+    
+    return domain_governance
+
+
 def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "sprawl") -> dict:
     """Compute the __expected__ block with classifications, reasons, and RCA hints.
     
@@ -849,6 +913,8 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
     - all: All assets
     """
     candidates = build_candidate_flags(snapshot, window_days)
+    
+    vendor_governance = propagate_vendor_governance(candidates)
     
     shadow_expected = []
     zombie_expected = []
@@ -882,8 +948,18 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
                 'matches': cand.get('cmdb_matches', []),
             }
         
-        is_shadow = is_external and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present'] and not is_infra_excluded
-        is_zombie = (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
+        idp_present = cand['idp_present']
+        cmdb_present = cand['cmdb_present']
+        vendor_name = None
+        
+        key_lower = key.lower()
+        if key_lower in vendor_governance:
+            vendor_has_idp, vendor_has_cmdb, vendor_name = vendor_governance[key_lower]
+            idp_present = idp_present or vendor_has_idp
+            cmdb_present = cmdb_present or vendor_has_cmdb
+        
+        is_shadow = is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded
+        is_zombie = (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
         
         raw_domains = list(cand.get('domains', set()))[:10]
         decision_traces[key] = {
@@ -895,8 +971,11 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
             'activity_window_days': window_days,
             'activity_source': cand.get('activity_source', 'none'),
             'latest_activity_at': cand.get('latest_activity_at'),
-            'idp_present': cand['idp_present'],
-            'cmdb_present': cand['cmdb_present'],
+            'idp_present': idp_present,
+            'idp_present_direct': cand['idp_present'],
+            'cmdb_present': cmdb_present,
+            'cmdb_present_direct': cand['cmdb_present'],
+            'vendor_governance': vendor_name,
             'infra_excluded': is_infra_excluded,
             'is_shadow': is_shadow,
             'reason_codes': reasons,
@@ -935,6 +1014,7 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
 def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> FarmExpectations:
     """Legacy function for backward compatibility."""
     candidates = build_candidate_flags(snapshot, window_days)
+    vendor_governance = propagate_vendor_governance(candidates)
     
     shadow_keys = []
     zombie_keys = []
@@ -942,9 +1022,18 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
     for key, cand in candidates.items():
         is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
         is_external = is_external_domain(key)
-        if is_external and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present'] and not is_infra_excluded:
+        
+        idp_present = cand['idp_present']
+        cmdb_present = cand['cmdb_present']
+        key_lower = key.lower()
+        if key_lower in vendor_governance:
+            vendor_has_idp, vendor_has_cmdb, _ = vendor_governance[key_lower]
+            idp_present = idp_present or vendor_has_idp
+            cmdb_present = cmdb_present or vendor_has_cmdb
+        
+        if is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded:
             shadow_keys.append(key)
-        elif (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0:
+        elif (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0:
             zombie_keys.append(key)
     
     return FarmExpectations(
