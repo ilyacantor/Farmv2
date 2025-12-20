@@ -1367,12 +1367,10 @@
             
             const summary = analysis.summary || {};
             const expected = isShadow ? summary.farm_shadows : summary.farm_zombies;
-            // "Found" = AOD's effective contribution at domain level (matched + false positives)
             const correct = matched.length;
             const fpCount = falsePos.length;
             const found = correct + fpCount;
             const missedCount = missed.length;
-            // Accuracy: matched / (expected + false_positives) - FPs penalize the grade
             const denominator = expected + fpCount;
             const accuracy = denominator > 0 ? Math.round(correct / denominator * 100) : 100;
             
@@ -1404,6 +1402,138 @@
                 <!-- Asset content - populated on KPI click -->
                 <div id="${contentId}" data-active-category="">
                     <div class="text-center py-8 text-slate-500 text-sm">Click a metric above to view assets</div>
+                </div>
+            `;
+        }
+
+        function renderLifecycleTabContent(analysis) {
+            const funnel = analysis.lifecycle_funnel || {};
+            const summary = analysis.summary || {};
+            
+            const grossObs = funnel.gross_observations || 0;
+            const uniqueAssets = funnel.unique_assets || 0;
+            const rejectedCount = funnel.rejected_count || 0;
+            const admittedCount = funnel.admitted_count || 0;
+            const shadowCount = funnel.shadow_count || 0;
+            const zombieCount = funnel.zombie_count || 0;
+            const cleanCount = funnel.clean_count || 0;
+            const finalCatalog = funnel.final_cataloged || admittedCount;
+            
+            const entityLevelShadow = summary.entity_level_shadow_count || 0;
+            const domainLevelShadow = summary.domain_level_shadow_count || 0;
+            const farmExpectedShadow = summary.farm_expected_shadow_count || 0;
+            const entityLevelZombie = summary.entity_level_zombie_count || 0;
+            const domainLevelZombie = summary.domain_level_zombie_count || 0;
+            const farmExpectedZombie = summary.farm_expected_zombie_count || 0;
+            
+            const funnelSteps = [
+                { label: 'Observations', value: grossObs, color: 'cyan', desc: 'Raw discovery observations' },
+                { label: 'Unique Assets', value: uniqueAssets, color: 'blue', desc: 'Deduplicated by domain' },
+                { label: 'Rejected', value: rejectedCount, color: 'rose', desc: 'Did not meet admission criteria' },
+                { label: 'Admitted', value: admittedCount, color: 'emerald', desc: 'Passed admission gates' },
+            ];
+            
+            const maxVal = Math.max(...funnelSteps.map(s => s.value), 1);
+            
+            return `
+                <div class="space-y-6">
+                    <!-- Funnel Visualization -->
+                    <div class="mb-6">
+                        <div class="text-sm font-semibold text-slate-100 mb-4">Asset Lifecycle Funnel</div>
+                        <div class="text-xs text-slate-400 mb-4">Observations → Assets → Admission → Classification</div>
+                        
+                        <div class="space-y-3">
+                            ${funnelSteps.map((step, idx) => {
+                                const widthPct = Math.max((step.value / maxVal) * 100, 10);
+                                const isRejected = step.label === 'Rejected';
+                                return `
+                                    <div class="flex items-center gap-3">
+                                        <div class="w-28 text-xs text-slate-300">${step.label}</div>
+                                        <div class="flex-1 h-8 bg-slate-800 rounded-lg overflow-hidden relative">
+                                            <div class="h-full bg-${step.color}-500/50 rounded-lg transition-all" 
+                                                 style="width: ${widthPct}%"></div>
+                                            <div class="absolute inset-0 flex items-center px-3">
+                                                <span class="text-sm font-bold text-white drop-shadow">${step.value.toLocaleString()}</span>
+                                            </div>
+                                        </div>
+                                        <div class="w-48 text-xs text-slate-500">${step.desc}</div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                    
+                    <!-- Classification Breakdown -->
+                    <div class="grid grid-cols-3 gap-4 mb-6">
+                        <div class="rounded-xl bg-amber-500/10 ring-1 ring-amber-500/30 p-4 text-center">
+                            <div class="text-2xl font-bold text-amber-400">${shadowCount}</div>
+                            <div class="text-xs text-amber-300/70">Shadows</div>
+                            <div class="text-[10px] text-slate-500 mt-1">Active, no governance</div>
+                        </div>
+                        <div class="rounded-xl bg-purple-500/10 ring-1 ring-purple-500/30 p-4 text-center">
+                            <div class="text-2xl font-bold text-purple-400">${zombieCount}</div>
+                            <div class="text-xs text-purple-300/70">Zombies</div>
+                            <div class="text-[10px] text-slate-500 mt-1">Governed, inactive</div>
+                        </div>
+                        <div class="rounded-xl bg-emerald-500/10 ring-1 ring-emerald-500/30 p-4 text-center">
+                            <div class="text-2xl font-bold text-emerald-400">${cleanCount}</div>
+                            <div class="text-xs text-emerald-300/70">Clean</div>
+                            <div class="text-[10px] text-slate-500 mt-1">Governed, active</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Shadow Count Discrepancy Explanation -->
+                    <div class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
+                        <div class="text-sm font-semibold text-slate-100 mb-3">Shadow Count Reconciliation</div>
+                        <div class="text-xs text-slate-400 mb-4">Entity-level counts roll up to domain-level for comparison</div>
+                        
+                        <div class="grid grid-cols-3 gap-4 text-center">
+                            <div class="p-3 rounded-lg bg-rose-500/10 ring-1 ring-rose-500/20">
+                                <div class="text-lg font-bold text-rose-400">${entityLevelShadow}</div>
+                                <div class="text-xs text-slate-400">AOD Entity-Level</div>
+                                <div class="text-[10px] text-slate-500">per observed_name</div>
+                            </div>
+                            <div class="p-3 rounded-lg bg-blue-500/10 ring-1 ring-blue-500/20">
+                                <div class="text-lg font-bold text-blue-400">${domainLevelShadow}</div>
+                                <div class="text-xs text-slate-400">AOD Domain-Level</div>
+                                <div class="text-[10px] text-slate-500">after roll_up</div>
+                            </div>
+                            <div class="p-3 rounded-lg bg-cyan-500/10 ring-1 ring-cyan-500/20">
+                                <div class="text-lg font-bold text-cyan-400">${farmExpectedShadow}</div>
+                                <div class="text-xs text-slate-400">Farm Expected</div>
+                                <div class="text-[10px] text-slate-500">unique domains</div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-4 pt-4 border-t border-slate-700/50">
+                            <div class="text-sm font-semibold text-slate-100 mb-3">Zombie Count Reconciliation</div>
+                            <div class="grid grid-cols-3 gap-4 text-center">
+                                <div class="p-3 rounded-lg bg-rose-500/10 ring-1 ring-rose-500/20">
+                                    <div class="text-lg font-bold text-rose-400">${entityLevelZombie}</div>
+                                    <div class="text-xs text-slate-400">AOD Entity-Level</div>
+                                </div>
+                                <div class="p-3 rounded-lg bg-blue-500/10 ring-1 ring-blue-500/20">
+                                    <div class="text-lg font-bold text-blue-400">${domainLevelZombie}</div>
+                                    <div class="text-xs text-slate-400">AOD Domain-Level</div>
+                                </div>
+                                <div class="p-3 rounded-lg bg-cyan-500/10 ring-1 ring-cyan-500/20">
+                                    <div class="text-lg font-bold text-cyan-400">${farmExpectedZombie}</div>
+                                    <div class="text-xs text-slate-400">Farm Expected</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Summary -->
+                    <div class="rounded-xl bg-white/5 ring-1 ring-white/10 p-4">
+                        <div class="flex items-center justify-between">
+                            <div class="text-sm text-slate-300">Final Cataloged Assets</div>
+                            <div class="text-xl font-bold text-white">${finalCatalog}</div>
+                        </div>
+                        <div class="text-xs text-slate-500 mt-1">
+                            ${shadowCount} shadows + ${zombieCount} zombies + ${cleanCount} clean = ${shadowCount + zombieCount + cleanCount} total classifications
+                        </div>
+                    </div>
                 </div>
             `;
         }
@@ -1513,7 +1643,7 @@
                             </div>
                         </div>
                         
-                        <!-- Shadow/Zombie Tabs -->
+                        <!-- Shadow/Zombie/Lifecycle Tabs -->
                         <div class="flex items-center gap-1 rounded-2xl bg-white/5 p-1 ring-1 ring-white/10 w-fit">
                             <button onclick="switchRecTab('shadow')" data-rec-tab="shadow"
                                 class="rounded-xl px-4 py-2 text-sm font-medium bg-white/10 text-slate-50">
@@ -1522,6 +1652,10 @@
                             <button onclick="switchRecTab('zombie')" data-rec-tab="zombie"
                                 class="rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/5">
                                 Zombie
+                            </button>
+                            <button onclick="switchRecTab('lifecycle')" data-rec-tab="lifecycle"
+                                class="rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/5">
+                                Lifecycle
                             </button>
                         </div>
                         
@@ -1533,6 +1667,11 @@
                         <!-- Zombie Tab Content -->
                         <div data-rec-content="zombie" class="hidden rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
                             ${renderReconciliationTabContent('zombie', analysis, rec)}
+                        </div>
+                        
+                        <!-- Lifecycle Tab Content -->
+                        <div data-rec-content="lifecycle" class="hidden rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
+                            ${renderLifecycleTabContent(analysis)}
                         </div>
                         
                         <!-- Raw Report -->

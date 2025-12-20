@@ -1800,16 +1800,39 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 return t
         return None
     
+    expected_admission = expected_block.get('expected_admission', {})
+    gross_observations = len(snapshot.get('planes', {}).get('discovery', {}).get('observations', []))
+    unique_assets = len(expected_admission)
+    rejected_count = sum(1 for v in expected_admission.values() if v == 'rejected')
+    admitted_count = unique_assets - rejected_count
+    
+    lifecycle_funnel = {
+        'gross_observations': gross_observations,
+        'unique_assets': unique_assets,
+        'rejected_count': rejected_count,
+        'admitted_count': admitted_count,
+        'shadow_count': len(farm_shadows),
+        'zombie_count': len(farm_zombies),
+        'clean_count': len(farm_clean),
+        'final_cataloged': admitted_count,
+    }
+    
     analysis = {
         'summary': {
             'farm_shadows': len(farm_shadows),
             'farm_zombies': len(farm_zombies),
             'aod_shadows': len(aod_shadows),
             'aod_zombies': len(aod_zombies),
-            # Domain-level counts (for reconciliation - collapses duplicates)
             'aod_shadow_domains': len(aod_shadow_domain_keys),
             'aod_zombie_domains': len(aod_zombie_domain_keys),
+            'entity_level_shadow_count': len(aod_shadows),
+            'domain_level_shadow_count': len(aod_shadow_domain_keys),
+            'farm_expected_shadow_count': len(farm_shadows),
+            'entity_level_zombie_count': len(aod_zombies),
+            'domain_level_zombie_count': len(aod_zombie_domain_keys),
+            'farm_expected_zombie_count': len(farm_zombies),
         },
+        'lifecycle_funnel': lifecycle_funnel,
         'payload_health': payload_health,
         'domain_roll_up': {
             'shadow_variants': shadow_domain_variants,
@@ -1931,9 +1954,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     farm_zombie_domain_keys = {to_domain_key(k) for k in farm_zombies}
     farm_clean_domain_keys = {to_domain_key(k) for k in farm_clean}
     
-    # Get decision_traces and expected_admission from expected_block for not-admitted detection
+    # Get decision_traces from expected_block for not-admitted detection
     decision_traces = expected_block.get('decision_traces', {})
-    expected_admission = expected_block.get('expected_admission', {})
     
     def norm_key(s):
         """Normalize key for comparison - extract core name, remove suffixes."""
