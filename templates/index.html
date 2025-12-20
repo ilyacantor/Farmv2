@@ -550,17 +550,48 @@
             }
         }
 
-        function exportMismatches() {
-            if (mismatchKeysCache.size === 0) {
-                alert('No mismatches to export. Run a reconciliation first.');
+        async function exportMismatches() {
+            let snapshotId = currentTestSnapshotId;
+            let mismatches = [];
+            
+            if (mismatchKeysCache.size > 0 && snapshotId) {
+                mismatches = Array.from(mismatchKeysCache).map(key => {
+                    return decisionTracesCache[key] || { asset_key_used: key };
+                });
+            } else {
+                if (reconciliationsListCache.length === 0) {
+                    alert('No reconciliations found.');
+                    return;
+                }
+                const latestRec = reconciliationsListCache[0];
+                snapshotId = latestRec.snapshot_id;
+                
+                const fullRecResp = await fetch(`/api/reconcile/${latestRec.reconciliation_id}`);
+                if (!fullRecResp.ok) {
+                    alert('Failed to load reconciliation.');
+                    return;
+                }
+                const fullRec = await fullRecResp.json();
+                const farmShadows = new Set((fullRec.farm_expectations?.shadow_keys || []).map(k => k.toLowerCase()));
+                const aodShadows = new Set((fullRec.aod_lists?.shadow_assets || []).map(k => k.toLowerCase()));
+                const mismatchKeys = new Set();
+                farmShadows.forEach(k => { if (!aodShadows.has(k)) mismatchKeys.add(k); });
+                aodShadows.forEach(k => { if (!farmShadows.has(k)) mismatchKeys.add(k); });
+                
+                const expectedResp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
+                const expectedData = expectedResp.ok ? await expectedResp.json() : {};
+                const traces = expectedData.decision_traces || {};
+                
+                mismatches = Array.from(mismatchKeys).map(key => traces[key] || { asset_key_used: key });
+            }
+            
+            if (mismatches.length === 0) {
+                alert('No mismatches found.');
                 return;
             }
-            const mismatches = Array.from(mismatchKeysCache).map(key => {
-                const trace = decisionTracesCache[key] || { asset_key_used: key };
-                return trace;
-            });
+            
             const json = JSON.stringify({ 
-                snapshot_id: currentTestSnapshotId,
+                snapshot_id: snapshotId,
                 mismatch_count: mismatches.length,
                 mismatches: mismatches
             }, null, 2);
@@ -568,7 +599,7 @@
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `mismatches_${currentTestSnapshotId || 'export'}.json`;
+            a.download = `mismatches_${snapshotId || 'export'}.json`;
             a.click();
             URL.revokeObjectURL(url);
         }
