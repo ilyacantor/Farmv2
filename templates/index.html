@@ -480,9 +480,18 @@
         }
 
         function showTraceDetail(assetKey) {
-            const trace = decisionTracesCache[assetKey];
+            const keyLower = assetKey.toLowerCase();
+            let trace = decisionTracesCache[assetKey] || decisionTracesCache[keyLower];
             if (!trace) {
-                alert(`No trace found for: ${assetKey}`);
+                for (const [k, v] of Object.entries(decisionTracesCache)) {
+                    if (k.toLowerCase() === keyLower) {
+                        trace = v;
+                        break;
+                    }
+                }
+            }
+            if (!trace) {
+                alert(`No trace found for: ${assetKey}\n\nAvailable keys (first 20): ${Object.keys(decisionTracesCache).slice(0, 20).join(', ')}`);
                 return;
             }
             
@@ -503,8 +512,15 @@
                         <div class="flex justify-between"><span class="text-slate-400">activity_source:</span><span class="text-white">${trace.activity_source}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">latest_activity_at:</span><span class="text-white font-mono text-[10px]">${trace.latest_activity_at || 'null'}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">idp_present:</span><span class="${trace.idp_present ? 'text-green-400' : 'text-red-400'}">${trace.idp_present}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">idp_present_direct:</span><span class="${trace.idp_present_direct ? 'text-green-400' : 'text-slate-500'}">${trace.idp_present_direct}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">cmdb_present:</span><span class="${trace.cmdb_present ? 'text-green-400' : 'text-red-400'}">${trace.cmdb_present}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">cmdb_present_direct:</span><span class="${trace.cmdb_present_direct ? 'text-green-400' : 'text-slate-500'}">${trace.cmdb_present_direct}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">vendor_governance:</span><span class="${trace.vendor_governance ? 'text-purple-400' : 'text-slate-500'}">${trace.vendor_governance || 'null'}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">infra_excluded:</span><span class="${trace.infra_excluded ? 'text-red-400' : 'text-green-400'}">${trace.infra_excluded}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">admitted:</span><span class="${trace.admitted ? 'text-green-400' : 'text-orange-400'}">${trace.admitted}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">discovery_sources_count:</span><span class="text-white">${trace.discovery_sources_count || 0}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">discovery_sources_list:</span><span class="text-white font-mono text-[10px]">${JSON.stringify(trace.discovery_sources_list || [])}</span></div>
+                        ${trace.rejection_reason ? `<div class="flex justify-between"><span class="text-slate-400">rejection_reason:</span><span class="text-orange-400">${trace.rejection_reason}</span></div>` : ''}
                         <div class="flex justify-between"><span class="text-slate-400">is_shadow:</span><span class="${trace.is_shadow ? 'text-red-400 font-bold' : 'text-slate-400'}">${trace.is_shadow}</span></div>
                         <div class="mt-2"><span class="text-slate-400">reason_codes:</span></div>
                         <div class="flex flex-wrap gap-1 mt-1">
