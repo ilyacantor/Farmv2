@@ -355,6 +355,7 @@
         let currentTraceFilter = 'all';
         let mismatchKeysCache = new Set();
         let currentTestSnapshotId = null;
+        let aodAssetSummariesCache = {};
 
         function switchMainTab(tab) {
             const consoleTab = document.getElementById('consoleTab');
@@ -395,6 +396,7 @@
             
             currentTestSnapshotId = snapshotId;
             mismatchKeysCache = new Set();
+            aodAssetSummariesCache = {};
             
             try {
                 const resp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
@@ -411,6 +413,7 @@
                         const aodShadows = new Set((fullRec.aod_lists?.shadow_assets || []).map(k => k.toLowerCase()));
                         farmShadows.forEach(k => { if (!aodShadows.has(k)) mismatchKeysCache.add(k); });
                         aodShadows.forEach(k => { if (!farmShadows.has(k)) mismatchKeysCache.add(k); });
+                        aodAssetSummariesCache = fullRec.aod_lists?.asset_summaries || {};
                     }
                 }
                 
@@ -487,6 +490,9 @@
             document.getElementById('decisionTraceResult').classList.remove('hidden');
             document.getElementById('traceAssetKey').textContent = assetKey;
             
+            const aodSummary = aodAssetSummariesCache[assetKey] || aodAssetSummariesCache[assetKey.toLowerCase()];
+            const isMismatch = mismatchKeysCache.has(assetKey.toLowerCase());
+            
             const content = document.getElementById('traceContent');
             content.innerHTML = `
                 <div class="bg-slate-900/60 rounded-lg p-4">
@@ -510,14 +516,43 @@
                         </div>
                     </div>
                 </div>
-                <div class="bg-slate-900/60 rounded-lg p-4 border-2 border-dashed border-slate-600">
-                    <h4 class="text-sm font-semibold text-purple-400 mb-3">AOD Decision Trace</h4>
-                    <p class="text-slate-500 text-xs italic">Paste AOD's decision trace here for comparison.</p>
-                    <textarea id="aodTraceInput" placeholder='{"asset_key_used": "...", ...}' 
-                        class="w-full mt-2 bg-slate-800 border border-slate-600 rounded p-2 text-xs font-mono text-white h-48"></textarea>
-                    <button onclick="compareTraces('${assetKey}')" class="mt-2 px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded">
-                        Compare
-                    </button>
+                <div class="bg-slate-900/60 rounded-lg p-4 ${isMismatch ? 'border-2 border-red-500' : ''}">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-3">AOD Decision Trace ${isMismatch ? '<span class="text-red-400 text-xs ml-2">MISMATCH</span>' : ''}</h4>
+                    ${aodSummary ? renderAodTrace(aodSummary, trace) : '<p class="text-slate-500 text-xs italic">No AOD data available. Run reconciliation first.</p>'}
+                </div>
+            `;
+        }
+        
+        function renderAodTrace(aod, farm) {
+            const diffClass = (field, aodVal, farmVal) => {
+                const aodStr = JSON.stringify(aodVal);
+                const farmStr = JSON.stringify(farmVal);
+                return aodStr !== farmStr ? 'text-yellow-400 font-bold' : 'text-white';
+            };
+            
+            const aodIsShadow = aod.classification === 'shadow' || aod.is_shadow === true;
+            const aodReasons = aod.reason_codes || aod.reasons || [];
+            
+            return `
+                <div class="space-y-2 text-xs">
+                    <div class="flex justify-between"><span class="text-slate-400">asset_key:</span><span class="${diffClass('key', aod.asset_key || aod.key, farm.asset_key_used)} font-mono">${aod.asset_key || aod.key || '-'}</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">classification:</span><span class="${aodIsShadow !== farm.is_shadow ? 'text-yellow-400 font-bold' : 'text-white'}">${aod.classification || (aodIsShadow ? 'shadow' : 'clean')}</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">is_shadow:</span><span class="${aodIsShadow !== farm.is_shadow ? 'text-yellow-400 font-bold' : (aodIsShadow ? 'text-red-400' : 'text-slate-400')}">${aodIsShadow}</span></div>
+                    ${aod.registered_domain !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">registered_domain:</span><span class="${diffClass('rd', aod.registered_domain, farm.registered_domain)} font-mono">${aod.registered_domain || 'null'}</span></div>` : ''}
+                    ${aod.is_external !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">is_external:</span><span class="${diffClass('ext', aod.is_external, farm.is_external)}">${aod.is_external}</span></div>` : ''}
+                    ${aod.is_active !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">is_active:</span><span class="${diffClass('act', aod.is_active, farm.is_active)}">${aod.is_active}</span></div>` : ''}
+                    ${aod.idp_present !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">idp_present:</span><span class="${diffClass('idp', aod.idp_present, farm.idp_present)}">${aod.idp_present}</span></div>` : ''}
+                    ${aod.cmdb_present !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">cmdb_present:</span><span class="${diffClass('cmdb', aod.cmdb_present, farm.cmdb_present)}">${aod.cmdb_present}</span></div>` : ''}
+                    ${aodReasons.length > 0 ? `
+                        <div class="mt-2"><span class="text-slate-400">reason_codes:</span></div>
+                        <div class="flex flex-wrap gap-1 mt-1">
+                            ${aodReasons.map(c => `<span class="px-1.5 py-0.5 bg-purple-900/60 rounded text-[10px]">${c}</span>`).join('')}
+                        </div>
+                    ` : ''}
+                    <details class="mt-3">
+                        <summary class="text-slate-500 cursor-pointer text-[10px]">Raw AOD Summary</summary>
+                        <pre class="mt-2 text-[9px] text-slate-400 bg-slate-800 p-2 rounded overflow-x-auto">${JSON.stringify(aod, null, 2)}</pre>
+                    </details>
                 </div>
             `;
         }
