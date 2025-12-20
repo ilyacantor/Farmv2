@@ -838,16 +838,24 @@ def determine_cmdb_resolution_reason(cmdb_matches: list, candidate_vendors: set)
     return 'NONE'
 
 
-def derive_reason_codes(cand: dict) -> list[str]:
-    """Derive canonical reason codes from candidate flags."""
+def derive_reason_codes(cand: dict, idp_present: bool = None, cmdb_present: bool = None) -> list[str]:
+    """Derive canonical reason codes from candidate flags.
+    
+    If idp_present/cmdb_present are provided, use those (for governance propagation).
+    Otherwise, use the raw candidate values.
+    """
     codes = []
     if cand.get('discovery_present'):
         codes.append('HAS_DISCOVERY')
-    if cand.get('idp_present'):
+    
+    effective_idp = idp_present if idp_present is not None else cand.get('idp_present')
+    effective_cmdb = cmdb_present if cmdb_present is not None else cand.get('cmdb_present')
+    
+    if effective_idp:
         codes.append('HAS_IDP')
     else:
         codes.append('NO_IDP')
-    if cand.get('cmdb_present'):
+    if effective_cmdb:
         codes.append('HAS_CMDB')
     else:
         codes.append('NO_CMDB')
@@ -964,7 +972,7 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
                 cmdb_present = True
                 governed_via_vendor = True
         
-        reasons = derive_reason_codes(cand)
+        reasons = derive_reason_codes(cand, idp_present=idp_present, cmdb_present=cmdb_present)
         if governed_via_vendor:
             reasons.append('GOVERNED_VIA_VENDOR')
         expected_reasons[key] = reasons
