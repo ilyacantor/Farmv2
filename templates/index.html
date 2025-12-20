@@ -1240,6 +1240,7 @@
         }
         
         let currentRecData = null;
+        let currentReconciliationId = null;
         let activeShadowCategory = '';
         let activeZombieCategory = '';
         
@@ -1473,12 +1474,28 @@
             const zombieCount = funnel.zombie_count || 0;
             const cleanCount = funnel.clean_count || 0;
             
-            const entityLevelShadow = summary.entity_level_shadow_count || 0;
-            const domainLevelShadow = summary.domain_level_shadow_count || 0;
-            const farmExpectedShadow = summary.farm_expected_shadow_count || 0;
-            const entityLevelZombie = summary.entity_level_zombie_count || 0;
-            const domainLevelZombie = summary.domain_level_zombie_count || 0;
-            const farmExpectedZombie = summary.farm_expected_zombie_count || 0;
+            const matchedShadows = analysis.matched_shadows || [];
+            const missedShadows = analysis.missed_shadows || [];
+            const fpShadows = analysis.false_positive_shadows || [];
+            const matchedZombies = analysis.matched_zombies || [];
+            const missedZombies = analysis.missed_zombies || [];
+            const fpZombies = analysis.false_positive_zombies || [];
+            
+            const shadowExpected = summary.farm_shadows || 0;
+            const shadowCorrect = matchedShadows.length;
+            const shadowFP = fpShadows.length;
+            const shadowFound = shadowCorrect + shadowFP;
+            const shadowMissed = missedShadows.length;
+            const shadowDenom = shadowExpected + shadowFP;
+            const shadowAccuracy = shadowDenom > 0 ? Math.round(shadowCorrect / shadowDenom * 100) : 100;
+            
+            const zombieExpected = summary.farm_zombies || 0;
+            const zombieCorrect = matchedZombies.length;
+            const zombieFP = fpZombies.length;
+            const zombieFound = zombieCorrect + zombieFP;
+            const zombieMissed = missedZombies.length;
+            const zombieDenom = zombieExpected + zombieFP;
+            const zombieAccuracy = zombieDenom > 0 ? Math.round(zombieCorrect / zombieDenom * 100) : 100;
             
             const funnelSteps = [
                 { label: 'Observations', key: 'observations', value: grossObs, color: 'cyan' },
@@ -1492,10 +1509,8 @@
             const admissionMathValid = rejectedCount + admittedCount === uniqueAssets;
             const classificationMathValid = shadowCount + zombieCount + cleanCount === admittedCount;
             
-            const shadowAgreementPct = farmExpectedShadow > 0 ? Math.round((domainLevelShadow / farmExpectedShadow) * 100) : 100;
-            const zombieAgreementPct = farmExpectedZombie > 0 ? Math.round((domainLevelZombie / farmExpectedZombie) * 100) : 100;
-            
             const snapshotId = rec ? rec.snapshot_id : null;
+            const gradeable = analysis.gradeable !== false;
             
             return `
                 <div class="space-y-6">
@@ -1599,44 +1614,143 @@
                         </div>
                     </div>
                     
-                    <!-- Reconciliation in Plain English -->
+                    <!-- Reconciliation Scorecards -->
                     <div class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
-                        <div class="text-sm font-semibold text-slate-100 mb-3">How the counts compare</div>
+                        <div class="text-sm font-semibold text-slate-100 mb-4">Reconciliation Scorecard</div>
                         
-                        <div class="space-y-4 text-sm text-slate-300 leading-relaxed">
-                            <!-- Shadow Reconciliation -->
-                            <div class="p-3 rounded-lg bg-amber-500/5 ring-1 ring-amber-500/20">
-                                <div class="font-medium text-amber-300 mb-2">Shadow Services</div>
-                                <div class="space-y-2">
-                                    <p>AOD found <span class="font-bold text-amber-400">${entityLevelShadow}</span> shadow services (counting each product name separately: 'Microsoft 365', 'Office 365', 'Teams' as 3 items)</p>
-                                    <p>After grouping by company domain (microsoft.com, google.com, etc), this becomes <span class="font-bold text-blue-400">${domainLevelShadow}</span> unique shadow domains.</p>
-                                    <p>Farm expected <span class="font-bold text-cyan-400">${farmExpectedShadow}</span> shadow domains.</p>
-                                    <p class="mt-2 pt-2 border-t border-amber-500/20">
-                                        ${Math.abs(domainLevelShadow - farmExpectedShadow) <= 2 
-                                            ? `<span class="text-emerald-400">✓</span> Match: ${domainLevelShadow} AOD domains vs ${farmExpectedShadow} Farm domains (${shadowAgreementPct}% agreement)`
-                                            : `<span class="text-amber-400">⚠</span> Difference: ${domainLevelShadow} AOD domains vs ${farmExpectedShadow} Farm domains (${shadowAgreementPct}% agreement)`}
-                                    </p>
+                        ${!gradeable ? `
+                            <div class="text-center py-4 text-slate-500 text-sm">
+                                Grading disabled for stale contract. Re-run AOD to enable.
+                            </div>
+                        ` : `
+                            <div class="space-y-4">
+                                <!-- Shadow Scorecard -->
+                                <div class="p-3 rounded-lg bg-amber-500/5 ring-1 ring-amber-500/20">
+                                    <div class="font-medium text-amber-300 mb-3">Shadows</div>
+                                    <div class="grid grid-cols-6 gap-2 text-center">
+                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                            <div class="text-lg font-bold text-cyan-400">${shadowExpected}</div>
+                                            <div class="text-[10px] text-slate-500">Expected</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                            <div class="text-lg font-bold text-blue-400">${shadowFound}</div>
+                                            <div class="text-[10px] text-slate-500">Found</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-emerald-400" onclick="showLifecycleAssets('shadow', 'correct')">
+                                            <div class="text-lg font-bold text-emerald-400">${shadowCorrect}</div>
+                                            <div class="text-[10px] text-slate-500">Correct</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-red-400" onclick="showLifecycleAssets('shadow', 'fp')">
+                                            <div class="text-lg font-bold ${shadowFP > 0 ? 'text-red-400' : 'text-emerald-400'}">${shadowFP}</div>
+                                            <div class="text-[10px] text-slate-500">False Pos</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-amber-400" onclick="showLifecycleAssets('shadow', 'missed')">
+                                            <div class="text-lg font-bold ${shadowMissed > 0 ? 'text-amber-400' : 'text-emerald-400'}">${shadowMissed}</div>
+                                            <div class="text-[10px] text-slate-500">Missed</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                            <div class="text-lg font-bold ${shadowAccuracy >= 91 ? 'text-emerald-400' : shadowAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${shadowAccuracy}%</div>
+                                            <div class="text-[10px] text-slate-500">Accuracy</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Zombie Scorecard -->
+                                <div class="p-3 rounded-lg bg-purple-500/5 ring-1 ring-purple-500/20">
+                                    <div class="font-medium text-purple-300 mb-3">Zombies</div>
+                                    <div class="grid grid-cols-6 gap-2 text-center">
+                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                            <div class="text-lg font-bold text-cyan-400">${zombieExpected}</div>
+                                            <div class="text-[10px] text-slate-500">Expected</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                            <div class="text-lg font-bold text-blue-400">${zombieFound}</div>
+                                            <div class="text-[10px] text-slate-500">Found</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-emerald-400" onclick="showLifecycleAssets('zombie', 'correct')">
+                                            <div class="text-lg font-bold text-emerald-400">${zombieCorrect}</div>
+                                            <div class="text-[10px] text-slate-500">Correct</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-red-400" onclick="showLifecycleAssets('zombie', 'fp')">
+                                            <div class="text-lg font-bold ${zombieFP > 0 ? 'text-red-400' : 'text-emerald-400'}">${zombieFP}</div>
+                                            <div class="text-[10px] text-slate-500">False Pos</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-amber-400" onclick="showLifecycleAssets('zombie', 'missed')">
+                                            <div class="text-lg font-bold ${zombieMissed > 0 ? 'text-amber-400' : 'text-emerald-400'}">${zombieMissed}</div>
+                                            <div class="text-[10px] text-slate-500">Missed</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                            <div class="text-lg font-bold ${zombieAccuracy >= 91 ? 'text-emerald-400' : zombieAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${zombieAccuracy}%</div>
+                                            <div class="text-[10px] text-slate-500">Accuracy</div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            
-                            <!-- Zombie Reconciliation -->
-                            <div class="p-3 rounded-lg bg-purple-500/5 ring-1 ring-purple-500/20">
-                                <div class="font-medium text-purple-300 mb-2">Zombie Services</div>
-                                <div class="space-y-2">
-                                    <p>AOD found <span class="font-bold text-purple-400">${entityLevelZombie}</span> zombie services (entity-level count)</p>
-                                    <p>After domain grouping: <span class="font-bold text-blue-400">${domainLevelZombie}</span> unique zombie domains.</p>
-                                    <p>Farm expected <span class="font-bold text-cyan-400">${farmExpectedZombie}</span> zombie domains.</p>
-                                    <p class="mt-2 pt-2 border-t border-purple-500/20">
-                                        ${Math.abs(domainLevelZombie - farmExpectedZombie) <= 2 
-                                            ? `<span class="text-emerald-400">✓</span> Match: ${domainLevelZombie} AOD domains vs ${farmExpectedZombie} Farm domains (${zombieAgreementPct}% agreement)`
-                                            : `<span class="text-amber-400">⚠</span> Difference: ${domainLevelZombie} AOD domains vs ${farmExpectedZombie} Farm domains (${zombieAgreementPct}% agreement)`}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+                        `}
+                    </div>
+                    
+                    <!-- Asset Drilldown Container -->
+                    <div id="lifecycleAssetContainer" class="hidden rounded-xl bg-slate-900/60 ring-1 ring-slate-700 p-4 max-h-64 overflow-y-auto">
+                        <div id="lifecycleAssetContent" class="text-sm text-slate-300"></div>
                     </div>
                 </div>
             `;
+        }
+        
+        function showLifecycleAssets(type, category) {
+            const container = document.getElementById('lifecycleAssetContainer');
+            const content = document.getElementById('lifecycleAssetContent');
+            
+            if (!currentRecData || !currentRecData.analysis) {
+                content.innerHTML = '<div class="text-slate-500">No data available</div>';
+                container.classList.remove('hidden');
+                return;
+            }
+            
+            const analysis = currentRecData.analysis;
+            let assets = [];
+            let title = '';
+            
+            if (type === 'shadow') {
+                if (category === 'correct') {
+                    assets = analysis.matched_shadows || [];
+                    title = 'Matched Shadows';
+                } else if (category === 'fp') {
+                    assets = analysis.false_positive_shadows || [];
+                    title = 'False Positive Shadows';
+                } else if (category === 'missed') {
+                    assets = analysis.missed_shadows || [];
+                    title = 'Missed Shadows';
+                }
+            } else {
+                if (category === 'correct') {
+                    assets = analysis.matched_zombies || [];
+                    title = 'Matched Zombies';
+                } else if (category === 'fp') {
+                    assets = analysis.false_positive_zombies || [];
+                    title = 'False Positive Zombies';
+                } else if (category === 'missed') {
+                    assets = analysis.missed_zombies || [];
+                    title = 'Missed Zombies';
+                }
+            }
+            
+            if (assets.length === 0) {
+                content.innerHTML = `<div class="text-slate-500">${title}: None</div>`;
+            } else {
+                content.innerHTML = `
+                    <div class="font-medium text-slate-200 mb-2">${title} (${assets.length})</div>
+                    <div class="space-y-1">
+                        ${assets.map(a => `
+                            <div class="text-xs py-1 px-2 rounded bg-slate-800/50 flex items-center justify-between">
+                                <span class="text-slate-300 font-mono">${a.asset_key || a.key || a}</span>
+                                ${a.rca_hint ? `<span class="text-slate-500 text-[10px]">${a.rca_hint}</span>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            container.classList.remove('hidden');
         }
         
         async function showLifecycleDrilldown(category, snapshotId) {
@@ -1774,6 +1888,7 @@
                 const analysis = analysisData.analysis || {};
                 
                 currentRecData = { rec, analysis };
+                currentReconciliationId = reconciliationId;
                 
                 const payloadHealth = analysis.payload_health || {};
                 const hasPayloadIssues = payloadHealth.has_issues;
@@ -1834,34 +1949,8 @@
                             </div>
                         </div>
                         
-                        <!-- Shadow/Zombie/Lifecycle Tabs -->
-                        <div class="flex items-center gap-1 rounded-2xl bg-white/5 p-1 ring-1 ring-white/10 w-fit">
-                            <button onclick="switchRecTab('shadow')" data-rec-tab="shadow"
-                                class="rounded-xl px-4 py-2 text-sm font-medium bg-white/10 text-slate-50">
-                                Shadow
-                            </button>
-                            <button onclick="switchRecTab('zombie')" data-rec-tab="zombie"
-                                class="rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/5">
-                                Zombie
-                            </button>
-                            <button onclick="switchRecTab('lifecycle')" data-rec-tab="lifecycle"
-                                class="rounded-xl px-4 py-2 text-sm font-medium text-slate-300 hover:bg-white/5">
-                                Lifecycle
-                            </button>
-                        </div>
-                        
-                        <!-- Shadow Tab Content -->
-                        <div data-rec-content="shadow" class="rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
-                            ${renderReconciliationTabContent('shadow', analysis, rec)}
-                        </div>
-                        
-                        <!-- Zombie Tab Content -->
-                        <div data-rec-content="zombie" class="hidden rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
-                            ${renderReconciliationTabContent('zombie', analysis, rec)}
-                        </div>
-                        
-                        <!-- Lifecycle Tab Content -->
-                        <div data-rec-content="lifecycle" class="hidden rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
+                        <!-- Lifecycle Content -->
+                        <div class="rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
                             ${renderLifecycleTabContent(analysis, rec)}
                         </div>
                         
