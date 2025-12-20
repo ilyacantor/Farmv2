@@ -348,6 +348,20 @@
         </div>
     </div>
 
+    <div id="explanationModal" class="modal-overlay hidden">
+        <div class="bg-slate-800 rounded-xl border border-slate-700 p-6 w-full max-w-lg mx-4">
+            <div class="flex items-center justify-between mb-4">
+                <h3 id="explanationModalTitle" class="text-lg font-semibold text-cyan-400">Explanation</h3>
+                <button onclick="closeModal('explanationModal')" class="text-slate-400 hover:text-white">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div id="explanationModalContent" class="text-sm text-slate-300 leading-relaxed"></div>
+        </div>
+    </div>
+
     <script>
         let snapshotsCache = [];
         let reconciliationsCache = {};
@@ -357,6 +371,47 @@
         let currentTraceFilter = 'all';
         let mismatchKeysCache = new Set();
         let currentTestSnapshotId = null;
+        let currentLifecycleExpectedBlock = null;
+
+        const LIFECYCLE_EXPLANATIONS = {
+            observations: {
+                title: 'Observations',
+                content: 'Raw events captured by discovery sources (DNS logs, browser extensions, network scans, SSO logs). Each login, API call, or DNS lookup generates one observation. Multiple observations may point to the same underlying asset.'
+            },
+            unique_assets: {
+                title: 'Unique Assets',
+                content: 'After deduplication by domain. Multiple observations to teams.microsoft.com, outlook.microsoft.com, and sharepoint.microsoft.com might roll up to 3 distinct assets.'
+            },
+            rejected: {
+                title: 'Rejected',
+                content: 'Assets that don\\'t meet admission criteria. Admission requires: ≥2 discovery sources OR cloud evidence OR IdP match OR CMDB match. Common rejection reasons: DNS-only observations, single source detections.'
+            },
+            admitted: {
+                title: 'Admitted',
+                content: 'Assets that passed admission gates and enter the classification pipeline. These are evaluated for shadow/zombie/clean status.'
+            },
+            shadows: {
+                title: 'Shadows',
+                content: 'Active + External + No Governance. The asset has recent activity, is a SaaS/external domain, but has NO IdP integration AND NO CMDB entry (even via vendor propagation).'
+            },
+            zombies: {
+                title: 'Zombies',
+                content: 'Governed + Inactive. The asset IS in IdP or CMDB (governance present), but has NO recent activity within the window.'
+            },
+            clean: {
+                title: 'Clean',
+                content: 'Governed + Active. The asset has both governance (IdP/CMDB) AND recent activity. This is the healthy state.'
+            }
+        };
+
+        function showExplanationModal(key) {
+            const explanation = LIFECYCLE_EXPLANATIONS[key];
+            if (!explanation) return;
+            
+            document.getElementById('explanationModalTitle').textContent = explanation.title;
+            document.getElementById('explanationModalContent').textContent = explanation.content;
+            document.getElementById('explanationModal').classList.remove('hidden');
+        }
 
         function switchMainTab(tab) {
             const consoleTab = document.getElementById('consoleTab');
@@ -1406,7 +1461,7 @@
             `;
         }
 
-        function renderLifecycleTabContent(analysis) {
+        function renderLifecycleTabContent(analysis, rec) {
             const funnel = analysis.lifecycle_funnel || {};
             const summary = analysis.summary || {};
             
@@ -1427,13 +1482,21 @@
             const farmExpectedZombie = summary.farm_expected_zombie_count || 0;
             
             const funnelSteps = [
-                { label: 'Observations', value: grossObs, color: 'cyan', desc: 'Raw discovery observations' },
-                { label: 'Unique Assets', value: uniqueAssets, color: 'blue', desc: 'Deduplicated by domain' },
-                { label: 'Rejected', value: rejectedCount, color: 'rose', desc: 'Did not meet admission criteria' },
-                { label: 'Admitted', value: admittedCount, color: 'emerald', desc: 'Passed admission gates' },
+                { label: 'Observations', key: 'observations', value: grossObs, color: 'cyan' },
+                { label: 'Unique Assets', key: 'unique_assets', value: uniqueAssets, color: 'blue' },
+                { label: 'Rejected', key: 'rejected', value: rejectedCount, color: 'rose' },
+                { label: 'Admitted', key: 'admitted', value: admittedCount, color: 'emerald' },
             ];
             
             const maxVal = Math.max(...funnelSteps.map(s => s.value), 1);
+            
+            const admissionMathValid = rejectedCount + admittedCount === uniqueAssets;
+            const classificationMathValid = shadowCount + zombieCount + cleanCount === admittedCount;
+            
+            const shadowAgreementPct = farmExpectedShadow > 0 ? Math.round((domainLevelShadow / farmExpectedShadow) * 100) : 100;
+            const zombieAgreementPct = farmExpectedZombie > 0 ? Math.round((domainLevelZombie / farmExpectedZombie) * 100) : 100;
+            
+            const snapshotId = rec ? rec.snapshot_id : null;
             
             return `
                 <div class="space-y-6">
@@ -1445,10 +1508,17 @@
                         <div class="space-y-3">
                             ${funnelSteps.map((step, idx) => {
                                 const widthPct = Math.max((step.value / maxVal) * 100, 10);
-                                const isRejected = step.label === 'Rejected';
                                 return `
                                     <div class="flex items-center gap-3">
-                                        <div class="w-28 text-xs text-slate-300">${step.label}</div>
+                                        <div class="w-32 text-xs text-slate-300 flex items-center gap-1.5">
+                                            ${step.label}
+                                            <button onclick="event.stopPropagation(); showExplanationModal('${step.key}')" 
+                                                class="text-slate-500 hover:text-cyan-400 transition-colors" title="What is this?">
+                                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                                </svg>
+                                            </button>
+                                        </div>
                                         <div class="flex-1 h-8 bg-slate-800 rounded-lg overflow-hidden relative">
                                             <div class="h-full bg-${step.color}-500/50 rounded-lg transition-all" 
                                                  style="width: ${widthPct}%"></div>
@@ -1456,69 +1526,112 @@
                                                 <span class="text-sm font-bold text-white drop-shadow">${step.value.toLocaleString()}</span>
                                             </div>
                                         </div>
-                                        <div class="w-48 text-xs text-slate-500">${step.desc}</div>
                                     </div>
                                 `;
                             }).join('')}
                         </div>
                     </div>
                     
-                    <!-- Classification Breakdown -->
-                    <div class="grid grid-cols-3 gap-4 mb-6">
-                        <div class="rounded-xl bg-amber-500/10 ring-1 ring-amber-500/30 p-4 text-center">
-                            <div class="text-2xl font-bold text-amber-400">${shadowCount}</div>
+                    <!-- Classification Breakdown - Clickable -->
+                    <div class="grid grid-cols-3 gap-4 mb-4">
+                        <div class="rounded-xl bg-amber-500/10 ring-1 ring-amber-500/30 p-4 text-center cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
+                             onclick="showLifecycleDrilldown('shadows', '${snapshotId}')">
+                            <div class="flex items-center justify-center gap-1.5 mb-1">
+                                <div class="text-2xl font-bold text-amber-400">${shadowCount}</div>
+                                <button onclick="event.stopPropagation(); showExplanationModal('shadows')" 
+                                    class="text-slate-500 hover:text-amber-400 transition-colors" title="What is this?">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                </button>
+                            </div>
                             <div class="text-xs text-amber-300/70">Shadows</div>
-                            <div class="text-[10px] text-slate-500 mt-1">Active, no governance</div>
+                            <div class="text-[10px] text-slate-500 mt-1">Click to view assets</div>
                         </div>
-                        <div class="rounded-xl bg-purple-500/10 ring-1 ring-purple-500/30 p-4 text-center">
-                            <div class="text-2xl font-bold text-purple-400">${zombieCount}</div>
+                        <div class="rounded-xl bg-purple-500/10 ring-1 ring-purple-500/30 p-4 text-center cursor-pointer hover:ring-2 hover:ring-purple-400 transition-all"
+                             onclick="showLifecycleDrilldown('zombies', '${snapshotId}')">
+                            <div class="flex items-center justify-center gap-1.5 mb-1">
+                                <div class="text-2xl font-bold text-purple-400">${zombieCount}</div>
+                                <button onclick="event.stopPropagation(); showExplanationModal('zombies')" 
+                                    class="text-slate-500 hover:text-purple-400 transition-colors" title="What is this?">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                </button>
+                            </div>
                             <div class="text-xs text-purple-300/70">Zombies</div>
-                            <div class="text-[10px] text-slate-500 mt-1">Governed, inactive</div>
+                            <div class="text-[10px] text-slate-500 mt-1">Click to view assets</div>
                         </div>
-                        <div class="rounded-xl bg-emerald-500/10 ring-1 ring-emerald-500/30 p-4 text-center">
-                            <div class="text-2xl font-bold text-emerald-400">${cleanCount}</div>
+                        <div class="rounded-xl bg-emerald-500/10 ring-1 ring-emerald-500/30 p-4 text-center cursor-pointer hover:ring-2 hover:ring-emerald-400 transition-all"
+                             onclick="showLifecycleDrilldown('clean', '${snapshotId}')">
+                            <div class="flex items-center justify-center gap-1.5 mb-1">
+                                <div class="text-2xl font-bold text-emerald-400">${cleanCount}</div>
+                                <button onclick="event.stopPropagation(); showExplanationModal('clean')" 
+                                    class="text-slate-500 hover:text-emerald-400 transition-colors" title="What is this?">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                    </svg>
+                                </button>
+                            </div>
                             <div class="text-xs text-emerald-300/70">Clean</div>
-                            <div class="text-[10px] text-slate-500 mt-1">Governed, active</div>
+                            <div class="text-[10px] text-slate-500 mt-1">Click to view assets</div>
                         </div>
                     </div>
                     
-                    <!-- Shadow Count Discrepancy Explanation -->
-                    <div class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
-                        <div class="text-sm font-semibold text-slate-100 mb-3">Shadow Count Reconciliation</div>
-                        <div class="text-xs text-slate-400 mb-4">Entity-level counts roll up to domain-level for comparison</div>
-                        
-                        <div class="grid grid-cols-3 gap-4 text-center">
-                            <div class="p-3 rounded-lg bg-rose-500/10 ring-1 ring-rose-500/20">
-                                <div class="text-lg font-bold text-rose-400">${entityLevelShadow}</div>
-                                <div class="text-xs text-slate-400">AOD Entity-Level</div>
-                                <div class="text-[10px] text-slate-500">per observed_name</div>
+                    <!-- Drilldown Container -->
+                    <div id="lifecycleDrilldownContainer" class="hidden rounded-xl bg-slate-900/60 ring-1 ring-slate-700 p-4 max-h-64 overflow-y-auto">
+                        <div id="lifecycleDrilldownContent" class="text-sm text-slate-300"></div>
+                    </div>
+                    
+                    <!-- Math Validation -->
+                    <div class="rounded-xl bg-slate-900/40 ring-1 ring-slate-700 p-4">
+                        <div class="text-sm font-semibold text-slate-100 mb-3">Math Check</div>
+                        <div class="space-y-2 text-sm">
+                            <div class="flex items-center gap-2">
+                                <span class="${admissionMathValid ? 'text-emerald-400' : 'text-amber-400'}">${admissionMathValid ? '✓' : '⚠'}</span>
+                                <span class="text-slate-300">${rejectedCount.toLocaleString()} rejected + ${admittedCount.toLocaleString()} admitted = ${uniqueAssets.toLocaleString()} unique assets</span>
+                                ${!admissionMathValid ? `<span class="text-amber-400 text-xs">(actual: ${(rejectedCount + admittedCount).toLocaleString()})</span>` : ''}
                             </div>
-                            <div class="p-3 rounded-lg bg-blue-500/10 ring-1 ring-blue-500/20">
-                                <div class="text-lg font-bold text-blue-400">${domainLevelShadow}</div>
-                                <div class="text-xs text-slate-400">AOD Domain-Level</div>
-                                <div class="text-[10px] text-slate-500">after roll_up</div>
-                            </div>
-                            <div class="p-3 rounded-lg bg-cyan-500/10 ring-1 ring-cyan-500/20">
-                                <div class="text-lg font-bold text-cyan-400">${farmExpectedShadow}</div>
-                                <div class="text-xs text-slate-400">Farm Expected</div>
-                                <div class="text-[10px] text-slate-500">unique domains</div>
+                            <div class="flex items-center gap-2">
+                                <span class="${classificationMathValid ? 'text-emerald-400' : 'text-amber-400'}">${classificationMathValid ? '✓' : '⚠'}</span>
+                                <span class="text-slate-300">${shadowCount.toLocaleString()} shadows + ${zombieCount.toLocaleString()} zombies + ${cleanCount.toLocaleString()} clean = ${admittedCount.toLocaleString()} admitted</span>
+                                ${!classificationMathValid ? `<span class="text-amber-400 text-xs">(actual: ${(shadowCount + zombieCount + cleanCount).toLocaleString()})</span>` : ''}
                             </div>
                         </div>
+                    </div>
+                    
+                    <!-- Reconciliation in Plain English -->
+                    <div class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
+                        <div class="text-sm font-semibold text-slate-100 mb-3">How the counts compare</div>
                         
-                        <div class="mt-4 pt-4 border-t border-slate-700/50">
-                            <div class="text-sm font-semibold text-slate-100 mb-3">Zombie Count Reconciliation</div>
-                            <div class="grid grid-cols-3 gap-4 text-center">
-                                <div class="p-3 rounded-lg bg-rose-500/10 ring-1 ring-rose-500/20">
-                                    <div class="text-lg font-bold text-rose-400">${entityLevelZombie}</div>
-                                    <div class="text-xs text-slate-400">AOD Entity-Level</div>
+                        <div class="space-y-4 text-sm text-slate-300 leading-relaxed">
+                            <!-- Shadow Reconciliation -->
+                            <div class="p-3 rounded-lg bg-amber-500/5 ring-1 ring-amber-500/20">
+                                <div class="font-medium text-amber-300 mb-2">Shadow Services</div>
+                                <div class="space-y-2">
+                                    <p>AOD found <span class="font-bold text-amber-400">${entityLevelShadow}</span> shadow services (counting each product name separately: 'Microsoft 365', 'Office 365', 'Teams' as 3 items)</p>
+                                    <p>After grouping by company domain (microsoft.com, google.com, etc), this becomes <span class="font-bold text-blue-400">${domainLevelShadow}</span> unique shadow domains.</p>
+                                    <p>Farm expected <span class="font-bold text-cyan-400">${farmExpectedShadow}</span> shadow domains.</p>
+                                    <p class="mt-2 pt-2 border-t border-amber-500/20">
+                                        ${Math.abs(domainLevelShadow - farmExpectedShadow) <= 2 
+                                            ? `<span class="text-emerald-400">✓</span> Match: ${domainLevelShadow} AOD domains vs ${farmExpectedShadow} Farm domains (${shadowAgreementPct}% agreement)`
+                                            : `<span class="text-amber-400">⚠</span> Difference: ${domainLevelShadow} AOD domains vs ${farmExpectedShadow} Farm domains (${shadowAgreementPct}% agreement)`}
+                                    </p>
                                 </div>
-                                <div class="p-3 rounded-lg bg-blue-500/10 ring-1 ring-blue-500/20">
-                                    <div class="text-lg font-bold text-blue-400">${domainLevelZombie}</div>
-                                    <div class="text-xs text-slate-400">AOD Domain-Level</div>
-                                </div>
-                                <div class="p-3 rounded-lg bg-cyan-500/10 ring-1 ring-cyan-500/20">
-                                    <div class="text-lg font-bold text-cyan-400">${farmExpectedZombie}</div>
-                                    <div class="text-xs text-slate-400">Farm Expected</div>
+                            </div>
+                            
+                            <!-- Zombie Reconciliation -->
+                            <div class="p-3 rounded-lg bg-purple-500/5 ring-1 ring-purple-500/20">
+                                <div class="font-medium text-purple-300 mb-2">Zombie Services</div>
+                                <div class="space-y-2">
+                                    <p>AOD found <span class="font-bold text-purple-400">${entityLevelZombie}</span> zombie services (entity-level count)</p>
+                                    <p>After domain grouping: <span class="font-bold text-blue-400">${domainLevelZombie}</span> unique zombie domains.</p>
+                                    <p>Farm expected <span class="font-bold text-cyan-400">${farmExpectedZombie}</span> zombie domains.</p>
+                                    <p class="mt-2 pt-2 border-t border-purple-500/20">
+                                        ${Math.abs(domainLevelZombie - farmExpectedZombie) <= 2 
+                                            ? `<span class="text-emerald-400">✓</span> Match: ${domainLevelZombie} AOD domains vs ${farmExpectedZombie} Farm domains (${zombieAgreementPct}% agreement)`
+                                            : `<span class="text-amber-400">⚠</span> Difference: ${domainLevelZombie} AOD domains vs ${farmExpectedZombie} Farm domains (${zombieAgreementPct}% agreement)`}
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -1535,6 +1648,96 @@
                         </div>
                     </div>
                 </div>
+            `;
+        }
+        
+        async function showLifecycleDrilldown(category, snapshotId) {
+            const container = document.getElementById('lifecycleDrilldownContainer');
+            const content = document.getElementById('lifecycleDrilldownContent');
+            
+            if (!snapshotId) {
+                content.innerHTML = '<div class="text-slate-500">Snapshot ID not available</div>';
+                container.classList.remove('hidden');
+                return;
+            }
+            
+            if (currentLifecycleExpectedBlock && currentLifecycleExpectedBlock._snapshotId === snapshotId) {
+                renderDrilldownContent(category);
+                container.classList.remove('hidden');
+                return;
+            }
+            
+            content.innerHTML = '<div class="text-slate-400 animate-pulse">Loading assets...</div>';
+            container.classList.remove('hidden');
+            
+            try {
+                const resp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
+                const data = await resp.json();
+                data._snapshotId = snapshotId;
+                currentLifecycleExpectedBlock = data;
+                renderDrilldownContent(category);
+            } catch (e) {
+                content.innerHTML = `<div class="text-red-400">Failed to load assets: ${e.message}</div>`;
+            }
+        }
+        
+        function renderDrilldownContent(category) {
+            const content = document.getElementById('lifecycleDrilldownContent');
+            if (!currentLifecycleExpectedBlock) {
+                content.innerHTML = '<div class="text-slate-500">No data available</div>';
+                return;
+            }
+            
+            let assets = [];
+            let title = '';
+            let colorClass = '';
+            const expectedReasons = currentLifecycleExpectedBlock.expected_reasons || {};
+            
+            if (category === 'shadows') {
+                assets = currentLifecycleExpectedBlock.shadow_expected || [];
+                title = 'Shadow Assets';
+                colorClass = 'amber';
+            } else if (category === 'zombies') {
+                assets = currentLifecycleExpectedBlock.zombie_expected || [];
+                title = 'Zombie Assets';
+                colorClass = 'purple';
+            } else if (category === 'clean') {
+                assets = currentLifecycleExpectedBlock.clean_expected || [];
+                title = 'Clean Assets';
+                colorClass = 'emerald';
+            }
+            
+            if (assets.length === 0) {
+                content.innerHTML = `<div class="text-slate-500">No ${title.toLowerCase()} found</div>`;
+                return;
+            }
+            
+            const assetRows = assets.slice(0, 100).map(a => {
+                const key = a.asset_key;
+                const reasons = expectedReasons[key] || [];
+                const reasonPills = reasons.map(r => 
+                    `<span class="px-1.5 py-0.5 text-[10px] rounded bg-slate-700 text-slate-300">${r}</span>`
+                ).join(' ');
+                
+                return `
+                    <div class="flex items-center justify-between py-2 border-b border-slate-700/50 last:border-b-0">
+                        <span class="font-mono text-${colorClass}-300">${key}</span>
+                        <div class="flex gap-1">${reasonPills || '<span class="text-slate-500 text-xs">-</span>'}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            const showMore = assets.length > 100 ? `<div class="text-slate-500 text-xs mt-2">Showing 100 of ${assets.length} assets</div>` : '';
+            
+            content.innerHTML = `
+                <div class="flex items-center justify-between mb-3">
+                    <div class="font-medium text-${colorClass}-400">${title}</div>
+                    <div class="text-xs text-slate-500">${assets.length} total</div>
+                </div>
+                <div class="divide-y divide-slate-700/30">
+                    ${assetRows}
+                </div>
+                ${showMore}
             `;
         }
 
@@ -1671,7 +1874,7 @@
                         
                         <!-- Lifecycle Tab Content -->
                         <div data-rec-content="lifecycle" class="hidden rounded-3xl bg-white/3 p-5 ring-1 ring-white/10">
-                            ${renderLifecycleTabContent(analysis)}
+                            ${renderLifecycleTabContent(analysis, rec)}
                         </div>
                         
                         <!-- Raw Report -->
