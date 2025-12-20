@@ -492,6 +492,32 @@ def extract_domain(text: str) -> Optional[str]:
     return text if '.' in text else None
 
 
+def extract_registered_domain(domain: str) -> Optional[str]:
+    """Extract eTLD+1 (registered domain) from a domain.
+    
+    Examples:
+        app.slack.com -> slack.com
+        cdn.static.example.co.uk -> example.co.uk
+        slack.com -> slack.com
+    """
+    if not domain:
+        return None
+    domain = domain.lower().strip('.')
+    
+    COMPOUND_TLDS = {'.co.uk', '.com.au', '.co.nz', '.co.jp', '.com.br', '.co.in'}
+    for ctld in COMPOUND_TLDS:
+        if domain.endswith(ctld):
+            parts = domain[:-len(ctld)].split('.')
+            if parts:
+                return parts[-1] + ctld
+            return domain
+    
+    parts = domain.split('.')
+    if len(parts) >= 2:
+        return '.'.join(parts[-2:])
+    return domain
+
+
 def to_domain_key(entity_key: str) -> str:
     """
     Convert an entity key to its domain key for roll-up.
@@ -590,6 +616,9 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         'discovery_present': False,
         'activity_present': False,
         'stale_timestamps': [],
+        'activity_timestamps': [],  # All activity timestamps with source
+        'latest_activity_at': None,
+        'activity_source': 'none',
     })
     
     observations = planes.get('discovery', {}).get('observations', [])
@@ -610,9 +639,16 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             candidates[key]['vendors'].add(vendor_hint)
         
         ts = obs.get('observed_at')
+        source = obs.get('source', 'unknown')
         if ts:
+            candidates[key]['activity_timestamps'].append({'ts': ts, 'source': source})
             if is_within_window(ts, window_days, reference):
                 candidates[key]['activity_present'] = True
+                ts_dt = parse_timestamp(ts)
+                latest = parse_timestamp(candidates[key]['latest_activity_at'])
+                if ts_dt and (not latest or ts_dt > latest):
+                    candidates[key]['latest_activity_at'] = ts
+                    candidates[key]['activity_source'] = source
             elif is_stale(ts, window_days, reference):
                 candidates[key]['stale_timestamps'].append(ts)
     
@@ -634,8 +670,14 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         if ts and matched_keys:
             for key in matched_keys:
                 cand = candidates[key]
+                cand['activity_timestamps'].append({'ts': ts, 'source': 'idp'})
                 if is_within_window(ts, window_days, reference):
                     cand['activity_present'] = True
+                    ts_dt = parse_timestamp(ts)
+                    latest = parse_timestamp(cand['latest_activity_at'])
+                    if ts_dt and (not latest or ts_dt > latest):
+                        cand['latest_activity_at'] = ts
+                        cand['activity_source'] = 'idp'
                 elif is_stale(ts, window_days, reference):
                     cand['stale_timestamps'].append(ts)
     
@@ -816,9 +858,11 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
     expected_rca_hint = {}
     expected_cmdb_resolution = {}
     excluded_by_mode = []
+    decision_traces = {}
     
     for key, cand in candidates.items():
         is_external = is_external_domain(key)
+        is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
         
         if mode == "sprawl" and not is_external:
             excluded_by_mode.append(key)
@@ -838,9 +882,25 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
                 'matches': cand.get('cmdb_matches', []),
             }
         
-        is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
         is_shadow = is_external and cand['activity_present'] and not cand['idp_present'] and not cand['cmdb_present'] and not is_infra_excluded
         is_zombie = (cand['idp_present'] or cand['cmdb_present']) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
+        
+        raw_domains = list(cand.get('domains', set()))[:10]
+        decision_traces[key] = {
+            'asset_key_used': key,
+            'registered_domain': extract_registered_domain(key),
+            'raw_domains_seen': raw_domains,
+            'is_external': is_external,
+            'is_active': cand['activity_present'],
+            'activity_window_days': window_days,
+            'activity_source': cand.get('activity_source', 'none'),
+            'latest_activity_at': cand.get('latest_activity_at'),
+            'idp_present': cand['idp_present'],
+            'cmdb_present': cand['cmdb_present'],
+            'infra_excluded': is_infra_excluded,
+            'is_shadow': is_shadow,
+            'reason_codes': reasons,
+        }
         
         if is_shadow:
             shadow_expected.append({'asset_key': key})
@@ -868,6 +928,7 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
         'expected_rca_hint': expected_rca_hint,
         'expected_cmdb_resolution': expected_cmdb_resolution,
         'excluded_by_mode': excluded_by_mode,
+        'decision_traces': decision_traces,
     }
 
 
