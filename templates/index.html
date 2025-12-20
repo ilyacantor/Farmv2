@@ -66,7 +66,16 @@
             </div>
         </header>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="flex gap-6 mb-6 border-b border-slate-700">
+            <button onclick="switchMainTab('console')" id="tabConsole" class="pb-3 px-1 text-sm font-medium tab-active">
+                Console
+            </button>
+            <button onclick="switchMainTab('test')" id="tabTest" class="pb-3 px-1 text-sm font-medium tab-inactive">
+                Test Lab
+            </button>
+        </div>
+
+        <div id="consoleTab" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div class="space-y-6">
                 <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
                     <h2 class="text-lg font-semibold text-cyan-400 mb-4">Generate Snapshot</h2>
@@ -161,6 +170,75 @@
                 </div>
                 <div id="reconciliationsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-220px)] overflow-y-auto">
                     <div class="text-slate-500 text-center py-12">Loading reconciliations...</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="testTab" class="hidden">
+            <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700 mb-6">
+                <h2 class="text-lg font-semibold text-cyan-400 mb-4">Decision Trace Comparison</h2>
+                <p class="text-slate-400 text-sm mb-4">
+                    Compare Farm's decision logic against AOD's for any asset. Select a snapshot and enter an asset key to see the full decision trace.
+                </p>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Snapshot</label>
+                        <select id="testSnapshotSelect" onchange="loadTestSnapshot()"
+                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                            <option value="">Select a snapshot...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1">Asset Key</label>
+                        <input type="text" id="testAssetKey" placeholder="e.g., slackapp.com"
+                            class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                    </div>
+                    <div class="flex items-end">
+                        <button onclick="lookupDecisionTrace()" 
+                            class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2 px-4 rounded-lg transition-all">
+                            Lookup Trace
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="flex gap-2 mb-4">
+                    <button onclick="filterTraces('all')" id="traceFilterAll" class="px-3 py-1 text-xs rounded bg-cyan-600 text-white">All</button>
+                    <button onclick="filterTraces('shadow')" id="traceFilterShadow" class="px-3 py-1 text-xs rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Shadows Only</button>
+                    <button onclick="filterTraces('mismatch')" id="traceFilterMismatch" class="px-3 py-1 text-xs rounded bg-slate-700 text-slate-300 hover:bg-slate-600">Mismatches</button>
+                </div>
+            </div>
+            
+            <div id="decisionTraceResult" class="hidden bg-slate-800/60 rounded-xl p-5 border border-slate-700 mb-6">
+                <h3 class="text-md font-semibold text-purple-400 mb-4">Decision Trace: <span id="traceAssetKey" class="text-white"></span></h3>
+                <div id="traceContent" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                </div>
+            </div>
+            
+            <div id="decisionTraceList" class="bg-slate-800/60 rounded-xl border border-slate-700">
+                <div class="flex items-center justify-between p-4 border-b border-slate-700">
+                    <h3 class="text-md font-semibold text-purple-400">All Decision Traces</h3>
+                    <span id="traceCount" class="text-xs text-slate-500">0 traces</span>
+                </div>
+                <div id="traceTableContainer" class="overflow-x-auto max-h-[60vh] overflow-y-auto">
+                    <table class="w-full text-xs">
+                        <thead class="bg-slate-900/60 sticky top-0">
+                            <tr class="text-slate-400">
+                                <th class="px-3 py-2 text-left">Asset Key</th>
+                                <th class="px-3 py-2 text-left">Registered Domain</th>
+                                <th class="px-3 py-2 text-center">External</th>
+                                <th class="px-3 py-2 text-center">Active</th>
+                                <th class="px-3 py-2 text-center">IdP</th>
+                                <th class="px-3 py-2 text-center">CMDB</th>
+                                <th class="px-3 py-2 text-center">Infra</th>
+                                <th class="px-3 py-2 text-center">Shadow</th>
+                                <th class="px-3 py-2 text-left">Activity Source</th>
+                            </tr>
+                        </thead>
+                        <tbody id="traceTableBody" class="divide-y divide-slate-700/50">
+                            <tr><td colspan="9" class="text-center py-8 text-slate-500">Select a snapshot to load traces</td></tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -273,6 +351,183 @@
         let reconciliationsCache = {};
         let reconciliationsListCache = [];
         let aodStatusCache = {};
+        let decisionTracesCache = {};
+        let currentTraceFilter = 'all';
+
+        function switchMainTab(tab) {
+            const consoleTab = document.getElementById('consoleTab');
+            const testTab = document.getElementById('testTab');
+            const tabConsole = document.getElementById('tabConsole');
+            const tabTest = document.getElementById('tabTest');
+            
+            if (tab === 'console') {
+                consoleTab.classList.remove('hidden');
+                testTab.classList.add('hidden');
+                tabConsole.classList.remove('tab-inactive');
+                tabConsole.classList.add('tab-active');
+                tabTest.classList.remove('tab-active');
+                tabTest.classList.add('tab-inactive');
+            } else {
+                consoleTab.classList.add('hidden');
+                testTab.classList.remove('hidden');
+                tabConsole.classList.remove('tab-active');
+                tabConsole.classList.add('tab-inactive');
+                tabTest.classList.remove('tab-inactive');
+                tabTest.classList.add('tab-active');
+                populateTestSnapshotSelect();
+            }
+        }
+
+        function populateTestSnapshotSelect() {
+            const select = document.getElementById('testSnapshotSelect');
+            select.innerHTML = '<option value="">Select a snapshot...</option>';
+            snapshotsCache.forEach(snap => {
+                const date = new Date(snap.created_at).toLocaleDateString();
+                select.innerHTML += `<option value="${snap.snapshot_id}">${snap.tenant_id} - ${date}</option>`;
+            });
+        }
+
+        async function loadTestSnapshot() {
+            const snapshotId = document.getElementById('testSnapshotSelect').value;
+            if (!snapshotId) return;
+            
+            try {
+                const resp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
+                const data = await resp.json();
+                decisionTracesCache = data.decision_traces || {};
+                renderTraceTable();
+            } catch (e) {
+                console.error('Failed to load traces:', e);
+            }
+        }
+
+        function renderTraceTable() {
+            const tbody = document.getElementById('traceTableBody');
+            const traces = Object.values(decisionTracesCache);
+            
+            let filtered = traces;
+            if (currentTraceFilter === 'shadow') {
+                filtered = traces.filter(t => t.is_shadow);
+            } else if (currentTraceFilter === 'mismatch') {
+                filtered = traces.filter(t => t.is_shadow);
+            }
+            
+            document.getElementById('traceCount').textContent = `${filtered.length} traces`;
+            
+            if (filtered.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-500">No traces found</td></tr>';
+                return;
+            }
+            
+            const boolIcon = (val) => val 
+                ? '<span class="text-green-400">Y</span>' 
+                : '<span class="text-slate-500">-</span>';
+            
+            tbody.innerHTML = filtered.slice(0, 500).map(t => `
+                <tr class="hover:bg-slate-700/30 cursor-pointer" onclick="showTraceDetail('${t.asset_key_used}')">
+                    <td class="px-3 py-2 text-cyan-300 font-mono">${t.asset_key_used}</td>
+                    <td class="px-3 py-2 text-slate-400">${t.registered_domain || '-'}</td>
+                    <td class="px-3 py-2 text-center">${boolIcon(t.is_external)}</td>
+                    <td class="px-3 py-2 text-center">${boolIcon(t.is_active)}</td>
+                    <td class="px-3 py-2 text-center">${boolIcon(t.idp_present)}</td>
+                    <td class="px-3 py-2 text-center">${boolIcon(t.cmdb_present)}</td>
+                    <td class="px-3 py-2 text-center">${boolIcon(t.infra_excluded)}</td>
+                    <td class="px-3 py-2 text-center">${t.is_shadow ? '<span class="text-red-400 font-bold">SHADOW</span>' : '<span class="text-slate-500">-</span>'}</td>
+                    <td class="px-3 py-2 text-slate-400">${t.activity_source || 'none'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function filterTraces(filter) {
+            currentTraceFilter = filter;
+            document.querySelectorAll('[id^="traceFilter"]').forEach(btn => {
+                btn.classList.remove('bg-cyan-600', 'text-white');
+                btn.classList.add('bg-slate-700', 'text-slate-300');
+            });
+            const activeBtn = document.getElementById('traceFilter' + filter.charAt(0).toUpperCase() + filter.slice(1));
+            if (activeBtn) {
+                activeBtn.classList.remove('bg-slate-700', 'text-slate-300');
+                activeBtn.classList.add('bg-cyan-600', 'text-white');
+            }
+            renderTraceTable();
+        }
+
+        function lookupDecisionTrace() {
+            const key = document.getElementById('testAssetKey').value.trim().toLowerCase();
+            if (!key) return;
+            showTraceDetail(key);
+        }
+
+        function showTraceDetail(assetKey) {
+            const trace = decisionTracesCache[assetKey];
+            if (!trace) {
+                alert(`No trace found for: ${assetKey}`);
+                return;
+            }
+            
+            document.getElementById('decisionTraceResult').classList.remove('hidden');
+            document.getElementById('traceAssetKey').textContent = assetKey;
+            
+            const content = document.getElementById('traceContent');
+            content.innerHTML = `
+                <div class="bg-slate-900/60 rounded-lg p-4">
+                    <h4 class="text-sm font-semibold text-cyan-400 mb-3">Farm Decision Trace</h4>
+                    <div class="space-y-2 text-xs">
+                        <div class="flex justify-between"><span class="text-slate-400">asset_key_used:</span><span class="text-white font-mono">${trace.asset_key_used}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">registered_domain:</span><span class="text-white font-mono">${trace.registered_domain || 'null'}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">raw_domains_seen:</span><span class="text-white font-mono">${JSON.stringify(trace.raw_domains_seen)}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">is_external:</span><span class="${trace.is_external ? 'text-green-400' : 'text-red-400'}">${trace.is_external}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">is_active:</span><span class="${trace.is_active ? 'text-green-400' : 'text-red-400'}">${trace.is_active}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">activity_window_days:</span><span class="text-white">${trace.activity_window_days}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">activity_source:</span><span class="text-white">${trace.activity_source}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">latest_activity_at:</span><span class="text-white font-mono text-[10px]">${trace.latest_activity_at || 'null'}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">idp_present:</span><span class="${trace.idp_present ? 'text-green-400' : 'text-red-400'}">${trace.idp_present}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">cmdb_present:</span><span class="${trace.cmdb_present ? 'text-green-400' : 'text-red-400'}">${trace.cmdb_present}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">infra_excluded:</span><span class="${trace.infra_excluded ? 'text-red-400' : 'text-green-400'}">${trace.infra_excluded}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">is_shadow:</span><span class="${trace.is_shadow ? 'text-red-400 font-bold' : 'text-slate-400'}">${trace.is_shadow}</span></div>
+                        <div class="mt-2"><span class="text-slate-400">reason_codes:</span></div>
+                        <div class="flex flex-wrap gap-1 mt-1">
+                            ${trace.reason_codes.map(c => `<span class="px-1.5 py-0.5 bg-slate-700 rounded text-[10px]">${c}</span>`).join('')}
+                        </div>
+                    </div>
+                </div>
+                <div class="bg-slate-900/60 rounded-lg p-4 border-2 border-dashed border-slate-600">
+                    <h4 class="text-sm font-semibold text-purple-400 mb-3">AOD Decision Trace</h4>
+                    <p class="text-slate-500 text-xs italic">Paste AOD's decision trace here for comparison.</p>
+                    <textarea id="aodTraceInput" placeholder='{"asset_key_used": "...", ...}' 
+                        class="w-full mt-2 bg-slate-800 border border-slate-600 rounded p-2 text-xs font-mono text-white h-48"></textarea>
+                    <button onclick="compareTraces('${assetKey}')" class="mt-2 px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-xs rounded">
+                        Compare
+                    </button>
+                </div>
+            `;
+        }
+
+        function compareTraces(assetKey) {
+            const farmTrace = decisionTracesCache[assetKey];
+            const aodInput = document.getElementById('aodTraceInput').value.trim();
+            if (!aodInput) {
+                alert('Paste AOD trace JSON to compare');
+                return;
+            }
+            try {
+                const aodTrace = JSON.parse(aodInput);
+                const diffs = [];
+                const fields = ['asset_key_used', 'registered_domain', 'is_external', 'is_active', 'activity_source', 'idp_present', 'cmdb_present', 'infra_excluded', 'is_shadow'];
+                fields.forEach(f => {
+                    if (JSON.stringify(farmTrace[f]) !== JSON.stringify(aodTrace[f])) {
+                        diffs.push(`${f}: Farm=${JSON.stringify(farmTrace[f])} vs AOD=${JSON.stringify(aodTrace[f])}`);
+                    }
+                });
+                if (diffs.length === 0) {
+                    alert('No differences found! Farm and AOD traces match.');
+                } else {
+                    alert('Differences found:\\n\\n' + diffs.join('\\n'));
+                }
+            } catch (e) {
+                alert('Invalid JSON: ' + e.message);
+            }
+        }
 
         const companyPrefixes = ['Tech', 'Data', 'Cloud', 'Cyber', 'Net', 'Info', 'Sys', 'Core', 'Blue', 'Nova', 'Apex', 'Velo', 'Aero', 'Flux', 'Helix'];
         const companySuffixes = ['Corp', 'Labs', 'Systems', 'Works', 'Flow', 'Hub', 'Dynamics', 'Logic', 'Wave', 'Edge'];
