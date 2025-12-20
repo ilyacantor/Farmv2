@@ -937,9 +937,6 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
             excluded_by_mode.append(key)
             continue
         
-        reasons = derive_reason_codes(cand)
-        expected_reasons[key] = reasons
-        
         cmdb_resolution = cand.get('cmdb_resolution_reason', 'NONE')
         if cmdb_resolution != 'NONE':
             expected_cmdb_resolution[key] = {
@@ -948,15 +945,27 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
                 'matches': cand.get('cmdb_matches', []),
             }
         
-        idp_present = cand['idp_present']
-        cmdb_present = cand['cmdb_present']
+        idp_present_direct = cand['idp_present']
+        cmdb_present_direct = cand['cmdb_present']
+        idp_present = idp_present_direct
+        cmdb_present = cmdb_present_direct
         vendor_name = None
+        governed_via_vendor = False
         
         key_lower = key.lower()
         if key_lower in vendor_governance:
             vendor_has_idp, vendor_has_cmdb, vendor_name = vendor_governance[key_lower]
-            idp_present = idp_present or vendor_has_idp
-            cmdb_present = cmdb_present or vendor_has_cmdb
+            if vendor_has_idp and not idp_present_direct:
+                idp_present = True
+                governed_via_vendor = True
+            if vendor_has_cmdb and not cmdb_present_direct:
+                cmdb_present = True
+                governed_via_vendor = True
+        
+        reasons = derive_reason_codes(cand)
+        if governed_via_vendor:
+            reasons.append('GOVERNED_VIA_VENDOR')
+        expected_reasons[key] = reasons
         
         is_shadow = is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded
         is_zombie = (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
@@ -972,9 +981,9 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
             'activity_source': cand.get('activity_source', 'none'),
             'latest_activity_at': cand.get('latest_activity_at'),
             'idp_present': idp_present,
-            'idp_present_direct': cand['idp_present'],
+            'idp_present_direct': idp_present_direct,
             'cmdb_present': cmdb_present,
-            'cmdb_present_direct': cand['cmdb_present'],
+            'cmdb_present_direct': cmdb_present_direct,
             'vendor_governance': vendor_name,
             'infra_excluded': is_infra_excluded,
             'is_shadow': is_shadow,
