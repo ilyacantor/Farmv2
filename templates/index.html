@@ -1150,8 +1150,10 @@
                         <div class="space-y-3">
                             ${funnelSteps.map((step, idx) => {
                                 const widthPct = Math.max((step.value / maxVal) * 100, 10);
+                                const isClickable = step.key !== 'observations';
                                 return `
-                                    <div class="flex items-center gap-3">
+                                    <div class="flex items-center gap-3 ${isClickable ? 'cursor-pointer group' : ''}" 
+                                         ${isClickable ? `onclick="showFunnelDrilldown('${step.key}', '${snapshotId}')"` : ''}>
                                         <div class="w-32 text-xs text-slate-300 flex items-center gap-1.5">
                                             ${step.label}
                                             <button onclick="event.stopPropagation(); showExplanationModal('${step.key}')" 
@@ -1161,11 +1163,12 @@
                                                 </svg>
                                             </button>
                                         </div>
-                                        <div class="flex-1 h-8 bg-slate-800 rounded-lg overflow-hidden relative">
+                                        <div class="flex-1 h-8 bg-slate-800 rounded-lg overflow-hidden relative ${isClickable ? 'group-hover:ring-2 group-hover:ring-' + step.color + '-400/50 transition-all' : ''}">
                                             <div class="h-full bg-${step.color}-500/50 rounded-lg transition-all" 
                                                  style="width: ${widthPct}%"></div>
-                                            <div class="absolute inset-0 flex items-center px-3">
+                                            <div class="absolute inset-0 flex items-center justify-between px-3">
                                                 <span class="text-sm font-bold text-white drop-shadow">${step.value.toLocaleString()}</span>
+                                                ${isClickable ? '<span class="text-[10px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity">Click to drill down</span>' : ''}
                                             </div>
                                         </div>
                                     </div>
@@ -1465,6 +1468,108 @@
                     <div class="text-xs text-slate-500">${assets.length} total</div>
                 </div>
                 <div class="divide-y divide-slate-700/30">
+                    ${assetRows}
+                </div>
+                ${showMore}
+            `;
+        }
+        
+        async function showFunnelDrilldown(stage, snapshotId) {
+            const container = document.getElementById('lifecycleDrilldownContainer');
+            const content = document.getElementById('lifecycleDrilldownContent');
+            
+            if (!snapshotId) {
+                content.innerHTML = '<div class="text-slate-500">Snapshot ID not available</div>';
+                container.classList.remove('hidden');
+                return;
+            }
+            
+            content.innerHTML = '<div class="text-slate-400 animate-pulse">Loading assets...</div>';
+            container.classList.remove('hidden');
+            
+            try {
+                if (!currentLifecycleExpectedBlock || currentLifecycleExpectedBlock._snapshotId !== snapshotId) {
+                    const resp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
+                    const data = await resp.json();
+                    data._snapshotId = snapshotId;
+                    currentLifecycleExpectedBlock = data;
+                }
+                
+                renderFunnelDrilldownContent(stage);
+            } catch (e) {
+                content.innerHTML = `<div class="text-red-400">Failed to load assets: ${e.message}</div>`;
+            }
+        }
+        
+        function renderFunnelDrilldownContent(stage) {
+            const content = document.getElementById('lifecycleDrilldownContent');
+            if (!currentLifecycleExpectedBlock) {
+                content.innerHTML = '<div class="text-slate-500">No data available</div>';
+                return;
+            }
+            
+            const decisionTraces = currentLifecycleExpectedBlock.decision_traces || {};
+            const expectedAdmission = currentLifecycleExpectedBlock.expected_admission || {};
+            const expectedReasons = currentLifecycleExpectedBlock.expected_reasons || {};
+            
+            let assets = [];
+            let title = '';
+            let colorClass = '';
+            let getDetail = (key, trace) => '';
+            
+            const allKeys = Object.keys(decisionTraces);
+            
+            if (stage === 'unique_assets') {
+                assets = allKeys;
+                title = 'All Unique Assets';
+                colorClass = 'blue';
+                getDetail = (key, trace) => trace.is_external ? 'External' : 'Internal';
+            } else if (stage === 'rejected') {
+                assets = allKeys.filter(k => expectedAdmission[k] === 'rejected');
+                title = 'Rejected Assets';
+                colorClass = 'rose';
+                getDetail = (key, trace) => trace.rejection_reason || 'Unknown';
+            } else if (stage === 'admitted') {
+                assets = allKeys.filter(k => expectedAdmission[k] === 'admitted');
+                title = 'Admitted Assets';
+                colorClass = 'emerald';
+                getDetail = (key, trace) => {
+                    if (trace.is_shadow) return 'Shadow';
+                    const reasons = expectedReasons[key] || [];
+                    if (reasons.includes('STALE_ACTIVITY')) return 'Zombie';
+                    return 'Clean';
+                };
+            }
+            
+            if (assets.length === 0) {
+                content.innerHTML = `<div class="text-slate-500">No ${title.toLowerCase()} found</div>`;
+                return;
+            }
+            
+            const assetRows = assets.slice(0, 100).map(key => {
+                const trace = decisionTraces[key] || {};
+                const detail = getDetail(key, trace);
+                const sources = (trace.discovery_sources_list || []).join(', ') || '-';
+                
+                return `
+                    <div class="py-2 border-b border-slate-700/50 last:border-b-0">
+                        <div class="flex items-center justify-between">
+                            <span class="font-mono text-${colorClass}-300 text-sm">${key}</span>
+                            <span class="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300">${detail}</span>
+                        </div>
+                        <div class="text-[10px] text-slate-500 mt-1">Sources: ${sources}</div>
+                    </div>
+                `;
+            }).join('');
+            
+            const showMore = assets.length > 100 ? `<div class="text-slate-500 text-xs mt-2">Showing 100 of ${assets.length} assets</div>` : '';
+            
+            content.innerHTML = `
+                <div class="flex items-center justify-between mb-3">
+                    <div class="font-medium text-${colorClass}-400">${title}</div>
+                    <div class="text-xs text-slate-500">${assets.length} total</div>
+                </div>
+                <div class="max-h-48 overflow-y-auto">
                     ${assetRows}
                 </div>
                 ${showMore}
