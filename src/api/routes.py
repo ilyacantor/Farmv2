@@ -368,7 +368,7 @@ async def create_snapshot(request: SnapshotRequest):
     snapshot.meta.snapshot_id = unique_snapshot_id
     snapshot_dict = snapshot.model_dump()
     
-    expected_block = compute_expected_block(snapshot_dict)
+    expected_block = compute_expected_block(snapshot_dict, mode="all")
     snapshot_dict['__expected__'] = expected_block
     
     async with pool.acquire() as conn:
@@ -1060,6 +1060,7 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
         'expected_cmdb_resolution': expected_cmdb_resolution,
         'excluded_by_mode': excluded_by_mode,
         'decision_traces': decision_traces,
+        'reconciliation_mode': mode,
     }
 
 
@@ -1234,7 +1235,7 @@ async def create_reconciliation(request: Request):
     report_text, _ = generate_reconcile_report(parsed_request.aod_summary, parsed_request.aod_lists, farm_expectations)
     
     # Derive status from accuracy percentage
-    analysis = build_reconciliation_analysis(snapshot, raw_json, expected_block)
+    analysis, recomputed_block = build_reconciliation_analysis(snapshot, raw_json, expected_block)
     accuracy = analysis.get('accuracy')
     
     # Status thresholds based on accuracy:
@@ -1265,6 +1266,14 @@ async def create_reconciliation(request: Request):
         """, reconciliation_id, parsed_request.snapshot_id, parsed_request.tenant_id, parsed_request.aod_run_id,
             created_at, json.dumps(aod_payload), json.dumps(farm_expectations.model_dump()),
             report_text, status.value)
+        
+        # Persist recomputed expected_block to snapshot if it was upgraded to mode="all"
+        if recomputed_block:
+            snapshot['__expected__'] = recomputed_block
+            await conn.execute(
+                "UPDATE snapshots SET snapshot_json = $1 WHERE snapshot_id = $2",
+                json.dumps(snapshot), parsed_request.snapshot_id
+            )
     
     return ReconcileResponse(
         reconciliation_id=reconciliation_id,
@@ -1669,16 +1678,28 @@ def check_key_in_aod_evidence(key: str, aod_evidence_domains: set) -> bool:
     return False
 
 
-def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> dict:
+def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> tuple:
     """Build detailed reconciliation analysis comparing Farm expectations vs AOD results.
     
     Uses stored __expected__ block from snapshot if available (fast path).
     Only recomputes if __expected__ is missing (legacy snapshots).
+    
+    Returns: (analysis_dict, recomputed_expected_block_or_none)
+        - If cached block was valid: returns (analysis, None)
+        - If recomputed: returns (analysis, new_expected_block) so caller can persist
     """
-    if '__expected__' in snapshot and snapshot['__expected__'].get('shadow_expected'):
-        expected_block = snapshot['__expected__']
+    # Always use mode="all" for reconciliation to ensure 100% accountability
+    # Force recompute if cached block is missing or was computed with a different mode
+    cached = snapshot.get('__expected__')
+    cached_mode = cached.get('reconciliation_mode') if cached else None
+    
+    recomputed_block = None
+    if cached and cached_mode == 'all' and cached.get('shadow_expected') is not None:
+        expected_block = cached
     else:
-        expected_block = compute_expected_block(snapshot)
+        # Recompute with mode="all" for legacy snapshots or non-all cached modes
+        expected_block = compute_expected_block(snapshot, mode="all")
+        recomputed_block = expected_block  # Signal caller to persist
     
     farm_shadows = {a['asset_key'] for a in expected_block.get('shadow_expected', [])}
     farm_zombies = {a['asset_key'] for a in expected_block.get('zombie_expected', [])}
@@ -1910,6 +1931,50 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     farm_zombie_domain_keys = {to_domain_key(k) for k in farm_zombies}
     farm_clean_domain_keys = {to_domain_key(k) for k in farm_clean}
     
+    # Get decision_traces and expected_admission from expected_block for not-admitted detection
+    decision_traces = expected_block.get('decision_traces', {})
+    expected_admission = expected_block.get('expected_admission', {})
+    
+    def norm_key(s):
+        """Normalize key for comparison - extract core name, remove suffixes."""
+        s = s.lower().strip()
+        s = re.sub(r'[^a-z0-9]', '', s)
+        for suffix in ['com', 'io', 'app', 'net', 'org', 'co']:
+            if s.endswith(suffix) and len(s) > len(suffix) + 2:
+                s = s[:-len(suffix)]
+        return s
+    
+    # Build normalized lookup tables for expected_admission and decision_traces
+    norm_admission = {norm_key(k): v for k, v in expected_admission.items()}
+    norm_traces = {norm_key(k): v for k, v in decision_traces.items()}
+    
+    def get_farm_classification(domain_key, rep_key):
+        """Determine Farm's classification with not-admitted awareness."""
+        if domain_key in farm_zombie_domain_keys:
+            return 'zombie', None
+        if domain_key in farm_clean_domain_keys:
+            return 'clean', None
+        
+        # Check if not-admitted using normalized lookup
+        norm_rep = norm_key(rep_key)
+        norm_dom = norm_key(domain_key)
+        admission_status = (
+            expected_admission.get(rep_key) or 
+            expected_admission.get(domain_key) or
+            norm_admission.get(norm_rep) or
+            norm_admission.get(norm_dom)
+        )
+        if admission_status == 'rejected':
+            trace = (
+                decision_traces.get(rep_key) or 
+                decision_traces.get(domain_key) or
+                norm_traces.get(norm_rep) or
+                norm_traces.get(norm_dom)
+            )
+            rejection_reason = trace.get('rejection_reason') if trace else None
+            return 'not-admitted', rejection_reason
+        return 'unknown', None
+    
     for domain_key, domain_info in aod_shadow_domains.items():
         if not find_match(domain_key, farm_shadow_domain_keys):
             variants = domain_info['variants']
@@ -1917,10 +1982,10 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             # Use first variant as representative key
             rep_key = variants[0] if variants else domain_key
             farm_reasons = expected_reasons.get(rep_key, [])
-            farm_class = 'zombie' if domain_key in farm_zombie_domain_keys else ('clean' if domain_key in farm_clean_domain_keys else 'unknown')
+            farm_class, rejection_reason = get_farm_classification(domain_key, rep_key)
             asset_analysis = generate_asset_analysis('false_positive_shadow', domain_key, farm_reasons, None, aod_key_reasons)
             investigation = investigate_fp_shadow(domain_key, aod_key_reasons, snapshot) if aod_key_reasons else None
-            analysis['false_positive_shadows'].append({
+            fp_entry = {
                 'asset_key': domain_key,
                 'farm_classification': farm_class,
                 'farm_reason_codes': farm_reasons,
@@ -1932,7 +1997,10 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'farm_investigation': investigation,
                 'explanation': get_explanation('false_positive_shadow', domain_key, farm_reasons, aod_reasons=aod_key_reasons),
                 'aod_variants': variants if len(variants) > 1 else None,
-            })
+            }
+            if rejection_reason:
+                fp_entry['farm_rejection_reason'] = rejection_reason
+            analysis['false_positive_shadows'].append(fp_entry)
     
     for domain_key, domain_info in aod_zombie_domains.items():
         if not find_match(domain_key, farm_zombie_domain_keys):
@@ -1941,10 +2009,14 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             # Use first variant as representative key
             rep_key = variants[0] if variants else domain_key
             farm_reasons = expected_reasons.get(rep_key, [])
-            farm_class = 'shadow' if domain_key in farm_shadow_domain_keys else ('clean' if domain_key in farm_clean_domain_keys else 'unknown')
+            # Check shadow first, then use get_farm_classification for not-admitted detection
+            if domain_key in farm_shadow_domain_keys:
+                farm_class, rejection_reason = 'shadow', None
+            else:
+                farm_class, rejection_reason = get_farm_classification(domain_key, rep_key)
             asset_analysis = generate_asset_analysis('false_positive_zombie', domain_key, farm_reasons, None, aod_key_reasons)
             investigation = investigate_fp_zombie(domain_key, aod_key_reasons, snapshot) if aod_key_reasons else None
-            analysis['false_positive_zombies'].append({
+            fp_entry = {
                 'asset_key': domain_key,
                 'farm_classification': farm_class,
                 'farm_reason_codes': farm_reasons,
@@ -1956,12 +2028,25 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'farm_investigation': investigation,
                 'explanation': get_explanation('false_positive_zombie', domain_key, farm_reasons, aod_reasons=aod_key_reasons),
                 'aod_variants': variants if len(variants) > 1 else None,
-            })
+            }
+            if rejection_reason:
+                fp_entry['farm_rejection_reason'] = rejection_reason
+            analysis['false_positive_zombies'].append(fp_entry)
     
     total_expected = len(farm_shadows) + len(farm_zombies)
     total_matched = len(analysis['matched_shadows']) + len(analysis['matched_zombies'])
     total_missed = len(analysis['missed_shadows']) + len(analysis['missed_zombies'])
     total_fp = len(analysis['false_positive_shadows']) + len(analysis['false_positive_zombies'])
+    
+    # Breakdown of false positives by Farm classification
+    fp_by_class = {'not-admitted': 0, 'clean': 0, 'zombie': 0, 'shadow': 0, 'unknown': 0}
+    for fp in analysis['false_positive_shadows'] + analysis['false_positive_zombies']:
+        fc = fp.get('farm_classification', 'unknown')
+        fp_by_class[fc] = fp_by_class.get(fc, 0) + 1
+    
+    analysis['summary']['false_positive_breakdown'] = fp_by_class
+    analysis['summary']['total_aod_graded'] = len(aod_shadows) + len(aod_zombies)
+    analysis['summary']['total_farm_graded'] = total_expected
     
     if total_missed == 0 and total_fp == 0:
         verdict = "PERFECT - AOD correctly identified all expected anomalies with no false positives."
@@ -2019,7 +2104,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         denominator = total_expected + total_fp
         analysis['accuracy'] = round(total_matched / denominator * 100, 1) if denominator > 0 else 100.0
     
-    return analysis
+    return (analysis, recomputed_block)
 
 
 @router.get("/api/reconcile/{reconciliation_id}/analysis")
@@ -2053,12 +2138,20 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
             else:
                 snapshot = {'__expected__': farm_exp}
             
-            analysis = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
+            analysis, recomputed_block = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
             
             await conn.execute(
                 "UPDATE reconciliations SET analysis_json = $1 WHERE reconciliation_id = $2",
                 json.dumps(analysis), reconciliation_id
             )
+            
+            # Persist recomputed expected_block to snapshot if it was upgraded to mode="all"
+            if recomputed_block and snap_row:
+                snapshot['__expected__'] = recomputed_block
+                await conn.execute(
+                    "UPDATE snapshots SET snapshot_json = $1 WHERE snapshot_id = $2",
+                    json.dumps(snapshot), rec_row["snapshot_id"]
+                )
         
         return {
             'reconciliation_id': reconciliation_id,
@@ -2140,7 +2233,7 @@ async def download_reconciliation_diff(
             else:
                 snapshot = {'__expected__': farm_exp}
             
-            analysis = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
+            analysis, _ = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
     
     rows = []
     
