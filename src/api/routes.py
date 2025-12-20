@@ -939,7 +939,6 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
     for key, cand in candidates.items():
         is_external = is_external_domain(key)
         is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
-        is_known_vendor_domain = key.lower() in DOMAIN_TO_VENDOR
         
         if mode == "sprawl" and not is_external:
             excluded_by_mode.append(key)
@@ -976,8 +975,6 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
         reasons = derive_reason_codes(cand, idp_present=idp_present, cmdb_present=cmdb_present)
         if governed_via_vendor:
             reasons.append('GOVERNED_VIA_VENDOR')
-        if is_known_vendor_domain:
-            reasons.append('KNOWN_VENDOR_DOMAIN')
         expected_reasons[key] = reasons
         
         discovery_sources = cand.get('discovery_sources', set())
@@ -996,7 +993,7 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
         rejection_reason = None
         
         if is_admitted:
-            is_shadow = is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded and not is_known_vendor_domain
+            is_shadow = is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded
             is_zombie = (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
         else:
             if discovery_sources_count == 1 and 'dns' in discovery_sources:
@@ -1024,7 +1021,6 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
             'cmdb_present_direct': cmdb_present_direct,
             'vendor_governance': vendor_name,
             'infra_excluded': is_infra_excluded,
-            'known_vendor_domain': is_known_vendor_domain,
             'admitted': is_admitted,
             'discovery_sources_count': discovery_sources_count,
             'discovery_sources_list': discovery_sources_list,
@@ -1077,7 +1073,6 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
     
     for key, cand in candidates.items():
         is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
-        is_known_vendor_domain = key.lower() in DOMAIN_TO_VENDOR
         is_external = is_external_domain(key)
         
         idp_present = cand['idp_present']
@@ -1099,7 +1094,7 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
         if not is_admitted:
             continue
         
-        if is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded and not is_known_vendor_domain:
+        if is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded:
             shadow_keys.append(key)
         elif (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0:
             zombie_keys.append(key)
