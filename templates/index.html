@@ -353,6 +353,8 @@
         let aodStatusCache = {};
         let decisionTracesCache = {};
         let currentTraceFilter = 'all';
+        let mismatchKeysCache = new Set();
+        let currentTestSnapshotId = null;
 
         function switchMainTab(tab) {
             const consoleTab = document.getElementById('consoleTab');
@@ -391,10 +393,27 @@
             const snapshotId = document.getElementById('testSnapshotSelect').value;
             if (!snapshotId) return;
             
+            currentTestSnapshotId = snapshotId;
+            mismatchKeysCache = new Set();
+            
             try {
                 const resp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
                 const data = await resp.json();
                 decisionTracesCache = data.decision_traces || {};
+                
+                const recs = reconciliationsCache[snapshotId] || [];
+                if (recs.length > 0) {
+                    const latestRecId = recs[0].reconciliation_id;
+                    const fullRecResp = await fetch(`/api/reconcile/${latestRecId}`);
+                    if (fullRecResp.ok) {
+                        const fullRec = await fullRecResp.json();
+                        const farmShadows = new Set((fullRec.farm_expectations?.shadow_keys || []).map(k => k.toLowerCase()));
+                        const aodShadows = new Set((fullRec.aod_lists?.shadow_assets || []).map(k => k.toLowerCase()));
+                        farmShadows.forEach(k => { if (!aodShadows.has(k)) mismatchKeysCache.add(k); });
+                        aodShadows.forEach(k => { if (!farmShadows.has(k)) mismatchKeysCache.add(k); });
+                    }
+                }
+                
                 renderTraceTable();
             } catch (e) {
                 console.error('Failed to load traces:', e);
@@ -409,7 +428,7 @@
             if (currentTraceFilter === 'shadow') {
                 filtered = traces.filter(t => t.is_shadow);
             } else if (currentTraceFilter === 'mismatch') {
-                filtered = traces.filter(t => t.is_shadow);
+                filtered = traces.filter(t => mismatchKeysCache.has(t.asset_key_used.toLowerCase()));
             }
             
             document.getElementById('traceCount').textContent = `${filtered.length} traces`;
