@@ -1239,8 +1239,8 @@
                         <div class="space-y-2 text-sm">
                             <div class="flex items-center gap-2">
                                 <span class="${admissionMathValid ? 'text-emerald-400' : 'text-amber-400'}">${admissionMathValid ? '✓' : '⚠'}</span>
-                                <span class="text-slate-300">${rejectedCount.toLocaleString()} rejected + ${admittedCount.toLocaleString()} admitted = ${uniqueAssets.toLocaleString()} unique assets</span>
-                                ${!admissionMathValid ? `<span class="text-amber-400 text-xs">(actual: ${(rejectedCount + admittedCount).toLocaleString()})</span>` : ''}
+                                <span class="text-slate-300">${uniqueAssets.toLocaleString()} unique − ${rejectedCount.toLocaleString()} rejected = ${admittedCount.toLocaleString()} admitted</span>
+                                ${!admissionMathValid ? `<span class="text-amber-400 text-xs">(actual: ${(uniqueAssets - rejectedCount).toLocaleString()})</span>` : ''}
                             </div>
                             <div class="flex items-center gap-2">
                                 <span class="${classificationMathValid ? 'text-emerald-400' : 'text-amber-400'}">${classificationMathValid ? '✓' : '⚠'}</span>
