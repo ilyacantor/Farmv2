@@ -1260,58 +1260,7 @@
                         </div>
                     </div>
                     
-                    <!-- Classification Breakdown - Clickable -->
-                    <div class="grid grid-cols-3 gap-4 mb-4">
-                        <div class="rounded-xl bg-amber-500/10 ring-1 ring-amber-500/30 p-4 text-center cursor-pointer hover:ring-2 hover:ring-amber-400 transition-all"
-                             onclick="showLifecycleDrilldown('shadows', '${snapshotId}')">
-                            <div class="flex items-center justify-center gap-1.5 mb-1">
-                                <div class="text-2xl font-bold text-amber-400">${shadowCount}</div>
-                                <button onclick="event.stopPropagation(); showExplanationModal('shadows')" 
-                                    class="text-slate-500 hover:text-amber-400 transition-colors" title="What is this?">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
-                                </button>
-                            </div>
-                            <div class="text-xs text-amber-300/70">Shadows</div>
-                            <div class="text-[10px] text-slate-500 mt-1">Click to view assets</div>
-                        </div>
-                        <div class="rounded-xl bg-purple-500/10 ring-1 ring-purple-500/30 p-4 text-center cursor-pointer hover:ring-2 hover:ring-purple-400 transition-all"
-                             onclick="showLifecycleDrilldown('zombies', '${snapshotId}')">
-                            <div class="flex items-center justify-center gap-1.5 mb-1">
-                                <div class="text-2xl font-bold text-purple-400">${zombieCount}</div>
-                                <button onclick="event.stopPropagation(); showExplanationModal('zombies')" 
-                                    class="text-slate-500 hover:text-purple-400 transition-colors" title="What is this?">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
-                                </button>
-                            </div>
-                            <div class="text-xs text-purple-300/70">Zombies</div>
-                            <div class="text-[10px] text-slate-500 mt-1">Click to view assets</div>
-                        </div>
-                        <div class="rounded-xl bg-emerald-500/10 ring-1 ring-emerald-500/30 p-4 text-center cursor-pointer hover:ring-2 hover:ring-emerald-400 transition-all"
-                             onclick="showLifecycleDrilldown('clean', '${snapshotId}')">
-                            <div class="flex items-center justify-center gap-1.5 mb-1">
-                                <div class="text-2xl font-bold text-emerald-400">${cleanCount}</div>
-                                <button onclick="event.stopPropagation(); showExplanationModal('clean')" 
-                                    class="text-slate-500 hover:text-emerald-400 transition-colors" title="What is this?">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                    </svg>
-                                </button>
-                            </div>
-                            <div class="text-xs text-emerald-300/70">Clean</div>
-                            <div class="text-[10px] text-slate-500 mt-1">Click to view assets</div>
-                        </div>
-                    </div>
-                    
-                    <!-- Drilldown Container -->
-                    <div id="lifecycleDrilldownContainer" class="hidden rounded-xl bg-slate-900/60 ring-1 ring-slate-700 p-4 max-h-64 overflow-y-auto">
-                        <div id="lifecycleDrilldownContent" class="text-sm text-slate-300"></div>
-                    </div>
-                    
-                    <!-- Math Validation -->
+                    <!-- Math Validation with Clickable Classification -->
                     <div class="rounded-xl bg-slate-900/40 ring-1 ring-slate-700 p-4">
                         <div class="text-sm font-semibold text-slate-100 mb-3">Math Check</div>
                         <div class="space-y-2 text-sm">
@@ -1320,12 +1269,23 @@
                                 <span class="text-slate-300">${uniqueAssets.toLocaleString()} unique − ${rejectedCount.toLocaleString()} rejected = ${admittedCount.toLocaleString()} cataloged</span>
                                 ${!admissionMathValid ? `<span class="text-amber-400 text-xs">(actual: ${(uniqueAssets - rejectedCount).toLocaleString()})</span>` : ''}
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-2 flex-wrap">
                                 <span class="${classificationMathValid ? 'text-emerald-400' : 'text-amber-400'}">${classificationMathValid ? '✓' : '⚠'}</span>
-                                <span class="text-slate-300">${shadowCount.toLocaleString()} shadows + ${zombieCount.toLocaleString()} zombies + ${cleanCount.toLocaleString()} clean = ${admittedCount.toLocaleString()} cataloged</span>
+                                <span class="cursor-pointer hover:underline text-amber-400" onclick="showLifecycleDrilldown('shadows', '${snapshotId}')">${shadowCount.toLocaleString()} shadows</span>
+                                <span class="text-slate-500">+</span>
+                                <span class="cursor-pointer hover:underline text-purple-400" onclick="showLifecycleDrilldown('zombies', '${snapshotId}')">${zombieCount.toLocaleString()} zombies</span>
+                                <span class="text-slate-500">+</span>
+                                <span class="cursor-pointer hover:underline text-emerald-400" onclick="showLifecycleDrilldown('clean', '${snapshotId}')">${cleanCount.toLocaleString()} clean</span>
+                                <span class="text-slate-500">=</span>
+                                <span class="text-slate-300">${admittedCount.toLocaleString()} cataloged</span>
                                 ${!classificationMathValid ? `<span class="text-amber-400 text-xs">(actual: ${(shadowCount + zombieCount + cleanCount).toLocaleString()})</span>` : ''}
                             </div>
                         </div>
+                    </div>
+                    
+                    <!-- Drilldown Container -->
+                    <div id="lifecycleDrilldownContainer" class="hidden rounded-xl bg-slate-900/60 ring-1 ring-slate-700 p-4 max-h-64 overflow-y-auto">
+                        <div id="lifecycleDrilldownContent" class="text-sm text-slate-300"></div>
                     </div>
                     
                     <!-- Reconciliation Scorecards -->
