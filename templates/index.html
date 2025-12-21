@@ -1965,9 +1965,11 @@
                 expandedSnapshots = {};
                 snapshotDataCache = {};
                 expectationsCache = {};
-                await refreshData();
+                await loadAllData();
+                addLogEntry('All snapshots erased', 'success');
             } catch (e) {
                 console.error('Erase failed:', e);
+                addLogEntry('Erase failed: ' + e.message, 'error');
             }
         }
 
