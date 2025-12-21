@@ -1239,13 +1239,13 @@
                         <div class="space-y-2 text-sm">
                             <div class="flex items-center gap-2">
                                 <span class="${admissionMathValid ? 'text-emerald-400' : 'text-amber-400'}">${admissionMathValid ? '✓' : '⚠'}</span>
-                                <span class="text-slate-300">${rejectedCount.toLocaleString()} rejected + ${admittedCount.toLocaleString()} admitted = ${(rejectedCount + admittedCount).toLocaleString()}</span>
-                                ${!admissionMathValid ? `<span class="text-amber-400 text-xs">(expected: ${uniqueAssets.toLocaleString()} unique assets)</span>` : `<span class="text-slate-500 text-xs">= unique assets</span>`}
+                                <span class="text-slate-300">${rejectedCount.toLocaleString()} rejected + ${admittedCount.toLocaleString()} admitted = ${uniqueAssets.toLocaleString()} unique assets</span>
+                                ${!admissionMathValid ? `<span class="text-amber-400 text-xs">(actual: ${(rejectedCount + admittedCount).toLocaleString()})</span>` : ''}
                             </div>
                             <div class="flex items-center gap-2">
                                 <span class="${classificationMathValid ? 'text-emerald-400' : 'text-amber-400'}">${classificationMathValid ? '✓' : '⚠'}</span>
-                                <span class="text-slate-300">${shadowCount.toLocaleString()} shadows + ${zombieCount.toLocaleString()} zombies + ${cleanCount.toLocaleString()} clean = ${(shadowCount + zombieCount + cleanCount).toLocaleString()}</span>
-                                ${!classificationMathValid ? `<span class="text-amber-400 text-xs">(expected: ${admittedCount.toLocaleString()} admitted)</span>` : `<span class="text-slate-500 text-xs">= admitted</span>`}
+                                <span class="text-slate-300">${shadowCount.toLocaleString()} shadows + ${zombieCount.toLocaleString()} zombies + ${cleanCount.toLocaleString()} clean = ${admittedCount.toLocaleString()} admitted</span>
+                                ${!classificationMathValid ? `<span class="text-amber-400 text-xs">(actual: ${(shadowCount + zombieCount + cleanCount).toLocaleString()})</span>` : ''}
                             </div>
                         </div>
                     </div>
