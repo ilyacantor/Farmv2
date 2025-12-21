@@ -286,7 +286,7 @@
                     
                     <div class="grid grid-cols-2 gap-4">
                         <div>
-                            <label class="block text-sm font-medium text-slate-300 mb-1">Assets Admitted</label>
+                            <label class="block text-sm font-medium text-slate-300 mb-1">Assets Cataloged</label>
                             <input type="number" id="aodAssetsAdmitted" value="0" min="0"
                                 class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-4 py-2 text-white outline-none">
                         </div>
@@ -372,7 +372,7 @@
                 content: "Assets that don't meet admission criteria. Admission requires: ≥2 discovery sources OR cloud evidence OR IdP match OR CMDB match. Common rejection reasons: DNS-only observations, single source detections."
             },
             admitted: {
-                title: 'Admitted',
+                title: 'Cataloged',
                 content: 'Assets that passed admission gates and enter the classification pipeline. These are evaluated for shadow/zombie/clean status.'
             },
             shadows: {
@@ -577,7 +577,7 @@
                         <div class="flex justify-between"><span class="text-slate-400">cmdb_present_direct:</span><span class="${trace.cmdb_present_direct ? 'text-green-400' : 'text-slate-500'}">${trace.cmdb_present_direct}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">vendor_governance:</span><span class="${trace.vendor_governance ? 'text-purple-400' : 'text-slate-500'}">${trace.vendor_governance || 'null'}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">infra_excluded:</span><span class="${trace.infra_excluded ? 'text-red-400' : 'text-green-400'}">${trace.infra_excluded}</span></div>
-                        <div class="flex justify-between"><span class="text-slate-400">admitted:</span><span class="${trace.admitted ? 'text-green-400' : 'text-orange-400'}">${trace.admitted}</span></div>
+                        <div class="flex justify-between"><span class="text-slate-400">cataloged:</span><span class="${trace.admitted ? 'text-green-400' : 'text-orange-400'}">${trace.admitted}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">discovery_sources_count:</span><span class="text-white">${trace.discovery_sources_count || 0}</span></div>
                         <div class="flex justify-between"><span class="text-slate-400">discovery_sources_list:</span><span class="text-white font-mono text-[10px]">${JSON.stringify(trace.discovery_sources_list || [])}</span></div>
                         ${trace.rejection_reason ? `<div class="flex justify-between"><span class="text-slate-400">rejection_reason:</span><span class="text-orange-400">${trace.rejection_reason}</span></div>` : ''}
@@ -1134,7 +1134,7 @@
                 { label: 'Observations', key: 'observations', value: grossObs, color: 'cyan' },
                 { label: 'Unique Assets', key: 'unique_assets', value: uniqueAssets, color: 'blue' },
                 { label: 'Rejected', key: 'rejected', value: rejectedCount, color: 'rose' },
-                { label: 'Admitted', key: 'admitted', value: admittedCount, color: 'emerald' },
+                { label: 'Cataloged', key: 'admitted', value: admittedCount, color: 'emerald' },
             ];
             
             const maxVal = Math.max(...funnelSteps.map(s => s.value), 1);
@@ -1239,12 +1239,12 @@
                         <div class="space-y-2 text-sm">
                             <div class="flex items-center gap-2">
                                 <span class="${admissionMathValid ? 'text-emerald-400' : 'text-amber-400'}">${admissionMathValid ? '✓' : '⚠'}</span>
-                                <span class="text-slate-300">${uniqueAssets.toLocaleString()} unique − ${rejectedCount.toLocaleString()} rejected = ${admittedCount.toLocaleString()} admitted</span>
+                                <span class="text-slate-300">${uniqueAssets.toLocaleString()} unique − ${rejectedCount.toLocaleString()} rejected = ${admittedCount.toLocaleString()} cataloged</span>
                                 ${!admissionMathValid ? `<span class="text-amber-400 text-xs">(actual: ${(uniqueAssets - rejectedCount).toLocaleString()})</span>` : ''}
                             </div>
                             <div class="flex items-center gap-2">
                                 <span class="${classificationMathValid ? 'text-emerald-400' : 'text-amber-400'}">${classificationMathValid ? '✓' : '⚠'}</span>
-                                <span class="text-slate-300">${shadowCount.toLocaleString()} shadows + ${zombieCount.toLocaleString()} zombies + ${cleanCount.toLocaleString()} clean = ${admittedCount.toLocaleString()} admitted</span>
+                                <span class="text-slate-300">${shadowCount.toLocaleString()} shadows + ${zombieCount.toLocaleString()} zombies + ${cleanCount.toLocaleString()} clean = ${admittedCount.toLocaleString()} cataloged</span>
                                 ${!classificationMathValid ? `<span class="text-amber-400 text-xs">(actual: ${(shadowCount + zombieCount + cleanCount).toLocaleString()})</span>` : ''}
                             </div>
                         </div>
@@ -1536,7 +1536,7 @@
                 getDetail = (key, trace) => trace.rejection_reason || 'Unknown';
             } else if (stage === 'admitted') {
                 assets = allKeys.filter(k => expectedAdmission[k] === 'admitted');
-                title = 'Admitted Assets';
+                title = 'Cataloged Assets';
                 colorClass = 'emerald';
                 getDetail = (key, trace) => {
                     if (trace.is_shadow) return 'Shadow';
