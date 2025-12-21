@@ -791,25 +791,19 @@
             closeModal('aodNavigateModal');
             if (!lastCreatedSnapshotId) return;
             
-            // Make sure we're on Console tab
             switchTab('console');
-            
-            const snapshotsSection = document.getElementById('configSnapshotsList');
-            if (snapshotsSection) {
-                snapshotsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }
             
             setTimeout(() => {
                 const snapshotRow = document.querySelector(`[data-snapshot-id="${lastCreatedSnapshotId}"]`);
                 if (snapshotRow) {
+                    snapshotRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     snapshotRow.classList.add('ring-2', 'ring-cyan-500');
-                    // Force expand (not toggle) - only expand if not already expanded
                     if (!expandedSnapshots[lastCreatedSnapshotId]) {
                         toggleSnapshotExpand(lastCreatedSnapshotId);
                     }
                     setTimeout(() => snapshotRow.classList.remove('ring-2', 'ring-cyan-500'), 2000);
                 }
-            }, 300);
+            }, 150);
         }
         
         function showAODNavigateDialog(snapshotId) {
