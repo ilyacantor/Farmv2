@@ -431,8 +431,24 @@
             const snapshotId = document.getElementById('testSnapshotSelect').value;
             if (!snapshotId) return;
             
+            document.getElementById('decisionTraceResult').classList.add('hidden');
+            document.getElementById('testAssetKey').value = '';
+            
+            currentTraceFilter = 'all';
+            document.querySelectorAll('[id^="traceFilter"]').forEach(btn => {
+                btn.classList.remove('bg-cyan-600', 'text-white');
+                btn.classList.add('bg-slate-700', 'text-slate-300');
+            });
+            document.getElementById('traceFilterAll').classList.remove('bg-slate-700', 'text-slate-300');
+            document.getElementById('traceFilterAll').classList.add('bg-cyan-600', 'text-white');
+            
+            const tbody = document.getElementById('traceTableBody');
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-400 animate-pulse">Loading traces...</td></tr>';
+            document.getElementById('traceCount').textContent = 'loading...';
+            
             currentTestSnapshotId = snapshotId;
             mismatchKeysCache = new Set();
+            decisionTracesCache = {};
             
             try {
                 const resp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
@@ -455,6 +471,7 @@
                 renderTraceTable();
             } catch (e) {
                 console.error('Failed to load traces:', e);
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-red-400">Failed to load traces</td></tr>';
             }
         }
 
