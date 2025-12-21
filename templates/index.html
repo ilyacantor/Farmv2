@@ -795,7 +795,7 @@
         async function viewSnapshotProfile() {
             closeModal('aodNavigateModal');
             if (lastCreatedSnapshotId) {
-                switchMainTab('test');
+                switchToTestLab();
                 await loadAllData();
                 setTimeout(() => {
                     const select = document.getElementById('testSnapshotSelect');
