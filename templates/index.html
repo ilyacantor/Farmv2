@@ -787,6 +787,17 @@
             }
         }
         
+        function goToDiscoverWithSnapshot(snapshotId) {
+            switchMainTab('testlab');
+            setTimeout(() => {
+                const select = document.getElementById('testlabSnapshotSelect');
+                if (select) {
+                    select.value = snapshotId;
+                    select.dispatchEvent(new Event('change'));
+                }
+            }, 100);
+        }
+        
         function viewCreatedSnapshot() {
             closeModal('aodNavigateModal');
             if (!lastCreatedSnapshotId) return;
@@ -2030,15 +2041,24 @@
                             </div>
                         `).join('')}
                     </div>
-                    <div class="p-3 flex gap-6 text-xs border-b border-slate-700/50 bg-slate-800/30">
-                        <div class="flex items-center gap-2">
-                            <span class="text-slate-400">Zombies Expected:</span>
-                            <span class="text-red-400 font-bold">${exp.expected_zombies ?? '-'}</span>
+                    <div class="p-3 flex items-center justify-between text-xs border-b border-slate-700/50 bg-slate-800/30">
+                        <div class="flex gap-6">
+                            <div class="flex items-center gap-2">
+                                <span class="text-slate-400">Zombies Expected:</span>
+                                <span class="text-red-400 font-bold">${exp.expected_zombies ?? '-'}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <span class="text-slate-400">Shadows Expected:</span>
+                                <span class="text-purple-400 font-bold">${exp.expected_shadows ?? '-'}</span>
+                            </div>
                         </div>
-                        <div class="flex items-center gap-2">
-                            <span class="text-slate-400">Shadows Expected:</span>
-                            <span class="text-purple-400 font-bold">${exp.expected_shadows ?? '-'}</span>
-                        </div>
+                        <button onclick="event.stopPropagation(); goToDiscoverWithSnapshot('${snapshotId}')" 
+                            class="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white rounded text-xs font-medium transition-colors">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                            Test in Discover
+                        </button>
                     </div>
                     <div class="divide-y divide-slate-700/30">
                         ${planes.map(plane => {
