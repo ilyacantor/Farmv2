@@ -2080,14 +2080,29 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     analysis['summary']['total_aod_graded'] = len(aod_shadows) + len(aod_zombies)
     analysis['summary']['total_farm_graded'] = total_expected
     
-    if total_missed == 0 and total_fp == 0:
-        verdict = "PERFECT - AOD correctly identified all expected anomalies with no false positives."
-    elif total_missed == 0:
-        verdict = f"GOOD - AOD found all expected anomalies, but flagged {total_fp} extra items (false positives)."
-    elif total_fp == 0:
-        verdict = f"NEEDS WORK - AOD missed {total_missed} of {total_expected} expected anomalies."
+    # Scaled materiality threshold: max(2, expected * 10%)
+    materiality = max(2, int(total_expected * 0.1))
+    
+    # Determine verdict based on materiality thresholds (aligned with PASS/WARN/FAIL status)
+    if total_expected == 0:
+        verdict = "GREAT - No anomalies expected and none found."
+    elif total_missed == 0 and total_fp == 0:
+        verdict = "GREAT - AOD correctly identified all expected anomalies with no false positives."
+    elif total_missed <= materiality:
+        if total_fp == 0:
+            verdict = f"GREAT - AOD matched {total_matched}/{total_expected} expected anomalies ({total_missed} within tolerance)."
+        else:
+            verdict = f"GREAT - AOD matched {total_matched}/{total_expected} anomalies with {total_fp} extra flags."
+    elif total_missed <= materiality * 2:
+        if total_fp == 0:
+            verdict = f"SOME IMPROVEMENT NEEDED - AOD missed {total_missed} of {total_expected} expected anomalies."
+        else:
+            verdict = f"SOME IMPROVEMENT NEEDED - AOD missed {total_missed} anomalies and flagged {total_fp} extras."
     else:
-        verdict = f"NEEDS WORK - AOD missed {total_missed} expected anomalies and had {total_fp} false positives."
+        if total_fp == 0:
+            verdict = f"NEEDS WORK - AOD missed {total_missed} of {total_expected} expected anomalies."
+        else:
+            verdict = f"NEEDS WORK - AOD missed {total_missed} expected anomalies and had {total_fp} false positives."
     
     # Contract validation
     has_asset_summaries = bool(asset_summaries)
