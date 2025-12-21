@@ -798,9 +798,11 @@
                 if (snapshotRow) {
                     snapshotRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     snapshotRow.classList.add('ring-2', 'ring-cyan-500');
-                    if (!expandedSnapshots[lastCreatedSnapshotId]) {
-                        toggleSnapshotExpand(lastCreatedSnapshotId);
+                    // Force expand - close first if already open, then open
+                    if (expandedSnapshots[lastCreatedSnapshotId]) {
+                        expandedSnapshots[lastCreatedSnapshotId] = false;
                     }
+                    toggleSnapshotExpand(lastCreatedSnapshotId);
                     setTimeout(() => snapshotRow.classList.remove('ring-2', 'ring-cyan-500'), 2000);
                 }
             }, 150);
