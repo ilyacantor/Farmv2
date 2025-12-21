@@ -2400,9 +2400,13 @@
             });
         });
 
-        loadConfig();
-        loadAllData();
-        addLogEntry('Farm Console loaded', 'info');
+        async function init() {
+            await loadConfig();
+            await loadAllData();
+            addLogEntry('Farm Console loaded', 'info');
+        }
+        
+        init();
     </script>
 </body>
 </html>
