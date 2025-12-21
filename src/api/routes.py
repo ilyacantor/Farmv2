@@ -1129,19 +1129,14 @@ def grade_count_check(name: str, aod_count: int, farm_count: int) -> tuple[str, 
 
 def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExpectations) -> tuple[str, ReconcileStatusEnum]:
     lines = []
-    check_statuses = []
     
     aod_zombies = aod_summary.zombie_count
     aod_shadows = aod_summary.shadow_count
     farm_zombies = farm_expectations.expected_zombies
     farm_shadows = farm_expectations.expected_shadows
     
-    zombie_line, zombie_status = grade_count_check("Zombie count", aod_zombies, farm_zombies)
-    shadow_line, shadow_status = grade_count_check("Shadow count", aod_shadows, farm_shadows)
-    
-    lines.append(zombie_line)
-    lines.append(shadow_line)
-    check_statuses.extend([zombie_status, shadow_status])
+    lines.append(f"Zombie count: AOD {aod_zombies} vs Farm {farm_zombies}")
+    lines.append(f"Shadow count: AOD {aod_shadows} vs Farm {farm_shadows}")
     
     aod_zombie_set = set(normalize_name(k) for k in aod_lists.zombie_assets)
     aod_shadow_set = set(normalize_name(k) for k in aod_lists.shadow_assets)
@@ -1155,42 +1150,36 @@ def generate_reconcile_report(aod_summary, aod_lists, farm_expectations: FarmExp
     zombie_extra = aod_zombie_set - farm_zombie_set
     shadow_extra = aod_shadow_set - farm_shadow_set
     
+    # Scaled materiality threshold: max(2, expected * 10%)
+    total_expected = len(farm_zombie_set) + len(farm_shadow_set)
+    total_missed = len(zombie_missed) + len(shadow_missed)
+    materiality = max(2, int(total_expected * 0.1))
+    
     if farm_zombie_set:
-        if len(zombie_missed) == 0:
-            lines.append(f"Zombie keys: PASS ({zombie_overlap}/{len(farm_zombie_set)} matched)")
-            check_statuses.append(ReconcileStatusEnum.PASS)
-        elif len(zombie_extra) > len(zombie_missed):
-            lines.append(f"Zombie keys: WARN ({zombie_overlap}/{len(farm_zombie_set)} matched, +{len(zombie_extra)} extra)")
-            check_statuses.append(ReconcileStatusEnum.WARN)
-        else:
-            lines.append(f"Zombie keys: FAIL (missed: {list(zombie_missed)[:3]})")
-            check_statuses.append(ReconcileStatusEnum.FAIL)
+        lines.append(f"Zombie keys: {zombie_overlap}/{len(farm_zombie_set)} matched, {len(zombie_missed)} missed")
     
     if farm_shadow_set:
-        if len(shadow_missed) == 0:
-            lines.append(f"Shadow keys: PASS ({shadow_overlap}/{len(farm_shadow_set)} matched)")
-            check_statuses.append(ReconcileStatusEnum.PASS)
-        elif len(shadow_extra) > len(shadow_missed):
-            lines.append(f"Shadow keys: WARN ({shadow_overlap}/{len(farm_shadow_set)} matched, +{len(shadow_extra)} extra)")
-            check_statuses.append(ReconcileStatusEnum.WARN)
-        else:
-            lines.append(f"Shadow keys: FAIL (missed: {list(shadow_missed)[:3]})")
-            check_statuses.append(ReconcileStatusEnum.FAIL)
+        lines.append(f"Shadow keys: {shadow_overlap}/{len(farm_shadow_set)} matched, {len(shadow_missed)} missed")
     
     if zombie_extra:
         lines.append(f"Extra zombies in AOD: {list(zombie_extra)[:5]}")
     if shadow_extra:
         lines.append(f"Extra shadows in AOD: {list(shadow_extra)[:5]}")
     
-    if ReconcileStatusEnum.FAIL in check_statuses:
-        status = ReconcileStatusEnum.FAIL
-        lines.append("OVERALL: FAIL")
-    elif ReconcileStatusEnum.WARN in check_statuses:
-        status = ReconcileStatusEnum.WARN
-        lines.append("OVERALL: WARN")
-    else:
+    # Status based on scaled materiality: PASS <= mat, WARN <= 2x mat, else FAIL
+    lines.append(f"Materiality threshold: {materiality} (from {total_expected} expected)")
+    if total_expected == 0:
         status = ReconcileStatusEnum.PASS
-        lines.append("OVERALL: PASS")
+        lines.append("OVERALL: PASS (no expectations)")
+    elif total_missed <= materiality:
+        status = ReconcileStatusEnum.PASS
+        lines.append(f"OVERALL: PASS ({total_missed} missed <= {materiality} threshold)")
+    elif total_missed <= materiality * 2:
+        status = ReconcileStatusEnum.WARN
+        lines.append(f"OVERALL: WARN ({total_missed} missed <= {materiality * 2} threshold)")
+    else:
+        status = ReconcileStatusEnum.FAIL
+        lines.append(f"OVERALL: FAIL ({total_missed} missed > {materiality * 2} threshold)")
     
     report_text = "\n".join(lines[:15])
     return report_text, status
@@ -1243,19 +1232,31 @@ async def create_reconciliation(request: Request):
     )
     report_text, _ = generate_reconcile_report(parsed_request.aod_summary, parsed_request.aod_lists, farm_expectations)
     
-    # Derive status from accuracy percentage
+    # Derive status using scaled materiality threshold
     analysis, recomputed_block = build_reconciliation_analysis(snapshot, raw_json, expected_block)
-    accuracy = analysis.get('accuracy')
     
-    # Status thresholds based on accuracy:
-    # PASS = 91%+ accuracy
-    # WARN = 81-90% accuracy
-    # FAIL = below 80% accuracy
-    if accuracy is None:
-        status = ReconcileStatusEnum.FAIL
-    elif accuracy >= 91:
+    # Calculate total missed and expected counts
+    missed_shadows = len(analysis.get('missed_shadows', []))
+    missed_zombies = len(analysis.get('missed_zombies', []))
+    total_missed = missed_shadows + missed_zombies
+    
+    expected_shadows = analysis.get('shadow_expected', 0)
+    expected_zombies = analysis.get('zombie_expected', 0)
+    total_expected = expected_shadows + expected_zombies
+    
+    # Scaled materiality threshold: max(2, expected * 10%)
+    # This gives small samples breathing room while scaling for larger datasets
+    materiality = max(2, int(total_expected * 0.1))
+    
+    # Status thresholds:
+    # PASS: missed <= materiality
+    # WARN: missed <= 2x materiality
+    # FAIL: missed > 2x materiality
+    if total_expected == 0:
         status = ReconcileStatusEnum.PASS
-    elif accuracy >= 81:
+    elif total_missed <= materiality:
+        status = ReconcileStatusEnum.PASS
+    elif total_missed <= materiality * 2:
         status = ReconcileStatusEnum.WARN
     else:
         status = ReconcileStatusEnum.FAIL
