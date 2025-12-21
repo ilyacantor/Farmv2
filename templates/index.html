@@ -29,9 +29,6 @@
             justify-content: center;
             z-index: 1000;
         }
-        .tab-active { border-bottom: 2px solid #22d3ee; color: #22d3ee; }
-        .tab-inactive { border-bottom: 2px solid transparent; color: #94a3b8; }
-        .tab-inactive:hover { color: #e2e8f0; }
     </style>
 </head>
 <body class="min-h-screen text-white">
@@ -42,6 +39,10 @@
                     <img src="/static/autonomos_logo.png" alt="AutonomOS" class="h-8">
                     <div class="h-6 w-px bg-slate-600"></div>
                     <span class="text-white font-medium text-lg">AOS Farm</span>
+                    <nav class="flex items-center gap-1 ml-4">
+                        <button id="tabConsole" onclick="switchMainTab('console')" class="px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors">Console</button>
+                        <button id="tabTest" onclick="switchMainTab('test')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Test Lab</button>
+                    </nav>
                 </div>
                 <div class="flex items-center gap-4">
                     <div class="text-xs text-slate-500">
@@ -58,14 +59,6 @@
             </div>
         </header>
 
-        <div class="flex gap-6 mb-6 border-b border-slate-700">
-            <button onclick="switchMainTab('console')" id="tabConsole" class="pb-3 px-1 text-sm font-medium tab-active">
-                Console
-            </button>
-            <button onclick="switchMainTab('test')" id="tabTest" class="pb-3 px-1 text-sm font-medium tab-inactive">
-                Test Lab
-            </button>
-        </div>
 
         <div id="consoleTab" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div class="space-y-6">
@@ -414,17 +407,13 @@
             if (tab === 'console') {
                 consoleTab.classList.remove('hidden');
                 testTab.classList.add('hidden');
-                tabConsole.classList.remove('tab-inactive');
-                tabConsole.classList.add('tab-active');
-                tabTest.classList.remove('tab-active');
-                tabTest.classList.add('tab-inactive');
+                tabConsole.className = 'px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors';
+                tabTest.className = 'px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors';
             } else {
                 consoleTab.classList.add('hidden');
                 testTab.classList.remove('hidden');
-                tabConsole.classList.remove('tab-active');
-                tabConsole.classList.add('tab-inactive');
-                tabTest.classList.remove('tab-inactive');
-                tabTest.classList.add('tab-active');
+                tabConsole.className = 'px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors';
+                tabTest.className = 'px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors';
                 populateTestSnapshotSelect();
             }
         }
