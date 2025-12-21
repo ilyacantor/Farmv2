@@ -1302,11 +1302,11 @@
                                 <div class="p-3 rounded-lg bg-amber-500/5 ring-1 ring-amber-500/20">
                                     <div class="font-medium text-amber-300 mb-3">Shadows</div>
                                     <div class="grid grid-cols-6 gap-2 text-center">
-                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-cyan-400" onclick="showLifecycleAssets('shadow', 'expected')">
                                             <div class="text-lg font-bold text-cyan-400">${shadowExpected}</div>
                                             <div class="text-[10px] text-slate-500">Expected</div>
                                         </div>
-                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-blue-400" onclick="showLifecycleAssets('shadow', 'found')">
                                             <div class="text-lg font-bold text-blue-400">${shadowFound}</div>
                                             <div class="text-[10px] text-slate-500">Found</div>
                                         </div>
@@ -1322,7 +1322,7 @@
                                             <div class="text-lg font-bold ${shadowMissed > 0 ? 'text-amber-400' : 'text-emerald-400'}">${shadowMissed}</div>
                                             <div class="text-[10px] text-slate-500">Missed</div>
                                         </div>
-                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-slate-400" onclick="showLifecycleAssets('shadow', 'all')">
                                             <div class="text-lg font-bold ${shadowAccuracy >= 91 ? 'text-emerald-400' : shadowAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${shadowAccuracy}%</div>
                                             <div class="text-[10px] text-slate-500">Accuracy</div>
                                         </div>
@@ -1333,11 +1333,11 @@
                                 <div class="p-3 rounded-lg bg-purple-500/5 ring-1 ring-purple-500/20">
                                     <div class="font-medium text-purple-300 mb-3">Zombies</div>
                                     <div class="grid grid-cols-6 gap-2 text-center">
-                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-cyan-400" onclick="showLifecycleAssets('zombie', 'expected')">
                                             <div class="text-lg font-bold text-cyan-400">${zombieExpected}</div>
                                             <div class="text-[10px] text-slate-500">Expected</div>
                                         </div>
-                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-blue-400" onclick="showLifecycleAssets('zombie', 'found')">
                                             <div class="text-lg font-bold text-blue-400">${zombieFound}</div>
                                             <div class="text-[10px] text-slate-500">Found</div>
                                         </div>
@@ -1353,7 +1353,7 @@
                                             <div class="text-lg font-bold ${zombieMissed > 0 ? 'text-amber-400' : 'text-emerald-400'}">${zombieMissed}</div>
                                             <div class="text-[10px] text-slate-500">Missed</div>
                                         </div>
-                                        <div class="rounded-lg bg-slate-800/50 p-2">
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-slate-400" onclick="showLifecycleAssets('zombie', 'all')">
                                             <div class="text-lg font-bold ${zombieAccuracy >= 91 ? 'text-emerald-400' : zombieAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${zombieAccuracy}%</div>
                                             <div class="text-[10px] text-slate-500">Accuracy</div>
                                         </div>
@@ -1385,28 +1385,33 @@
             let assets = [];
             let title = '';
             
-            if (type === 'shadow') {
-                if (category === 'correct') {
-                    assets = analysis.matched_shadows || [];
-                    title = 'Matched Shadows';
-                } else if (category === 'fp') {
-                    assets = analysis.false_positive_shadows || [];
-                    title = 'False Positive Shadows';
-                } else if (category === 'missed') {
-                    assets = analysis.missed_shadows || [];
-                    title = 'Missed Shadows';
-                }
-            } else {
-                if (category === 'correct') {
-                    assets = analysis.matched_zombies || [];
-                    title = 'Matched Zombies';
-                } else if (category === 'fp') {
-                    assets = analysis.false_positive_zombies || [];
-                    title = 'False Positive Zombies';
-                } else if (category === 'missed') {
-                    assets = analysis.missed_zombies || [];
-                    title = 'Missed Zombies';
-                }
+            const typeLabel = type === 'shadow' ? 'Shadows' : 'Zombies';
+            const matched = type === 'shadow' ? (analysis.matched_shadows || []) : (analysis.matched_zombies || []);
+            const fps = type === 'shadow' ? (analysis.false_positive_shadows || []) : (analysis.false_positive_zombies || []);
+            const missed = type === 'shadow' ? (analysis.missed_shadows || []) : (analysis.missed_zombies || []);
+            
+            if (category === 'correct') {
+                assets = matched;
+                title = `Matched ${typeLabel}`;
+            } else if (category === 'fp') {
+                assets = fps;
+                title = `False Positive ${typeLabel}`;
+            } else if (category === 'missed') {
+                assets = missed;
+                title = `Missed ${typeLabel}`;
+            } else if (category === 'expected') {
+                assets = [...matched, ...missed];
+                title = `Expected ${typeLabel} (Farm)`;
+            } else if (category === 'found') {
+                assets = [...matched, ...fps];
+                title = `Found ${typeLabel} (AOD)`;
+            } else if (category === 'all') {
+                assets = [...matched, ...fps, ...missed].reduce((acc, a) => {
+                    const key = a.asset_key || a.key || a;
+                    if (!acc.find(x => (x.asset_key || x.key || x) === key)) acc.push(a);
+                    return acc;
+                }, []);
+                title = `All ${typeLabel}`;
             }
             
             if (assets.length === 0) {
