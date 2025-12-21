@@ -792,13 +792,16 @@
             document.getElementById('aodNavigateModal').classList.remove('hidden');
         }
         
-        function viewSnapshotProfile() {
+        async function viewSnapshotProfile() {
             closeModal('aodNavigateModal');
             if (lastCreatedSnapshotId) {
                 switchToTestLab();
+                await loadAllData();
                 setTimeout(() => {
-                    loadSnapshotForTestLab(lastCreatedSnapshotId);
-                }, 100);
+                    const select = document.getElementById('testSnapshotSelect');
+                    select.value = lastCreatedSnapshotId;
+                    loadTestSnapshot();
+                }, 150);
             }
         }
 
