@@ -791,7 +791,7 @@
             closeModal('aodNavigateModal');
             if (!lastCreatedSnapshotId) return;
             
-            switchTab('console');
+            switchMainTab('console');
             
             setTimeout(() => {
                 const snapshotRow = document.querySelector(`[data-snapshot-id="${lastCreatedSnapshotId}"]`);
