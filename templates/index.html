@@ -1927,17 +1927,14 @@
         async function doEraseAll() {
             hideEraseConfirm();
             try {
-                const resp = await fetch('/api/snapshots/cleanup?keep=0', { method: 'DELETE' });
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                await fetch('/api/snapshots/cleanup?keep=0', { method: 'DELETE' });
+                expandedSnapshots = {};
+                snapshotDataCache = {};
+                expectationsCache = {};
+                await refreshData();
             } catch (e) {
                 console.error('Erase failed:', e);
             }
-            expandedSnapshots = {};
-            snapshotDataCache = {};
-            expectationsCache = {};
-            snapshotsListCache = [];
-            renderConfigSnapshotsList();
-            await refreshData();
         }
 
         async function toggleSnapshotExpand(snapshotId) {
