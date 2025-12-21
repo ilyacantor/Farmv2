@@ -1597,22 +1597,67 @@
             const assetRows = assets.slice(0, 100).map((key, idx) => {
                 const trace = decisionTraces[key] || {};
                 const detail = getDetail(key, trace);
-                const sources = (trace.discovery_sources_list || []).join(', ') || '-';
+                const sourcesList = trace.discovery_sources_list || [];
+                const sourcesText = sourcesList.join(', ') || '-';
                 const rowId = `funnel-asset-${idx}`;
                 
-                const traceDetails = [
-                    trace.is_external !== undefined ? `External: ${trace.is_external}` : null,
-                    trace.discovery_strength ? `Discovery Strength: ${trace.discovery_strength}` : null,
-                    trace.has_idp_match !== undefined ? `IdP Match: ${trace.has_idp_match}` : null,
-                    trace.has_cmdb_match !== undefined ? `CMDB Match: ${trace.has_cmdb_match}` : null,
-                    trace.has_cloud_evidence !== undefined ? `Cloud Evidence: ${trace.has_cloud_evidence}` : null,
-                    trace.is_governed !== undefined ? `Governed: ${trace.is_governed}` : null,
-                    trace.is_shadow !== undefined ? `Shadow: ${trace.is_shadow}` : null,
-                    trace.is_active !== undefined ? `Active: ${trace.is_active}` : null,
-                    trace.has_ongoing_finance !== undefined ? `Finance: ${trace.has_ongoing_finance}` : null,
-                    trace.rejection_reason ? `Rejection: ${trace.rejection_reason}` : null,
-                    trace.vendor_domain_set ? `Vendor Set: ${trace.vendor_domain_set}` : null,
-                ].filter(Boolean);
+                // Build operationally meaningful narrative
+                const traceDetails = [];
+                
+                // Asset type context
+                if (trace.is_external) {
+                    traceDetails.push({text: 'External SaaS/vendor domain', type: 'neutral'});
+                } else {
+                    traceDetails.push({text: 'Internal service', type: 'neutral'});
+                }
+                
+                // Discovery evidence
+                if (trace.discovery_strength) {
+                    traceDetails.push({text: `Seen in ${trace.discovery_strength} source${trace.discovery_strength > 1 ? 's' : ''}: ${sourcesList.join(', ') || 'unknown'}`, type: 'info'});
+                }
+                
+                // Admission gate results
+                if (trace.has_idp_match) traceDetails.push({text: 'Users authenticated via IdP', type: 'good'});
+                if (trace.has_cmdb_match) traceDetails.push({text: 'Registered in CMDB', type: 'good'});
+                if (trace.has_cloud_evidence) traceDetails.push({text: 'Cloud infrastructure detected', type: 'good'});
+                
+                // Governance status with WHY
+                if (trace.is_governed) {
+                    const reason = trace.vendor_domain_set 
+                        ? `Governed via ${trace.vendor_domain_set} vendor set`
+                        : 'Governed (CMDB/IdP/Cloud match)';
+                    traceDetails.push({text: reason, type: 'good'});
+                } else if (trace.is_external) {
+                    traceDetails.push({text: 'No governance evidence - potential shadow', type: 'warn'});
+                }
+                
+                // Activity status
+                if (trace.is_active === false) {
+                    traceDetails.push({text: 'Stale activity - potential zombie', type: 'warn'});
+                }
+                
+                // Finance (informational only, not a gate)
+                if (trace.has_ongoing_finance) {
+                    traceDetails.push({text: 'Has active financial contracts', type: 'info'});
+                }
+                
+                // Rejection reason if applicable
+                if (trace.rejection_reason) {
+                    const rejectionMap = {
+                        'INSUFFICIENT_DISCOVERY': 'Not enough discovery sources to confirm existence',
+                        'INFRASTRUCTURE_DOMAIN': 'Infrastructure/CDN domain excluded from analysis',
+                        'INTERNAL_INSUFFICIENT': 'Internal service without enough corroboration'
+                    };
+                    traceDetails.push({text: rejectionMap[trace.rejection_reason] || trace.rejection_reason, type: 'bad'});
+                }
+                
+                const typeColors = {
+                    good: 'text-emerald-400',
+                    warn: 'text-amber-400', 
+                    bad: 'text-rose-400',
+                    info: 'text-cyan-400',
+                    neutral: 'text-slate-400'
+                };
                 
                 return `
                     <div class="py-2 border-b border-slate-700/50 last:border-b-0">
@@ -1623,9 +1668,8 @@
                                 <svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                             </div>
                         </div>
-                        <div class="text-[10px] text-slate-500 mt-1">Sources: ${sources}</div>
-                        <div id="${rowId}" class="hidden mt-2 p-2 bg-slate-800/50 rounded text-[10px] space-y-1">
-                            ${traceDetails.map(d => `<div class="text-slate-400">${d}</div>`).join('')}
+                        <div id="${rowId}" class="hidden mt-2 p-2 bg-slate-800/50 rounded text-[10px] space-y-1.5">
+                            ${traceDetails.map(d => `<div class="${typeColors[d.type] || 'text-slate-400'}">• ${d.text}</div>`).join('')}
                         </div>
                     </div>
                 `;
