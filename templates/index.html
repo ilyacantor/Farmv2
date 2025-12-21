@@ -523,7 +523,11 @@
                 activeBtn.classList.remove('bg-slate-700', 'text-slate-300');
                 activeBtn.classList.add('bg-cyan-600', 'text-white');
             }
-            renderTraceTable();
+            
+            const tbody = document.getElementById('traceTableBody');
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-slate-400">Filtering...</td></tr>';
+            
+            setTimeout(() => renderTraceTable(), 10);
         }
 
         function lookupDecisionTrace() {
