@@ -525,9 +525,12 @@
             }
             
             const tbody = document.getElementById('traceTableBody');
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-slate-400">Filtering...</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center py-6 text-cyan-400 animate-pulse">Filtering...</td></tr>';
+            document.getElementById('traceCount').textContent = '...';
             
-            setTimeout(() => renderTraceTable(), 10);
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => renderTraceTable());
+            });
         }
 
         function lookupDecisionTrace() {
