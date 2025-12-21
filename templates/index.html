@@ -135,7 +135,7 @@
                             <span class="text-xs text-slate-500"><span id="configSnapshotCount">0</span></span>
                         </div>
                     </div>
-                    <div id="configSnapshotsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-420px)] overflow-y-auto">
+                    <div id="configSnapshotsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-280px)] overflow-y-auto">
                         <div class="text-slate-500 text-center py-12">Loading snapshots...</div>
                     </div>
                 </div>
@@ -803,7 +803,10 @@
                 const snapshotRow = document.querySelector(`[data-snapshot-id="${lastCreatedSnapshotId}"]`);
                 if (snapshotRow) {
                     snapshotRow.classList.add('ring-2', 'ring-cyan-500');
-                    toggleSnapshotExpand(lastCreatedSnapshotId);
+                    // Force expand (not toggle) - only expand if not already expanded
+                    if (!expandedSnapshots[lastCreatedSnapshotId]) {
+                        toggleSnapshotExpand(lastCreatedSnapshotId);
+                    }
                     setTimeout(() => snapshotRow.classList.remove('ring-2', 'ring-cyan-500'), 2000);
                 }
             }, 300);
