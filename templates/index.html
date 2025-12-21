@@ -255,20 +255,20 @@
                     </svg>
                 </div>
                 <h3 class="text-lg font-semibold text-white mb-2">Snapshot Created Successfully</h3>
-                <p class="text-slate-400 text-sm">What would you like to do next?</p>
+                <p class="text-slate-400 text-sm">Proceed to AOS Discover for Running Discovery?</p>
             </div>
-            <div class="flex flex-col gap-3">
-                <button onclick="navigateToAOD()" 
-                    class="w-full px-4 py-3 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-medium transition-colors">
-                    Proceed to AOS Discover
-                </button>
-                <button onclick="viewSnapshotProfile()" 
-                    class="w-full px-4 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-medium transition-colors">
-                    View Snapshot Profile
+            <div class="flex gap-3">
+                <button onclick="closeModal('aodNavigateModal')" 
+                    class="flex-1 px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors">
+                    Cancel
                 </button>
                 <button onclick="closeModal('aodNavigateModal')" 
-                    class="w-full px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-colors">
-                    Close
+                    class="flex-1 px-4 py-2 bg-slate-600 hover:bg-slate-500 text-white rounded-lg transition-colors">
+                    No
+                </button>
+                <button onclick="navigateToAOD()" 
+                    class="flex-1 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg font-medium transition-colors">
+                    Yes
                 </button>
             </div>
         </div>
@@ -766,7 +766,6 @@
         }
         
         let aodBaseUrl = null;
-        let lastCreatedSnapshotId = null;
         
         async function loadConfig() {
             try {
@@ -787,22 +786,8 @@
             }
         }
         
-        function showAODNavigateDialog(snapshotId) {
-            lastCreatedSnapshotId = snapshotId;
+        function showAODNavigateDialog() {
             document.getElementById('aodNavigateModal').classList.remove('hidden');
-        }
-        
-        async function viewSnapshotProfile() {
-            closeModal('aodNavigateModal');
-            if (lastCreatedSnapshotId) {
-                switchToTestLab();
-                await loadAllData();
-                setTimeout(() => {
-                    const select = document.getElementById('testSnapshotSelect');
-                    select.value = lastCreatedSnapshotId;
-                    loadTestSnapshot();
-                }, 150);
-            }
         }
 
         function addLogEntry(message, type = 'info') {
@@ -2321,7 +2306,7 @@
                     document.getElementById('dataPreset').value || null
                 );
                 if (result && result.snapshot_id) {
-                    showAODNavigateDialog(result.snapshot_id);
+                    showAODNavigateDialog();
                 }
             } finally {
                 btn.disabled = false;
