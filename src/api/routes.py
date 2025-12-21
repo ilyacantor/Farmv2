@@ -397,6 +397,15 @@ async def create_snapshot(request: SnapshotRequest):
     )
 
 
+@router.get("/api/config")
+async def get_config():
+    """Return frontend configuration values."""
+    aod_url = os.environ.get("AOD_BASE_URL", "") or os.environ.get("AOD_URL", "")
+    return {
+        "aod_base_url": aod_url.rstrip("/") if aod_url else None
+    }
+
+
 @router.get("/api/snapshots/{snapshot_id}")
 async def get_snapshot(snapshot_id: str):
     pool = await get_pool()

@@ -765,9 +765,25 @@
             document.getElementById(id).classList.add('hidden');
         }
         
+        let aodBaseUrl = null;
+        
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                aodBaseUrl = config.aod_base_url;
+            } catch (e) {
+                console.warn('Failed to load config:', e);
+            }
+        }
+        
         function navigateToAOD() {
             closeModal('aodNavigateModal');
-            window.open('https://aodv3.replit.app/', '_blank');
+            if (aodBaseUrl) {
+                window.open(aodBaseUrl, '_blank');
+            } else {
+                alert('AOD_BASE_URL not configured. Please set the environment variable.');
+            }
         }
         
         function showAODNavigateDialog() {
@@ -2356,6 +2372,7 @@
             });
         });
 
+        loadConfig();
         loadAllData();
         addLogEntry('Farm Console loaded', 'info');
     </script>
