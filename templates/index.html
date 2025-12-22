@@ -2621,7 +2621,7 @@
             },
             
             showOverlay(message, options = {}) {
-                document.getElementById('tourDimmer').classList.remove('hidden');
+                // No dimmer - keep screen visible
                 const overlay = document.getElementById('tourOverlay');
                 document.getElementById('tourOverlayText').innerHTML = message;
                 
@@ -2660,9 +2660,16 @@
             },
             
             hideOverlay() {
-                document.getElementById('tourDimmer').classList.add('hidden');
                 document.getElementById('tourOverlay').classList.add('hidden');
                 this.clearHighlights();
+                this.closeAllDropdowns();
+            },
+            
+            closeAllDropdowns() {
+                document.getElementById('scale').blur();
+                document.getElementById('enterpriseProfile').blur();
+                document.getElementById('realismProfile').blur();
+                document.getElementById('dataPreset').blur();
             },
             
             highlight(elementId) {
@@ -2697,30 +2704,46 @@
                 this.clearHighlights();
                 
                 if (step === 0) {
-                    document.getElementById('scale').value = 'medium';
+                    const el = document.getElementById('scale');
+                    el.value = 'medium';
                     this.highlight('scale');
+                    el.focus();
+                    el.click();
                     this.showOverlay(
                         "Scale controls asset count. Medium = ~50 assets, Enterprise = 500+."
                     );
                 } else if (step === 1) {
-                    document.getElementById('enterpriseProfile').value = 'modern_saas';
+                    this.closeAllDropdowns();
+                    const el = document.getElementById('enterpriseProfile');
+                    el.value = 'modern_saas';
                     this.highlight('enterpriseProfile');
+                    el.focus();
+                    el.click();
                     this.showOverlay(
                         "Enterprise profile affects system mix. Modern SaaS = heavy cloud, Regulated Finance = legacy + compliance."
                     );
                 } else if (step === 2) {
-                    document.getElementById('realismProfile').value = 'typical';
+                    this.closeAllDropdowns();
+                    const el = document.getElementById('realismProfile');
+                    el.value = 'typical';
                     this.highlight('realismProfile');
+                    el.focus();
+                    el.click();
                     this.showOverlay(
                         "Realism introduces messiness: stale entries, conflicting records, unmanaged systems."
                     );
                 } else if (step === 3) {
-                    document.getElementById('dataPreset').value = 'enterprise_mess';
+                    this.closeAllDropdowns();
+                    const el = document.getElementById('dataPreset');
+                    el.value = 'enterprise_mess';
                     this.highlight('dataPreset');
+                    el.focus();
+                    el.click();
                     this.showOverlay(
-                        "Data Preset sets challenge level. Clean = easy baseline, Enterprise Mess = realistic conflicts, Adversarial = edge cases."
+                        "Data Preset sets challenge level. Clean = easy baseline, Enterprise Mess = realistic conflicts, Adversarial = absolute disaster environment."
                     );
                 } else if (step === 4) {
+                    this.closeAllDropdowns();
                     this.highlight('generateBtn');
                     this.showOverlay(
                         "Press Generate Snapshot to create ground truth data.",
@@ -2801,7 +2824,7 @@
                     }
                     
                     this.showOverlay(
-                        "Snapshot created. This is ground truth — AOD sees only raw signals, not classifications."
+                        "Snapshot represents a synthetic and hyper-realistic enterprise IT environment. In a typical large enterprise, AOD processes 500–1,500 raw observations, resolves them into 50–300 candidate assets, evaluates thousands of evidence relationships, and produces a verified catalog of 30–200 trusted assets."
                     );
                 } else if (step === 1) {
                     this.clearHighlights();
