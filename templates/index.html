@@ -2763,6 +2763,14 @@
                 el.addEventListener('change', handler);
             },
             
+            waitForReconciliationClick(el) {
+                const handler = () => {
+                    el.removeEventListener('click', handler);
+                    setTimeout(() => this.next(), 500);
+                };
+                el.addEventListener('click', handler);
+            },
+            
             setupGenerateCapture() {
                 const form = document.getElementById('snapshotForm');
                 const originalSubmit = form.onsubmit;
@@ -2886,11 +2894,12 @@
                     if (recEl) {
                         recEl.classList.add('tour-highlight');
                         recEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        setTimeout(() => recEl.click(), 500);
+                        this.waitForReconciliationClick(recEl);
                     }
                     
                     this.showOverlay(
-                        "The scorecard shows precision and recall. Expected shadow/zombie counts from Farm vs. AOD's actual classifications."
+                        "Click the highlighted reconciliation to view the scorecard comparing AOD's results to Farm's ground truth.",
+                        { hideNext: true }
                     );
                 } else if (step === 2) {
                     this.showOverlay(
