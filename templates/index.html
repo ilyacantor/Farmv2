@@ -2378,9 +2378,6 @@
                     document.getElementById('realismProfile').value,
                     document.getElementById('dataPreset').value || null
                 );
-                if (result && result.snapshot_id) {
-                    showAODNavigateDialog(result.snapshot_id);
-                }
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'Generate Snapshot';
