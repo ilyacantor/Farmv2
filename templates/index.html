@@ -377,15 +377,48 @@
     </div>
 
     <script>
-        let snapshotsCache = [];
-        let reconciliationsCache = {};
-        let reconciliationsListCache = [];
-        let aodStatusCache = {};
-        let decisionTracesCache = {};
-        let currentTraceFilter = 'all';
-        let mismatchKeysCache = new Set();
-        let currentTestSnapshotId = null;
-        let currentLifecycleExpectedBlock = null;
+        const FarmState = {
+            snapshots: [],
+            reconciliationsListCache: [],
+            aodStatusCache: {},
+            decisionTracesCache: {},
+            currentRecData: null,
+            currentLifecycleExpectedBlock: null,
+            expandedSnapshots: {},
+            snapshotDataCache: {},
+            expectationsCache: {},
+            reconciliationsCache: {},
+            currentLifecycleAssets: null,
+            lastCreatedSnapshotId: null,
+            aodBaseUrl: null,
+            currentTraceFilter: 'all',
+            mismatchKeysCache: new Set(),
+            currentTestSnapshotId: null,
+            expandedPlanes: {},
+            expandedItems: {},
+            assetListIdCounter: 0
+        };
+
+        const RequestController = {
+            _pendingRequests: new Map(),
+            _requestId: 0,
+            
+            async fetch(key, fetchFn) {
+                const id = ++this._requestId;
+                this._pendingRequests.set(key, id);
+                try {
+                    const result = await fetchFn();
+                    if (this._pendingRequests.get(key) !== id) {
+                        return null;
+                    }
+                    return result;
+                } finally {
+                    if (this._pendingRequests.get(key) === id) {
+                        this._pendingRequests.delete(key);
+                    }
+                }
+            }
+        };
 
         const LIFECYCLE_EXPLANATIONS = {
             observations: {
@@ -450,7 +483,7 @@
         function populateTestSnapshotSelect() {
             const select = document.getElementById('testSnapshotSelect');
             select.innerHTML = '<option value="">Select a snapshot...</option>';
-            snapshotsCache.forEach(snap => {
+            FarmState.snapshots.forEach(snap => {
                 const date = new Date(snap.created_at).toLocaleDateString();
                 select.innerHTML += `<option value="${snap.snapshot_id}">${snap.tenant_id} - ${date}</option>`;
             });
@@ -463,7 +496,7 @@
             document.getElementById('decisionTraceResult').classList.add('hidden');
             document.getElementById('testAssetKey').value = '';
             
-            currentTraceFilter = 'all';
+            FarmState.currentTraceFilter = 'all';
             document.querySelectorAll('[id^="traceFilter"]').forEach(btn => {
                 btn.classList.remove('bg-cyan-600', 'text-white');
                 btn.classList.add('bg-slate-700', 'text-slate-300');
@@ -475,16 +508,16 @@
             tbody.innerHTML = '<tr><td colspan="9" class="text-center py-8 text-slate-400 animate-pulse">Loading traces...</td></tr>';
             document.getElementById('traceCount').textContent = 'loading...';
             
-            currentTestSnapshotId = snapshotId;
-            mismatchKeysCache = new Set();
-            decisionTracesCache = {};
+            FarmState.currentTestSnapshotId = snapshotId;
+            FarmState.mismatchKeysCache = new Set();
+            FarmState.decisionTracesCache = {};
             
             try {
                 const resp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
                 const data = await resp.json();
-                decisionTracesCache = data.decision_traces || {};
+                FarmState.decisionTracesCache = data.decision_traces || {};
                 
-                const recs = reconciliationsCache[snapshotId] || [];
+                const recs = FarmState.reconciliationsCache[snapshotId] || [];
                 if (recs.length > 0) {
                     const latestRecId = recs[0].reconciliation_id;
                     const fullRecResp = await fetch(`/api/reconcile/${latestRecId}`);
@@ -492,8 +525,8 @@
                         const fullRec = await fullRecResp.json();
                         const farmShadows = new Set((fullRec.farm_expectations?.shadow_keys || []).map(k => k.toLowerCase()));
                         const aodShadows = new Set((fullRec.aod_lists?.shadow_assets || []).map(k => k.toLowerCase()));
-                        farmShadows.forEach(k => { if (!aodShadows.has(k)) mismatchKeysCache.add(k); });
-                        aodShadows.forEach(k => { if (!farmShadows.has(k)) mismatchKeysCache.add(k); });
+                        farmShadows.forEach(k => { if (!aodShadows.has(k)) FarmState.mismatchKeysCache.add(k); });
+                        aodShadows.forEach(k => { if (!farmShadows.has(k)) FarmState.mismatchKeysCache.add(k); });
                     }
                 }
                 
@@ -506,13 +539,13 @@
 
         function renderTraceTable() {
             const tbody = document.getElementById('traceTableBody');
-            const traces = Object.values(decisionTracesCache);
+            const traces = Object.values(FarmState.decisionTracesCache);
             
             let filtered = traces;
-            if (currentTraceFilter === 'shadow') {
+            if (FarmState.currentTraceFilter === 'shadow') {
                 filtered = traces.filter(t => t.is_shadow);
-            } else if (currentTraceFilter === 'mismatch') {
-                filtered = traces.filter(t => mismatchKeysCache.has(t.asset_key_used.toLowerCase()));
+            } else if (FarmState.currentTraceFilter === 'mismatch') {
+                filtered = traces.filter(t => FarmState.mismatchKeysCache.has(t.asset_key_used.toLowerCase()));
             }
             
             document.getElementById('traceCount').textContent = `${filtered.length} traces`;
@@ -542,7 +575,7 @@
         }
 
         function filterTraces(filter) {
-            currentTraceFilter = filter;
+            FarmState.currentTraceFilter = filter;
             document.querySelectorAll('[id^="traceFilter"]').forEach(btn => {
                 btn.classList.remove('bg-cyan-600', 'text-white');
                 btn.classList.add('bg-slate-700', 'text-slate-300');
@@ -570,9 +603,9 @@
 
         function showTraceDetail(assetKey) {
             const keyLower = assetKey.toLowerCase();
-            let trace = decisionTracesCache[assetKey] || decisionTracesCache[keyLower];
+            let trace = FarmState.decisionTracesCache[assetKey] || FarmState.decisionTracesCache[keyLower];
             if (!trace) {
-                for (const [k, v] of Object.entries(decisionTracesCache)) {
+                for (const [k, v] of Object.entries(FarmState.decisionTracesCache)) {
                     if (k.toLowerCase() === keyLower) {
                         trace = v;
                         break;
@@ -580,7 +613,7 @@
                 }
             }
             if (!trace) {
-                alert(`No trace found for: ${assetKey}\n\nAvailable keys (first 20): ${Object.keys(decisionTracesCache).slice(0, 20).join(', ')}`);
+                alert(`No trace found for: ${assetKey}\n\nAvailable keys (first 20): ${Object.keys(FarmState.decisionTracesCache).slice(0, 20).join(', ')}`);
                 return;
             }
             
@@ -630,7 +663,7 @@
         }
 
         function compareTraces(assetKey) {
-            const farmTrace = decisionTracesCache[assetKey];
+            const farmTrace = FarmState.decisionTracesCache[assetKey];
             const aodInput = document.getElementById('aodTraceInput').value.trim();
             if (!aodInput) {
                 alert('Paste AOD trace JSON to compare');
@@ -656,17 +689,17 @@
         }
 
         async function exportMismatches() {
-            let snapshotId = currentTestSnapshotId;
+            let snapshotId = FarmState.currentTestSnapshotId;
             let mismatches = [];
             let fullRec = null;
             let farmTraces = {};
             
-            if (reconciliationsListCache.length === 0) {
+            if (FarmState.reconciliationsListCache.length === 0) {
                 alert('No reconciliations found.');
                 return;
             }
             
-            const latestRec = reconciliationsListCache[0];
+            const latestRec = FarmState.reconciliationsListCache[0];
             if (!snapshotId) snapshotId = latestRec.snapshot_id;
             
             const fullRecResp = await fetch(`/api/reconcile/${latestRec.reconciliation_id}`);
@@ -765,14 +798,11 @@
             document.getElementById(id).classList.add('hidden');
         }
         
-        let aodBaseUrl = null;
-        let lastCreatedSnapshotId = null;
-        
         async function loadConfig() {
             try {
                 const response = await fetch('/api/config');
                 const config = await response.json();
-                aodBaseUrl = config.aod_base_url;
+                FarmState.aodBaseUrl = config.aod_base_url;
             } catch (e) {
                 console.warn('Failed to load config:', e);
             }
@@ -780,16 +810,16 @@
         
         function navigateToAOD() {
             closeModal('aodNavigateModal');
-            if (aodBaseUrl) {
-                window.open(aodBaseUrl, 'aos_discover');
+            if (FarmState.aodBaseUrl) {
+                window.open(FarmState.aodBaseUrl, 'aos_discover');
             } else {
                 alert('AOD_BASE_URL not configured. Please set the environment variable.');
             }
         }
         
         function goToDiscoverWithSnapshot(snapshotId) {
-            if (aodBaseUrl) {
-                window.open(aodBaseUrl, 'aos_discover');
+            if (FarmState.aodBaseUrl) {
+                window.open(FarmState.aodBaseUrl, 'aos_discover');
             } else {
                 alert('AOD_BASE_URL not configured. Please set the environment variable.');
             }
@@ -797,27 +827,27 @@
         
         function viewCreatedSnapshot() {
             closeModal('aodNavigateModal');
-            if (!lastCreatedSnapshotId) return;
+            if (!FarmState.lastCreatedSnapshotId) return;
             
             switchMainTab('console');
             
             setTimeout(() => {
-                const snapshotRow = document.querySelector(`[data-snapshot-id="${lastCreatedSnapshotId}"]`);
+                const snapshotRow = document.querySelector(`[data-snapshot-id="${FarmState.lastCreatedSnapshotId}"]`);
                 if (snapshotRow) {
                     snapshotRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     snapshotRow.classList.add('ring-2', 'ring-cyan-500');
                     // Force expand - close first if already open, then open
-                    if (expandedSnapshots[lastCreatedSnapshotId]) {
-                        expandedSnapshots[lastCreatedSnapshotId] = false;
+                    if (FarmState.expandedSnapshots[FarmState.lastCreatedSnapshotId]) {
+                        FarmState.expandedSnapshots[FarmState.lastCreatedSnapshotId] = false;
                     }
-                    toggleSnapshotExpand(lastCreatedSnapshotId);
+                    toggleSnapshotExpand(FarmState.lastCreatedSnapshotId);
                     setTimeout(() => snapshotRow.classList.remove('ring-2', 'ring-cyan-500'), 2000);
                 }
             }, 150);
         }
         
         function showAODNavigateDialog(snapshotId) {
-            lastCreatedSnapshotId = snapshotId;
+            FarmState.lastCreatedSnapshotId = snapshotId;
             document.getElementById('aodModalSnapshotId').textContent = snapshotId ? `Snapshot: ${snapshotId.substring(0, 8)}...` : '';
             document.getElementById('aodNavigateModal').classList.remove('hidden');
         }
@@ -850,42 +880,44 @@
         }
 
         async function loadAodStatuses() {
-            const promises = snapshotsCache.map(async (snap) => {
-                aodStatusCache[snap.snapshot_id] = await fetchAodStatus(snap.snapshot_id, snap.tenant_id);
+            const promises = FarmState.snapshots.map(async (snap) => {
+                FarmState.aodStatusCache[snap.snapshot_id] = await fetchAodStatus(snap.snapshot_id, snap.tenant_id);
             });
             await Promise.all(promises);
             renderSnapshotsList();
         }
 
         async function loadAllData() {
-            try {
-                const [snapshotsRes, reconciliationsRes] = await Promise.all([
-                    fetch('/api/snapshots?limit=100'),
-                    fetch('/api/reconcile?limit=500')
-                ]);
-                
-                snapshotsCache = await snapshotsRes.json();
-                reconciliationsListCache = await reconciliationsRes.json();
-                
-                reconciliationsCache = {};
-                for (const rec of reconciliationsListCache) {
-                    if (!reconciliationsCache[rec.snapshot_id]) reconciliationsCache[rec.snapshot_id] = [];
-                    reconciliationsCache[rec.snapshot_id].push(rec);
+            return RequestController.fetch('loadAllData', async () => {
+                try {
+                    const [snapshotsRes, reconciliationsRes] = await Promise.all([
+                        fetch('/api/snapshots?limit=100'),
+                        fetch('/api/reconcile?limit=500')
+                    ]);
+                    
+                    FarmState.snapshots = await snapshotsRes.json();
+                    FarmState.reconciliationsListCache = await reconciliationsRes.json();
+                    
+                    FarmState.reconciliationsCache = {};
+                    for (const rec of FarmState.reconciliationsListCache) {
+                        if (!FarmState.reconciliationsCache[rec.snapshot_id]) FarmState.reconciliationsCache[rec.snapshot_id] = [];
+                        FarmState.reconciliationsCache[rec.snapshot_id].push(rec);
+                    }
+                    
+                    document.getElementById('snapshotCount').textContent = FarmState.snapshots.length;
+                    document.getElementById('configSnapshotCount').textContent = FarmState.snapshots.length;
+                    
+                    FarmState.snapshots.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    FarmState.reconciliationsListCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    
+                    renderReconciliationsList();
+                    renderConfigSnapshotsList();
+                } catch (e) {
+                    console.error('Failed to load data:', e);
+                    document.getElementById('reconciliationsList').innerHTML = 
+                        '<div class="text-red-400 text-center py-12">Failed to load data</div>';
                 }
-                
-                document.getElementById('snapshotCount').textContent = snapshotsCache.length;
-                document.getElementById('configSnapshotCount').textContent = snapshotsCache.length;
-                
-                snapshotsCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                reconciliationsListCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                
-                renderReconciliationsList();
-                renderConfigSnapshotsList();
-            } catch (e) {
-                console.error('Failed to load data:', e);
-                document.getElementById('reconciliationsList').innerHTML = 
-                    '<div class="text-red-400 text-center py-12">Failed to load data</div>';
-            }
+            });
         }
         
         function parseReportSummary(reportText) {
@@ -901,7 +933,7 @@
             const container = document.getElementById('reconciliationsList');
             const filterStatus = document.getElementById('filterReconcileStatus')?.value || '';
             
-            let filtered = reconciliationsListCache;
+            let filtered = FarmState.reconciliationsListCache;
             if (filterStatus) filtered = filtered.filter(r => r.status === filterStatus);
             
             if (filtered.length === 0) {
@@ -969,8 +1001,6 @@
             const extraCount = aodCount - matched.length;
             return { matched, missed, extraKeys, extraCount };
         }
-        
-        let assetListIdCounter = 0;
         const MAX_VISIBLE = 8;
         
         function showAssetDetail(key) {
@@ -991,7 +1021,7 @@
         
         function renderAssetList(title, items, colorClass) {
             if (!items || items.length === 0) return '';
-            const id = assetListIdCounter++;
+            const id = FarmState.assetListIdCounter++;
             const visible = items.slice(0, MAX_VISIBLE);
             const hidden = items.slice(MAX_VISIBLE);
             const hasMore = hidden.length > 0;
@@ -1012,7 +1042,7 @@
         
         function renderAssetListWithCount(title, items, count, colorClass) {
             if (count === 0) return '';
-            const id = assetListIdCounter++;
+            const id = FarmState.assetListIdCounter++;
             const visible = items.slice(0, MAX_VISIBLE);
             const hidden = items.slice(MAX_VISIBLE);
             const hasMoreKeys = hidden.length > 0;
@@ -1177,9 +1207,6 @@
                 </div>
             `;
         }
-        
-        let currentRecData = null;
-        let currentReconciliationId = null;
 
         function renderLifecycleTabContent(analysis, rec) {
             const funnel = analysis.lifecycle_funnel || {};
@@ -1383,13 +1410,13 @@
             const container = document.getElementById('lifecycleAssetContainer');
             const content = document.getElementById('lifecycleAssetContent');
             
-            if (!currentRecData || !currentRecData.analysis) {
+            if (!FarmState.currentRecData || !FarmState.currentRecData.analysis) {
                 content.innerHTML = '<div class="text-slate-500">No data available</div>';
                 container.classList.remove('hidden');
                 return;
             }
             
-            const analysis = currentRecData.analysis;
+            const analysis = FarmState.currentRecData.analysis;
             let assets = [];
             let title = '';
             
@@ -1445,19 +1472,17 @@
                     </div>
                 `;
             }
-            currentLifecycleAssets = { type, category, assets };
+            FarmState.currentLifecycleAssets = { type, category, assets };
             container.classList.remove('hidden');
         }
         
-        let currentLifecycleAssets = null;
-        
         function showAssetExplanation(category, index) {
-            if (!currentLifecycleAssets) return;
-            const asset = currentLifecycleAssets.assets[index];
+            if (!FarmState.currentLifecycleAssets) return;
+            const asset = FarmState.currentLifecycleAssets.assets[index];
             if (!asset) return;
             
             const key = asset.asset_key || asset.key || asset;
-            const type = currentLifecycleAssets.type;
+            const type = FarmState.currentLifecycleAssets.type;
             const categoryLabel = category === 'fp' ? 'False Positive' : category === 'missed' ? 'Missed' : 'Asset';
             const typeLabel = type === 'shadow' ? 'Shadow' : 'Zombie';
             
@@ -1511,7 +1536,7 @@
                 return;
             }
             
-            if (currentLifecycleExpectedBlock && currentLifecycleExpectedBlock._snapshotId === snapshotId) {
+            if (FarmState.currentLifecycleExpectedBlock && FarmState.currentLifecycleExpectedBlock._snapshotId === snapshotId) {
                 renderDrilldownContent(category);
                 container.classList.remove('hidden');
                 return;
@@ -1524,7 +1549,7 @@
                 const resp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
                 const data = await resp.json();
                 data._snapshotId = snapshotId;
-                currentLifecycleExpectedBlock = data;
+                FarmState.currentLifecycleExpectedBlock = data;
                 renderDrilldownContent(category);
             } catch (e) {
                 content.innerHTML = `<div class="text-red-400">Failed to load assets: ${e.message}</div>`;
@@ -1533,7 +1558,7 @@
         
         function renderDrilldownContent(category) {
             const content = document.getElementById('lifecycleDrilldownContent');
-            if (!currentLifecycleExpectedBlock) {
+            if (!FarmState.currentLifecycleExpectedBlock) {
                 content.innerHTML = '<div class="text-slate-500">No data available</div>';
                 return;
             }
@@ -1541,18 +1566,18 @@
             let assets = [];
             let title = '';
             let colorClass = '';
-            const expectedReasons = currentLifecycleExpectedBlock.expected_reasons || {};
+            const expectedReasons = FarmState.currentLifecycleExpectedBlock.expected_reasons || {};
             
             if (category === 'shadows') {
-                assets = currentLifecycleExpectedBlock.shadow_expected || [];
+                assets = FarmState.currentLifecycleExpectedBlock.shadow_expected || [];
                 title = 'Shadow Assets';
                 colorClass = 'amber';
             } else if (category === 'zombies') {
-                assets = currentLifecycleExpectedBlock.zombie_expected || [];
+                assets = FarmState.currentLifecycleExpectedBlock.zombie_expected || [];
                 title = 'Zombie Assets';
                 colorClass = 'purple';
             } else if (category === 'clean') {
-                assets = currentLifecycleExpectedBlock.clean_expected || [];
+                assets = FarmState.currentLifecycleExpectedBlock.clean_expected || [];
                 title = 'Clean Assets';
                 colorClass = 'emerald';
             }
@@ -1605,11 +1630,11 @@
             container.classList.remove('hidden');
             
             try {
-                if (!currentLifecycleExpectedBlock || currentLifecycleExpectedBlock._snapshotId !== snapshotId) {
+                if (!FarmState.currentLifecycleExpectedBlock || FarmState.currentLifecycleExpectedBlock._snapshotId !== snapshotId) {
                     const resp = await fetch(`/api/snapshots/${snapshotId}/expected?mode=all`);
                     const data = await resp.json();
                     data._snapshotId = snapshotId;
-                    currentLifecycleExpectedBlock = data;
+                    FarmState.currentLifecycleExpectedBlock = data;
                 }
                 
                 renderFunnelDrilldownContent(stage);
@@ -1620,14 +1645,14 @@
         
         function renderFunnelDrilldownContent(stage) {
             const content = document.getElementById('lifecycleDrilldownContent');
-            if (!currentLifecycleExpectedBlock) {
+            if (!FarmState.currentLifecycleExpectedBlock) {
                 content.innerHTML = '<div class="text-slate-500">No data available</div>';
                 return;
             }
             
-            const decisionTraces = currentLifecycleExpectedBlock.decision_traces || {};
-            const expectedAdmission = currentLifecycleExpectedBlock.expected_admission || {};
-            const expectedReasons = currentLifecycleExpectedBlock.expected_reasons || {};
+            const decisionTraces = FarmState.currentLifecycleExpectedBlock.decision_traces || {};
+            const expectedAdmission = FarmState.currentLifecycleExpectedBlock.expected_admission || {};
+            const expectedReasons = FarmState.currentLifecycleExpectedBlock.expected_reasons || {};
             
             let assets = [];
             let title = '';
@@ -1793,7 +1818,7 @@
             modal.classList.remove('hidden');
             
             try {
-                assetListIdCounter = 0;
+                FarmState.assetListIdCounter = 0;
                 const [recResp, analysisResp] = await Promise.all([
                     fetch(`/api/reconcile/${reconciliationId}`),
                     fetch(`/api/reconcile/${reconciliationId}/analysis`)
@@ -1802,7 +1827,7 @@
                 const analysisData = await analysisResp.json();
                 const analysis = analysisData.analysis || {};
                 
-                currentRecData = { rec, analysis };
+                FarmState.currentRecData = { rec, analysis };
                 currentReconciliationId = reconciliationId;
                 
                 const payloadHealth = analysis.payload_health || {};
@@ -1885,7 +1910,7 @@
         }
 
         function getLatestReconciliation(snapshotId) {
-            const recs = reconciliationsCache[snapshotId];
+            const recs = FarmState.reconciliationsCache[snapshotId];
             return recs && recs.length > 0 ? recs[0] : null;
         }
 
@@ -1894,7 +1919,7 @@
             const filterTenant = document.getElementById('filterTenant').value;
             const filterStatus = document.getElementById('filterStatus').value;
             
-            let filtered = snapshotsCache;
+            let filtered = FarmState.snapshots;
             if (filterTenant) filtered = filtered.filter(s => s.tenant_id === filterTenant);
             if (filterStatus) filtered = filtered.filter(s => {
                 const rec = getLatestReconciliation(s.snapshot_id);
@@ -1910,7 +1935,7 @@
             container.innerHTML = filtered.map(snap => {
                 const rec = getLatestReconciliation(snap.snapshot_id);
                 const status = rec ? rec.status : 'NOT_RUN';
-                const aodStatus = aodStatusCache[snap.snapshot_id];
+                const aodStatus = FarmState.aodStatusCache[snap.snapshot_id];
                 const canReconcile = aodStatus && aodStatus.status === 'PROCESSED';
                 const created = new Date(snap.created_at);
                 const timeAgo = getTimeAgo(created);
@@ -1963,20 +1988,16 @@
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         }
 
-        let expandedSnapshots = {};
-        let snapshotDataCache = {};
-        let expectationsCache = {};
-
         function renderConfigSnapshotsList() {
             const container = document.getElementById('configSnapshotsList');
-            if (snapshotsCache.length === 0) {
+            if (FarmState.snapshots.length === 0) {
                 container.innerHTML = '<div class="text-slate-500 text-center py-12">No snapshots yet. Generate one!</div>';
                 return;
             }
             
-            container.innerHTML = snapshotsCache.map(snap => {
+            container.innerHTML = FarmState.snapshots.map(snap => {
                 const created = new Date(snap.created_at);
-                const isExpanded = expandedSnapshots[snap.snapshot_id];
+                const isExpanded = FarmState.expandedSnapshots[snap.snapshot_id];
                 
                 return `
                     <div class="border-b border-slate-700/50" data-snapshot-id="${snap.snapshot_id}">
@@ -2001,15 +2022,15 @@
                 `;
             }).join('');
             
-            Object.keys(expandedSnapshots).forEach(id => {
-                if (expandedSnapshots[id] && snapshotDataCache[id]) {
-                    renderSnapshotExpanded(id, snapshotDataCache[id]);
+            Object.keys(FarmState.expandedSnapshots).forEach(id => {
+                if (FarmState.expandedSnapshots[id] && FarmState.snapshotDataCache[id]) {
+                    renderSnapshotExpanded(id, FarmState.snapshotDataCache[id]);
                 }
             });
         }
 
         function showEraseConfirm() {
-            if (snapshotsCache.length === 0) return;
+            if (FarmState.snapshots.length === 0) return;
             document.getElementById('eraseNormal').classList.add('hidden');
             document.getElementById('eraseConfirm').classList.remove('hidden');
         }
@@ -2023,9 +2044,9 @@
             hideEraseConfirm();
             try {
                 await fetch('/api/snapshots/cleanup?keep=0', { method: 'DELETE' });
-                expandedSnapshots = {};
-                snapshotDataCache = {};
-                expectationsCache = {};
+                FarmState.expandedSnapshots = {};
+                FarmState.snapshotDataCache = {};
+                FarmState.expectationsCache = {};
                 await loadAllData();
                 addLogEntry('All snapshots erased', 'success');
             } catch (e) {
@@ -2037,34 +2058,32 @@
         async function toggleSnapshotExpand(snapshotId) {
             const container = document.getElementById(`expand-${snapshotId}`);
             
-            if (expandedSnapshots[snapshotId]) {
-                expandedSnapshots[snapshotId] = false;
+            if (FarmState.expandedSnapshots[snapshotId]) {
+                FarmState.expandedSnapshots[snapshotId] = false;
                 container.classList.add('hidden');
                 renderConfigSnapshotsList();
                 return;
             }
             
-            expandedSnapshots[snapshotId] = true;
+            FarmState.expandedSnapshots[snapshotId] = true;
             container.classList.remove('hidden');
             container.innerHTML = '<div class="p-4 text-slate-400 text-sm">Loading snapshot data...</div>';
             
             try {
                 const fetches = [];
-                if (!snapshotDataCache[snapshotId]) {
-                    fetches.push(fetch(`/api/snapshots/${snapshotId}`).then(r => r.json()).then(d => snapshotDataCache[snapshotId] = d));
+                if (!FarmState.snapshotDataCache[snapshotId]) {
+                    fetches.push(fetch(`/api/snapshots/${snapshotId}`).then(r => r.json()).then(d => FarmState.snapshotDataCache[snapshotId] = d));
                 }
-                if (!expectationsCache[snapshotId]) {
-                    fetches.push(fetch(`/api/snapshots/${snapshotId}/expectations`).then(r => r.json()).then(d => expectationsCache[snapshotId] = d));
+                if (!FarmState.expectationsCache[snapshotId]) {
+                    fetches.push(fetch(`/api/snapshots/${snapshotId}/expectations`).then(r => r.json()).then(d => FarmState.expectationsCache[snapshotId] = d));
                 }
                 await Promise.all(fetches);
-                renderSnapshotExpanded(snapshotId, snapshotDataCache[snapshotId]);
+                renderSnapshotExpanded(snapshotId, FarmState.snapshotDataCache[snapshotId]);
                 renderConfigSnapshotsList();
             } catch (e) {
                 container.innerHTML = `<div class="p-4 text-red-400 text-sm">Failed to load: ${e.message}</div>`;
             }
         }
-
-        let expandedPlanes = {};
 
         function renderSnapshotExpanded(snapshotId, data) {
             const container = document.getElementById(`expand-${snapshotId}`);
@@ -2090,7 +2109,7 @@
                 { key: 'finance', name: 'Finance', icon: planeIcons.finance, items: p.finance ? [...(p.finance.vendors || []), ...(p.finance.contracts || []), ...(p.finance.transactions || [])] : [] }
             ];
             
-            const exp = expectationsCache[snapshotId] || {};
+            const exp = FarmState.expectationsCache[snapshotId] || {};
             container.innerHTML = `
                 <div class="bg-slate-900/40 border-t border-slate-700">
                     <div class="p-3 grid grid-cols-4 gap-2 text-xs border-b border-slate-700/50">
@@ -2123,7 +2142,7 @@
                     <div class="divide-y divide-slate-700/30">
                         ${planes.map(plane => {
                             const planeKey = `${snapshotId}-${plane.key}`;
-                            const isPlaneExpanded = expandedPlanes[planeKey];
+                            const isPlaneExpanded = FarmState.expandedPlanes[planeKey];
                             return `
                                 <div>
                                     <div class="px-4 py-2 flex items-center justify-between cursor-pointer hover:bg-slate-800/50"
@@ -2155,13 +2174,11 @@
 
         function togglePlaneExpand(snapshotId, planeKey) {
             const key = `${snapshotId}-${planeKey}`;
-            expandedPlanes[key] = !expandedPlanes[key];
-            if (snapshotDataCache[snapshotId]) {
-                renderSnapshotExpanded(snapshotId, snapshotDataCache[snapshotId]);
+            FarmState.expandedPlanes[key] = !FarmState.expandedPlanes[key];
+            if (FarmState.snapshotDataCache[snapshotId]) {
+                renderSnapshotExpanded(snapshotId, FarmState.snapshotDataCache[snapshotId]);
             }
         }
-
-        let expandedItems = {};
 
         function renderPlaneItems(items, planeKey) {
             if (items.length === 0) {
@@ -2169,7 +2186,7 @@
             }
             return items.map((item, idx) => {
                 const itemKey = `${planeKey}-${idx}`;
-                const isItemExpanded = expandedItems[itemKey];
+                const isItemExpanded = FarmState.expandedItems[itemKey];
                 const displayName = item.observed_name || item.name || item.hostname || item.vendor_name || item.domain || `Item ${idx + 1}`;
                 const subtitle = item.source || item.idp_type || item.ci_type || item.cloud_provider || item.resource_type || '';
                 
@@ -2194,7 +2211,7 @@
         }
 
         function toggleItemExpand(itemKey) {
-            expandedItems[itemKey] = !expandedItems[itemKey];
+            FarmState.expandedItems[itemKey] = !FarmState.expandedItems[itemKey];
             const container = document.getElementById(`item-${itemKey}`);
             if (container) {
                 container.classList.toggle('hidden');
@@ -2220,8 +2237,8 @@
                 
                 const meta = snapshot.meta;
                 const counts = meta.counts;
-                const recs = reconciliationsCache[snapshotId] || [];
-                const aodStatus = aodStatusCache[snapshotId];
+                const recs = FarmState.reconciliationsCache[snapshotId] || [];
+                const aodStatus = FarmState.aodStatusCache[snapshotId];
                 
                 document.getElementById('detailModalTitle').textContent = 'Snapshot Details';
                 document.getElementById('detailModalTitle').classList.remove('hidden');
@@ -2318,7 +2335,7 @@
             document.getElementById('autoReconcileError').classList.add('hidden');
             document.getElementById('autoReconcileSuccess').classList.add('hidden');
             
-            const aodStatus = aodStatusCache[snapshotId];
+            const aodStatus = FarmState.aodStatusCache[snapshotId];
             const btn = document.getElementById('autoReconcileBtn');
             const errorDiv = document.getElementById('autoReconcileError');
             
