@@ -107,6 +107,18 @@ Evidence-only derivations over labels
 ## System Architecture
 The project is structured around a FastAPI application. It features a simple Farm Console UI via `templates/index.html`.
 
+**Services Layer (src/services/):**
+- **constants.py** - Domain/vendor constants (VENDOR_DOMAIN_SETS, INFRASTRUCTURE_DOMAINS, TLD sets)
+- **key_normalization.py** - Key processing functions (normalize_name, extract_domain, to_domain_key)
+- **reconciliation.py** - Core reconciliation logic (build_candidate_flags, propagate_vendor_governance, compute_expected_block)
+- **analysis.py** - Analysis and investigation functions (build_reconciliation_analysis, investigate_mismatch)
+- **logging.py** - Trace logging utilities with mismatch counters
+- **aod_client.py** - AOD API client with per-run caching and circuit breaker pattern
+
+**Frontend Architecture (templates/index.html):**
+- **FarmState** - Namespace object for all global state (snapshots, caches, UI state)
+- **RequestController** - Async request manager to prevent stale response race conditions
+
 **Technical Implementations:**
 - **Core Framework:** FastAPI for the web API.
 - **Data Generation:** Deterministic generators ensure reproducible results based on seed, scale, and enterprise/realism profiles.
