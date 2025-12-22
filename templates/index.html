@@ -2737,23 +2737,18 @@
                     this.hideOverlay();
                     this.showOverlay("Generating snapshot...", { hideNext: true });
                     
-                    const formData = {
-                        scale: document.getElementById('scale').value,
-                        enterprise_profile: document.getElementById('enterpriseProfile').value,
-                        realism_profile: document.getElementById('realismProfile').value,
-                        data_preset: document.getElementById('dataPreset').value || null
-                    };
-                    
                     try {
-                        const response = await fetch('/api/snapshots', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(formData)
-                        });
+                        const result = await generateSnapshot(
+                            generateTenantId(),
+                            generateSeed(),
+                            document.getElementById('scale').value,
+                            document.getElementById('enterpriseProfile').value,
+                            document.getElementById('realismProfile').value,
+                            document.getElementById('dataPreset').value || null
+                        );
                         
-                        if (!response.ok) throw new Error('Generation failed');
+                        if (!result || !result.snapshot_id) throw new Error('Generation failed');
                         
-                        const result = await response.json();
                         this.tourSnapshotId = result.snapshot_id;
                         
                         const state = this.getState();
