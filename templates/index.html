@@ -2565,21 +2565,48 @@
             currentPhase: null,
             currentStep: 0,
             tourSnapshotId: null,
-            pendingGenerateCallback: null,
+            returnUrl: null,
+            
+            getState() {
+                try {
+                    return JSON.parse(localStorage.getItem('farm_guided_tour')) || null;
+                } catch { return null; }
+            },
+            
+            setState(state) {
+                localStorage.setItem('farm_guided_tour', JSON.stringify(state));
+            },
+            
+            clearState() {
+                localStorage.removeItem('farm_guided_tour');
+            },
             
             init() {
                 const params = new URLSearchParams(window.location.search);
-                if (params.get('tour') === 'true') {
-                    this.isActive = true;
-                    this.currentPhase = parseInt(params.get('phase') || '1');
-                    this.tourSnapshotId = params.get('snapshot_id') || sessionStorage.getItem('tour_snapshot_id');
+                
+                if (params.get('guided') === '1') {
+                    const phase = parseInt(params.get('tour_phase') || '1');
+                    const returnUrl = params.get('return_url') ? decodeURIComponent(params.get('return_url')) : null;
+                    const snapshotId = params.get('snapshot_id');
                     const reconciliationId = params.get('reconciliation_id');
                     
-                    if (reconciliationId) {
-                        sessionStorage.setItem('tour_reconciliation_id', reconciliationId);
-                    }
+                    this.setState({
+                        active: true,
+                        phase: phase,
+                        returnUrl: returnUrl,
+                        snapshotId: snapshotId || null,
+                        reconciliationId: reconciliationId || null
+                    });
                     
                     window.history.replaceState({}, document.title, window.location.pathname);
+                }
+                
+                const state = this.getState();
+                if (state && state.active) {
+                    this.isActive = true;
+                    this.currentPhase = state.phase;
+                    this.returnUrl = state.returnUrl;
+                    this.tourSnapshotId = state.snapshotId;
                     
                     setTimeout(() => this.startPhase(this.currentPhase), 500);
                 }
@@ -2655,8 +2682,7 @@
             exitTour() {
                 this.isActive = false;
                 this.hideOverlay();
-                sessionStorage.removeItem('tour_snapshot_id');
-                sessionStorage.removeItem('tour_reconciliation_id');
+                this.clearState();
             },
             
             next() {
@@ -2729,9 +2755,20 @@
                         
                         const result = await response.json();
                         this.tourSnapshotId = result.snapshot_id;
-                        sessionStorage.setItem('tour_snapshot_id', this.tourSnapshotId);
+                        
+                        const state = this.getState();
+                        if (state) {
+                            state.snapshotId = this.tourSnapshotId;
+                            this.setState(state);
+                        }
                         
                         await loadAllData();
+                        
+                        const updatedState = this.getState();
+                        if (updatedState) {
+                            updatedState.phase = 2;
+                            this.setState(updatedState);
+                        }
                         
                         this.currentPhase = 2;
                         this.currentStep = 0;
@@ -2784,14 +2821,20 @@
                 } else if (step === 2) {
                     this.clearHighlights();
                     
-                    const aodUrl = FarmState.aodBaseUrl || 'https://aos-discover.replit.app';
-                    const tourUrl = `${aodUrl}?tour=true&phase=3&snapshot_id=${this.tourSnapshotId}`;
-                    
-                    this.showOverlay(
-                        `Snapshot ready. Next, AOD will run discovery on this data. Click below to proceed to AOS Discover.<br><br>
-                        <a href="${tourUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Run Discovery in AOD →</a>`,
-                        { hideNext: true }
-                    );
+                    if (this.returnUrl) {
+                        const handoffUrl = this.returnUrl + '&snapshot_id=' + this.tourSnapshotId;
+                        
+                        this.showOverlay(
+                            `Snapshot ready. Next, AOD will run discovery on this data.<br><br>
+                            <a href="${handoffUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Run Discovery in AOD →</a>`,
+                            { hideNext: true }
+                        );
+                    } else {
+                        this.showOverlay(
+                            "Snapshot ready. Copy the snapshot ID and run discovery in AOD manually, then return here for reconciliation.",
+                            { buttonText: 'Finish' }
+                        );
+                    }
                 }
             },
             
@@ -2799,11 +2842,12 @@
                 const step = this.currentStep;
                 this.clearHighlights();
                 
-                const reconciliationId = sessionStorage.getItem('tour_reconciliation_id');
+                const state = this.getState();
+                const reconciliationId = state?.reconciliationId;
                 
                 if (step === 0) {
                     this.showOverlay(
-                        "Reconciliation compares Farm's expected outcomes to AOD's actual results. Accuracy, misses, and false positives are all visible here."
+                        "Reconciliation compares expected outcomes to AOD's results. Accuracy, misses, and false positives are all visible."
                     );
                     
                     if (reconciliationId) {
@@ -2823,11 +2867,11 @@
                     }
                     
                     this.showOverlay(
-                        "The reconciliation report shows scorecard metrics. Green means AOD matched Farm's expectations. Mismatches reveal classification disagreements."
+                        "The reconciliation report shows scorecard metrics. Green = match. Mismatches reveal classification disagreements."
                     );
                 } else if (step === 2) {
                     this.showOverlay(
-                        "Tour complete. You've seen how Farm generates test data, AOD processes it, and reconciliation grades the results. Explore further or start a new run.",
+                        "Tour complete. Farm generates test data, AOD processes it, reconciliation grades results.",
                         { buttonText: 'Finish Tour' }
                     );
                 } else if (step === 3) {
