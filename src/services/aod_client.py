@@ -7,6 +7,7 @@ Provides call_aod_explain_nonflag with:
 - Better error logging
 """
 
+import copy
 import os
 import time
 import httpx
@@ -55,13 +56,23 @@ def _record_success():
     _circuit_failures = 0
 
 
-def _get_fallback_response(asset_keys: list[str], reason: str = "CIRCUIT_OPEN") -> dict[str, dict]:
-    """Generate fallback response for when we can't make real calls."""
-    return {key: {
-        "present_in_aod": False,
-        "decision": "UNKNOWN_KEY",
-        "reason_codes": ["NO_EXPLAIN_ENDPOINT", reason]
-    } for key in asset_keys}
+def _get_fallback_response(asset_keys: list[str], http_code: str | None = None) -> dict[str, dict]:
+    """Generate fallback response for when we can't make real calls.
+    
+    Preserves original behavior: ["NO_EXPLAIN_ENDPOINT"] or ["NO_EXPLAIN_ENDPOINT", "HTTP_xxx"]
+    """
+    if http_code:
+        return {key: {
+            "present_in_aod": False,
+            "decision": "UNKNOWN_KEY",
+            "reason_codes": ["NO_EXPLAIN_ENDPOINT", http_code]
+        } for key in asset_keys}
+    else:
+        return {key: {
+            "present_in_aod": False,
+            "decision": "UNKNOWN_KEY",
+            "reason_codes": ["NO_EXPLAIN_ENDPOINT"]
+        } for key in asset_keys}
 
 
 def clear_cache():
@@ -139,16 +150,16 @@ async def call_aod_explain_nonflag(
         return stub_aod_explain_nonflag(asset_keys, ask)
     
     if not aod_url:
-        return _get_fallback_response(asset_keys, "NO_AOD_URL")
+        return _get_fallback_response(asset_keys)
     
-    # Check cache first
+    # Check cache first - return deep copy to prevent mutation
     cache_key = (snapshot_id, frozenset(asset_keys), ask)
     if cache_key in _explain_cache:
         trace_log("aod_client", "cache_hit", {
             "snapshot_id": snapshot_id,
             "keys_count": len(asset_keys)
         })
-        return _explain_cache[cache_key]
+        return copy.deepcopy(_explain_cache[cache_key])
     
     # Check circuit breaker
     if _is_circuit_open():
@@ -156,7 +167,7 @@ async def call_aod_explain_nonflag(
             "snapshot_id": snapshot_id,
             "keys_count": len(asset_keys)
         })
-        return _get_fallback_response(asset_keys, "CIRCUIT_OPEN")
+        return _get_fallback_response(asset_keys)
     
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -176,8 +187,8 @@ async def call_aod_explain_nonflag(
             if resp.status_code == 200:
                 result = resp.json()
                 _record_success()
-                # Cache successful result
-                _explain_cache[cache_key] = result
+                # Cache successful result (store copy)
+                _explain_cache[cache_key] = copy.deepcopy(result)
                 trace_log("aod_client", "call_success", {
                     "snapshot_id": snapshot_id,
                     "keys_count": len(asset_keys),
@@ -200,4 +211,4 @@ async def call_aod_explain_nonflag(
             "keys_count": len(asset_keys)
         })
         _record_failure()
-        return _get_fallback_response(asset_keys, "CONNECTION_ERROR")
+        return _get_fallback_response(asset_keys)
