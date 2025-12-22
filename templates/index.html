@@ -1428,16 +1428,77 @@
                 content.innerHTML = `
                     <div class="font-medium text-slate-200 mb-2">${title} (${assets.length})</div>
                     <div class="space-y-1">
-                        ${assets.map(a => `
-                            <div class="text-xs py-1 px-2 rounded bg-slate-800/50 flex items-center justify-between">
-                                <span class="text-slate-300 font-mono">${a.asset_key || a.key || a}</span>
-                                ${a.rca_hint ? `<span class="text-slate-500 text-[10px]">${a.rca_hint}</span>` : ''}
-                            </div>
-                        `).join('')}
+                        ${assets.map((a, i) => {
+                            const key = a.asset_key || a.key || a;
+                            const hasDetail = a.explanation || a.headline || a.farm_detail;
+                            const clickClass = hasDetail ? 'cursor-pointer hover:bg-slate-700/50' : '';
+                            const clickHandler = hasDetail ? `onclick="showAssetExplanation('${category}', ${i})"` : '';
+                            return `
+                            <div class="text-xs py-1.5 px-2 rounded bg-slate-800/50 flex items-center justify-between ${clickClass}" ${clickHandler}>
+                                <span class="text-slate-300 font-mono">${key}</span>
+                                <div class="flex items-center gap-2">
+                                    ${a.rca_hint ? `<span class="text-slate-500 text-[10px]">${a.rca_hint}</span>` : ''}
+                                    ${hasDetail ? '<svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>' : ''}
+                                </div>
+                            </div>`;
+                        }).join('')}
                     </div>
                 `;
             }
+            currentLifecycleAssets = { type, category, assets };
             container.classList.remove('hidden');
+        }
+        
+        let currentLifecycleAssets = null;
+        
+        function showAssetExplanation(category, index) {
+            if (!currentLifecycleAssets) return;
+            const asset = currentLifecycleAssets.assets[index];
+            if (!asset) return;
+            
+            const key = asset.asset_key || asset.key || asset;
+            const type = currentLifecycleAssets.type;
+            const categoryLabel = category === 'fp' ? 'False Positive' : category === 'missed' ? 'Missed' : 'Asset';
+            const typeLabel = type === 'shadow' ? 'Shadow' : 'Zombie';
+            
+            let content = '';
+            
+            if (asset.headline) {
+                content += `<div class="text-base font-medium text-slate-100 mb-3">${asset.headline}</div>`;
+            }
+            
+            if (asset.explanation) {
+                content += `<div class="text-slate-300 mb-4">${asset.explanation}</div>`;
+            }
+            
+            if (asset.farm_detail) {
+                content += `<div class="mb-3"><div class="text-xs font-medium text-purple-400 mb-1">Farm Evidence</div><div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">${asset.farm_detail}</div></div>`;
+            }
+            
+            if (asset.aod_detail) {
+                content += `<div class="mb-3"><div class="text-xs font-medium text-cyan-400 mb-1">AOD Evidence</div><div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">${asset.aod_detail}</div></div>`;
+            }
+            
+            if (asset.farm_investigation) {
+                const inv = asset.farm_investigation;
+                content += `<div class="mb-3"><div class="text-xs font-medium text-orange-400 mb-1">Investigation</div>`;
+                content += `<div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">`;
+                if (inv.conclusion) content += `<div class="font-medium mb-1">${inv.conclusion}</div>`;
+                if (inv.findings && inv.findings.length) content += `<ul class="list-disc list-inside">${inv.findings.map(f => `<li>${f}</li>`).join('')}</ul>`;
+                content += `</div></div>`;
+            }
+            
+            if (asset.rca_hint) {
+                content += `<div class="mt-3 pt-3 border-t border-slate-700"><span class="text-xs px-2 py-1 rounded bg-slate-700 text-slate-300">${asset.rca_hint}</span></div>`;
+            }
+            
+            if (!content) {
+                content = '<div class="text-slate-500">No detailed explanation available.</div>';
+            }
+            
+            document.getElementById('explanationModalTitle').textContent = `${categoryLabel} ${typeLabel}: ${key}`;
+            document.getElementById('explanationModalContent').innerHTML = content;
+            document.getElementById('explanationModal').classList.remove('hidden');
         }
         
         async function showLifecycleDrilldown(category, snapshotId) {
