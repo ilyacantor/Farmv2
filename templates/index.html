@@ -2853,37 +2853,56 @@
                 
                 const state = this.getState();
                 const reconciliationId = state?.reconciliationId;
+                const snapshotId = state?.snapshotId;
                 
                 if (step === 0) {
+                    await loadAllData();
+                    
                     this.showOverlay(
-                        "Reconciliation compares expected outcomes to AOD's results. Accuracy, misses, and false positives are all visible."
+                        "Verification: comparing AOD's classifications against Farm's ground truth expectations."
                     );
-                    
-                    if (reconciliationId) {
-                        await loadAllData();
-                    }
                 } else if (step === 1) {
+                    let recEl = null;
                     if (reconciliationId) {
-                        const recEl = document.querySelector(`[data-rec-id="${reconciliationId}"]`);
-                        if (recEl) {
-                            recEl.classList.add('tour-highlight');
-                            recEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                            
-                            setTimeout(() => {
-                                recEl.click();
-                            }, 500);
-                        }
+                        recEl = document.querySelector(`[data-rec-id="${reconciliationId}"]`);
+                    }
+                    if (!recEl && snapshotId) {
+                        recEl = document.querySelector(`[data-snapshot-id="${snapshotId}"]`)?.closest('.reconciliation-item') ||
+                                document.querySelector('.reconciliation-item');
+                    }
+                    if (!recEl) {
+                        recEl = document.querySelector('.reconciliation-item');
+                    }
+                    
+                    if (recEl) {
+                        recEl.classList.add('tour-highlight');
+                        recEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        setTimeout(() => recEl.click(), 500);
                     }
                     
                     this.showOverlay(
-                        "The reconciliation report shows scorecard metrics. Green = match. Mismatches reveal classification disagreements."
+                        "The scorecard shows precision and recall. Expected shadow/zombie counts from Farm vs. AOD's actual classifications."
                     );
                 } else if (step === 2) {
                     this.showOverlay(
-                        "Tour complete. Farm generates test data, AOD processes it, reconciliation grades results.",
-                        { buttonText: 'Finish Tour' }
+                        "Mismatches reveal where AOD and Farm disagree. Each mismatch shows reasoning for investigation."
                     );
                 } else if (step === 3) {
+                    const returnUrl = state?.returnUrl;
+                    if (returnUrl) {
+                        const backUrl = returnUrl.split('?')[0] + '?guided=1&tour_phase=8';
+                        this.showOverlay(
+                            `Verification complete. Return to AOD to review the full discovery results.<br><br>
+                            <a href="${backUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Return to AOD →</a>`,
+                            { hideNext: true }
+                        );
+                    } else {
+                        this.showOverlay(
+                            "Verification complete. Farm generates test data, AOD processes it, reconciliation grades results.",
+                            { buttonText: 'Finish Tour' }
+                        );
+                    }
+                } else if (step === 4) {
                     this.exitTour();
                 }
             }
