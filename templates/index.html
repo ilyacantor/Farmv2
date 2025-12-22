@@ -2697,32 +2697,30 @@
                 this.clearHighlights();
                 
                 if (step === 0) {
+                    document.getElementById('scale').value = 'medium';
+                    this.highlight('scale');
                     this.showOverlay(
-                        "Farm generates enterprise environments at scale. These snapshots intentionally include conflicts, gaps, and unmanaged systems that AOD must detect."
+                        "Scale controls asset count. Medium = ~50 assets, Enterprise = 500+."
                     );
                 } else if (step === 1) {
-                    document.getElementById('scale').value = 'medium';
                     document.getElementById('enterpriseProfile').value = 'modern_saas';
+                    this.highlight('enterpriseProfile');
+                    this.showOverlay(
+                        "Enterprise profile affects system mix. Modern SaaS = heavy cloud, Regulated Finance = legacy + compliance."
+                    );
+                } else if (step === 2) {
                     document.getElementById('realismProfile').value = 'typical';
-                    
-                    this.highlight('scale');
-                    setTimeout(() => {
-                        this.clearHighlights();
-                        this.highlight('enterpriseProfile');
-                    }, 300);
-                    setTimeout(() => {
-                        this.clearHighlights();
-                        this.highlight('realismProfile');
-                    }, 600);
-                    setTimeout(() => {
-                        this.clearHighlights();
-                        this.highlight('generateBtn');
-                        this.showOverlay(
-                            "Scale controls asset count. Enterprise profile affects system mix. Realism introduces real-world messiness like stale entries and conflicting records.",
-                            { buttonText: 'Generate Snapshot', hideNext: true }
-                        );
-                        this.setupGenerateCapture();
-                    }, 900);
+                    this.highlight('realismProfile');
+                    this.showOverlay(
+                        "Realism introduces messiness: stale entries, conflicting records, unmanaged systems."
+                    );
+                } else if (step === 3) {
+                    this.highlight('generateBtn');
+                    this.showOverlay(
+                        "Press Generate Snapshot to create ground truth data.",
+                        { buttonText: 'Generate Snapshot', hideNext: true }
+                    );
+                    this.setupGenerateCapture();
                 }
             },
             
@@ -2790,44 +2788,30 @@
                         await toggleSnapshotExpand(this.tourSnapshotId);
                     }
                     
-                    setTimeout(() => {
-                        const snapshotEl = document.querySelector(`[data-snapshot-id="${this.tourSnapshotId}"]`);
-                        if (snapshotEl) {
-                            snapshotEl.classList.add('tour-highlight');
-                            snapshotEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
-                        
-                        this.showOverlay(
-                            "This snapshot is ground truth. It contains discovery signals, IdP records, CMDB entries, and more. AOD sees only raw signals — not classifications."
-                        );
-                    }, 300);
-                } else if (step === 1) {
-                    const expandEl = document.getElementById(`expand-${this.tourSnapshotId}`);
-                    if (expandEl) {
-                        const countsSection = expandEl.querySelector('.grid.grid-cols-4');
-                        if (countsSection) {
-                            countsSection.classList.add('tour-highlight');
-                        }
+                    const snapshotEl = document.querySelector(`[data-snapshot-id="${this.tourSnapshotId}"]`);
+                    if (snapshotEl) {
+                        snapshotEl.classList.add('tour-highlight');
+                        snapshotEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
                     
                     this.showOverlay(
-                        "Source counts show data volume per plane: discovery observations, IdP apps, CMDB items, etc. This is the raw input AOD will process."
+                        "Snapshot created. This is ground truth — AOD sees only raw signals, not classifications."
                     );
-                } else if (step === 2) {
+                } else if (step === 1) {
                     this.clearHighlights();
                     
                     if (this.returnUrl) {
                         const handoffUrl = this.returnUrl + '&snapshot_id=' + this.tourSnapshotId;
                         
                         this.showOverlay(
-                            `Snapshot ready. Next, AOD will run discovery on this data.<br><br>
-                            <a href="${handoffUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Run Discovery in AOD →</a>`,
+                            `Now we go back to AOD to run discovery on this data.<br><br>
+                            <a href="${handoffUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Continue to AOD →</a>`,
                             { hideNext: true }
                         );
                     } else {
                         this.showOverlay(
-                            "Snapshot ready. Copy the snapshot ID and run discovery in AOD manually, then return here for reconciliation.",
-                            { buttonText: 'Finish' }
+                            "Snapshot ready. Return to AOD to run discovery, then come back for reconciliation.",
+                            { buttonText: 'Done' }
                         );
                     }
                 }
