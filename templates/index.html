@@ -29,6 +29,38 @@
             justify-content: center;
             z-index: 1000;
         }
+        .tour-overlay {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b;
+            border: 1px solid #22d3ee;
+            border-radius: 12px;
+            padding: 16px 24px;
+            z-index: 1100;
+            max-width: 500px;
+            box-shadow: 0 0 30px rgba(34, 211, 238, 0.3);
+        }
+        .tour-overlay-text {
+            color: #e2e8f0;
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 12px;
+        }
+        .tour-highlight {
+            position: relative;
+            z-index: 1050;
+            box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.5), 0 0 20px rgba(34, 211, 238, 0.3) !important;
+            border-radius: 8px;
+        }
+        .tour-dimmer {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body class="min-h-screen text-white">
@@ -2527,6 +2559,299 @@
         }
         
         init();
+
+        const TourController = {
+            isActive: false,
+            currentPhase: null,
+            currentStep: 0,
+            tourSnapshotId: null,
+            pendingGenerateCallback: null,
+            
+            init() {
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('tour') === 'true') {
+                    this.isActive = true;
+                    this.currentPhase = parseInt(params.get('phase') || '1');
+                    this.tourSnapshotId = params.get('snapshot_id') || sessionStorage.getItem('tour_snapshot_id');
+                    const reconciliationId = params.get('reconciliation_id');
+                    
+                    if (reconciliationId) {
+                        sessionStorage.setItem('tour_reconciliation_id', reconciliationId);
+                    }
+                    
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    
+                    setTimeout(() => this.startPhase(this.currentPhase), 500);
+                }
+            },
+            
+            startPhase(phase) {
+                this.currentPhase = phase;
+                this.currentStep = 0;
+                if (phase === 1) this.runPhase1();
+                else if (phase === 2) this.runPhase2();
+                else if (phase === 7) this.runPhase7();
+            },
+            
+            showOverlay(message, options = {}) {
+                document.getElementById('tourDimmer').classList.remove('hidden');
+                const overlay = document.getElementById('tourOverlay');
+                document.getElementById('tourOverlayText').innerHTML = message;
+                
+                const container = document.getElementById('tourButtonsContainer');
+                container.innerHTML = `
+                    <button id="tourNextBtn" onclick="TourController.next()" 
+                        class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg transition-colors">
+                        Continue
+                    </button>
+                    <button onclick="TourController.exitTour()" 
+                        class="text-slate-400 hover:text-white text-sm transition-colors">
+                        Exit Tour
+                    </button>
+                `;
+                
+                const nextBtn = document.getElementById('tourNextBtn');
+                if (options.buttonText) {
+                    nextBtn.textContent = options.buttonText;
+                }
+                
+                if (options.hideNext) {
+                    nextBtn.classList.add('hidden');
+                }
+                
+                if (options.customButtons) {
+                    container.innerHTML = `
+                        <div class="flex items-center gap-3">${options.customButtons}</div>
+                        <button onclick="TourController.exitTour()" 
+                            class="text-slate-400 hover:text-white text-sm transition-colors">
+                            Exit Tour
+                        </button>
+                    `;
+                }
+                
+                overlay.classList.remove('hidden');
+            },
+            
+            hideOverlay() {
+                document.getElementById('tourDimmer').classList.add('hidden');
+                document.getElementById('tourOverlay').classList.add('hidden');
+                this.clearHighlights();
+            },
+            
+            highlight(elementId) {
+                const el = document.getElementById(elementId);
+                if (el) {
+                    el.classList.add('tour-highlight');
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            },
+            
+            clearHighlights() {
+                document.querySelectorAll('.tour-highlight').forEach(el => {
+                    el.classList.remove('tour-highlight');
+                });
+            },
+            
+            exitTour() {
+                this.isActive = false;
+                this.hideOverlay();
+                sessionStorage.removeItem('tour_snapshot_id');
+                sessionStorage.removeItem('tour_reconciliation_id');
+            },
+            
+            next() {
+                this.currentStep++;
+                if (this.currentPhase === 1) this.runPhase1();
+                else if (this.currentPhase === 2) this.runPhase2();
+                else if (this.currentPhase === 7) this.runPhase7();
+            },
+            
+            runPhase1() {
+                const step = this.currentStep;
+                this.clearHighlights();
+                
+                if (step === 0) {
+                    this.showOverlay(
+                        "Farm generates enterprise environments at scale. These snapshots intentionally include conflicts, gaps, and unmanaged systems that AOD must detect."
+                    );
+                } else if (step === 1) {
+                    document.getElementById('scale').value = 'medium';
+                    document.getElementById('enterpriseProfile').value = 'modern_saas';
+                    document.getElementById('realismProfile').value = 'typical';
+                    
+                    this.highlight('scale');
+                    setTimeout(() => {
+                        this.clearHighlights();
+                        this.highlight('enterpriseProfile');
+                    }, 300);
+                    setTimeout(() => {
+                        this.clearHighlights();
+                        this.highlight('realismProfile');
+                    }, 600);
+                    setTimeout(() => {
+                        this.clearHighlights();
+                        this.highlight('generateBtn');
+                        this.showOverlay(
+                            "Scale controls asset count. Enterprise profile affects system mix. Realism introduces real-world messiness like stale entries and conflicting records.",
+                            { buttonText: 'Generate Snapshot', hideNext: true }
+                        );
+                        this.setupGenerateCapture();
+                    }, 900);
+                }
+            },
+            
+            setupGenerateCapture() {
+                const form = document.getElementById('snapshotForm');
+                const originalSubmit = form.onsubmit;
+                
+                const captureHandler = async (e) => {
+                    e.preventDefault();
+                    form.removeEventListener('submit', captureHandler);
+                    
+                    this.hideOverlay();
+                    this.showOverlay("Generating snapshot...", { hideNext: true });
+                    
+                    const formData = {
+                        scale: document.getElementById('scale').value,
+                        enterprise_profile: document.getElementById('enterpriseProfile').value,
+                        realism_profile: document.getElementById('realismProfile').value,
+                        data_preset: document.getElementById('dataPreset').value || null
+                    };
+                    
+                    try {
+                        const response = await fetch('/api/snapshots', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(formData)
+                        });
+                        
+                        if (!response.ok) throw new Error('Generation failed');
+                        
+                        const result = await response.json();
+                        this.tourSnapshotId = result.snapshot_id;
+                        sessionStorage.setItem('tour_snapshot_id', this.tourSnapshotId);
+                        
+                        await loadAllData();
+                        
+                        this.currentPhase = 2;
+                        this.currentStep = 0;
+                        this.runPhase2();
+                    } catch (err) {
+                        this.showOverlay("Generation failed: " + err.message);
+                    }
+                };
+                
+                form.addEventListener('submit', captureHandler);
+                
+                document.getElementById('generateBtn').onclick = (e) => {
+                    e.preventDefault();
+                    form.dispatchEvent(new Event('submit'));
+                };
+            },
+            
+            async runPhase2() {
+                const step = this.currentStep;
+                this.clearHighlights();
+                
+                if (step === 0) {
+                    if (this.tourSnapshotId && !FarmState.expandedSnapshots[this.tourSnapshotId]) {
+                        await toggleSnapshotExpand(this.tourSnapshotId);
+                    }
+                    
+                    setTimeout(() => {
+                        const snapshotEl = document.querySelector(`[data-snapshot-id="${this.tourSnapshotId}"]`);
+                        if (snapshotEl) {
+                            snapshotEl.classList.add('tour-highlight');
+                            snapshotEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                        
+                        this.showOverlay(
+                            "This snapshot is ground truth. It contains discovery signals, IdP records, CMDB entries, and more. AOD sees only raw signals — not classifications."
+                        );
+                    }, 300);
+                } else if (step === 1) {
+                    const expandEl = document.getElementById(`expand-${this.tourSnapshotId}`);
+                    if (expandEl) {
+                        const countsSection = expandEl.querySelector('.grid.grid-cols-4');
+                        if (countsSection) {
+                            countsSection.classList.add('tour-highlight');
+                        }
+                    }
+                    
+                    this.showOverlay(
+                        "Source counts show data volume per plane: discovery observations, IdP apps, CMDB items, etc. This is the raw input AOD will process."
+                    );
+                } else if (step === 2) {
+                    this.clearHighlights();
+                    
+                    const aodUrl = FarmState.aodBaseUrl || 'https://aos-discover.replit.app';
+                    const tourUrl = `${aodUrl}?tour=true&phase=3&snapshot_id=${this.tourSnapshotId}`;
+                    
+                    this.showOverlay(
+                        `Snapshot ready. Next, AOD will run discovery on this data. Click below to proceed to AOS Discover.<br><br>
+                        <a href="${tourUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Run Discovery in AOD →</a>`,
+                        { hideNext: true }
+                    );
+                }
+            },
+            
+            async runPhase7() {
+                const step = this.currentStep;
+                this.clearHighlights();
+                
+                const reconciliationId = sessionStorage.getItem('tour_reconciliation_id');
+                
+                if (step === 0) {
+                    this.showOverlay(
+                        "Reconciliation compares Farm's expected outcomes to AOD's actual results. Accuracy, misses, and false positives are all visible here."
+                    );
+                    
+                    if (reconciliationId) {
+                        await loadAllData();
+                    }
+                } else if (step === 1) {
+                    if (reconciliationId) {
+                        const recEl = document.querySelector(`[data-rec-id="${reconciliationId}"]`);
+                        if (recEl) {
+                            recEl.classList.add('tour-highlight');
+                            recEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            
+                            setTimeout(() => {
+                                recEl.click();
+                            }, 500);
+                        }
+                    }
+                    
+                    this.showOverlay(
+                        "The reconciliation report shows scorecard metrics. Green means AOD matched Farm's expectations. Mismatches reveal classification disagreements."
+                    );
+                } else if (step === 2) {
+                    this.showOverlay(
+                        "Tour complete. You've seen how Farm generates test data, AOD processes it, and reconciliation grades the results. Explore further or start a new run.",
+                        { buttonText: 'Finish Tour' }
+                    );
+                } else if (step === 3) {
+                    this.exitTour();
+                }
+            }
+        };
+        
+        setTimeout(() => TourController.init(), 100);
     </script>
+
+    <div id="tourDimmer" class="tour-dimmer hidden"></div>
+    <div id="tourOverlay" class="tour-overlay hidden">
+        <div id="tourOverlayText" class="tour-overlay-text"></div>
+        <div id="tourButtonsContainer" class="flex items-center justify-between gap-4">
+            <button id="tourNextBtn" onclick="TourController.next()" 
+                class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg transition-colors">
+                Continue
+            </button>
+            <button onclick="TourController.exitTour()" 
+                class="text-slate-400 hover:text-white text-sm transition-colors">
+                Exit Tour
+            </button>
+        </div>
+    </div>
 </body>
 </html>
