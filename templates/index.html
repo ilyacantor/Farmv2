@@ -2706,43 +2706,43 @@
                 
                 if (step === 0) {
                     const el = document.getElementById('scale');
-                    el.value = 'medium';
                     this.highlight('scale');
                     el.focus();
-                    el.click();
                     this.showOverlay(
-                        "Scale controls asset count. Medium = ~50 assets, Enterprise = 500+, Mega = 1500+."
+                        "Select a Scale. Medium = ~50 assets, Enterprise = 500+, Mega = 1500+.",
+                        { hideNext: true }
                     );
+                    this.waitForSelection('scale');
                 } else if (step === 1) {
                     this.closeAllDropdowns();
                     const el = document.getElementById('enterpriseProfile');
-                    el.value = 'modern_saas';
                     this.highlight('enterpriseProfile');
                     el.focus();
-                    el.click();
                     this.showOverlay(
-                        "Enterprise profile affects system mix. Modern SaaS = heavy cloud, Regulated Finance = legacy + compliance."
+                        "Select an Enterprise profile. Modern SaaS = heavy cloud, Regulated Finance = legacy + compliance.",
+                        { hideNext: true }
                     );
+                    this.waitForSelection('enterpriseProfile');
                 } else if (step === 2) {
                     this.closeAllDropdowns();
                     const el = document.getElementById('realismProfile');
-                    el.value = 'typical';
                     this.highlight('realismProfile');
                     el.focus();
-                    el.click();
                     this.showOverlay(
-                        "Realism introduces messiness: stale entries, conflicting records, unmanaged systems."
+                        "Select a Realism level. Clean = no mess, Typical = some conflicts, Messy = chaos.",
+                        { hideNext: true }
                     );
+                    this.waitForSelection('realismProfile');
                 } else if (step === 3) {
                     this.closeAllDropdowns();
                     const el = document.getElementById('dataPreset');
-                    el.value = 'enterprise_mess';
                     this.highlight('dataPreset');
                     el.focus();
-                    el.click();
                     this.showOverlay(
-                        "Data Preset sets challenge level. Clean = easy baseline, Enterprise Mess = realistic conflicts, Adversarial = absolute disaster environment."
+                        "Select a Data Preset. Clean = easy baseline, Enterprise Mess = realistic conflicts, Adversarial = absolute disaster.",
+                        { hideNext: true }
                     );
+                    this.waitForSelection('dataPreset');
                 } else if (step === 4) {
                     this.closeAllDropdowns();
                     this.highlight('generateBtn');
@@ -2752,6 +2752,15 @@
                     );
                     this.setupGenerateCapture();
                 }
+            },
+            
+            waitForSelection(elementId) {
+                const el = document.getElementById(elementId);
+                const handler = () => {
+                    el.removeEventListener('change', handler);
+                    setTimeout(() => this.next(), 300);
+                };
+                el.addEventListener('change', handler);
             },
             
             setupGenerateCapture() {
