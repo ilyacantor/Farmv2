@@ -2715,6 +2715,12 @@
                         "Realism introduces messiness: stale entries, conflicting records, unmanaged systems."
                     );
                 } else if (step === 3) {
+                    document.getElementById('dataPreset').value = 'enterprise_mess';
+                    this.highlight('dataPreset');
+                    this.showOverlay(
+                        "Data Preset sets challenge level. Clean = easy baseline, Enterprise Mess = realistic conflicts, Adversarial = edge cases."
+                    );
+                } else if (step === 4) {
                     this.highlight('generateBtn');
                     this.showOverlay(
                         "Press Generate Snapshot to create ground truth data.",
