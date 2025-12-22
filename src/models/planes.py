@@ -65,6 +65,7 @@ class ScaleEnum(str, Enum):
     medium = "medium"
     large = "large"
     enterprise = "enterprise"
+    mega = "mega"
 
 
 class EnterpriseProfileEnum(str, Enum):

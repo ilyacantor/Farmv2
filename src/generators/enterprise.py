@@ -228,6 +228,7 @@ class EnterpriseGenerator:
             ScaleEnum.medium: 3,
             ScaleEnum.large: 8,
             ScaleEnum.enterprise: 20,
+            ScaleEnum.mega: 50,
         }
         
         self._employees: list[dict] = []
