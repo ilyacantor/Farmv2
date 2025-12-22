@@ -14,6 +14,7 @@ from src.services.key_normalization import (
     extract_registered_domain,
     is_external_domain,
 )
+from src.services.logging import trace_log
 
 
 def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
@@ -202,6 +203,18 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
     for key, cand in candidates.items():
         cand['cmdb_resolution_reason'] = determine_cmdb_resolution_reason(cand['cmdb_matches'], cand['vendors'])
     
+    discovery_count = sum(1 for c in candidates.values() if c.get('discovery_present'))
+    idp_count = sum(1 for c in candidates.values() if c.get('idp_present'))
+    cmdb_count = sum(1 for c in candidates.values() if c.get('cmdb_present'))
+    finance_count = sum(1 for c in candidates.values() if c.get('finance_present'))
+    trace_log("reconciliation", "build_candidate_flags", {
+        "total_candidates": len(candidates),
+        "discovery_present": discovery_count,
+        "idp_present": idp_count,
+        "cmdb_present": cmdb_count,
+        "finance_present": finance_count,
+    })
+    
     return dict(candidates)
 
 
@@ -321,9 +334,18 @@ def propagate_vendor_governance(candidates: dict) -> dict:
         vendor_governance[vendor] = (has_idp, has_cmdb)
     
     domain_governance = {}
+    propagated_keys = []
     for domain, vendor in DOMAIN_TO_VENDOR.items():
         has_idp, has_cmdb = vendor_governance.get(vendor, (False, False))
         domain_governance[domain] = (has_idp, has_cmdb, vendor)
+        if has_idp or has_cmdb:
+            propagated_keys.append(domain)
+    
+    trace_log("reconciliation", "propagate_vendor_governance", {
+        "total_vendors": len(vendor_governance),
+        "propagated_domains": len(propagated_keys),
+        "sample_keys": propagated_keys[:5],
+    })
     
     return domain_governance
 
@@ -463,6 +485,16 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
             if cand['discovery_present']:
                 clean_expected.append({'asset_key': key})
                 expected_admission[key] = 'admitted'
+    
+    rejected_count = sum(1 for v in expected_admission.values() if v == 'rejected')
+    trace_log("reconciliation", "compute_expected_block", {
+        "mode": mode,
+        "shadows": len(shadow_expected),
+        "zombies": len(zombie_expected),
+        "clean": len(clean_expected),
+        "rejected": rejected_count,
+        "excluded_by_mode": len(excluded_by_mode),
+    })
     
     return {
         'shadow_expected': shadow_expected,

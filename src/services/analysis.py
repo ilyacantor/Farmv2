@@ -9,6 +9,7 @@ from src.services.key_normalization import (
     roll_up_to_domains,
 )
 from src.services.reconciliation import compute_expected_block
+from src.services.logging import trace_log, increment_mismatch_counter, reset_mismatch_counters
 
 
 EXPLANATION_TEMPLATES = {
@@ -317,6 +318,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         - If cached block was valid: returns (analysis, None)
         - If recomputed: returns (analysis, new_expected_block) so caller can persist
     """
+    reset_mismatch_counters()
+    
     cached = snapshot.get('__expected__')
     cached_mode = cached.get('reconciliation_mode') if cached else None
     
@@ -520,6 +523,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('shadow_missed', key, reasons, effective_rca),
             })
+            increment_mismatch_counter('missed_shadow')
+            trace_log("analysis", "missed_shadow", {"key": key, "rca_hint": effective_rca, "is_key_drift": is_key_drift})
     
     for key in farm_zombies:
         reasons = expected_reasons.get(key, [])
@@ -559,6 +564,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('zombie_missed', key, reasons, effective_rca),
             })
+            increment_mismatch_counter('missed_zombie')
+            trace_log("analysis", "missed_zombie", {"key": key, "rca_hint": effective_rca, "is_key_drift": is_key_drift})
     
     farm_shadow_domain_keys = {to_domain_key(k) for k in farm_shadows}
     farm_zombie_domain_keys = {to_domain_key(k) for k in farm_zombies}
@@ -629,6 +636,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             if rejection_reason:
                 fp_entry['farm_rejection_reason'] = rejection_reason
             analysis['false_positive_shadows'].append(fp_entry)
+            increment_mismatch_counter('false_positive_shadow')
+            trace_log("analysis", "false_positive_shadow", {"key": domain_key, "farm_class": farm_class})
     
     for domain_key, domain_info in aod_zombie_domains.items():
         if not find_match(domain_key, farm_zombie_domain_keys):
@@ -658,11 +667,26 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             if rejection_reason:
                 fp_entry['farm_rejection_reason'] = rejection_reason
             analysis['false_positive_zombies'].append(fp_entry)
+            increment_mismatch_counter('false_positive_zombie')
+            trace_log("analysis", "false_positive_zombie", {"key": domain_key, "farm_class": farm_class})
     
     total_expected = len(farm_shadows) + len(farm_zombies)
     total_matched = len(analysis['matched_shadows']) + len(analysis['matched_zombies'])
     total_missed = len(analysis['missed_shadows']) + len(analysis['missed_zombies'])
     total_fp = len(analysis['false_positive_shadows']) + len(analysis['false_positive_zombies'])
+    
+    trace_log("analysis", "build_reconciliation_analysis", {
+        "matched_shadows": len(analysis['matched_shadows']),
+        "matched_zombies": len(analysis['matched_zombies']),
+        "missed_shadows": len(analysis['missed_shadows']),
+        "missed_zombies": len(analysis['missed_zombies']),
+        "false_positive_shadows": len(analysis['false_positive_shadows']),
+        "false_positive_zombies": len(analysis['false_positive_zombies']),
+        "total_expected": total_expected,
+        "total_matched": total_matched,
+        "total_missed": total_missed,
+        "total_fp": total_fp,
+    })
     
     fp_by_class = {'not-admitted': 0, 'clean': 0, 'zombie': 0, 'shadow': 0, 'unknown': 0}
     for fp in analysis['false_positive_shadows'] + analysis['false_positive_zombies']:
