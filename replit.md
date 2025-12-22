@@ -118,6 +118,7 @@ The project is structured around a FastAPI application. It features a simple Far
 **Frontend Architecture (templates/index.html):**
 - **FarmState** - Namespace object for all global state (snapshots, caches, UI state)
 - **RequestController** - Async request manager to prevent stale response race conditions
+- **TourController** - Guided Validation Run system for cross-system tours with AOD
 
 **Technical Implementations:**
 - **Core Framework:** FastAPI for the web API.
