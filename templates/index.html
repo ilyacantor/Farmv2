@@ -2756,11 +2756,24 @@
             
             waitForSelection(elementId) {
                 const el = document.getElementById(elementId);
-                const handler = () => {
-                    el.removeEventListener('change', handler);
+                const generateBtn = document.getElementById('generateBtn');
+                
+                const selectionHandler = () => {
+                    el.removeEventListener('change', selectionHandler);
+                    generateBtn.removeEventListener('click', generateHandler);
                     setTimeout(() => this.next(), 300);
                 };
-                el.addEventListener('change', handler);
+                
+                const generateHandler = (e) => {
+                    e.preventDefault();
+                    el.removeEventListener('change', selectionHandler);
+                    generateBtn.removeEventListener('click', generateHandler);
+                    this.currentStep = 4;
+                    this.runPhase1();
+                };
+                
+                el.addEventListener('change', selectionHandler);
+                generateBtn.addEventListener('click', generateHandler);
             },
             
             waitForReconciliationClick(el) {
