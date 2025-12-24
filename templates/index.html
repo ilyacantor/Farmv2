@@ -31,22 +31,157 @@
         }
         .tour-overlay {
             position: fixed;
-            bottom: 24px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: #1e293b;
-            border: 1px solid #22d3ee;
-            border-radius: 12px;
-            padding: 16px 24px;
             z-index: 1100;
-            max-width: 500px;
-            box-shadow: 0 0 30px rgba(34, 211, 238, 0.3);
+            width: 400px;
+            overflow: hidden;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            left: calc(50% - 200px);
+            top: calc(50% - 150px);
+            cursor: default;
+        }
+        .tour-overlay::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.05), transparent);
+            pointer-events: none;
+            border-radius: 12px;
+        }
+        .tour-overlay::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 12px;
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
+            pointer-events: none;
+        }
+        .tour-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            cursor: grab;
+        }
+        .tour-header:active { cursor: grabbing; }
+        .tour-header-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tour-pulse-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #22d3ee;
+            box-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+            animation: pulse 2s infinite;
+        }
+        .tour-header-title {
+            font-size: 14px;
+            font-weight: 500;
+            letter-spacing: 0.025em;
+            color: rgba(207, 250, 254, 0.9);
+        }
+        .tour-close-btn {
+            padding: 4px;
+            border-radius: 6px;
+            transition: background 0.15s;
+            color: rgba(255, 255, 255, 0.7);
+        }
+        .tour-close-btn:hover { background: rgba(255, 255, 255, 0.1); }
+        .tour-content {
+            padding: 24px;
+            position: relative;
+            z-index: 10;
+        }
+        .tour-step-counter {
+            margin-bottom: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #22d3ee;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
         .tour-overlay-text {
-            color: #e2e8f0;
             font-size: 14px;
-            line-height: 1.5;
-            margin-bottom: 12px;
+            color: #cbd5e1;
+            line-height: 1.6;
+        }
+        .tour-footer {
+            padding: 12px 16px;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+        }
+        .tour-footer-btns {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tour-btn-back {
+            height: 32px;
+            padding: 0 8px;
+            font-size: 13px;
+            color: #94a3b8;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s;
+        }
+        .tour-btn-back:hover:not(:disabled) { color: white; background: rgba(255,255,255,0.1); }
+        .tour-btn-back:disabled { opacity: 0.3; cursor: not-allowed; }
+        .tour-btn-next {
+            height: 32px;
+            padding: 0 12px;
+            font-size: 13px;
+            color: white;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: all 0.15s;
+        }
+        .tour-btn-next:hover { background: rgba(255, 255, 255, 0.2); }
+        .tour-btn-finish {
+            height: 32px;
+            padding: 0 12px;
+            font-size: 13px;
+            font-weight: 600;
+            color: black;
+            background: #06b6d4;
+            border: none;
+            border-radius: 6px;
+            box-shadow: 0 0 15px rgba(6, 182, 212, 0.4);
+            transition: all 0.15s;
+        }
+        .tour-btn-finish:hover { background: #22d3ee; }
+        .tour-progress {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 3px;
+            background: rgba(255, 255, 255, 0.05);
+            width: 100%;
+        }
+        .tour-progress-bar {
+            height: 100%;
+            background: #22d3ee;
+            box-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+            transition: width 0.3s ease-out;
         }
         .tour-highlight {
             position: relative;
@@ -2621,43 +2756,83 @@
                 else if (phase === 7) this.runPhase7();
             },
             
+            totalSteps: { 1: 5, 2: 2, 7: 4 },
+            
             showOverlay(message, options = {}) {
-                // No dimmer - keep screen visible
                 const overlay = document.getElementById('tourOverlay');
                 document.getElementById('tourOverlayText').innerHTML = message;
                 
-                const container = document.getElementById('tourButtonsContainer');
-                container.innerHTML = `
-                    <button id="tourNextBtn" onclick="TourController.next()" 
-                        class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg transition-colors">
-                        Continue
-                    </button>
-                    <button onclick="TourController.exitTour()" 
-                        class="text-slate-400 hover:text-white text-sm transition-colors">
-                        Exit Tour
-                    </button>
-                `;
+                const total = this.totalSteps[this.currentPhase] || 5;
+                const current = this.currentStep + 1;
+                document.getElementById('tourStepCounter').textContent = `Step ${current} of ${total}`;
                 
+                const progress = (current / total) * 100;
+                document.getElementById('tourProgressBar').style.width = `${progress}%`;
+                
+                const backBtn = document.getElementById('tourBackBtn');
                 const nextBtn = document.getElementById('tourNextBtn');
-                if (options.buttonText) {
-                    nextBtn.textContent = options.buttonText;
-                }
+                
+                backBtn.disabled = this.currentStep === 0;
+                backBtn.classList.toggle('hidden', options.hideBack === true);
                 
                 if (options.hideNext) {
                     nextBtn.classList.add('hidden');
-                }
-                
-                if (options.customButtons) {
-                    container.innerHTML = `
-                        <div class="flex items-center gap-3">${options.customButtons}</div>
-                        <button onclick="TourController.exitTour()" 
-                            class="text-slate-400 hover:text-white text-sm transition-colors">
-                            Exit Tour
-                        </button>
-                    `;
+                } else {
+                    nextBtn.classList.remove('hidden');
+                    if (options.buttonText) {
+                        nextBtn.innerHTML = options.buttonText;
+                        if (options.buttonText === 'Finish Tour' || options.buttonText === 'Finish') {
+                            nextBtn.className = 'tour-btn-finish';
+                        } else {
+                            nextBtn.className = 'tour-btn-next';
+                            nextBtn.innerHTML = `${options.buttonText} <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>`;
+                        }
+                    } else {
+                        nextBtn.className = 'tour-btn-next';
+                        nextBtn.innerHTML = `Next <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>`;
+                    }
                 }
                 
                 overlay.classList.remove('hidden');
+                this.initDrag();
+            },
+            
+            initDrag() {
+                if (this.dragInitialized) return;
+                this.dragInitialized = true;
+                
+                const overlay = document.getElementById('tourOverlay');
+                const handle = document.getElementById('tourDragHandle');
+                let isDragging = false;
+                let offsetX, offsetY;
+                
+                handle.addEventListener('mousedown', (e) => {
+                    isDragging = true;
+                    const rect = overlay.getBoundingClientRect();
+                    offsetX = e.clientX - rect.left;
+                    offsetY = e.clientY - rect.top;
+                    overlay.style.transition = 'none';
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (!isDragging) return;
+                    overlay.style.left = `${e.clientX - offsetX}px`;
+                    overlay.style.top = `${e.clientY - offsetY}px`;
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    isDragging = false;
+                    overlay.style.transition = '';
+                });
+            },
+            
+            back() {
+                if (this.currentStep > 0) {
+                    this.currentStep--;
+                    if (this.currentPhase === 1) this.runPhase1();
+                    else if (this.currentPhase === 2) this.runPhase2();
+                    else if (this.currentPhase === 7) this.runPhase7();
+                }
             },
             
             hideOverlay() {
@@ -2944,16 +3119,39 @@
 
     <div id="tourDimmer" class="tour-dimmer hidden"></div>
     <div id="tourOverlay" class="tour-overlay hidden">
-        <div id="tourOverlayText" class="tour-overlay-text"></div>
-        <div id="tourButtonsContainer" class="flex items-center justify-between gap-4">
-            <button id="tourNextBtn" onclick="TourController.next()" 
-                class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg transition-colors">
-                Continue
+        <div class="tour-header" id="tourDragHandle">
+            <div class="tour-header-left">
+                <div class="tour-pulse-dot"></div>
+                <span class="tour-header-title">Guided Validation</span>
+            </div>
+            <button class="tour-close-btn" onclick="TourController.exitTour()">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
             </button>
-            <button onclick="TourController.exitTour()" 
-                class="text-slate-400 hover:text-white text-sm transition-colors">
-                Exit Tour
-            </button>
+        </div>
+        <div class="tour-content">
+            <div id="tourStepCounter" class="tour-step-counter">Step 1 of 5</div>
+            <div id="tourOverlayText" class="tour-overlay-text"></div>
+        </div>
+        <div class="tour-footer">
+            <div class="tour-footer-btns">
+                <button id="tourBackBtn" class="tour-btn-back" onclick="TourController.back()">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                    Back
+                </button>
+                <button id="tourNextBtn" class="tour-btn-next" onclick="TourController.next()">
+                    Next
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="tour-progress">
+            <div id="tourProgressBar" class="tour-progress-bar" style="width: 20%"></div>
         </div>
     </div>
 </body>
