@@ -2828,6 +2828,7 @@
             
             back() {
                 if (this.currentStep > 0) {
+                    this.clearPendingListeners();
                     this.currentStep--;
                     if (this.currentPhase === 1) this.runPhase1();
                     else if (this.currentPhase === 2) this.runPhase2();
@@ -2929,26 +2930,38 @@
                 }
             },
             
+            pendingListeners: [],
+            
+            clearPendingListeners() {
+                this.pendingListeners.forEach(({ el, event, handler }) => {
+                    el.removeEventListener(event, handler);
+                });
+                this.pendingListeners = [];
+            },
+            
             waitForSelection(elementId) {
+                this.clearPendingListeners();
+                
                 const el = document.getElementById(elementId);
                 const generateBtn = document.getElementById('generateBtn');
                 
                 const selectionHandler = () => {
-                    el.removeEventListener('change', selectionHandler);
-                    generateBtn.removeEventListener('click', generateHandler);
+                    this.clearPendingListeners();
                     setTimeout(() => this.next(), 300);
                 };
                 
                 const generateHandler = (e) => {
                     e.preventDefault();
-                    el.removeEventListener('change', selectionHandler);
-                    generateBtn.removeEventListener('click', generateHandler);
+                    this.clearPendingListeners();
                     this.currentStep = 4;
                     this.runPhase1();
                 };
                 
                 el.addEventListener('change', selectionHandler);
                 generateBtn.addEventListener('click', generateHandler);
+                
+                this.pendingListeners.push({ el, event: 'change', handler: selectionHandler });
+                this.pendingListeners.push({ el: generateBtn, event: 'click', handler: generateHandler });
             },
             
             waitForReconciliationClick(el) {
@@ -2960,15 +2973,18 @@
             },
             
             setupGenerateCapture() {
-                const form = document.getElementById('snapshotForm');
-                const originalSubmit = form.onsubmit;
+                if (this.generateCaptureSetup) return;
+                this.generateCaptureSetup = true;
                 
-                const captureHandler = async (e) => {
-                    e.preventDefault();
-                    form.removeEventListener('submit', captureHandler);
+                const form = document.getElementById('snapshotForm');
+                const generateBtn = document.getElementById('generateBtn');
+                
+                const doGenerate = async () => {
+                    if (this.isGenerating) return;
+                    this.isGenerating = true;
                     
                     this.hideOverlay();
-                    this.showOverlay("Generating snapshot...", { hideNext: true });
+                    this.showOverlay("Generating snapshot...", { hideNext: true, hideBack: true });
                     
                     try {
                         const result = await generateSnapshot(
@@ -3000,17 +3016,20 @@
                         
                         this.currentPhase = 2;
                         this.currentStep = 0;
+                        this.generateCaptureSetup = false;
+                        this.isGenerating = false;
                         this.runPhase2();
                     } catch (err) {
+                        this.isGenerating = false;
+                        this.generateCaptureSetup = false;
                         this.showOverlay("Generation failed: " + err.message);
                     }
                 };
                 
-                form.addEventListener('submit', captureHandler);
-                
-                document.getElementById('generateBtn').onclick = (e) => {
+                generateBtn.onclick = (e) => {
                     e.preventDefault();
-                    form.dispatchEvent(new Event('submit'));
+                    e.stopPropagation();
+                    doGenerate();
                 };
             },
             
@@ -3030,7 +3049,7 @@
                     }
                     
                     this.showOverlay(
-                        "Snapshot represents a synthetic and hyper-realistic enterprise IT environment. At mega scale, AOD processes 5,000–8,000 raw observations, resolves them into 300–800 candidate assets, evaluates tens of thousands of evidence relationships, and produces a verified catalog of 150–500 trusted assets."
+                        "Snapshot represents a synthetic and hyper-realistic enterprise IT environment. AOD processes in excess of 10,000 raw observations, resolves over 1,000 candidate assets, evaluates tens of thousands of evidence relationships, and produces a verified catalog of over 1,000 trusted assets."
                     );
                 } else if (step === 1) {
                     this.clearHighlights();
