@@ -376,12 +376,10 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     
     expected_admission = expected_block.get('expected_admission', {})
     
+    aod_admitted_set = None
     if not aod_admission and asset_summaries:
         aod_admitted_set = set(asset_summaries.keys())
         aod_admission = {k: 'admitted' for k in aod_admitted_set}
-        for farm_key in expected_admission:
-            if farm_key not in aod_admission:
-                aod_admission[farm_key] = 'rejected'
     
     aod_shadow_domains = roll_up_to_domains(aod_shadows, aod_reason_codes)
     aod_zombie_domains = roll_up_to_domains(aod_zombies, aod_reason_codes)
@@ -711,8 +709,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     
     farm_admitted_keys = set(k for k, v in expected_admission.items() if v == 'admitted')
     farm_rejected_keys = set(k for k, v in expected_admission.items() if v == 'rejected')
-    aod_admitted_keys = set(k for k, v in aod_admission.items() if v == 'admitted')
-    aod_rejected_keys = set(k for k, v in aod_admission.items() if v == 'rejected')
+    aod_admitted_keys = aod_admitted_set if aod_admitted_set else set(k for k, v in aod_admission.items() if v == 'admitted')
+    aod_rejected_keys = set(expected_admission.keys()) - aod_admitted_keys
     
     cataloged_matched = farm_admitted_keys & aod_admitted_keys
     cataloged_missed = farm_admitted_keys - aod_admitted_keys
