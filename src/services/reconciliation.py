@@ -14,6 +14,7 @@ from src.services.key_normalization import (
     extract_domain,
     extract_registered_domain,
     is_external_domain,
+    is_valid_fqdn,
 )
 from src.services.logging import trace_log
 
@@ -402,12 +403,17 @@ def compute_expected_block(
     for key, cand in candidates.items():
         is_external = is_external_domain(key)
         is_excluded = policy.is_excluded(key)
+        is_fqdn = is_valid_fqdn(key)
         
         if mode == "sprawl" and not is_external:
             excluded_by_mode.append(key)
             continue
         elif mode == "infra" and is_external:
             excluded_by_mode.append(key)
+            continue
+        
+        if not is_fqdn:
+            expected_admission[key] = 'rejected'
             continue
         
         discovery_sources = cand.get('discovery_sources', set())
@@ -557,8 +563,9 @@ def analyze_snapshot_for_expectations(
     for key, cand in candidates.items():
         is_excluded = policy.is_excluded(key)
         is_external = is_external_domain(key)
+        is_fqdn = is_valid_fqdn(key)
         
-        if is_excluded:
+        if is_excluded or not is_fqdn:
             continue
         
         idp_present = cand['idp_present']

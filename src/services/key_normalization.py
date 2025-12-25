@@ -100,3 +100,24 @@ def is_external_domain(key: str) -> bool:
     if '.' not in key_lower:
         return False
     return any(key_lower.endswith(tld) for tld in EXTERNAL_DOMAIN_TLDS)
+
+
+def is_valid_fqdn(key: str) -> bool:
+    """Check if key is a valid FQDN with a real TLD suffix.
+    
+    Uses tldextract to validate against Public Suffix List.
+    Internal hostnames like 'paymentgateway', 'auth-service', 'images694' 
+    will return False because they lack a valid TLD.
+    
+    Examples:
+        google.com -> True
+        mail.google.com -> True  
+        paymentgateway -> False
+        auth-service -> False
+        images694 -> False
+    """
+    if not key:
+        return False
+    
+    ext = tldextract.extract(key)
+    return bool(ext.suffix)

@@ -320,15 +320,9 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     """
     reset_mismatch_counters()
     
-    cached = snapshot.get('__expected__')
-    cached_mode = cached.get('reconciliation_mode') if cached else None
-    
     recomputed_block = None
-    if cached and cached_mode == 'all' and cached.get('shadow_expected') is not None:
-        expected_block = cached
-    else:
-        expected_block = compute_expected_block(snapshot, mode="all")
-        recomputed_block = expected_block
+    expected_block = compute_expected_block(snapshot, mode="all")
+    recomputed_block = expected_block
     
     farm_shadows = {a['asset_key'] for a in expected_block.get('shadow_expected', [])}
     farm_zombies = {a['asset_key'] for a in expected_block.get('zombie_expected', [])}
