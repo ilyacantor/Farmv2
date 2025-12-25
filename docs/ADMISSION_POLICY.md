@@ -1,0 +1,232 @@
+# AOS Farm: Discovery, Admission & Classification Policy
+
+This document defines the complete policy for how AOS Farm determines which assets are cataloged and how they are classified.
+
+---
+
+## Overview
+
+The pipeline has three stages:
+
+```
+Discovery → Admission Gate → Classification
+   ↓              ↓                ↓
+Raw signals   Catalog/Reject   Shadow/Zombie/Clean
+```
+
+---
+
+## Stage 1: Discovery
+
+### What is Discovery?
+Discovery collects raw signals about assets from multiple sources. An asset must be "discovered" before it can be evaluated.
+
+### Discovery Sources
+- **DNS** - Domain resolution records
+- **Proxy/Firewall logs** - Network traffic observations
+- **SSO/OAuth flows** - Authentication integrations
+- **Cloud inventory** - AWS, Azure, GCP resources
+- **Browser extensions** - Client-side SaaS detection
+- **API integrations** - Connected service catalogs
+
+### Discovery Strength
+`discovery_sources_count` = number of distinct sources that observed this asset.
+
+| Count | Strength | Example |
+|-------|----------|---------|
+| 0 | None | No observations |
+| 1 | Weak | DNS-only |
+| 2+ | Strong | Proxy + SSO |
+
+---
+
+## Stage 2: Admission Gate
+
+### Purpose
+Filter noise and ensure only "real" assets enter the catalog. This prevents false classifications.
+
+### Admission Criteria
+An asset is **ADMITTED** if ANY of these are true:
+
+| Criterion | Description |
+|-----------|-------------|
+| `discovery_sources_count >= 2` | Corroborated by multiple sources |
+| `cloud_present = true` | Has cloud plane evidence |
+| `idp_present = true` | Found in Identity Provider (direct or via vendor) |
+| `cmdb_present = true` | Found in CMDB (direct or via vendor) |
+
+### Rejection Reasons
+If no admission criteria are met, the asset is **REJECTED** with a reason:
+
+| Reason | Condition |
+|--------|-----------|
+| `DNS-only` | Single source = DNS |
+| `Single source (X)` | Single source = X |
+| `No discovery sources` | Zero discovery sources |
+| `No admission criteria satisfied` | Other cases |
+
+### Infrastructure Exclusions
+The following infrastructure/OSS domains are **always excluded** from classification (even if admitted):
+
+```
+postgresql.org, mysql.com, apache.org, redis.io, redis.com,
+mongodb.com, elastic.co, elasticsearch.com, kafka.apache.org,
+nginx.org, docker.com, kubernetes.io, linux.org, gnu.org,
+python.org, nodejs.org, golang.org, rust-lang.org, ruby-lang.org
+```
+
+These are tools, not SaaS applications.
+
+---
+
+## Stage 3: Classification
+
+### Applies To
+Only **admitted** assets are classified. Rejected assets have no classification.
+
+### Classification Matrix
+
+| Classification | Criteria |
+|----------------|----------|
+| **Shadow** | `is_external` AND `is_active` AND NOT `idp_present` AND NOT `cmdb_present` AND NOT `is_infra_excluded` |
+| **Zombie** | (`idp_present` OR `cmdb_present`) AND NOT `is_active` AND `has_stale_timestamps` |
+| **Clean** | Everything else that's admitted |
+
+### Key Definitions
+
+**is_external**: Domain has a public TLD (.com, .io, .org, etc.)
+
+**is_active**: Activity observed within the window (default 90 days). Activity sources:
+- Authentication events
+- Network traffic
+- API calls
+- User sessions
+
+**idp_present**: Found in Identity Provider. Can be:
+- Direct match on this domain
+- Vendor propagation (e.g., `teams.microsoft.com` inherits from `microsoft.com`)
+
+**cmdb_present**: Found in Configuration Management Database. Same propagation rules as IdP.
+
+**is_infra_excluded**: Domain is in `INFRASTRUCTURE_DOMAINS` set.
+
+---
+
+## Vendor Governance Propagation
+
+When a vendor's root domain is governed (has IdP or CMDB), governance propagates to all related domains:
+
+```python
+VENDOR_DOMAIN_SETS = {
+    'microsoft': {'microsoft.com', 'office.com', 'sharepoint.com', 'teams.microsoft.com', 'github.com', ...},
+    'google': {'google.com', 'gmail.com', 'youtube.com', ...},
+    'salesforce': {'salesforce.com', 'slack.com', 'heroku.com', 'tableau.com', ...},
+    ...
+}
+```
+
+Example: If `microsoft.com` is in IdP, then `teams.microsoft.com` is also considered governed.
+
+---
+
+## Reconciliation Modes
+
+| Mode | Scope | Use Case |
+|------|-------|----------|
+| `sprawl` (default) | External SaaS domains only | Shadow IT detection |
+| `infra` | Internal services only | Infrastructure monitoring |
+| `all` | Everything | Full reconciliation |
+
+Mode filters which assets are included in `shadow_expected`, `zombie_expected`, `clean_expected`.
+
+---
+
+## Invariants
+
+These rules must ALWAYS hold:
+
+1. **Mutual exclusivity**: Every admitted asset is exactly ONE of: shadow, zombie, clean
+2. **Exhaustive**: `admitted_count = shadow_count + zombie_count + clean_count`
+3. **Partition**: `unique_assets = admitted_count + rejected_count`
+4. **No classification for rejected**: Rejected assets have no shadow/zombie/clean label
+5. **Shadow ≠ Zombie**: An asset cannot be both
+6. **Admission before classification**: Classification only runs on admitted assets
+7. **Infrastructure always excluded**: `INFRASTRUCTURE_DOMAINS` members never become shadow/zombie
+
+---
+
+## Decision Trace
+
+Every asset has a `decision_trace` recording:
+
+```json
+{
+  "asset_key_used": "slack.com",
+  "is_external": true,
+  "is_active": true,
+  "discovery_sources_count": 3,
+  "discovery_sources_list": ["proxy", "sso", "browser"],
+  "idp_present": false,
+  "idp_present_direct": false,
+  "cmdb_present": false,
+  "cmdb_present_direct": false,
+  "vendor_governance": null,
+  "infra_excluded": false,
+  "admitted": true,
+  "rejection_reason": null,
+  "is_shadow": true,
+  "reason_codes": ["HAS_DISCOVERY", "IS_ACTIVE", "NO_IDP", "NO_CMDB"]
+}
+```
+
+This provides full auditability for why each asset was classified.
+
+---
+
+## Reason Codes
+
+| Code | Meaning |
+|------|---------|
+| `HAS_DISCOVERY` | Discovered by at least one source |
+| `IS_ACTIVE` | Activity within window |
+| `HAS_IDP` | Found in Identity Provider |
+| `HAS_CMDB` | Found in CMDB |
+| `HAS_CLOUD` | Has cloud plane evidence |
+| `HAS_FINANCE` | Has finance/procurement records |
+| `HAS_ENDPOINT` | Detected on endpoints |
+| `HAS_NETWORK` | Seen in network traffic |
+| `NO_IDP` | Not in Identity Provider |
+| `NO_CMDB` | Not in CMDB |
+| `GOVERNED_VIA_VENDOR` | Governance inherited from vendor parent |
+| `STALE_ACTIVITY` | Last activity is stale |
+
+---
+
+## Summary Flow
+
+```
+Asset Key
+    ↓
+[Discovery Sources Count]
+    ↓
+[Check Admission Criteria]
+    ↓
+┌─────────────────────────────────┐
+│ discovery >= 2?                 │
+│ OR cloud_present?               │──→ YES → ADMITTED
+│ OR idp_present?                 │
+│ OR cmdb_present?                │
+└─────────────────────────────────┘
+    ↓ NO
+REJECTED (with reason)
+    
+IF ADMITTED:
+    ↓
+[Check Classification]
+    ↓
+┌─────────────────────────────────┐
+│ external + active + ungoverned? │──→ SHADOW
+│ governed + inactive + stale?    │──→ ZOMBIE  
+│ else                            │──→ CLEAN
+└─────────────────────────────────┘
+```
