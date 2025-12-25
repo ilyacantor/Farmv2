@@ -96,7 +96,7 @@ class EnterpriseGenerator:
 class EnterpriseGenerator:
     def __init__(self, seed, scale, enterprise_profile, realism_profile, tenant_id, 
                  policy_config: Optional[PolicyConfig] = None):
-        self.policy = policy_config or PolicyConfig()
+        self.policy = policy_config or PolicyConfig.default_fallback()
 ```
 
 **Key changes:**
@@ -120,15 +120,15 @@ class EnterpriseGenerator:
    rejected_spend = self.rng.randint(10, self.policy.admission.minimum_spend - 1)
    ```
 
-3. **Kill list awareness** - Skip generation for excluded domains
+3. **Kill list awareness** - Use AOD-provided seeds, NOT local constants
    ```python
+   # CRITICAL: Do NOT use local INFRASTRUCTURE_DOMAINS constant
+   # Use the list from PolicyConfig which comes from AOD
    def _is_excluded(self, domain: str) -> bool:
-       if domain in self.policy.exclusions:
-           return True
-       if not self.policy.scope.include_infra and domain in INFRASTRUCTURE_DOMAINS:
-           return True
-       return False
+       return self.policy.is_excluded(domain)
    ```
+   
+   **This prevents "Constant Drift"** where Farm and AOD disagree on definitions.
 
 ### Phase 4: Reconciliation Refactor
 

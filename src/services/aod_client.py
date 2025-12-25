@@ -1,7 +1,11 @@
 """
 AOD Client Service with caching and circuit breaker pattern.
 
-Provides call_aod_explain_nonflag with:
+Provides:
+- fetch_policy_config: Get active PolicyConfig from AOD
+- call_aod_explain_nonflag: Get decision traces for missed assets
+
+Features:
 - Per-run cache: Cache results by (snapshot_id, frozenset(asset_keys))
 - Circuit breaker: After 3 consecutive failures, skip real calls for 60 seconds
 - Better error logging
@@ -10,8 +14,10 @@ Provides call_aod_explain_nonflag with:
 import copy
 import os
 import time
+from typing import Optional
 import httpx
 from src.services.logging import trace_log
+from src.models.policy import PolicyConfig
 
 # Cache: {(snapshot_id, frozenset(keys)): result_dict}
 _explain_cache: dict[tuple, dict] = {}
@@ -212,3 +218,99 @@ async def call_aod_explain_nonflag(
         })
         _record_failure()
         return _get_fallback_response(asset_keys)
+
+
+_policy_cache: Optional[PolicyConfig] = None
+_policy_cache_time: float = 0.0
+POLICY_CACHE_TTL = 300
+
+
+async def fetch_policy_config(force_refresh: bool = False) -> PolicyConfig:
+    """
+    Fetch active PolicyConfig from AOD.
+    
+    Features:
+    - Caches result for 5 minutes
+    - Falls back to default config if AOD unavailable
+    - Respects circuit breaker
+    
+    INVARIANT: Farm never defines policy locally.
+    This function is the ONLY source of policy configuration.
+    """
+    global _policy_cache, _policy_cache_time
+    
+    if not force_refresh and _policy_cache is not None:
+        if time.time() - _policy_cache_time < POLICY_CACHE_TTL:
+            trace_log("aod_client", "policy_cache_hit", {
+                "age_seconds": int(time.time() - _policy_cache_time)
+            })
+            return _policy_cache
+    
+    aod_url = os.environ.get("AOD_BASE_URL", "") or os.environ.get("AOD_URL", "")
+    use_stub = os.environ.get("USE_AOD_EXPLAIN_STUB", "").lower() == "true"
+    
+    if use_stub:
+        trace_log("aod_client", "policy_stub", {"reason": "USE_AOD_EXPLAIN_STUB=true"})
+        return PolicyConfig.default_fallback()
+    
+    if not aod_url:
+        trace_log("aod_client", "policy_fallback", {"reason": "no_aod_url"})
+        return PolicyConfig.default_fallback()
+    
+    if _is_circuit_open():
+        trace_log("aod_client", "policy_circuit_open", {"reason": "circuit_breaker"})
+        if _policy_cache is not None:
+            return _policy_cache
+        return PolicyConfig.default_fallback()
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            shared_secret = os.environ.get("AOD_SHARED_SECRET", "")
+            headers = {"X-Shared-Secret": shared_secret} if shared_secret else {}
+            
+            resp = await client.get(
+                f"{aod_url}/api/v1/policy/config",
+                headers=headers
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                policy = PolicyConfig.from_aod_response(data)
+                _record_success()
+                
+                _policy_cache = policy
+                _policy_cache_time = time.time()
+                
+                trace_log("aod_client", "policy_fetch_success", {
+                    "noise_floor": policy.admission.noise_floor,
+                    "minimum_spend": policy.admission.minimum_spend,
+                    "zombie_window_days": policy.admission.zombie_window_days,
+                    "exclusions_count": len(policy.exclusions),
+                    "infrastructure_seeds_count": len(policy.infrastructure_seeds),
+                })
+                return policy
+            else:
+                trace_log("aod_client", "policy_fetch_failed", {
+                    "status_code": resp.status_code
+                })
+                _record_failure()
+                if _policy_cache is not None:
+                    return _policy_cache
+                return PolicyConfig.default_fallback()
+                
+    except Exception as e:
+        trace_log("aod_client", "policy_fetch_error", {
+            "error": str(e)
+        })
+        _record_failure()
+        if _policy_cache is not None:
+            return _policy_cache
+        return PolicyConfig.default_fallback()
+
+
+def clear_policy_cache():
+    """Clear the policy cache. Useful for testing."""
+    global _policy_cache, _policy_cache_time
+    _policy_cache = None
+    _policy_cache_time = 0.0
+    trace_log("aod_client", "policy_cache_cleared", {})
