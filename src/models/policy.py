@@ -118,6 +118,7 @@ class PolicyConfig(BaseModel):
                 "global.com", "api.co", "app.co", "pro.co", "quick.net",
                 "max.io", "smart.io", "sys.net", "force.com", "fast.io",
                 "cloud.io", "dev.io", "web.io", "net.io", "tech.io",
+                "tech.net", "cloud.net", "world.net", "services.io", "plus.net",
             ],
             infrastructure_seeds=[
                 "postgresql.org", "mysql.com", "apache.org", "redis.io",
