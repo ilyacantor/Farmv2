@@ -1792,10 +1792,18 @@
                 colorClass = typeColor;
             }
             
+            const shadowExpectedArr = expectedBlock.shadow_expected || [];
+            const zombieExpectedArr = expectedBlock.zombie_expected || [];
+            const cleanExpectedArr = expectedBlock.clean_expected || [];
+            const allExpectedAssets = [...shadowExpectedArr, ...zombieExpectedArr, ...cleanExpectedArr];
+            const expectedByKey = {};
+            allExpectedAssets.forEach(a => { if (a.asset_key) expectedByKey[a.asset_key] = a; });
+            
             const assets = keys.map(key => ({
                 asset_key: key,
                 trace: decisionTraces[key],
-                aod_summary: aodSummaries[key]
+                aod_summary: aodSummaries[key],
+                expected_asset: expectedByKey[key]
             }));
             
             if (assets.length === 0) {
@@ -1808,12 +1816,14 @@
                             const key = a.asset_key;
                             const hasTrace = a.trace && Object.keys(a.trace).length > 0;
                             const hasAodData = a.aod_summary && Object.keys(a.aod_summary).length > 0;
-                            const isClickable = hasTrace || hasAodData;
+                            const hasExpected = a.expected_asset && Object.keys(a.expected_asset).length > 0;
+                            const isClickable = hasTrace || hasAodData || hasExpected;
                             const clickClass = isClickable ? 'cursor-pointer hover:bg-slate-700/50' : '';
                             const clickHandler = isClickable ? `onclick="showAdmissionExplanation('${type}', '${category}', ${i})"` : '';
                             const trace = a.trace || {};
                             const aodSum = a.aod_summary || {};
-                            const classification = trace.classification || '';
+                            const exp = a.expected_asset || {};
+                            const classification = trace.classification || exp.classification || '';
                             const aodClass = aodSum.is_shadow ? 'shadow' : aodSum.is_zombie ? 'zombie' : aodSum.is_clean ? 'clean' : '';
                             const displayClass = classification || aodClass;
                             const classBadge = displayClass ? 
@@ -1842,6 +1852,7 @@
             const key = asset.asset_key;
             const trace = asset.trace || {};
             const aodSum = asset.aod_summary || {};
+            const exp = asset.expected_asset || {};
             
             const typeLabel = type === 'cataloged' ? 'Cataloged' : 'Rejected';
             const categoryLabels = {
@@ -1855,84 +1866,80 @@
             
             let content = '';
             
-            content += `<div class="text-base font-medium ${type === 'cataloged' ? 'text-cyan-400' : 'text-slate-400'} mb-3">${categoryLabels[category] || typeLabel}</div>`;
+            const farmClass = trace.classification || exp.classification;
+            const farmReasons = trace.reason_codes || exp.reason_codes || [];
+            const farmRca = trace.rca_hint || exp.rca_hint;
+            const farmDiscovery = trace.discovery_sources || exp.discovery_sources || [];
+            const farmFlags = trace.evidence_flags || exp.evidence_flags;
+            const farmRejection = trace.rejection_reason || exp.rejection_reason;
+            const farmGoverned = trace.is_governed !== undefined ? trace.is_governed : exp.is_governed;
             
-            const hasFarmData = trace.classification || trace.rejection_reason || trace.discovery_sources;
+            const hasFarmData = farmClass || farmRejection || farmDiscovery.length > 0 || farmReasons.length > 0;
             const hasAodData = Object.keys(aodSum).length > 0;
             
+            if (category === 'missed' && type === 'cataloged') {
+                const classColor = farmClass === 'shadow' ? 'text-amber-400' : farmClass === 'zombie' ? 'text-purple-400' : 'text-emerald-400';
+                content += `<div class="text-sm text-slate-300 mb-3">AOD missed <strong class="${classColor}">${key}</strong> as ${farmClass || 'cataloged'} - ${farmRca || farmReasons.join(', ') || 'Farm expected this asset to be cataloged'}</div>`;
+                content += `<div class="text-xs text-slate-400 mb-4">${farmRca ? `Farm expected ${farmClass?.toUpperCase() || 'CATALOGED'} because: ${farmReasons.join(', ')}. AOD did not flag this asset.` : `Farm expected this asset to be admitted. Reason codes: ${farmReasons.join(', ') || 'none'}`}</div>`;
+            } else if (category === 'fp' && type === 'cataloged') {
+                content += `<div class="text-sm text-slate-300 mb-3">AOD incorrectly cataloged <strong class="text-red-400">${key}</strong> - Farm expected this to be rejected</div>`;
+                if (farmRejection) {
+                    content += `<div class="text-xs text-slate-400 mb-4">Farm rejection reason: ${farmRejection}</div>`;
+                }
+            } else {
+                content += `<div class="text-base font-medium ${type === 'cataloged' ? 'text-cyan-400' : 'text-slate-400'} mb-3">${categoryLabels[category] || typeLabel}</div>`;
+            }
+            
             if (hasFarmData) {
-                content += `<div class="text-xs font-semibold text-cyan-300 mb-2 uppercase tracking-wide">Farm Ground Truth</div>`;
+                content += `<div class="text-xs font-semibold text-cyan-300 mb-2 uppercase tracking-wide">Farm Evidence</div>`;
                 
-                if (trace.classification) {
-                    content += `<div class="text-slate-300 mb-2">Classification: <strong class="${trace.classification === 'shadow' ? 'text-amber-400' : trace.classification === 'zombie' ? 'text-purple-400' : 'text-emerald-400'}">${trace.classification}</strong></div>`;
+                const farmEvItems = [];
+                if (farmClass) farmEvItems.push(`Classification: ${farmClass.toUpperCase()}`);
+                if (farmReasons.length) farmEvItems.push(farmReasons.join(', '));
+                if (farmRejection) farmEvItems.push(`Rejected: ${farmRejection}`);
+                
+                if (farmEvItems.length) {
+                    content += `<div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded mb-3">${farmEvItems.join(', ')}</div>`;
                 }
                 
-                if (trace.rejection_reason) {
-                    content += `<div class="text-slate-300 mb-2">Rejection reason: <strong class="text-rose-400">${trace.rejection_reason}</strong></div>`;
-                }
-                
-                if (trace.discovery_sources && trace.discovery_sources.length) {
-                    content += `<div class="mb-2"><div class="text-xs font-medium text-cyan-400 mb-1">Discovery Sources</div><div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">${trace.discovery_sources.join(', ')}</div></div>`;
-                }
-                
-                if (trace.evidence_flags) {
-                    const flags = trace.evidence_flags;
+                if (farmFlags) {
                     const flagItems = [];
-                    if (flags.has_discovery) flagItems.push('<span class="text-cyan-400">HAS_DISCOVERY</span>');
-                    if (flags.is_active) flagItems.push('<span class="text-emerald-400">IS_ACTIVE</span>');
-                    if (flags.has_idp) flagItems.push('<span class="text-blue-400">HAS_IDP</span>');
-                    if (flags.has_cmdb) flagItems.push('<span class="text-purple-400">HAS_CMDB</span>');
-                    if (flags.has_cloud) flagItems.push('<span class="text-orange-400">HAS_CLOUD</span>');
-                    if (flags.has_finance) flagItems.push('<span class="text-green-400">HAS_FINANCE</span>');
-                    if (flags.has_endpoint) flagItems.push('<span class="text-pink-400">HAS_ENDPOINT</span>');
-                    if (flags.has_network) flagItems.push('<span class="text-yellow-400">HAS_NETWORK</span>');
+                    if (farmFlags.has_discovery) flagItems.push('HAS_DISCOVERY');
+                    if (farmFlags.is_active) flagItems.push('IS_ACTIVE');
+                    if (farmFlags.has_idp) flagItems.push('HAS_IDP');
+                    if (farmFlags.has_cmdb) flagItems.push('HAS_CMDB');
+                    if (farmFlags.has_cloud) flagItems.push('HAS_CLOUD');
+                    if (farmFlags.has_finance) flagItems.push('HAS_FINANCE');
+                    if (farmFlags.has_endpoint) flagItems.push('HAS_ENDPOINT');
+                    if (farmFlags.has_network) flagItems.push('HAS_NETWORK');
                     if (flagItems.length) {
-                        content += `<div class="mb-2"><div class="text-xs font-medium text-purple-400 mb-1">Evidence Flags</div><div class="text-xs bg-slate-900/50 p-2 rounded flex flex-wrap gap-2">${flagItems.join('')}</div></div>`;
+                        content += `<div class="mb-3"><div class="text-xs font-medium text-purple-400 mb-1">Evidence Flags</div><div class="text-xs bg-slate-900/50 p-2 rounded">${flagItems.join(', ')}</div></div>`;
                     }
-                }
-                
-                if (trace.reason_codes && trace.reason_codes.length) {
-                    content += `<div class="mb-2"><div class="text-xs font-medium text-amber-400 mb-1">Reason Codes</div><div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">${trace.reason_codes.join(', ')}</div></div>`;
-                }
-                
-                if (trace.is_governed !== undefined) {
-                    content += `<div class="mb-2"><div class="text-xs font-medium text-slate-400 mb-1">Governance Status</div><div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">${trace.is_governed ? 'Governed (IdP or CMDB match)' : 'Ungoverned'}</div></div>`;
                 }
             }
             
+            content += `<div class="text-xs font-semibold text-blue-300 mb-2 uppercase tracking-wide">AOD Evidence</div>`;
             if (hasAodData) {
-                if (hasFarmData) content += `<div class="border-t border-slate-700 my-3"></div>`;
-                content += `<div class="text-xs font-semibold text-blue-300 mb-2 uppercase tracking-wide">AOD Analysis</div>`;
-                
                 const aodClass = aodSum.is_shadow ? 'shadow' : aodSum.is_zombie ? 'zombie' : aodSum.is_clean ? 'clean' : null;
-                if (aodClass) {
-                    content += `<div class="text-slate-300 mb-2">AOD classified as: <strong class="${aodClass === 'shadow' ? 'text-amber-400' : aodClass === 'zombie' ? 'text-purple-400' : 'text-emerald-400'}">${aodClass}</strong></div>`;
-                }
+                const aodEvItems = [];
+                if (aodClass) aodEvItems.push(`AOD classified as ${aodClass.toUpperCase()}`);
+                if (aodSum.reason_codes && aodSum.reason_codes.length) aodEvItems.push(aodSum.reason_codes.join(', '));
                 
-                if (aodSum.reason_codes && aodSum.reason_codes.length) {
-                    content += `<div class="mb-2"><div class="text-xs font-medium text-amber-400 mb-1">AOD Reason Codes</div><div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">${aodSum.reason_codes.join(', ')}</div></div>`;
+                if (aodEvItems.length) {
+                    content += `<div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded mb-3">${aodEvItems.join(' - ')}</div>`;
+                } else {
+                    content += `<div class="text-xs text-slate-500 bg-slate-900/50 p-2 rounded mb-3">AOD cataloged this asset</div>`;
                 }
-                
-                if (aodSum.evidence) {
-                    const ev = aodSum.evidence;
-                    const evItems = [];
-                    for (const [plane, data] of Object.entries(ev)) {
-                        if (data && typeof data === 'object') {
-                            evItems.push(`<span class="text-slate-400">${plane}</span>`);
-                        }
-                    }
-                    if (evItems.length) {
-                        content += `<div class="mb-2"><div class="text-xs font-medium text-cyan-400 mb-1">Evidence Planes</div><div class="text-xs bg-slate-900/50 p-2 rounded flex flex-wrap gap-2">${evItems.join('')}</div></div>`;
-                    }
-                }
-                
-                if (aodSum.discovery_strength !== undefined) {
-                    content += `<div class="text-xs text-slate-500 mb-2">Discovery strength: ${aodSum.discovery_strength}</div>`;
-                }
+            } else {
+                content += `<div class="text-xs text-slate-500 bg-slate-900/50 p-2 rounded mb-3">AOD did not flag this asset</div>`;
             }
             
-            if (!hasFarmData && !hasAodData) {
-                content += '<div class="text-slate-500">No detailed information available for this asset.</div>';
+            if (farmReasons.length) {
+                content += `<div class="flex flex-wrap gap-1 mt-2">`;
+                farmReasons.forEach(rc => {
+                    content += `<span class="text-[10px] px-2 py-1 rounded bg-slate-700 text-slate-300">${rc}</span>`;
+                });
+                content += `</div>`;
             }
             
             document.getElementById('explanationModalTitle').textContent = `${categoryLabels[category] || typeLabel}: ${key}`;
