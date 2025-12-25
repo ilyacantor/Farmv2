@@ -281,9 +281,13 @@ async def get_config():
 
 
 @router.get("/api/policy")
-async def get_policy_config():
-    """Return the active PolicyConfig (from AOD or mock fallback)."""
-    policy = await fetch_policy_config()
+async def get_policy_config(refresh: bool = False):
+    """Return the active PolicyConfig (from AOD or mock fallback).
+    
+    Query params:
+        refresh: If true, bypass cache and fetch fresh from AOD
+    """
+    policy = await fetch_policy_config(force_refresh=refresh)
     return {
         "admission": {
             "minimum_spend": policy.admission.minimum_spend,
