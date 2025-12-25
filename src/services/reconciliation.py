@@ -73,17 +73,18 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
     
     observations = planes.get('discovery', {}).get('observations', [])
     for obs in observations:
-        domain = obs.get('domain') or extract_domain(obs.get('observed_uri') or obs.get('hostname') or '')
+        raw_domain = obs.get('domain') or extract_domain(obs.get('observed_uri') or obs.get('hostname') or '')
         name = obs.get('observed_name', '')
-        key = domain if domain else normalize_name(name)
+        key = extract_registered_domain(raw_domain) if raw_domain else normalize_name(name)
         if not key:
             continue
         
         candidates[key]['key'] = key
         candidates[key]['names'].add(name)
         candidates[key]['discovery_present'] = True
-        if domain:
-            candidates[key]['domains'].add(domain)
+        if raw_domain:
+            candidates[key]['domains'].add(raw_domain)
+            candidates[key]['domains'].add(key)
         vendor_hint = obs.get('vendor_hint')
         if vendor_hint:
             candidates[key]['vendors'].add(vendor_hint)
@@ -106,14 +107,18 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
     idp_objects = planes.get('idp', {}).get('objects', [])
     for obj in idp_objects:
         name = normalize_name(obj.get('name', ''))
-        domain = extract_domain(obj.get('external_ref', ''))
+        raw_domain = extract_domain(obj.get('external_ref', ''))
+        idp_registered = extract_registered_domain(raw_domain) if raw_domain else None
         matched_keys = set()
         
         for key, cand in candidates.items():
             if name and (name == normalize_name(key) or any(name == normalize_name(n) for n in cand['names'])):
                 cand['idp_present'] = True
                 matched_keys.add(key)
-            if domain and (domain == key or domain in cand['domains']):
+            if idp_registered and idp_registered == key:
+                cand['idp_present'] = True
+                matched_keys.add(key)
+            elif raw_domain and raw_domain in cand['domains']:
                 cand['idp_present'] = True
                 matched_keys.add(key)
         
@@ -135,7 +140,8 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])
     for ci in cmdb_cis:
         name = normalize_name(ci.get('name', ''))
-        domain = extract_domain(ci.get('external_ref', ''))
+        raw_domain = extract_domain(ci.get('external_ref', ''))
+        cmdb_registered = extract_registered_domain(raw_domain) if raw_domain else None
         ci_vendor = normalize_name(ci.get('vendor', '') or '')
         
         for key, cand in candidates.items():
@@ -144,7 +150,9 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             
             if name and (name == normalize_name(key) or any(name == normalize_name(n) for n in cand['names'])):
                 matched_by_name_or_domain = True
-            if domain and (domain == key or domain in cand['domains']):
+            if cmdb_registered and cmdb_registered == key:
+                matched_by_name_or_domain = True
+            elif raw_domain and raw_domain in cand['domains']:
                 matched_by_name_or_domain = True
             if ci_vendor and any(ci_vendor == normalize_name(v) for v in cand['vendors']):
                 if not matched_by_name_or_domain:

@@ -2,6 +2,8 @@ import re
 from typing import Optional
 from collections import defaultdict
 
+import tldextract
+
 from src.services.constants import EXTERNAL_DOMAIN_TLDS
 
 
@@ -22,28 +24,21 @@ def extract_domain(text: str) -> Optional[str]:
 
 
 def extract_registered_domain(domain: str) -> Optional[str]:
-    """Extract eTLD+1 (registered domain) from a domain.
+    """Extract eTLD+1 (registered domain) using PSL via tldextract.
     
     Examples:
         app.slack.com -> slack.com
         cdn.static.example.co.uk -> example.co.uk
         slack.com -> slack.com
+        www.redis.com -> redis.com
     """
     if not domain:
         return None
     domain = domain.lower().strip('.')
     
-    COMPOUND_TLDS = {'.co.uk', '.com.au', '.co.nz', '.co.jp', '.com.br', '.co.in'}
-    for ctld in COMPOUND_TLDS:
-        if domain.endswith(ctld):
-            parts = domain[:-len(ctld)].split('.')
-            if parts:
-                return parts[-1] + ctld
-            return domain
-    
-    parts = domain.split('.')
-    if len(parts) >= 2:
-        return '.'.join(parts[-2:])
+    ext = tldextract.extract(domain)
+    if ext.domain and ext.suffix:
+        return f"{ext.domain}.{ext.suffix}"
     return domain
 
 
