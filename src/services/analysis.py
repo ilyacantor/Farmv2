@@ -442,6 +442,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         'summary': {
             'farm_shadows': len(farm_shadows),
             'farm_zombies': len(farm_zombies),
+            'farm_clean': len(farm_clean),
             'aod_shadows': len(aod_shadows),
             'aod_zombies': len(aod_zombies),
             'aod_shadow_domains': len(aod_shadow_domain_keys),
@@ -452,6 +453,9 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'entity_level_zombie_count': len(aod_zombies),
             'domain_level_zombie_count': len(aod_zombie_domain_keys),
             'farm_expected_zombie_count': len(farm_zombies),
+            'gross_observations': gross_observations,
+            'cataloged': admitted_count,
+            'rejected': rejected_count,
         },
         'lifecycle_funnel': lifecycle_funnel,
         'payload_health': payload_health,

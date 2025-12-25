@@ -1506,6 +1506,24 @@
                     <div class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
                         <div class="text-sm font-semibold text-slate-100 mb-4">Reconciliation Scorecard</div>
                         
+                        <!-- Overview: Observed / Cataloged / Rejected -->
+                        <div class="mb-4 p-3 rounded-lg bg-slate-800/30 ring-1 ring-slate-700">
+                            <div class="grid grid-cols-3 gap-3 text-center">
+                                <div class="rounded-lg bg-slate-800/50 p-2">
+                                    <div class="text-lg font-bold text-slate-300">${grossObs.toLocaleString()}</div>
+                                    <div class="text-[10px] text-slate-500">Observed</div>
+                                </div>
+                                <div class="rounded-lg bg-slate-800/50 p-2">
+                                    <div class="text-lg font-bold text-cyan-400">${admittedCount.toLocaleString()}</div>
+                                    <div class="text-[10px] text-slate-500">Cataloged</div>
+                                </div>
+                                <div class="rounded-lg bg-slate-800/50 p-2">
+                                    <div class="text-lg font-bold text-slate-500">${rejectedCount.toLocaleString()}</div>
+                                    <div class="text-[10px] text-slate-500">Rejected</div>
+                                </div>
+                            </div>
+                        </div>
+                        
                         ${!gradeable ? `
                             <div class="text-center py-4 text-slate-500 text-sm">
                                 Grading disabled for stale contract. Re-run AOD to enable.
