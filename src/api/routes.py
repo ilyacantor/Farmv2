@@ -63,8 +63,10 @@ from src.services.analysis import (
     get_explanation,
     investigate_fp_shadow,
     investigate_fp_zombie,
+    extract_aod_evidence_domains,
+    check_key_in_aod_evidence,
+    build_reconciliation_analysis,
 )
-from src.services.mismatch_analyzer import analyze_mismatches
 from src.services.aod_client import call_aod_explain_nonflag, stub_aod_explain_nonflag
 import re
 import uuid
@@ -675,47 +677,6 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
             'aod_run_id': rec_row["aod_run_id"],
             'status': rec_row["status"],
             'analysis': analysis,
-        }
-
-
-@router.get("/api/reconcile/{reconciliation_id}/mismatches")
-async def get_reconciliation_mismatches(reconciliation_id: str):
-    """
-    Return structured mismatch diagnostics for automated debugging.
-    AOD can consume this to auto-apply fixes.
-    """
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
-        rec_row = await conn.fetchrow(
-            "SELECT analysis_json FROM reconciliations WHERE reconciliation_id = $1",
-            reconciliation_id
-        )
-        if not rec_row:
-            raise HTTPException(status_code=404, detail="Reconciliation not found")
-        
-        analysis = {}
-        if rec_row["analysis_json"]:
-            try:
-                analysis = json.loads(rec_row["analysis_json"])
-            except:
-                pass
-        
-        mismatches = analyze_mismatches(analysis)
-        
-        return {
-            "reconciliation_id": reconciliation_id,
-            "diagnostics": mismatches,
-            "aod_consumable": {
-                "domain_aliases": mismatches.get("domain_alias_suggestions", {}),
-                "infrastructure_seeds_to_add": [
-                    item["key"] for item in mismatches.get("infrastructure_leaks", [])
-                ],
-                "key_normalization_fixes": [
-                    {"from": t["aod_key"], "to": t["likely_full_key"]}
-                    for t in mismatches.get("truncation_patterns", [])
-                ],
-            }
         }
 
 
