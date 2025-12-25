@@ -113,7 +113,12 @@ class PolicyConfig(BaseModel):
                 include_infra=False,
                 treat_directory_as_idp=False,
             ),
-            exclusions=[],
+            exclusions=[
+                "platform.io", "hub.io", "data.io", "cdn.com", "edge.com",
+                "global.com", "api.co", "app.co", "pro.co", "quick.net",
+                "max.io", "smart.io", "sys.net", "force.com", "fast.io",
+                "cloud.io", "dev.io", "web.io", "net.io", "tech.io",
+            ],
             infrastructure_seeds=[
                 "postgresql.org", "mysql.com", "apache.org", "redis.io",
                 "redis.com", "mongodb.com", "elastic.co", "elasticsearch.com",

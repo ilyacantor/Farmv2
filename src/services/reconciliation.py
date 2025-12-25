@@ -401,7 +401,7 @@ def compute_expected_block(
     
     for key, cand in candidates.items():
         is_external = is_external_domain(key)
-        is_infra_excluded = policy.is_excluded(key)
+        is_excluded = policy.is_excluded(key)
         
         if mode == "sprawl" and not is_external:
             excluded_by_mode.append(key)
@@ -410,13 +410,9 @@ def compute_expected_block(
             excluded_by_mode.append(key)
             continue
         
-        cmdb_resolution = cand.get('cmdb_resolution_reason', 'NONE')
-        if cmdb_resolution != 'NONE':
-            expected_cmdb_resolution[key] = {
-                'reason': cmdb_resolution,
-                'match_count': len(cand.get('cmdb_matches', [])),
-                'matches': cand.get('cmdb_matches', []),
-            }
+        discovery_sources = cand.get('discovery_sources', set())
+        discovery_sources_list = sorted(list(discovery_sources))
+        discovery_sources_count = len(discovery_sources)
         
         idp_present_direct = cand['idp_present']
         cmdb_present_direct = cand['cmdb_present']
@@ -440,33 +436,35 @@ def compute_expected_block(
             reasons.append('GOVERNED_VIA_VENDOR')
         expected_reasons[key] = reasons
         
-        discovery_sources = cand.get('discovery_sources', set())
-        discovery_sources_list = sorted(list(discovery_sources))
-        discovery_sources_count = len(discovery_sources)
-        
-        is_admitted = (
-            discovery_sources_count >= noise_floor or
-            cand['cloud_present'] or
-            idp_present or
-            cmdb_present
-        )
+        cmdb_resolution = cand.get('cmdb_resolution_reason', 'NONE')
+        if cmdb_resolution != 'NONE':
+            expected_cmdb_resolution[key] = {
+                'reason': cmdb_resolution,
+                'match_count': len(cand.get('cmdb_matches', [])),
+                'matches': cand.get('cmdb_matches', []),
+            }
         
         is_shadow = False
         is_zombie = False
         rejection_reason = None
+        is_admitted = False
         
-        if is_admitted:
-            is_shadow = is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded
-            is_zombie = (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
+        if is_excluded:
+            rejection_reason = 'EXCLUDED_BY_POLICY'
+            reasons.append('POLICY_EXCLUDED')
         else:
-            if discovery_sources_count == 1 and 'dns' in discovery_sources:
-                rejection_reason = 'DNS-only'
-            elif discovery_sources_count == 1:
-                rejection_reason = f'Single source ({discovery_sources_list[0]})'
-            elif discovery_sources_count == 0:
-                rejection_reason = 'No discovery sources'
-            else:
-                rejection_reason = 'No admission criteria satisfied'
+            finance_spend = cand.get('finance_spend', 0)
+            is_admitted, rejection_reason = policy.is_admitted(
+                discovery_sources_count=discovery_sources_count,
+                cloud_present=cand['cloud_present'],
+                idp_present=idp_present,
+                cmdb_present=cmdb_present,
+                finance_spend=finance_spend,
+            )
+            
+            if is_admitted:
+                is_shadow = is_external and cand['activity_present'] and not idp_present and not cmdb_present
+                is_zombie = (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
         
         raw_domains = list(cand.get('domains', set()))[:10]
         decision_traces[key] = {
@@ -483,7 +481,7 @@ def compute_expected_block(
             'cmdb_present': cmdb_present,
             'cmdb_present_direct': cmdb_present_direct,
             'vendor_governance': vendor_name,
-            'infra_excluded': is_infra_excluded,
+            'policy_excluded': is_excluded,
             'admitted': is_admitted,
             'discovery_sources_count': discovery_sources_count,
             'discovery_sources_list': discovery_sources_list,
@@ -492,7 +490,7 @@ def compute_expected_block(
             'reason_codes': reasons,
         }
         
-        if not is_admitted:
+        if is_excluded or not is_admitted:
             expected_admission[key] = 'rejected'
             continue
         
@@ -557,8 +555,11 @@ def analyze_snapshot_for_expectations(
     zombie_keys = []
     
     for key, cand in candidates.items():
-        is_infra_excluded = policy.is_excluded(key)
+        is_excluded = policy.is_excluded(key)
         is_external = is_external_domain(key)
+        
+        if is_excluded:
+            continue
         
         idp_present = cand['idp_present']
         cmdb_present = cand['cmdb_present']
@@ -569,17 +570,20 @@ def analyze_snapshot_for_expectations(
             cmdb_present = cmdb_present or vendor_has_cmdb
         
         discovery_sources = cand.get('discovery_sources', set())
-        is_admitted = (
-            len(discovery_sources) >= noise_floor or
-            cand['cloud_present'] or
-            idp_present or
-            cmdb_present
+        finance_spend = cand.get('finance_spend', 0)
+        
+        is_admitted, _ = policy.is_admitted(
+            discovery_sources_count=len(discovery_sources),
+            cloud_present=cand['cloud_present'],
+            idp_present=idp_present,
+            cmdb_present=cmdb_present,
+            finance_spend=finance_spend,
         )
         
         if not is_admitted:
             continue
         
-        if is_external and cand['activity_present'] and not idp_present and not cmdb_present and not is_infra_excluded:
+        if is_external and cand['activity_present'] and not idp_present and not cmdb_present:
             shadow_keys.append(key)
         elif (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0:
             zombie_keys.append(key)
