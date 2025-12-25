@@ -372,7 +372,10 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     
     aod_admitted_set = None
     if not aod_admission and asset_summaries:
-        aod_admitted_set = set(asset_summaries.keys())
+        aod_admitted_set = set(
+            k for k, v in asset_summaries.items() 
+            if isinstance(v, dict) and v.get('aod_decision') == 'admitted'
+        )
         aod_admission = {k: 'admitted' for k in aod_admitted_set}
     
     aod_shadow_domains = roll_up_to_domains(aod_shadows, aod_reason_codes)
