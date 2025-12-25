@@ -9,7 +9,9 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
-from src.generators.enterprise import EnterpriseGenerator
+from src.generators.enterprise import EnterpriseGenerator, load_mock_policy_config
+from src.models.policy import PolicyConfig
+from src.services.aod_client import fetch_policy_config
 from src.models.planes import (
     SnapshotRequest,
     SnapshotCreateResponse,
@@ -224,6 +226,8 @@ async def create_snapshot(request: SnapshotRequest):
     unique_snapshot_id = str(uuid.uuid4())
     created_at = datetime.utcnow().isoformat() + "Z"
     
+    policy = await fetch_policy_config()
+    
     generator = EnterpriseGenerator(
         tenant_id=request.tenant_id,
         seed=request.seed,
@@ -231,13 +235,14 @@ async def create_snapshot(request: SnapshotRequest):
         enterprise_profile=request.enterprise_profile,
         realism_profile=request.realism_profile,
         data_preset=request.data_preset,
+        policy_config=policy,
     )
     
     snapshot = generator.generate()
     snapshot.meta.snapshot_id = unique_snapshot_id
     snapshot_dict = snapshot.model_dump()
     
-    expected_block = compute_expected_block(snapshot_dict, mode="all")
+    expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
     snapshot_dict['__expected__'] = expected_block
     
     async with pool.acquire() as conn:
@@ -275,6 +280,27 @@ async def get_config():
     }
 
 
+@router.get("/api/policy")
+async def get_policy_config():
+    """Return the active PolicyConfig (from AOD or mock fallback)."""
+    policy = await fetch_policy_config()
+    return {
+        "admission": {
+            "minimum_spend": policy.admission.minimum_spend,
+            "noise_floor": policy.admission.noise_floor,
+            "zombie_window_days": policy.admission.zombie_window_days,
+        },
+        "scope": {
+            "include_infra": policy.scope.include_infra,
+            "treat_directory_as_idp": policy.scope.treat_directory_as_idp,
+        },
+        "exclusions": policy.exclusions,
+        "infrastructure_seeds": policy.infrastructure_seeds,
+        "corporate_root_domains": policy.corporate_root_domains,
+        "source": "aod" if os.environ.get("AOD_BASE_URL") or os.environ.get("AOD_URL") else "mock",
+    }
+
+
 @router.get("/api/snapshots/{snapshot_id}")
 async def get_snapshot(snapshot_id: str):
     pool = await get_pool()
@@ -300,7 +326,8 @@ async def get_snapshot_expectations(snapshot_id: str):
             raise HTTPException(status_code=404, detail="Snapshot not found")
         
         snapshot = json.loads(row["snapshot_json"])
-        expectations = analyze_snapshot_for_expectations(snapshot)
+        policy = await fetch_policy_config()
+        expectations = analyze_snapshot_for_expectations(snapshot, policy=policy)
         return expectations.model_dump()
 
 
@@ -324,8 +351,15 @@ async def get_snapshot_expected_block(snapshot_id: str, mode: str = "sprawl"):
             raise HTTPException(status_code=404, detail="Snapshot not found")
         
         snapshot = json.loads(row["snapshot_json"])
-        expected_block = compute_expected_block(snapshot, mode=mode)
+        policy = await fetch_policy_config()
+        expected_block = compute_expected_block(snapshot, mode=mode, policy=policy)
         expected_block['reconciliation_mode'] = mode
+        expected_block['policy_config'] = {
+            "noise_floor": policy.admission.noise_floor,
+            "minimum_spend": policy.admission.minimum_spend,
+            "zombie_window_days": policy.admission.zombie_window_days,
+            "source": "aod" if os.environ.get("AOD_BASE_URL") or os.environ.get("AOD_URL") else "mock",
+        }
         return expected_block
 
 
@@ -425,7 +459,8 @@ async def create_reconciliation(request: Request):
             raise HTTPException(status_code=404, detail="Snapshot not found")
         snapshot = json.loads(row["snapshot_json"])
     
-    expected_block = compute_expected_block(snapshot, mode=mode)
+    policy = await fetch_policy_config()
+    expected_block = compute_expected_block(snapshot, mode=mode, policy=policy)
     farm_expectations = FarmExpectations(
         expected_shadows=len(expected_block['shadow_expected']),
         expected_zombies=len(expected_block['zombie_expected']),
