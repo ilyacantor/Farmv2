@@ -1422,6 +1422,26 @@
             const zombieDenom = zombieExpected + zombieFP;
             const zombieAccuracy = zombieDenom > 0 ? Math.round(zombieCorrect / zombieDenom * 100) : 100;
             
+            const admissionRec = analysis.admission_reconciliation || {};
+            const catalogedRec = admissionRec.cataloged || {};
+            const rejectedRec = admissionRec.rejected || {};
+            
+            const catalogedExpected = catalogedRec.farm_expected || admittedCount;
+            const catalogedFound = catalogedRec.aod_found || 0;
+            const catalogedCorrect = catalogedRec.matched || 0;
+            const catalogedFP = catalogedRec.false_positive || 0;
+            const catalogedMissed = catalogedRec.missed || 0;
+            const catalogedDenom = catalogedExpected + catalogedFP;
+            const catalogedAccuracy = catalogedDenom > 0 ? Math.round(catalogedCorrect / catalogedDenom * 100) : 100;
+            
+            const rejectedExpected = rejectedRec.farm_expected || rejectedCount;
+            const rejectedFound = rejectedRec.aod_found || 0;
+            const rejectedCorrect = rejectedRec.matched || 0;
+            const rejectedFP = rejectedRec.false_positive || 0;
+            const rejectedMissed = rejectedRec.missed || 0;
+            const rejectedDenom = rejectedExpected + rejectedFP;
+            const rejectedAccuracy = rejectedDenom > 0 ? Math.round(rejectedCorrect / rejectedDenom * 100) : 100;
+            
             const funnelSteps = [
                 { label: 'Observations', key: 'observations', value: grossObs, color: 'cyan' },
                 { label: 'Unique Assets', key: 'unique_assets', value: uniqueAssets, color: 'blue' },
@@ -1506,36 +1526,6 @@
                     <div class="rounded-2xl bg-black/20 p-4 ring-1 ring-white/10">
                         <div class="text-sm font-semibold text-slate-100 mb-4">Reconciliation Scorecard</div>
                         
-                        <!-- Pipeline Funnel Scorecard -->
-                        <div class="mb-4 p-3 rounded-lg bg-cyan-500/5 ring-1 ring-cyan-500/20">
-                            <div class="font-medium text-cyan-300 mb-3">Pipeline Funnel</div>
-                            <div class="grid grid-cols-6 gap-2 text-center">
-                                <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-slate-400" onclick="showFunnelAssets('observed')">
-                                    <div class="text-lg font-bold text-slate-300">${grossObs.toLocaleString()}</div>
-                                    <div class="text-[10px] text-slate-500">Observed</div>
-                                </div>
-                                <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-cyan-400" onclick="showFunnelAssets('cataloged')">
-                                    <div class="text-lg font-bold text-cyan-400">${admittedCount.toLocaleString()}</div>
-                                    <div class="text-[10px] text-slate-500">Cataloged</div>
-                                </div>
-                                <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-slate-500" onclick="showFunnelAssets('rejected')">
-                                    <div class="text-lg font-bold text-slate-500">${rejectedCount.toLocaleString()}</div>
-                                    <div class="text-[10px] text-slate-500">Rejected</div>
-                                </div>
-                                <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-amber-400" onclick="showFunnelAssets('shadow')">
-                                    <div class="text-lg font-bold text-amber-400">${shadowCount.toLocaleString()}</div>
-                                    <div class="text-[10px] text-slate-500">Shadows</div>
-                                </div>
-                                <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-purple-400" onclick="showFunnelAssets('zombie')">
-                                    <div class="text-lg font-bold text-purple-400">${zombieCount.toLocaleString()}</div>
-                                    <div class="text-[10px] text-slate-500">Zombies</div>
-                                </div>
-                                <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-emerald-400" onclick="showFunnelAssets('clean')">
-                                    <div class="text-lg font-bold text-emerald-400">${cleanCount.toLocaleString()}</div>
-                                    <div class="text-[10px] text-slate-500">Clean</div>
-                                </div>
-                            </div>
-                        </div>
                         
                         ${!gradeable ? `
                             <div class="text-center py-4 text-slate-500 text-sm">
@@ -1543,6 +1533,68 @@
                             </div>
                         ` : `
                             <div class="space-y-4">
+                                <!-- Cataloged Scorecard -->
+                                <div class="p-3 rounded-lg bg-cyan-500/5 ring-1 ring-cyan-500/20">
+                                    <div class="font-medium text-cyan-300 mb-3">Cataloged</div>
+                                    <div class="grid grid-cols-6 gap-2 text-center">
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-cyan-400" onclick="showAdmissionAssets('cataloged', 'expected')">
+                                            <div class="text-lg font-bold text-cyan-400">${catalogedExpected}</div>
+                                            <div class="text-[10px] text-slate-500">Expected</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-blue-400" onclick="showAdmissionAssets('cataloged', 'found')">
+                                            <div class="text-lg font-bold text-blue-400">${catalogedFound}</div>
+                                            <div class="text-[10px] text-slate-500">Found</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-emerald-400" onclick="showAdmissionAssets('cataloged', 'correct')">
+                                            <div class="text-lg font-bold text-emerald-400">${catalogedCorrect}</div>
+                                            <div class="text-[10px] text-slate-500">Correct</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-red-400" onclick="showAdmissionAssets('cataloged', 'fp')">
+                                            <div class="text-lg font-bold ${catalogedFP > 0 ? 'text-red-400' : 'text-emerald-400'}">${catalogedFP}</div>
+                                            <div class="text-[10px] text-slate-500">False Pos</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-amber-400" onclick="showAdmissionAssets('cataloged', 'missed')">
+                                            <div class="text-lg font-bold ${catalogedMissed > 0 ? 'text-amber-400' : 'text-emerald-400'}">${catalogedMissed}</div>
+                                            <div class="text-[10px] text-slate-500">Missed</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-slate-400" onclick="showAdmissionAssets('cataloged', 'all')">
+                                            <div class="text-lg font-bold ${catalogedAccuracy >= 91 ? 'text-emerald-400' : catalogedAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${catalogedAccuracy}%</div>
+                                            <div class="text-[10px] text-slate-500">Accuracy</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Rejected Scorecard -->
+                                <div class="p-3 rounded-lg bg-slate-500/5 ring-1 ring-slate-500/20">
+                                    <div class="font-medium text-slate-400 mb-3">Rejected</div>
+                                    <div class="grid grid-cols-6 gap-2 text-center">
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-cyan-400" onclick="showAdmissionAssets('rejected', 'expected')">
+                                            <div class="text-lg font-bold text-cyan-400">${rejectedExpected}</div>
+                                            <div class="text-[10px] text-slate-500">Expected</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-blue-400" onclick="showAdmissionAssets('rejected', 'found')">
+                                            <div class="text-lg font-bold text-blue-400">${rejectedFound}</div>
+                                            <div class="text-[10px] text-slate-500">Found</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-emerald-400" onclick="showAdmissionAssets('rejected', 'correct')">
+                                            <div class="text-lg font-bold text-emerald-400">${rejectedCorrect}</div>
+                                            <div class="text-[10px] text-slate-500">Correct</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-red-400" onclick="showAdmissionAssets('rejected', 'fp')">
+                                            <div class="text-lg font-bold ${rejectedFP > 0 ? 'text-red-400' : 'text-emerald-400'}">${rejectedFP}</div>
+                                            <div class="text-[10px] text-slate-500">False Pos</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-amber-400" onclick="showAdmissionAssets('rejected', 'missed')">
+                                            <div class="text-lg font-bold ${rejectedMissed > 0 ? 'text-amber-400' : 'text-emerald-400'}">${rejectedMissed}</div>
+                                            <div class="text-[10px] text-slate-500">Missed</div>
+                                        </div>
+                                        <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-slate-400" onclick="showAdmissionAssets('rejected', 'all')">
+                                            <div class="text-lg font-bold ${rejectedAccuracy >= 91 ? 'text-emerald-400' : rejectedAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${rejectedAccuracy}%</div>
+                                            <div class="text-[10px] text-slate-500">Accuracy</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
                                 <!-- Shadow Scorecard -->
                                 <div class="p-3 rounded-lg bg-amber-500/5 ring-1 ring-amber-500/20">
                                     <div class="font-medium text-amber-300 mb-3">Shadows</div>
@@ -1684,6 +1736,161 @@
             }
             FarmState.currentLifecycleAssets = { type, category, assets };
             container.classList.remove('hidden');
+        }
+        
+        function showAdmissionAssets(type, category) {
+            const container = document.getElementById('lifecycleAssetContainer');
+            const content = document.getElementById('lifecycleAssetContent');
+            
+            if (!FarmState.currentRecData || !FarmState.currentRecData.analysis) {
+                content.innerHTML = '<div class="text-slate-500">No data available</div>';
+                container.classList.remove('hidden');
+                return;
+            }
+            
+            const analysis = FarmState.currentRecData.analysis;
+            const admissionRec = analysis.admission_reconciliation || {};
+            const typeData = admissionRec[type] || {};
+            const expectedBlock = analysis.expected_block || {};
+            const decisionTraces = expectedBlock.decision_traces || {};
+            
+            let keys = [];
+            let title = '';
+            let colorClass = 'text-slate-300';
+            
+            const typeLabel = type === 'cataloged' ? 'Cataloged' : 'Rejected';
+            const typeColor = type === 'cataloged' ? 'text-cyan-400' : 'text-slate-400';
+            
+            if (category === 'expected') {
+                keys = type === 'cataloged' 
+                    ? [...(expectedBlock.shadow_expected || []), ...(expectedBlock.zombie_expected || []), ...(expectedBlock.clean_expected || [])].map(a => a.asset_key)
+                    : Object.entries(expectedBlock.expected_admission || {}).filter(([k, v]) => v === 'rejected').map(([k]) => k);
+                title = `Expected ${typeLabel} (Farm)`;
+                colorClass = 'text-cyan-400';
+            } else if (category === 'found') {
+                keys = type === 'cataloged' ? (typeData.matched_keys || []).concat(typeData.fp_keys || []) : (typeData.matched_keys || []).concat(typeData.fp_keys || []);
+                title = `Found ${typeLabel} (AOD)`;
+                colorClass = 'text-blue-400';
+            } else if (category === 'correct') {
+                keys = typeData.matched_keys || [];
+                title = `Correct ${typeLabel}`;
+                colorClass = 'text-emerald-400';
+            } else if (category === 'fp') {
+                keys = typeData.fp_keys || [];
+                title = `False Positive ${typeLabel}`;
+                colorClass = 'text-red-400';
+            } else if (category === 'missed') {
+                keys = typeData.missed_keys || [];
+                title = `Missed ${typeLabel}`;
+                colorClass = 'text-amber-400';
+            } else if (category === 'all') {
+                const allKeys = new Set([...(typeData.matched_keys || []), ...(typeData.missed_keys || []), ...(typeData.fp_keys || [])]);
+                keys = Array.from(allKeys);
+                title = `All ${typeLabel}`;
+                colorClass = typeColor;
+            }
+            
+            const assets = keys.map(key => ({
+                asset_key: key,
+                trace: decisionTraces[key]
+            }));
+            
+            if (assets.length === 0) {
+                content.innerHTML = `<div class="text-slate-500">${title}: None</div>`;
+            } else {
+                content.innerHTML = `
+                    <div class="font-medium ${colorClass} mb-2">${title} (${assets.length})</div>
+                    <div class="space-y-1">
+                        ${assets.map((a, i) => {
+                            const key = a.asset_key;
+                            const hasTrace = a.trace && Object.keys(a.trace).length > 0;
+                            const clickClass = hasTrace ? 'cursor-pointer hover:bg-slate-700/50' : '';
+                            const clickHandler = hasTrace ? `onclick="showAdmissionExplanation('${type}', '${category}', ${i})"` : '';
+                            const trace = a.trace || {};
+                            const classification = trace.classification || '';
+                            const classBadge = classification ? 
+                                `<span class="text-[10px] px-1.5 py-0.5 rounded ${classification === 'shadow' ? 'bg-amber-500/20 text-amber-400' : classification === 'zombie' ? 'bg-purple-500/20 text-purple-400' : classification === 'clean' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-600/50 text-slate-400'}">${classification}</span>` : '';
+                            return `
+                            <div class="text-xs py-1.5 px-2 rounded bg-slate-800/50 flex items-center justify-between ${clickClass}" ${clickHandler}>
+                                <span class="text-slate-300 font-mono">${key}</span>
+                                <div class="flex items-center gap-2">
+                                    ${classBadge}
+                                    ${hasTrace ? '<svg class="w-3 h-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>' : ''}
+                                </div>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                `;
+            }
+            FarmState.currentAdmissionAssets = { type, category, assets };
+            container.classList.remove('hidden');
+        }
+        
+        function showAdmissionExplanation(type, category, index) {
+            if (!FarmState.currentAdmissionAssets) return;
+            const asset = FarmState.currentAdmissionAssets.assets[index];
+            if (!asset) return;
+            
+            const key = asset.asset_key;
+            const trace = asset.trace || {};
+            
+            const typeLabel = type === 'cataloged' ? 'Cataloged' : 'Rejected';
+            const categoryLabels = {
+                'expected': `Expected ${typeLabel}`,
+                'found': `Found ${typeLabel}`,
+                'correct': `Correct ${typeLabel}`,
+                'fp': `False Positive ${typeLabel}`,
+                'missed': `Missed ${typeLabel}`,
+                'all': typeLabel
+            };
+            
+            let content = '';
+            
+            content += `<div class="text-base font-medium ${type === 'cataloged' ? 'text-cyan-400' : 'text-slate-400'} mb-3">${categoryLabels[category] || typeLabel}</div>`;
+            
+            if (trace.classification) {
+                content += `<div class="text-slate-300 mb-3">Farm classified this asset as <strong>${trace.classification}</strong>.</div>`;
+            }
+            
+            if (trace.rejection_reason) {
+                content += `<div class="text-slate-300 mb-3">Rejection reason: <strong>${trace.rejection_reason}</strong></div>`;
+            }
+            
+            if (trace.discovery_sources && trace.discovery_sources.length) {
+                content += `<div class="mb-3"><div class="text-xs font-medium text-cyan-400 mb-1">Discovery Sources</div><div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">${trace.discovery_sources.join(', ')}</div></div>`;
+            }
+            
+            if (trace.evidence_flags) {
+                const flags = trace.evidence_flags;
+                const flagItems = [];
+                if (flags.has_discovery) flagItems.push('<span class="text-cyan-400">HAS_DISCOVERY</span>');
+                if (flags.is_active) flagItems.push('<span class="text-emerald-400">IS_ACTIVE</span>');
+                if (flags.has_idp) flagItems.push('<span class="text-blue-400">HAS_IDP</span>');
+                if (flags.has_cmdb) flagItems.push('<span class="text-purple-400">HAS_CMDB</span>');
+                if (flags.has_cloud) flagItems.push('<span class="text-orange-400">HAS_CLOUD</span>');
+                if (flags.has_finance) flagItems.push('<span class="text-green-400">HAS_FINANCE</span>');
+                if (flags.has_endpoint) flagItems.push('<span class="text-pink-400">HAS_ENDPOINT</span>');
+                if (flags.has_network) flagItems.push('<span class="text-yellow-400">HAS_NETWORK</span>');
+                if (flagItems.length) {
+                    content += `<div class="mb-3"><div class="text-xs font-medium text-purple-400 mb-1">Evidence Flags</div><div class="text-xs bg-slate-900/50 p-2 rounded flex flex-wrap gap-2">${flagItems.join('')}</div></div>`;
+                }
+            }
+            
+            if (trace.reason_codes && trace.reason_codes.length) {
+                content += `<div class="mb-3"><div class="text-xs font-medium text-amber-400 mb-1">Reason Codes</div><div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">${trace.reason_codes.join(', ')}</div></div>`;
+            }
+            
+            if (trace.is_governed !== undefined) {
+                content += `<div class="mb-3"><div class="text-xs font-medium text-slate-400 mb-1">Governance Status</div><div class="text-xs text-slate-400 bg-slate-900/50 p-2 rounded">${trace.is_governed ? 'Governed (IdP or CMDB match)' : 'Ungoverned'}</div></div>`;
+            }
+            
+            if (!trace.classification && !trace.rejection_reason && !trace.discovery_sources) {
+                content += '<div class="text-slate-500">No detailed trace available for this asset.</div>';
+            }
+            
+            document.getElementById('explanationModalTitle').textContent = `${categoryLabels[category] || typeLabel}: ${key}`;
+            document.getElementById('explanationModalContent').innerHTML = content;
+            document.getElementById('explanationModal').classList.remove('hidden');
         }
         
         function showFunnelAssets(category) {

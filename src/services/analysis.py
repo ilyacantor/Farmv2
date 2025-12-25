@@ -701,6 +701,42 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     analysis['summary']['total_aod_graded'] = len(aod_shadows) + len(aod_zombies)
     analysis['summary']['total_farm_graded'] = total_expected
     
+    farm_admitted_keys = set(k for k, v in expected_admission.items() if v == 'admitted')
+    farm_rejected_keys = set(k for k, v in expected_admission.items() if v == 'rejected')
+    aod_admitted_keys = set(k for k, v in aod_admission.items() if v == 'admitted')
+    aod_rejected_keys = set(k for k, v in aod_admission.items() if v == 'rejected')
+    
+    cataloged_matched = farm_admitted_keys & aod_admitted_keys
+    cataloged_missed = farm_admitted_keys - aod_admitted_keys
+    cataloged_fp = aod_admitted_keys - farm_admitted_keys
+    
+    rejected_matched = farm_rejected_keys & aod_rejected_keys
+    rejected_missed = farm_rejected_keys - aod_rejected_keys
+    rejected_fp = aod_rejected_keys - farm_rejected_keys
+    
+    analysis['admission_reconciliation'] = {
+        'cataloged': {
+            'farm_expected': len(farm_admitted_keys),
+            'aod_found': len(aod_admitted_keys),
+            'matched': len(cataloged_matched),
+            'missed': len(cataloged_missed),
+            'false_positive': len(cataloged_fp),
+            'matched_keys': list(cataloged_matched),
+            'missed_keys': list(cataloged_missed),
+            'fp_keys': list(cataloged_fp),
+        },
+        'rejected': {
+            'farm_expected': len(farm_rejected_keys),
+            'aod_found': len(aod_rejected_keys),
+            'matched': len(rejected_matched),
+            'missed': len(rejected_missed),
+            'false_positive': len(rejected_fp),
+            'matched_keys': list(rejected_matched),
+            'missed_keys': list(rejected_missed),
+            'fp_keys': list(rejected_fp),
+        }
+    }
+    
     materiality = max(2, int(total_expected * 0.1))
     
     if total_expected == 0:
