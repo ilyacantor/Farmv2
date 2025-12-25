@@ -760,4 +760,6 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         denominator = total_expected + total_fp
         analysis['accuracy'] = round(total_matched / denominator * 100, 1) if denominator > 0 else 100.0
     
+    analysis['expected_block'] = expected_block
+    
     return (analysis, recomputed_block)
