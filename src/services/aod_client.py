@@ -149,7 +149,7 @@ async def call_aod_explain_nonflag(
     Returns per-key: {present_in_aod, decision, reason_codes[]}
     Fallback: decision="UNKNOWN_KEY", reason_codes=["NO_EXPLAIN_ENDPOINT"]
     """
-    aod_url = os.environ.get("AOD_BASE_URL", "") or os.environ.get("AOD_URL", "")
+    aod_url = (os.environ.get("AOD_BASE_URL", "") or os.environ.get("AOD_URL", "")).rstrip("/")
     use_stub = os.environ.get("USE_AOD_EXPLAIN_STUB", "").lower() == "true"
     
     if use_stub:
@@ -176,7 +176,7 @@ async def call_aod_explain_nonflag(
         return _get_fallback_response(asset_keys)
     
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             shared_secret = os.environ.get("AOD_SHARED_SECRET", "")
             headers = {"X-Shared-Secret": shared_secret} if shared_secret else {}
             
@@ -246,7 +246,7 @@ async def fetch_policy_config(force_refresh: bool = False) -> PolicyConfig:
             })
             return _policy_cache
     
-    aod_url = os.environ.get("AOD_BASE_URL", "") or os.environ.get("AOD_URL", "")
+    aod_url = (os.environ.get("AOD_BASE_URL", "") or os.environ.get("AOD_URL", "")).rstrip("/")
     use_stub = os.environ.get("USE_AOD_EXPLAIN_STUB", "").lower() == "true"
     
     if use_stub:
@@ -264,7 +264,7 @@ async def fetch_policy_config(force_refresh: bool = False) -> PolicyConfig:
         return PolicyConfig.default_fallback()
     
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             shared_secret = os.environ.get("AOD_SHARED_SECRET", "")
             headers = {"X-Shared-Secret": shared_secret} if shared_secret else {}
             
