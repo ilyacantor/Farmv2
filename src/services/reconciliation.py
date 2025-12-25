@@ -3,6 +3,7 @@ from typing import Optional
 from collections import defaultdict
 
 from src.models.planes import FarmExpectations, ReconcileStatusEnum
+from src.models.policy import PolicyConfig
 from src.services.constants import (
     INFRASTRUCTURE_DOMAINS,
     VENDOR_DOMAIN_SETS,
@@ -350,14 +351,32 @@ def propagate_vendor_governance(candidates: dict) -> dict:
     return domain_governance
 
 
-def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "sprawl") -> dict:
+def compute_expected_block(
+    snapshot: dict, 
+    window_days: Optional[int] = None, 
+    mode: str = "sprawl",
+    policy: Optional[PolicyConfig] = None
+) -> dict:
     """Compute the __expected__ block with classifications, reasons, and RCA hints.
     
     Mode controls eligibility:
     - sprawl: Only external SaaS domains (shadow IT detection)
     - infra: Only internal services (infrastructure monitoring)
     - all: All assets
+    
+    Policy-driven thresholds:
+    - noise_floor: minimum discovery sources for admission
+    - zombie_window_days: inactivity threshold
+    - infrastructure_seeds: domains to exclude (from AOD, not local)
     """
+    if policy is None:
+        policy = PolicyConfig.default_fallback()
+    
+    if window_days is None:
+        window_days = policy.admission.zombie_window_days
+    
+    noise_floor = policy.admission.noise_floor
+    
     candidates = build_candidate_flags(snapshot, window_days)
     
     vendor_governance = propagate_vendor_governance(candidates)
@@ -374,7 +393,7 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
     
     for key, cand in candidates.items():
         is_external = is_external_domain(key)
-        is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
+        is_infra_excluded = policy.is_excluded(key)
         
         if mode == "sprawl" and not is_external:
             excluded_by_mode.append(key)
@@ -418,7 +437,7 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
         discovery_sources_count = len(discovery_sources)
         
         is_admitted = (
-            discovery_sources_count >= 2 or
+            discovery_sources_count >= noise_floor or
             cand['cloud_present'] or
             idp_present or
             cmdb_present
@@ -510,8 +529,19 @@ def compute_expected_block(snapshot: dict, window_days: int = 90, mode: str = "s
     }
 
 
-def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> FarmExpectations:
+def analyze_snapshot_for_expectations(
+    snapshot: dict, 
+    window_days: Optional[int] = None,
+    policy: Optional[PolicyConfig] = None
+) -> FarmExpectations:
     """Legacy function for backward compatibility."""
+    if policy is None:
+        policy = PolicyConfig.default_fallback()
+    if window_days is None:
+        window_days = policy.admission.zombie_window_days
+    
+    noise_floor = policy.admission.noise_floor
+    
     candidates = build_candidate_flags(snapshot, window_days)
     vendor_governance = propagate_vendor_governance(candidates)
     
@@ -519,7 +549,7 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
     zombie_keys = []
     
     for key, cand in candidates.items():
-        is_infra_excluded = key in INFRASTRUCTURE_DOMAINS
+        is_infra_excluded = policy.is_excluded(key)
         is_external = is_external_domain(key)
         
         idp_present = cand['idp_present']
@@ -532,7 +562,7 @@ def analyze_snapshot_for_expectations(snapshot: dict, window_days: int = 90) -> 
         
         discovery_sources = cand.get('discovery_sources', set())
         is_admitted = (
-            len(discovery_sources) >= 2 or
+            len(discovery_sources) >= noise_floor or
             cand['cloud_present'] or
             idp_present or
             cmdb_present

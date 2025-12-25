@@ -1,8 +1,11 @@
+import json
 import random
 import uuid
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
+from src.models.policy import PolicyConfig
 from src.models.planes import (
     DiscoveryObservation,
     IdPObject,
@@ -201,6 +204,15 @@ MARKETPLACE_RESELLERS = [
 ]
 
 
+def load_mock_policy_config() -> PolicyConfig:
+    """Load mock policy config from fixture file for local development."""
+    fixture_path = Path(__file__).parent.parent / "fixtures" / "mock_policy_config.json"
+    if fixture_path.exists():
+        with open(fixture_path) as f:
+            return PolicyConfig.from_aod_response(json.load(f))
+    return PolicyConfig.default_fallback()
+
+
 class EnterpriseGenerator:
     def __init__(
         self,
@@ -211,6 +223,7 @@ class EnterpriseGenerator:
         realism_profile: RealismProfileEnum,
         snapshot_time: Optional[datetime] = None,
         data_preset: Optional[DataPresetEnum] = None,
+        policy_config: Optional[PolicyConfig] = None,
     ):
         self.tenant_id = tenant_id
         self.seed = seed
@@ -219,6 +232,7 @@ class EnterpriseGenerator:
         self.realism_profile = realism_profile
         self.data_preset = data_preset
         self.preset_config = PresetConfig.from_preset(data_preset) if data_preset else None
+        self.policy = policy_config or load_mock_policy_config()
         self.rng = random.Random(seed)
         self.run_id = self._generate_uuid()
         self.base_date = snapshot_time if snapshot_time else datetime.utcnow()
