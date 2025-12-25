@@ -374,6 +374,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         {}
     )
     
+    expected_admission = expected_block.get('expected_admission', {})
+    
     if not aod_admission and asset_summaries:
         aod_admitted_set = set(asset_summaries.keys())
         aod_admission = {k: 'admitted' for k in aod_admitted_set}
@@ -428,7 +430,6 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 return t
         return None
     
-    expected_admission = expected_block.get('expected_admission', {})
     gross_observations = len(snapshot.get('planes', {}).get('discovery', {}).get('observations', []))
     unique_assets = len(expected_admission)
     rejected_count = sum(1 for v in expected_admission.values() if v == 'rejected')
