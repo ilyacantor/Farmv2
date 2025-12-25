@@ -1817,7 +1817,7 @@
                             const hasTrace = a.trace && Object.keys(a.trace).length > 0;
                             const hasAodData = a.aod_summary && Object.keys(a.aod_summary).length > 0;
                             const hasExpected = a.expected_asset && Object.keys(a.expected_asset).length > 0;
-                            const isClickable = hasTrace || hasAodData || hasExpected;
+                            const isClickable = hasTrace || hasAodData || hasExpected || category === 'fp';
                             const clickClass = isClickable ? 'cursor-pointer hover:bg-slate-700/50' : '';
                             const clickHandler = isClickable ? `onclick="showAdmissionExplanation('${type}', '${category}', ${i})"` : '';
                             const trace = a.trace || {};
