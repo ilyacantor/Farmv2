@@ -720,6 +720,9 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     rejected_missed = farm_rejected_keys - aod_rejected_keys
     rejected_fp = aod_rejected_keys - farm_rejected_keys
     
+    admission_cataloged_accuracy = round(len(cataloged_matched) / len(farm_admitted_keys) * 100, 1) if len(farm_admitted_keys) > 0 else 100.0
+    admission_rejected_accuracy = round(len(rejected_matched) / len(farm_rejected_keys) * 100, 1) if len(farm_rejected_keys) > 0 else 100.0
+    
     analysis['admission_reconciliation'] = {
         'cataloged': {
             'farm_expected': len(farm_admitted_keys),
@@ -730,6 +733,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'matched_keys': list(cataloged_matched),
             'missed_keys': list(cataloged_missed),
             'fp_keys': list(cataloged_fp),
+            'accuracy': admission_cataloged_accuracy,
         },
         'rejected': {
             'farm_expected': len(farm_rejected_keys),
@@ -740,30 +744,60 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'matched_keys': list(rejected_matched),
             'missed_keys': list(rejected_missed),
             'fp_keys': list(rejected_fp),
+            'accuracy': admission_rejected_accuracy,
         }
     }
     
-    materiality = max(2, int(total_expected * 0.1))
+    classification_materiality = max(2, int(total_expected * 0.1))
+    admission_total = len(farm_admitted_keys) + len(farm_rejected_keys)
+    admission_matched = len(cataloged_matched) + len(rejected_matched)
+    admission_missed = len(cataloged_missed) + len(rejected_missed)
+    admission_fp = len(cataloged_fp) + len(rejected_fp)
+    admission_materiality = max(5, int(admission_total * 0.15))
     
-    if total_expected == 0:
-        verdict = "GREAT - No anomalies expected and none found."
-    elif total_missed == 0 and total_fp == 0:
-        verdict = "GREAT - AOD correctly identified all expected anomalies with no false positives."
-    elif total_missed <= materiality:
-        if total_fp == 0:
-            verdict = f"GREAT - AOD matched {total_matched}/{total_expected} expected anomalies ({total_missed} within tolerance)."
-        else:
-            verdict = f"GREAT - AOD matched {total_matched}/{total_expected} anomalies with {total_fp} extra flags."
-    elif total_missed <= materiality * 2:
-        if total_fp == 0:
-            verdict = f"SOME IMPROVEMENT NEEDED - AOD missed {total_missed} of {total_expected} expected anomalies."
-        else:
-            verdict = f"SOME IMPROVEMENT NEEDED - AOD missed {total_missed} anomalies and flagged {total_fp} extras."
+    classification_score = 'GREAT' if total_missed <= classification_materiality else ('SOME_ISSUES' if total_missed <= classification_materiality * 2 else 'NEEDS_WORK')
+    admission_score = 'GREAT' if admission_missed <= admission_materiality else ('SOME_ISSUES' if admission_missed <= admission_materiality * 2 else 'NEEDS_WORK')
+    
+    classification_accuracy = round(total_matched / (total_expected + total_fp) * 100, 1) if (total_expected + total_fp) > 0 else 100.0
+    admission_accuracy = round(admission_matched / admission_total * 100, 1) if admission_total > 0 else 100.0
+    
+    if classification_score == 'GREAT' and admission_score == 'GREAT':
+        verdict = f"GREAT - Classification {total_matched}/{total_expected} ({classification_accuracy}%), Admission {admission_matched}/{admission_total} ({admission_accuracy}%)"
+        overall_status = 'PASS'
+    elif classification_score == 'NEEDS_WORK' or admission_score == 'NEEDS_WORK':
+        issues = []
+        if classification_score == 'NEEDS_WORK':
+            issues.append(f"classification missed {total_missed}/{total_expected}")
+        if admission_score == 'NEEDS_WORK':
+            issues.append(f"admission drift {admission_missed} missed, {admission_fp} FP")
+        verdict = f"NEEDS WORK - {'; '.join(issues)}"
+        overall_status = 'FAIL'
     else:
-        if total_fp == 0:
-            verdict = f"NEEDS WORK - AOD missed {total_missed} of {total_expected} expected anomalies."
-        else:
-            verdict = f"NEEDS WORK - AOD missed {total_missed} expected anomalies and had {total_fp} false positives."
+        issues = []
+        if classification_score == 'SOME_ISSUES':
+            issues.append(f"classification {total_matched}/{total_expected}")
+        if admission_score == 'SOME_ISSUES':
+            issues.append(f"admission {admission_matched}/{admission_total}")
+        verdict = f"SOME IMPROVEMENT NEEDED - {'; '.join(issues)}"
+        overall_status = 'WARN'
+    
+    analysis['classification_metrics'] = {
+        'expected': total_expected,
+        'matched': total_matched,
+        'missed': total_missed,
+        'false_positives': total_fp,
+        'accuracy': classification_accuracy,
+        'status': classification_score,
+    }
+    analysis['admission_metrics'] = {
+        'total': admission_total,
+        'matched': admission_matched,
+        'missed': admission_missed,
+        'false_positives': admission_fp,
+        'accuracy': admission_accuracy,
+        'status': admission_score,
+    }
+    analysis['overall_status'] = overall_status
     
     has_asset_summaries = bool(asset_summaries)
     payload_version = aod_payload.get('payload_version') or aod_lists.get('payload_version')
@@ -799,8 +833,11 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         analysis['gradeable'] = True
         analysis['payload_version'] = payload_version
         analysis['verdict'] = verdict
-        denominator = total_expected + total_fp
-        analysis['accuracy'] = round(total_matched / denominator * 100, 1) if denominator > 0 else 100.0
+        combined_matched = total_matched + admission_matched
+        combined_total = total_expected + total_fp + admission_total
+        analysis['accuracy'] = round(combined_matched / combined_total * 100, 1) if combined_total > 0 else 100.0
+        analysis['classification_accuracy'] = classification_accuracy
+        analysis['admission_accuracy'] = admission_accuracy
     
     analysis['expected_block'] = expected_block
     

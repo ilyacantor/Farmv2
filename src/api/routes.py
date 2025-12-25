@@ -474,31 +474,12 @@ async def create_reconciliation(request: Request):
     )
     report_text, _ = generate_reconcile_report(parsed_request.aod_summary, parsed_request.aod_lists, farm_expectations)
     
-    # Derive status using scaled materiality threshold
     analysis, recomputed_block = build_reconciliation_analysis(snapshot, raw_json, expected_block)
     
-    # Calculate total missed and expected counts
-    missed_shadows = len(analysis.get('missed_shadows', []))
-    missed_zombies = len(analysis.get('missed_zombies', []))
-    total_missed = missed_shadows + missed_zombies
-    
-    expected_shadows = analysis.get('shadow_expected', 0)
-    expected_zombies = analysis.get('zombie_expected', 0)
-    total_expected = expected_shadows + expected_zombies
-    
-    # Scaled materiality threshold: max(2, expected * 10%)
-    # This gives small samples breathing room while scaling for larger datasets
-    materiality = max(2, int(total_expected * 0.1))
-    
-    # Status thresholds:
-    # PASS: missed <= materiality
-    # WARN: missed <= 2x materiality
-    # FAIL: missed > 2x materiality
-    if total_expected == 0:
+    overall_status = analysis.get('overall_status', 'PASS')
+    if overall_status == 'PASS':
         status = ReconcileStatusEnum.PASS
-    elif total_missed <= materiality:
-        status = ReconcileStatusEnum.PASS
-    elif total_missed <= materiality * 2:
+    elif overall_status == 'WARN':
         status = ReconcileStatusEnum.WARN
     else:
         status = ReconcileStatusEnum.FAIL
