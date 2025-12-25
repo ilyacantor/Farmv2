@@ -2888,7 +2888,7 @@
                     this.highlight('scale');
                     el.focus();
                     this.showOverlay(
-                        "Select a Scale. Medium = ~50 assets, Enterprise = 500+, Mega = 1500+.<br><br><em>Or accept defaults and press Generate.</em>",
+                        "<strong>Simulating Reality</strong><br><br>Real data is messy. To prove AOD is battle-hardened, we use <strong>The Farm</strong> to generate complex, conflicted datasets—not \"happy path\" demo data.<br><br>Select <strong>Enterprise</strong> to simulate the scale where human management fails.",
                         { hideNext: true }
                     );
                     this.waitForSelection('scale');
@@ -2898,7 +2898,7 @@
                     this.highlight('enterpriseProfile');
                     el.focus();
                     this.showOverlay(
-                        "Select an Enterprise profile. Modern SaaS = heavy cloud, Regulated Finance = legacy + compliance.<br><br><em>Or accept defaults and press Generate.</em>",
+                        "<strong>Enterprise Profile</strong><br><br>Different industries have different IT landscapes. <strong>Modern SaaS</strong> = cloud-heavy, API-first. <strong>Regulated Finance</strong> = legacy systems + compliance overhead.<br><br>Select a profile or continue.",
                         { hideNext: true }
                     );
                     this.waitForSelection('enterpriseProfile');
@@ -2908,7 +2908,7 @@
                     this.highlight('realismProfile');
                     el.focus();
                     this.showOverlay(
-                        "Select a Realism level. Clean = no mess, Typical = some conflicts, Messy = chaos.<br><br><em>Or accept defaults and press Generate.</em>",
+                        "<strong>Stress Testing</strong><br><br>Clean data doesn't exist in the wild. Select <strong>Messy</strong> or <strong>Adversarial</strong> to inject conflicting records, partial telemetry, and duplicates—forcing the system to resolve ambiguity that simple asset managers can't handle.",
                         { hideNext: true }
                     );
                     this.waitForSelection('realismProfile');
@@ -2918,7 +2918,7 @@
                     this.highlight('dataPreset');
                     el.focus();
                     this.showOverlay(
-                        "Select a Data Preset. Clean = easy baseline, Enterprise Mess = realistic conflicts, Adversarial = absolute disaster.<br><br><em>Or accept defaults and press Generate.</em>",
+                        "<strong>Challenge Level</strong><br><br><strong>Clean Baseline</strong> = minimal conflicts. <strong>Enterprise Mess</strong> = realistic chaos. <strong>Adversarial</strong> = intentional edge cases that break naive systems.",
                         { hideNext: true }
                     );
                     this.waitForSelection('dataPreset');
@@ -2926,7 +2926,7 @@
                     this.closeAllDropdowns();
                     this.highlight('generateBtn');
                     this.showOverlay(
-                        "Press Generate Snapshot to create ground truth data.",
+                        "<strong>Generate Ground Truth</strong><br><br>We are now creating thousands of raw signals—DNS logs, finance transactions, SSO records, endpoint telemetry.<br><br>Click <strong>Generate</strong> to create this Ground Truth snapshot.",
                         { buttonText: 'Generate Snapshot', hideNext: true }
                     );
                     this.setupGenerateCapture();
@@ -2987,7 +2987,7 @@
                     this.isGenerating = true;
                     
                     this.hideOverlay();
-                    this.showOverlay("Generating snapshot...", { hideNext: true, hideBack: true });
+                    this.showOverlay("<strong>Generating Ground Truth...</strong><br><br>Creating thousands of raw signals across 7 data planes.", { hideNext: true, hideBack: true });
                     
                     try {
                         const result = await generateSnapshot(
@@ -3052,7 +3052,7 @@
                     }
                     
                     this.showOverlay(
-                        "Snapshot represents a synthetic and hyper-realistic enterprise IT environment. AOD processes in excess of 10,000 raw observations, resolves over 1,000 candidate assets, evaluates tens of thousands of evidence relationships, and produces a verified catalog of over 1,000 trusted assets."
+                        "<strong>The Raw Data</strong><br><br>The Farm has generated a complex IT estate with intentional anomalies—Shadow IT hiding in plain sight, Zombie licenses draining budget, conflicting records across systems.<br><br>This is your Ground Truth. Every asset's true classification is known."
                     );
                 } else if (step === 1) {
                     this.clearHighlights();
@@ -3061,13 +3061,13 @@
                         const handoffUrl = this.returnUrl + '&snapshot_id=' + this.tourSnapshotId;
                         
                         this.showOverlay(
-                            `Now we go back to AOD to run discovery on this data.<br><br>
+                            `<strong>Handoff to AOD</strong><br><br>Now let's switch to <strong>AOD</strong> to ingest, normalize, and make sense of this chaos.<br><br>AOD will process thousands of raw observations without knowing the answers.<br><br>
                             <a href="${handoffUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Continue to AOD →</a>`,
                             { hideNext: true }
                         );
                     } else {
                         this.showOverlay(
-                            "Snapshot ready. Return to AOD to run discovery, then come back for reconciliation.",
+                            "<strong>Snapshot Ready</strong><br><br>Ground Truth created. Return to AOD to run discovery, then come back for reconciliation.",
                             { buttonText: 'Done' }
                         );
                     }
@@ -3086,7 +3086,7 @@
                     await loadAllData();
                     
                     this.showOverlay(
-                        "Verification: comparing AOD's classifications against Farm's ground truth expectations."
+                        "<strong>Trust, but Verify</strong><br><br>In a demo, you trust the vendor. In AutonomOS, we let you audit the math.<br><br>We're comparing AOD's findings against the Ground Truth we generated earlier. We measure our own Precision and Recall."
                     );
                 } else if (step === 1) {
                     let recEl = null;
@@ -3106,31 +3106,31 @@
                         recEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
                         this.waitForReconciliationClick(recEl);
                         this.showOverlay(
-                            "Click the highlighted reconciliation to view the scorecard comparing AOD's results to Farm's ground truth.",
+                            "<strong>The Scorecard</strong><br><br>Click to view the reconciliation report. This compares what <em>actually</em> existed (Farm) vs. what AOD <em>found</em>.<br><br>If AOD missed a Shadow asset or misclassified a Zombie, it shows up here.",
                             { hideNext: true }
                         );
                     } else {
                         this.showOverlay(
-                            "No reconciliations found yet. AOD must process the snapshot and send results back to Farm for reconciliation."
+                            "<strong>Awaiting Results</strong><br><br>No reconciliations found yet. AOD must process the snapshot and send results back to Farm."
                         );
                     }
                 } else if (step === 2) {
                     this.showOverlay(
-                        "Mismatches reveal where AOD and Farm disagree. Each mismatch shows reasoning for investigation."
+                        "<strong>Investigating Mismatches</strong><br><br>Mismatches reveal where AOD and Farm disagree. Each one shows the reasoning chain—why Farm expected one classification and what AOD concluded.<br><br>This transparency ensures results are defensible on real enterprise data."
                     );
                 } else if (step === 3) {
                     const returnUrl = state?.returnUrl;
                     if (returnUrl) {
                         const backUrl = returnUrl.split('?')[0] + '?guided=1&tour_phase=8';
                         this.showOverlay(
-                            `Verification complete. Return to AOD to review the full discovery results.<br><br>
-                            <a href="${backUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Return to AOD →</a>`,
+                            `<strong>Tour Complete</strong><br><br>You've seen the full cycle: <strong>Generate Chaos → Discover Order → Audit Accuracy</strong>.<br><br>Return to AOD to explore the Catalog, drill into asset details, or run new simulations.<br><br>
+                            <a href="${backUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Finish & Explore →</a>`,
                             { hideNext: true }
                         );
                     } else {
                         this.showOverlay(
-                            "Verification complete. Farm generates test data, AOD processes it, reconciliation grades results.",
-                            { buttonText: 'Finish Tour' }
+                            "<strong>Tour Complete</strong><br><br>You've seen the cycle: <strong>Generate Chaos → Discover Order → Audit Accuracy</strong>.<br><br>You are now free to explore the Catalog, run new simulations, or drill into specific asset details.",
+                            { buttonText: 'Finish & Explore' }
                         );
                     }
                 } else if (step === 4) {
@@ -3147,7 +3147,7 @@
         <div class="tour-header" id="tourDragHandle">
             <div class="tour-header-left">
                 <div class="tour-pulse-dot"></div>
-                <span class="tour-header-title">Guided Validation</span>
+                <span class="tour-header-title">Simulation & Proof</span>
             </div>
             <button class="tour-close-btn" onclick="TourController.exitTour()">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
