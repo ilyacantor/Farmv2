@@ -2955,7 +2955,17 @@
                     this.closeAllDropdowns();
                     this.highlight('generateBtn');
                     this.showOverlay(
-                        "<strong>Generate Ground Truth</strong><br><br>We are now creating thousands of raw signals—DNS logs, finance transactions, SSO records, endpoint telemetry.<br><br>Click <strong>Generate</strong> to create this Ground Truth snapshot.",
+                        `<strong>Generate Ground Truth</strong><br><br>We're creating thousands of raw signals across <strong>7 Data Planes</strong>—the evidence sources AOD correlates to build asset catalogs and detect anomalies:
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 16px; margin: 12px 0; font-size: 0.85em; opacity: 0.9;">
+                            <div><span style="color: #22d3ee;">Discovery</span> — DNS/domain</div>
+                            <div><span style="color: #22d3ee;">IdP</span> — Identity/access</div>
+                            <div><span style="color: #22d3ee;">CMDB</span> — Systems of record</div>
+                            <div><span style="color: #22d3ee;">Cloud</span> — Cloud resources</div>
+                            <div><span style="color: #22d3ee;">Endpoint</span> — Device data</div>
+                            <div><span style="color: #22d3ee;">Network</span> — Traffic/topology</div>
+                            <div><span style="color: #22d3ee;">Finance</span> — Spend/billing</div>
+                        </div>
+                        Click <strong>Generate</strong> to create this Ground Truth snapshot.`,
                         { buttonText: 'Generate Snapshot', hideNext: true }
                     );
                     this.setupGenerateCapture();
