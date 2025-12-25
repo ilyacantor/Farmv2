@@ -15,6 +15,7 @@ class ScopeConfig(BaseModel):
     """Toggles for scope control."""
     include_infra: bool = False
     treat_directory_as_idp: bool = False
+    use_policy_engine: bool = False
 
 
 class PolicyConfig(BaseModel):
@@ -87,6 +88,7 @@ class PolicyConfig(BaseModel):
             scope=ScopeConfig(
                 include_infra=scope_data.get("include_infra", False),
                 treat_directory_as_idp=scope_data.get("treat_directory_as_idp", False),
+                use_policy_engine=scope_data.get("use_policy_engine", False),
             ),
             exclusions=data.get("exclusions", []),
             infrastructure_seeds=data.get("infrastructure_seeds", []),

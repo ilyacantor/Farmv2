@@ -293,6 +293,7 @@ async def get_policy_config():
         "scope": {
             "include_infra": policy.scope.include_infra,
             "treat_directory_as_idp": policy.scope.treat_directory_as_idp,
+            "use_policy_engine": policy.scope.use_policy_engine,
         },
         "exclusions": policy.exclusions,
         "infrastructure_seeds": policy.infrastructure_seeds,

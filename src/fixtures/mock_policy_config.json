@@ -6,7 +6,8 @@
   },
   "scope": {
     "include_infra": false,
-    "treat_directory_as_idp": false
+    "treat_directory_as_idp": false,
+    "use_policy_engine": false
   },
   "exclusions": [],
   "infrastructure_seeds": [
