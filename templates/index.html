@@ -2971,14 +2971,16 @@
                 
                 const selectionHandler = () => {
                     this.clearPendingListeners();
-                    setTimeout(() => this.next(), 300);
+                    this.next();
                 };
                 
                 const generateHandler = (e) => {
                     e.preventDefault();
+                    e.stopPropagation();
                     this.clearPendingListeners();
                     this.currentStep = 4;
-                    this.runPhase1();
+                    this.setupGenerateCapture();
+                    generateBtn.click();
                 };
                 
                 el.addEventListener('change', selectionHandler);
@@ -2991,7 +2993,7 @@
             waitForReconciliationClick(el) {
                 const handler = () => {
                     el.removeEventListener('click', handler);
-                    setTimeout(() => this.next(), 500);
+                    this.next();
                 };
                 el.addEventListener('click', handler);
             },
