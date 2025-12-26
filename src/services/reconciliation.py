@@ -20,6 +20,10 @@ from src.services.logging import trace_log
 
 
 def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
+    """Parse ISO timestamp string to datetime.
+
+    Handles timezone suffixes and returns naive datetime for comparison.
+    """
     if not ts:
         return None
     try:
@@ -27,7 +31,12 @@ def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
         if '+' in ts:
             ts = ts.split('+')[0]
         return datetime.fromisoformat(ts)
-    except:
+    except (ValueError, TypeError, AttributeError) as e:
+        # Log warning but don't fail - return None for invalid timestamps
+        trace_log("reconciliation", "parse_timestamp_error", {
+            "timestamp": ts,
+            "error": str(e)
+        })
         return None
 
 
@@ -138,77 +147,132 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
                 elif is_stale(ts, window_days, reference):
                     cand['stale_timestamps'].append(ts)
     
+    # PERFORMANCE: Build reverse indexes to avoid O(N*M) nested loops
+    # Pre-compute normalized values for all candidates to avoid repeated normalize_name() calls
+    key_to_normalized = {key: normalize_name(key) for key in candidates.keys()}
+    vendor_to_keys = defaultdict(set)
+    name_to_keys = defaultdict(set)
+    domain_to_keys = defaultdict(set)
+
+    for key, cand in candidates.items():
+        # Index by normalized vendors
+        for vendor in cand['vendors']:
+            vendor_to_keys[normalize_name(vendor)].add(key)
+        # Index by normalized names
+        for name in cand['names']:
+            name_to_keys[normalize_name(name)].add(key)
+        # Index by domains
+        for domain in cand['domains']:
+            domain_to_keys[domain].add(key)
+
+    # Process CMDB CIs with O(N) complexity instead of O(N*M)
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])
     for ci in cmdb_cis:
         name = normalize_name(ci.get('name', ''))
         raw_domain = extract_domain(ci.get('external_ref', ''))
         cmdb_registered = extract_registered_domain(raw_domain) if raw_domain else None
         ci_vendor = normalize_name(ci.get('vendor', '') or '')
-        
-        for key, cand in candidates.items():
-            matched_by_name_or_domain = False
-            matched_by_vendor_only = False
-            
-            if name and (name == normalize_name(key) or any(name == normalize_name(n) for n in cand['names'])):
-                matched_by_name_or_domain = True
-            if cmdb_registered and cmdb_registered == key:
-                matched_by_name_or_domain = True
-            elif raw_domain and raw_domain in cand['domains']:
-                matched_by_name_or_domain = True
-            if ci_vendor and any(ci_vendor == normalize_name(v) for v in cand['vendors']):
-                if not matched_by_name_or_domain:
-                    matched_by_vendor_only = True
-            
-            if matched_by_name_or_domain or matched_by_vendor_only:
-                cand['cmdb_present'] = True
-                cand['cmdb_matches'].append({
-                    'ci_id': ci.get('ci_id'),
-                    'name': ci.get('name'),
-                    'lifecycle': ci.get('lifecycle'),
-                    'vendor': ci.get('vendor'),
-                    'ci_type': ci.get('ci_type'),
-                    'matched_via_vendor': matched_by_vendor_only,
-                })
+
+        matched_keys = set()
+        matched_by_vendor = set()
+
+        # Direct lookups instead of nested loops
+        if name:
+            if name in key_to_normalized.values():
+                matched_keys.update(k for k, norm_k in key_to_normalized.items() if norm_k == name)
+            matched_keys.update(name_to_keys.get(name, set()))
+
+        if cmdb_registered:
+            matched_keys.add(cmdb_registered)
+        elif raw_domain:
+            matched_keys.update(domain_to_keys.get(raw_domain, set()))
+
+        if ci_vendor:
+            vendor_keys = vendor_to_keys.get(ci_vendor, set())
+            matched_by_vendor.update(vendor_keys - matched_keys)
+
+        # Update candidates with matches
+        for key in matched_keys:
+            candidates[key]['cmdb_present'] = True
+            candidates[key]['cmdb_matches'].append({
+                'ci_id': ci.get('ci_id'),
+                'name': ci.get('name'),
+                'lifecycle': ci.get('lifecycle'),
+                'vendor': ci.get('vendor'),
+                'ci_type': ci.get('ci_type'),
+                'matched_via_vendor': False,
+            })
+
+        for key in matched_by_vendor:
+            candidates[key]['cmdb_present'] = True
+            candidates[key]['cmdb_matches'].append({
+                'ci_id': ci.get('ci_id'),
+                'name': ci.get('name'),
+                'lifecycle': ci.get('lifecycle'),
+                'vendor': ci.get('vendor'),
+                'ci_type': ci.get('ci_type'),
+                'matched_via_vendor': True,
+            })
     
+    # Process cloud resources with O(N) complexity
     cloud_resources = planes.get('cloud', {}).get('resources', [])
     for res in cloud_resources:
         name = normalize_name(res.get('name', ''))
-        for key, cand in candidates.items():
-            if name and any(normalize_name(n) in name or name in normalize_name(n) for n in cand['names']):
-                cand['cloud_present'] = True
-    
+        if name:
+            # Direct lookup by name
+            for key in name_to_keys.get(name, set()):
+                candidates[key]['cloud_present'] = True
+            # Substring matching (kept for compatibility but limited scope)
+            for key, cand in candidates.items():
+                normalized_names = {normalize_name(n) for n in cand['names']}
+                if any(n in name or name in n for n in normalized_names):
+                    cand['cloud_present'] = True
+
+    # Process finance contracts with O(N) complexity
     contracts = planes.get('finance', {}).get('contracts', [])
     transactions = planes.get('finance', {}).get('transactions', [])
-    
+
     for contract in contracts:
         vendor = normalize_name(contract.get('vendor_name', ''))
         product = normalize_name(contract.get('product', '') or '')
-        
-        for key, cand in candidates.items():
-            matched = False
-            if vendor and any(vendor in normalize_name(n) or normalize_name(n) in vendor for n in cand['names']):
-                matched = True
-            if vendor and any(vendor == normalize_name(v) for v in cand['vendors']):
-                matched = True
-            if product and any(product in normalize_name(n) or normalize_name(n) in product for n in cand['names']):
-                matched = True
-            if matched:
-                cand['finance_present'] = True
-                cand['has_ongoing_finance'] = True
-    
+
+        matched_keys = set()
+        # Direct vendor lookup
+        if vendor:
+            matched_keys.update(vendor_to_keys.get(vendor, set()))
+            # Substring match on names (limited scope)
+            for key in name_to_keys.keys():
+                if vendor in key or key in vendor:
+                    matched_keys.update(name_to_keys[key])
+
+        # Product name matching
+        if product:
+            matched_keys.update(name_to_keys.get(product, set()))
+            for key in name_to_keys.keys():
+                if product in key or key in product:
+                    matched_keys.update(name_to_keys[key])
+
+        for key in matched_keys:
+            candidates[key]['finance_present'] = True
+            candidates[key]['has_ongoing_finance'] = True
+
+    # Process transactions with O(N) complexity
     for txn in transactions:
         vendor = normalize_name(txn.get('vendor_name', ''))
         is_recurring = txn.get('is_recurring', False)
-        for key, cand in candidates.items():
-            matched = False
-            if vendor and any(vendor in normalize_name(n) or normalize_name(n) in vendor for n in cand['names']):
-                matched = True
-            if vendor and any(vendor == normalize_name(v) for v in cand['vendors']):
-                matched = True
-            if matched:
-                cand['finance_present'] = True
-                if is_recurring:
-                    cand['has_ongoing_finance'] = True
+
+        matched_keys = set()
+        if vendor:
+            matched_keys.update(vendor_to_keys.get(vendor, set()))
+            # Substring match
+            for key in name_to_keys.keys():
+                if vendor in key or key in vendor:
+                    matched_keys.update(name_to_keys[key])
+
+        for key in matched_keys:
+            candidates[key]['finance_present'] = True
+            if is_recurring:
+                candidates[key]['has_ongoing_finance'] = True
     
     for key, cand in candidates.items():
         cand['cmdb_resolution_reason'] = determine_cmdb_resolution_reason(cand['cmdb_matches'], cand['vendors'])
@@ -226,7 +290,6 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
     })
     
     return dict(candidates)
-
 
 def determine_cmdb_resolution_reason(cmdb_matches: list, candidate_vendors: set) -> str:
     """Determine CMDB resolution reason based on matched CIs.

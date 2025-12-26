@@ -1,4 +1,5 @@
 import re
+from functools import lru_cache
 from typing import Optional
 from collections import defaultdict
 
@@ -7,7 +8,12 @@ import tldextract
 from src.services.constants import EXTERNAL_DOMAIN_TLDS
 
 
+@lru_cache(maxsize=2048)
 def normalize_name(name: str) -> str:
+    """Normalize name for matching - cached for performance.
+
+    Cache size 2048 covers typical enterprise asset count per snapshot.
+    """
     if not name:
         return ""
     return re.sub(r'[^a-z0-9]', '', name.lower())
@@ -23,9 +29,12 @@ def extract_domain(text: str) -> Optional[str]:
     return text if '.' in text else None
 
 
+@lru_cache(maxsize=1024)
 def extract_registered_domain(domain: str) -> Optional[str]:
     """Extract eTLD+1 (registered domain) using PSL via tldextract.
-    
+
+    Cached because tldextract parsing is expensive.
+
     Examples:
         app.slack.com -> slack.com
         cdn.static.example.co.uk -> example.co.uk
@@ -35,7 +44,7 @@ def extract_registered_domain(domain: str) -> Optional[str]:
     if not domain:
         return None
     domain = domain.lower().strip('.')
-    
+
     ext = tldextract.extract(domain)
     if ext.domain and ext.suffix:
         return f"{ext.domain}.{ext.suffix}"

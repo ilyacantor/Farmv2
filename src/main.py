@@ -107,11 +107,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Configure CORS with explicit origin whitelist for security
+# Default to localhost for development, override via CORS_ORIGINS env var
+import os
+allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,  # Explicit whitelist - no wildcards with credentials
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
