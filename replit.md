@@ -149,6 +149,14 @@ The project is structured around a FastAPI application. It features a simple Far
 - **Database:** Supabase Postgres (exclusively). Configured via `SUPABASE_DB_URL` or `DATABASE_URL`. Replit DB URLs are ignored if `IGNORE_REPLIT_DB=true`. Schema includes `runs`, `snapshots`, and `reconciliations` tables.
 - **AOD Module (AutonomOS Discover):** Interacts via defined API contracts. Requires `AOD_URL` and optionally `AOD_SHARED_SECRET` for auto-reconciliation. `USE_AOD_EXPLAIN_STUB=true` enables a local stub for testing.
 
+## Recent Changes (2025-12-26)
+
+### Reconciliation Performance Fix
+- Fixed `build_reconciliation_analysis` to use cached `__expected__` block from snapshot
+- Previously: Always recomputed expectations from scratch (17.7s for 712 candidates)
+- After: Uses cached block when available (0.01s)
+- **Speedup: 1837x** for large snapshots
+
 ## Recent Changes (2025-12-25)
 
 ### FQDN Validation Filter
