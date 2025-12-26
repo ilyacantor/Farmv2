@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from collections import defaultdict
+from dateutil import parser as dateutil_parser
 
 from src.models.planes import FarmExpectations, ReconcileStatusEnum
 from src.models.policy import PolicyConfig
@@ -20,19 +21,13 @@ from src.services.logging import trace_log
 
 
 def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
-    """Parse ISO timestamp string to datetime.
-
-    Handles timezone suffixes and returns naive datetime for comparison.
-    """
+    """Parse ISO timestamp string to datetime using dateutil."""
     if not ts:
         return None
     try:
-        ts = ts.replace('Z', '+00:00')
-        if '+' in ts:
-            ts = ts.split('+')[0]
-        return datetime.fromisoformat(ts)
+        dt = dateutil_parser.parse(ts)
+        return dt.replace(tzinfo=None) if dt.tzinfo else dt
     except (ValueError, TypeError, AttributeError) as e:
-        # Log warning but don't fail - return None for invalid timestamps
         trace_log("reconciliation", "parse_timestamp_error", {
             "timestamp": ts,
             "error": str(e)

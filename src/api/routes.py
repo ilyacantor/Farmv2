@@ -123,7 +123,13 @@ async def get_pool() -> asyncpg.Pool:
     global _db_pool
     if _db_pool is None:
         db_url = get_db_url()
-        _db_pool = await asyncpg.create_pool(db_url, min_size=1, max_size=10)
+        _db_pool = await asyncpg.create_pool(
+            db_url,
+            min_size=1,
+            max_size=20,
+            command_timeout=60.0,
+            max_inactive_connection_lifetime=300.0
+        )
     return _db_pool
 
 
@@ -371,20 +377,21 @@ async def get_snapshot_expected_block(snapshot_id: str, mode: str = "sprawl"):
 @router.get("/api/snapshots", response_model=list[SnapshotMetadata])
 async def list_snapshots(
     tenant_id: Optional[str] = Query(None, description="Filter by tenant ID"),
-    limit: int = Query(100, ge=1, le=1000, description="Maximum number of results")
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
+    offset: int = Query(0, ge=0, description="Number of results to skip")
 ):
     pool = await get_pool()
     
     async with pool.acquire() as conn:
         if tenant_id:
             rows = await conn.fetch(
-                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2",
-                tenant_id, limit
+                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+                tenant_id, limit, offset
             )
         else:
             rows = await conn.fetch(
-                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT $1",
-                limit
+                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+                limit, offset
             )
         
         return [

@@ -81,6 +81,16 @@ def _get_fallback_response(asset_keys: list[str], http_code: str | None = None) 
         } for key in asset_keys}
 
 
+async def create_aod_http_client(timeout: float = 30.0) -> tuple[httpx.AsyncClient, dict]:
+    """Create configured HTTP client for AOD with auth headers."""
+    aod_secret = os.environ.get("AOD_SHARED_SECRET", "")
+    headers = {}
+    if aod_secret:
+        headers["Authorization"] = f"Bearer {aod_secret}"
+    client = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+    return client, headers
+
+
 def clear_cache():
     """Clear the explain cache. Useful for testing or between runs."""
     global _explain_cache

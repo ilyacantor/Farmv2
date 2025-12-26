@@ -87,6 +87,12 @@ class DataPresetEnum(str, Enum):
     adversarial = "adversarial"
 
 
+class ReconciliationModeEnum(str, Enum):
+    sprawl = "sprawl"
+    infra = "infra"
+    all = "all"
+
+
 class PresetConfig(BaseModel):
     """Configuration knobs for data generation presets."""
     name: str
@@ -385,7 +391,7 @@ class ReconcileRequest(BaseModel):
     tenant_id: str
     aod_summary: AODSummary
     aod_lists: AODLists
-    mode: str = "sprawl"  # sprawl (default), infra, or all
+    mode: ReconciliationModeEnum = ReconciliationModeEnum.sprawl
 
 
 class FarmExpectations(BaseModel):
