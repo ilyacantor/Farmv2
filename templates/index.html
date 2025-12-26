@@ -3359,6 +3359,10 @@
                 this.isActive = false;
                 this.hideOverlay();
                 this.clearState();
+                this.clearPendingListeners();
+                this.generateCaptureSetup = false;
+                const generateBtn = document.getElementById('generateBtn');
+                if (generateBtn) generateBtn.onclick = null;
             },
             
             startTour() {
@@ -3490,6 +3494,7 @@
             },
             
             setupGenerateCapture() {
+                if (!this.isActive) return;
                 if (this.generateCaptureSetup) return;
                 this.generateCaptureSetup = true;
                 
