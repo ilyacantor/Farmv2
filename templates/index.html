@@ -3211,8 +3211,9 @@
             
             init() {
                 const params = new URLSearchParams(window.location.search);
+                const guidedParam = params.get('guided') === '1';
                 
-                if (params.get('guided') === '1') {
+                if (guidedParam) {
                     const phase = parseInt(params.get('tour_phase') || '1');
                     const returnUrl = params.get('return_url') ? decodeURIComponent(params.get('return_url')) : null;
                     const snapshotId = params.get('snapshot_id');
@@ -3227,16 +3228,15 @@
                     });
                     
                     window.history.replaceState({}, document.title, window.location.pathname);
-                }
-                
-                const state = this.getState();
-                if (state && state.active) {
+                    
                     this.isActive = true;
-                    this.currentPhase = state.phase;
-                    this.returnUrl = state.returnUrl;
-                    this.tourSnapshotId = state.snapshotId;
+                    this.currentPhase = phase;
+                    this.returnUrl = returnUrl;
+                    this.tourSnapshotId = snapshotId;
                     
                     setTimeout(() => this.startPhase(this.currentPhase), 500);
+                } else {
+                    this.clearState();
                 }
             },
             
