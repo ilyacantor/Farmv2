@@ -733,113 +733,164 @@ async def download_reconciliation_diff(
         if not rec_row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
         
-        cached_analysis = None
-        try:
-            cached_analysis = rec_row["analysis_json"]
-        except (KeyError, TypeError):
-            pass
+        aod_payload = json.loads(rec_row["aod_payload_json"])
+        farm_exp = json.loads(rec_row["farm_expectations_json"])
         
-        if cached_analysis:
-            analysis = json.loads(cached_analysis)
+        snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
+        if snap_row:
+            snapshot = json.loads(snap_row["snapshot_json"])
         else:
-            aod_payload = json.loads(rec_row["aod_payload_json"])
-            farm_exp = json.loads(rec_row["farm_expectations_json"])
-            
-            snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
-            if snap_row:
-                snapshot = json.loads(snap_row["snapshot_json"])
-            else:
-                snapshot = {'__expected__': farm_exp}
-            
-            analysis, _ = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
+            snapshot = {'__expected__': farm_exp}
+        
+        analysis, _ = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
     
-    rows = []
+    admission_rows = []
+    classification_rows = []
     
-    for item in analysis.get('matched_shadows', []):
-        rows.append({
-            'category': 'shadow',
-            'result': 'matched',
+    adm_recon = analysis.get('admission_reconciliation', {})
+    cataloged = adm_recon.get('cataloged', {})
+    rejected = adm_recon.get('rejected', {})
+    
+    for item in cataloged.get('missed_details', []):
+        admission_rows.append({
+            'mismatch_type': 'admission',
+            'category': 'cataloged_missed',
+            'severity': 'MATERIAL',
             'asset_key': item.get('asset_key', ''),
+            'farm_expected': 'admitted',
+            'aod_decision': 'rejected',
             'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
             'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
-            'rca_hint': item.get('rca_hint', ''),
-            'headline': item.get('headline', ''),
-            'farm_detail': item.get('farm_detail', ''),
-            'aod_detail': item.get('aod_detail', ''),
+            'discovery_sources': ','.join(item.get('discovery_sources', [])),
+            'discovery_count': item.get('discovery_count', 0),
+            'idp_present': item.get('idp_present', False),
+            'cmdb_present': item.get('cmdb_present', False),
+            'vendor_governance': item.get('vendor_governance', ''),
+            'rejection_reason': item.get('rejection_reason', ''),
+            'raw_domains': ','.join(item.get('raw_domains_seen', [])[:5]),
+            'farm_classification': item.get('farm_classification', ''),
         })
     
-    for item in analysis.get('matched_zombies', []):
-        rows.append({
-            'category': 'zombie',
-            'result': 'matched',
+    for item in cataloged.get('fp_details', []):
+        admission_rows.append({
+            'mismatch_type': 'admission',
+            'category': 'cataloged_fp',
+            'severity': 'MATERIAL',
             'asset_key': item.get('asset_key', ''),
+            'farm_expected': 'rejected',
+            'aod_decision': 'admitted',
             'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
             'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
-            'rca_hint': item.get('rca_hint', ''),
-            'headline': item.get('headline', ''),
-            'farm_detail': item.get('farm_detail', ''),
-            'aod_detail': item.get('aod_detail', ''),
+            'discovery_sources': ','.join(item.get('discovery_sources', [])),
+            'discovery_count': item.get('discovery_count', 0),
+            'idp_present': item.get('idp_present', False),
+            'cmdb_present': item.get('cmdb_present', False),
+            'vendor_governance': item.get('vendor_governance', ''),
+            'rejection_reason': item.get('rejection_reason', ''),
+            'raw_domains': ','.join(item.get('raw_domains_seen', [])[:5]),
+            'farm_classification': item.get('farm_classification', ''),
+        })
+    
+    for item in rejected.get('missed_details', []):
+        admission_rows.append({
+            'mismatch_type': 'admission',
+            'category': 'rejected_missed',
+            'severity': 'MATERIAL',
+            'asset_key': item.get('asset_key', ''),
+            'farm_expected': 'rejected',
+            'aod_decision': 'admitted',
+            'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
+            'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
+            'discovery_sources': ','.join(item.get('discovery_sources', [])),
+            'discovery_count': item.get('discovery_count', 0),
+            'idp_present': item.get('idp_present', False),
+            'cmdb_present': item.get('cmdb_present', False),
+            'vendor_governance': item.get('vendor_governance', ''),
+            'rejection_reason': item.get('rejection_reason', ''),
+            'raw_domains': ','.join(item.get('raw_domains_seen', [])[:5]),
+            'farm_classification': item.get('farm_classification', ''),
+        })
+    
+    for item in rejected.get('fp_details', []):
+        admission_rows.append({
+            'mismatch_type': 'admission',
+            'category': 'rejected_fp',
+            'severity': 'MATERIAL',
+            'asset_key': item.get('asset_key', ''),
+            'farm_expected': 'admitted',
+            'aod_decision': 'rejected',
+            'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
+            'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
+            'discovery_sources': ','.join(item.get('discovery_sources', [])),
+            'discovery_count': item.get('discovery_count', 0),
+            'idp_present': item.get('idp_present', False),
+            'cmdb_present': item.get('cmdb_present', False),
+            'vendor_governance': item.get('vendor_governance', ''),
+            'rejection_reason': item.get('rejection_reason', ''),
+            'raw_domains': ','.join(item.get('raw_domains_seen', [])[:5]),
+            'farm_classification': item.get('farm_classification', ''),
         })
     
     for item in analysis.get('missed_shadows', []):
-        rows.append({
-            'category': 'shadow',
-            'result': 'missed_by_aod',
+        classification_rows.append({
+            'mismatch_type': 'classification',
+            'category': 'shadow_missed',
+            'severity': 'minor',
             'asset_key': item.get('asset_key', ''),
+            'farm_expected': 'shadow',
+            'aod_decision': item.get('aod_explain', {}).get('decision', ''),
             'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
             'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
             'rca_hint': item.get('rca_hint', ''),
-            'headline': item.get('headline', ''),
-            'farm_detail': item.get('farm_detail', ''),
-            'aod_detail': item.get('aod_detail', ''),
-            'aod_decision': item.get('aod_explain', {}).get('decision', ''),
         })
     
     for item in analysis.get('missed_zombies', []):
-        rows.append({
-            'category': 'zombie',
-            'result': 'missed_by_aod',
+        classification_rows.append({
+            'mismatch_type': 'classification',
+            'category': 'zombie_missed',
+            'severity': 'minor',
             'asset_key': item.get('asset_key', ''),
+            'farm_expected': 'zombie',
+            'aod_decision': item.get('aod_explain', {}).get('decision', ''),
             'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
             'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
             'rca_hint': item.get('rca_hint', ''),
-            'headline': item.get('headline', ''),
-            'farm_detail': item.get('farm_detail', ''),
-            'aod_detail': item.get('aod_detail', ''),
-            'aod_decision': item.get('aod_explain', {}).get('decision', ''),
         })
     
     for item in analysis.get('false_positive_shadows', []):
         investigation = item.get('farm_investigation', {})
-        rows.append({
-            'category': 'shadow',
-            'result': 'false_positive',
+        classification_rows.append({
+            'mismatch_type': 'classification',
+            'category': 'shadow_fp',
+            'severity': 'minor',
             'asset_key': item.get('asset_key', ''),
+            'farm_expected': item.get('farm_classification', 'clean'),
+            'aod_decision': 'shadow',
             'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
             'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
             'rca_hint': item.get('rca_hint', ''),
-            'headline': item.get('headline', ''),
-            'farm_detail': item.get('farm_detail', ''),
-            'aod_detail': item.get('aod_detail', ''),
-            'farm_investigation': investigation.get('conclusion', ''),
-            'investigation_findings': '; '.join(investigation.get('findings', [])),
+            'investigation': investigation.get('conclusion', ''),
         })
     
     for item in analysis.get('false_positive_zombies', []):
         investigation = item.get('farm_investigation', {})
-        rows.append({
-            'category': 'zombie',
-            'result': 'false_positive',
+        classification_rows.append({
+            'mismatch_type': 'classification',
+            'category': 'zombie_fp',
+            'severity': 'minor',
             'asset_key': item.get('asset_key', ''),
+            'farm_expected': item.get('farm_classification', 'clean'),
+            'aod_decision': 'zombie',
             'farm_reason_codes': ','.join(item.get('farm_reason_codes', [])),
             'aod_reason_codes': ','.join(item.get('aod_reason_codes', [])),
             'rca_hint': item.get('rca_hint', ''),
-            'headline': item.get('headline', ''),
-            'farm_detail': item.get('farm_detail', ''),
-            'aod_detail': item.get('aod_detail', ''),
-            'farm_investigation': investigation.get('conclusion', ''),
-            'investigation_findings': '; '.join(investigation.get('findings', [])),
+            'investigation': investigation.get('conclusion', ''),
         })
+    
+    all_rows = admission_rows + classification_rows
+    
+    adm_metrics = analysis.get('admission_metrics', {})
+    class_metrics = analysis.get('classification_metrics', {})
     
     if format == "json":
         report = {
@@ -849,23 +900,42 @@ async def download_reconciliation_diff(
             'aod_run_id': rec_row["aod_run_id"],
             'status': rec_row["status"],
             'created_at': rec_row["created_at"],
-            'summary': analysis.get('summary', {}),
             'verdict': analysis.get('verdict', ''),
-            'accuracy': analysis.get('accuracy', 0),
-            'differences': rows,
+            'overall_status': analysis.get('overall_status', ''),
+            'metrics': {
+                'admission': {
+                    'total': adm_metrics.get('total', 0),
+                    'matched': adm_metrics.get('matched', 0),
+                    'missed': adm_metrics.get('missed', 0),
+                    'false_positives': adm_metrics.get('false_positives', 0),
+                    'accuracy': adm_metrics.get('accuracy', 0),
+                    'status': adm_metrics.get('status', ''),
+                },
+                'classification': {
+                    'expected': class_metrics.get('expected', 0),
+                    'matched': class_metrics.get('matched', 0),
+                    'missed': class_metrics.get('missed', 0),
+                    'false_positives': class_metrics.get('false_positives', 0),
+                    'accuracy': class_metrics.get('accuracy', 0),
+                    'status': class_metrics.get('status', ''),
+                },
+            },
+            'admission_mismatches': admission_rows,
+            'classification_mismatches': classification_rows,
         }
         return Response(
-            content=json.dumps(report, indent=2),
+            content=json.dumps(report, indent=2, default=str),
             media_type="application/json",
             headers={"Content-Disposition": f"attachment; filename=reconcile_{reconciliation_id}.json"}
         )
     
-    headers = ['category', 'result', 'asset_key', 'farm_reason_codes', 'aod_reason_codes', 
-               'rca_hint', 'headline', 'farm_detail', 'aod_detail', 'aod_decision',
-               'farm_investigation', 'investigation_findings']
+    headers = ['mismatch_type', 'severity', 'category', 'asset_key', 'farm_expected', 'aod_decision',
+               'farm_reason_codes', 'aod_reason_codes', 'discovery_sources', 'discovery_count',
+               'idp_present', 'cmdb_present', 'vendor_governance', 'rejection_reason', 
+               'raw_domains', 'farm_classification', 'rca_hint', 'investigation']
     
     csv_lines = [','.join(headers)]
-    for row in rows:
+    for row in all_rows:
         values = []
         for h in headers:
             val = str(row.get(h, '')).replace('"', '""')

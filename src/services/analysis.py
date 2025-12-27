@@ -725,6 +725,61 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     admission_cataloged_accuracy = round(len(cataloged_matched) / len(farm_admitted_keys) * 100, 1) if len(farm_admitted_keys) > 0 else 100.0
     admission_rejected_accuracy = round(len(rejected_matched) / len(farm_rejected_keys) * 100, 1) if len(farm_rejected_keys) > 0 else 100.0
     
+    decision_traces = expected_block.get('decision_traces', {})
+    expected_reasons = expected_block.get('expected_reasons', {})
+    
+    def build_admission_mismatch_entry(key: str, category: str, result: str, farm_expected: str, aod_decision: str) -> dict:
+        """Build a detailed entry for an admission mismatch."""
+        trace = decision_traces.get(key, {})
+        reasons = expected_reasons.get(key, [])
+        
+        entry = {
+            'asset_key': key,
+            'category': category,
+            'result': result,
+            'farm_expected_admission': farm_expected,
+            'aod_admission': aod_decision,
+            'farm_reason_codes': reasons if isinstance(reasons, list) else [],
+        }
+        
+        if isinstance(trace, dict):
+            entry['discovery_sources'] = trace.get('discovery_sources_list', [])
+            entry['discovery_count'] = trace.get('discovery_sources_count', 0)
+            entry['is_external'] = trace.get('is_external', False)
+            entry['is_active'] = trace.get('is_active', False)
+            entry['idp_present'] = trace.get('idp_present', False)
+            entry['cmdb_present'] = trace.get('cmdb_present', False)
+            entry['vendor_governance'] = trace.get('vendor_governance')
+            entry['rejection_reason'] = trace.get('rejection_reason')
+            entry['farm_classification'] = 'shadow' if trace.get('is_shadow') else ('zombie' if trace.get('is_zombie') else 'clean')
+            entry['raw_domains_seen'] = trace.get('raw_domains_seen', [])
+            entry['latest_activity'] = trace.get('latest_activity_at')
+        
+        aod_summary = asset_summaries.get(key, {}) if asset_summaries else {}
+        if isinstance(aod_summary, dict):
+            entry['aod_reason_codes'] = aod_summary.get('reason_codes', [])
+            entry['aod_is_shadow'] = aod_summary.get('is_shadow', False)
+            entry['aod_is_zombie'] = aod_summary.get('is_zombie', False)
+        
+        return entry
+    
+    cataloged_missed_details = [
+        build_admission_mismatch_entry(k, 'cataloged', 'missed_by_aod', 'admitted', 'rejected')
+        for k in cataloged_missed
+    ]
+    cataloged_fp_details = [
+        build_admission_mismatch_entry(k, 'cataloged', 'false_positive', 'rejected', 'admitted')
+        for k in cataloged_fp
+    ]
+    rejected_missed_details = [
+        build_admission_mismatch_entry(k, 'rejected', 'missed_by_aod', 'rejected', 'admitted')
+        for k in rejected_missed
+    ]
+    rejected_fp_details = [
+        build_admission_mismatch_entry(k, 'rejected', 'false_positive', 'admitted', 'rejected')
+        for k in rejected_fp
+    ]
+    
     analysis['admission_reconciliation'] = {
         'cataloged': {
             'farm_expected': len(farm_admitted_keys),
@@ -736,6 +791,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'missed_keys': list(cataloged_missed),
             'fp_keys': list(cataloged_fp),
             'accuracy': admission_cataloged_accuracy,
+            'missed_details': cataloged_missed_details,
+            'fp_details': cataloged_fp_details,
         },
         'rejected': {
             'farm_expected': len(farm_rejected_keys),
@@ -747,6 +804,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'missed_keys': list(rejected_missed),
             'fp_keys': list(rejected_fp),
             'accuracy': admission_rejected_accuracy,
+            'missed_details': rejected_missed_details,
+            'fp_details': rejected_fp_details,
         }
     }
     
