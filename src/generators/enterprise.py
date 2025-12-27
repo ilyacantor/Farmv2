@@ -258,6 +258,7 @@ class EnterpriseGenerator:
         snapshot_time: Optional[datetime] = None,
         data_preset: Optional[DataPresetEnum] = None,
         policy_config: Optional[PolicyConfig] = None,
+        volume_multiplier: int = 1,
     ):
         self.tenant_id = tenant_id
         self.seed = seed
@@ -270,6 +271,7 @@ class EnterpriseGenerator:
         self.rng = random.Random(seed)
         self.run_id = self._generate_uuid()
         self.base_date = snapshot_time if snapshot_time else datetime.utcnow()
+        self.volume_multiplier = max(1, min(50, volume_multiplier))
         
         self.scale_multipliers = {
             ScaleEnum.small: 1,
@@ -368,10 +370,35 @@ class EnterpriseGenerator:
             return None
         return email
 
+    def _generate_synthetic_saas(self, count: int, category: str = "saas") -> list[dict]:
+        """Generate synthetic SaaS apps with realistic domains when static lists are exhausted."""
+        prefixes = ["Cloud", "Smart", "Easy", "Pro", "Fast", "Open", "Net", "Data", "Team", "Work",
+                    "Hub", "Flow", "Sync", "Core", "Link", "Flex", "Rapid", "Prime", "Max", "Ultra"]
+        suffixes = ["ly", "ify", "io", "fy", "hub", "base", "desk", "suite", "space", "labs",
+                    "works", "force", "point", "cloud", "soft", "tech", "app", "sync", "flow", "box"]
+        tlds = ["com", "io", "co", "app", "dev", "net", "org", "cloud", "ai", "tech"]
+        
+        synthetic = []
+        for i in range(count):
+            prefix = self.rng.choice(prefixes)
+            suffix = self.rng.choice(suffixes)
+            tld = self.rng.choice(tlds)
+            name = f"{prefix}{suffix}"
+            domain = f"{name.lower()}.{tld}"
+            synthetic.append({
+                "name": name,
+                "vendor": f"{name} Inc",
+                "domain": domain,
+                "category": category,
+                "synthetic": True
+            })
+        return synthetic
+
     def _init_enterprise(self):
         mult = self.scale_multipliers[self.scale]
+        vol = self.volume_multiplier
         
-        num_employees = 20 * mult
+        num_employees = 20 * mult * vol
         for _ in range(num_employees):
             first = self.rng.choice(FIRST_NAMES)
             last = self.rng.choice(LAST_NAMES)
@@ -381,33 +408,74 @@ class EnterpriseGenerator:
                 "email": self._generate_email(first, last),
             })
         
-        num_saas = min(len(SAAS_APPS), 8 + mult * 2)
-        self._saas_selection = self.rng.sample(SAAS_APPS, num_saas)
+        target_saas = (8 + mult * 2) * vol
+        if target_saas <= len(SAAS_APPS):
+            self._saas_selection = self.rng.sample(SAAS_APPS, target_saas)
+        else:
+            self._saas_selection = list(SAAS_APPS)
+            synthetic_needed = target_saas - len(SAAS_APPS)
+            self._saas_selection.extend(self._generate_synthetic_saas(synthetic_needed, "saas"))
         
         shadow_count = {
             RealismProfileEnum.clean: 0,
-            RealismProfileEnum.typical: max(2, mult),
-            RealismProfileEnum.messy: max(3, mult * 2),
+            RealismProfileEnum.typical: max(2, mult) * vol,
+            RealismProfileEnum.messy: max(3, mult * 2) * vol,
         }
-        num_shadows = min(len(SHADOW_SAAS_APPS), shadow_count.get(self.realism_profile, 2))
-        self._shadow_apps = self.rng.sample(SHADOW_SAAS_APPS, num_shadows)
+        target_shadows = shadow_count.get(self.realism_profile, 2)
+        if target_shadows <= len(SHADOW_SAAS_APPS):
+            self._shadow_apps = self.rng.sample(SHADOW_SAAS_APPS, target_shadows) if target_shadows > 0 else []
+        else:
+            self._shadow_apps = list(SHADOW_SAAS_APPS)
+            synthetic_needed = target_shadows - len(SHADOW_SAAS_APPS)
+            self._shadow_apps.extend(self._generate_synthetic_saas(synthetic_needed, "shadow"))
         
-        num_services = min(len(INTERNAL_SERVICES), 5 + mult * 2)
-        self._internal_services = self.rng.sample(INTERNAL_SERVICES, num_services)
+        target_services = (5 + mult * 2) * vol
+        if target_services <= len(INTERNAL_SERVICES):
+            self._internal_services = self.rng.sample(INTERNAL_SERVICES, target_services)
+        else:
+            self._internal_services = list(INTERNAL_SERVICES)
+            for i in range(target_services - len(INTERNAL_SERVICES)):
+                svc_name = f"svc-{self.rng.choice(['api', 'worker', 'batch', 'stream', 'cache', 'queue'])}-{i:03d}"
+                self._internal_services.append({"name": svc_name, "category": "service", "synthetic": True})
         
-        num_datastores = min(len(DATASTORES), 3 + mult)
-        self._datastores = self.rng.sample(DATASTORES, num_datastores)
+        target_datastores = (3 + mult) * vol
+        if target_datastores <= len(DATASTORES):
+            self._datastores = self.rng.sample(DATASTORES, target_datastores)
+        else:
+            self._datastores = list(DATASTORES)
+            ds_types = [
+                ("postgres", "PostgreSQL"),
+                ("mysql", "MySQL"),
+                ("redis", "Redis"),
+                ("mongo", "MongoDB"),
+                ("elastic", "Elastic"),
+            ]
+            for i in range(target_datastores - len(DATASTORES)):
+                ds_type, ds_vendor = self.rng.choice(ds_types)
+                ds_name = f"db-{ds_type}-{i:03d}"
+                self._datastores.append({"name": ds_name, "vendor": ds_vendor, "category": "database", "type": ds_type, "synthetic": True})
         
         zombie_count = {
-            RealismProfileEnum.clean: 2,
-            RealismProfileEnum.typical: max(3, mult),
-            RealismProfileEnum.messy: max(4, mult + 1),
+            RealismProfileEnum.clean: 2 * vol,
+            RealismProfileEnum.typical: max(3, mult) * vol,
+            RealismProfileEnum.messy: max(4, mult + 1) * vol,
         }
-        num_zombies = min(len(ZOMBIE_APPS), zombie_count.get(self.realism_profile, 2))
-        self._zombie_apps = self.rng.sample(ZOMBIE_APPS, num_zombies)
+        target_zombies = zombie_count.get(self.realism_profile, 2)
+        if target_zombies <= len(ZOMBIE_APPS):
+            self._zombie_apps = self.rng.sample(ZOMBIE_APPS, target_zombies)
+        else:
+            self._zombie_apps = list(ZOMBIE_APPS)
+            synthetic_needed = target_zombies - len(ZOMBIE_APPS)
+            self._zombie_apps.extend(self._generate_synthetic_saas(synthetic_needed, "zombie"))
         
-        num_zombie_svcs = min(len(ZOMBIE_INTERNAL_SERVICES), max(2, mult // 2))
-        self._zombie_services = self.rng.sample(ZOMBIE_INTERNAL_SERVICES, num_zombie_svcs)
+        target_zombie_svcs = max(2, mult // 2) * vol
+        if target_zombie_svcs <= len(ZOMBIE_INTERNAL_SERVICES):
+            self._zombie_services = self.rng.sample(ZOMBIE_INTERNAL_SERVICES, target_zombie_svcs)
+        else:
+            self._zombie_services = list(ZOMBIE_INTERNAL_SERVICES)
+            for i in range(target_zombie_svcs - len(ZOMBIE_INTERNAL_SERVICES)):
+                svc_name = f"legacy-svc-{i:03d}"
+                self._zombie_services.append({"name": svc_name, "category": "service", "synthetic": True})
         
         if self.preset_config:
             self._init_preset_data()
@@ -1112,6 +1180,7 @@ class EnterpriseGenerator:
             scale=self.scale,
             enterprise_profile=self.enterprise_profile,
             realism_profile=self.realism_profile,
+            volume_multiplier=self.volume_multiplier,
             created_at=self.base_date.isoformat() + "Z",
             counts=counts,
         )
