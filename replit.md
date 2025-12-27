@@ -159,18 +159,18 @@ The project is structured around a FastAPI application. It features a simple Far
 ### Simplified Configuration System
 - **Scale** now controls volume via internal multiplier:
   - `small=1x`, `medium=4x`, `large=12x`, `enterprise=50x`, `mega=100x`
-- **Realism Profile** controls corroboration rate (% of assets with multi-plane evidence):
-  - `clean=100%`: All assets fully corroborated → high admission
-  - `typical=40%`: Normal enterprise messiness
-  - `messy=5%`: Minimal corroboration → high rejection (needle in haystack)
-- IdP/CMDB coverage tied to corroboration rate for realistic admission gates
+- **Realism Profile** decouples evidence strength from governance coverage:
+  - `clean`: corroboration=90%, governance=95% → High admission, low shadow
+  - `typical`: corroboration=80%, governance=60% → Medium shadow
+  - `messy`: corroboration=80%, governance=15% → High admission, **HIGH shadow**
+- "Messy" means ungoverned (shadow IT), not weak signals (rejected)
 - Zombie CMDB entries now respect coverage rate (fixed unconditional CMDB bug)
 - Benchmark results:
-  | Scale + Realism | Admitted |
-  |----------------|----------|
-  | large + clean | ~396 |
-  | large + typical | ~533 |
-  | large + messy | ~198 |
+  | Scale + Realism | Admitted | Shadow | Clean |
+  |-----------------|----------|--------|-------|
+  | large + clean | ~396 | ~1 | ~382 |
+  | large + typical | ~400 | ~120 | ~200 |
+  | large + messy | ~622 | **~311** | ~251 |
 
 ### Admission Mismatch Export (JSON/CSV)
 - Enhanced download endpoint to include both admission and classification mismatches

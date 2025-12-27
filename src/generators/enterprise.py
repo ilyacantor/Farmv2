@@ -256,9 +256,15 @@ SCALE_MULTIPLIERS = {
 }
 
 CORROBORATION_RATES = {
-    RealismProfileEnum.clean: 1.0,
-    RealismProfileEnum.typical: 0.40,
-    RealismProfileEnum.messy: 0.05,
+    RealismProfileEnum.clean: 0.90,
+    RealismProfileEnum.typical: 0.80,
+    RealismProfileEnum.messy: 0.80,
+}
+
+GOVERNANCE_RATES = {
+    RealismProfileEnum.clean: 0.95,
+    RealismProfileEnum.typical: 0.60,
+    RealismProfileEnum.messy: 0.15,
 }
 
 
@@ -287,7 +293,8 @@ class EnterpriseGenerator:
         self.base_date = snapshot_time if snapshot_time else datetime.utcnow()
         
         self.volume_multiplier = SCALE_MULTIPLIERS.get(scale, 1)
-        self.corroboration_rate = CORROBORATION_RATES.get(realism_profile, 0.6)
+        self.corroboration_rate = CORROBORATION_RATES.get(realism_profile, 0.8)
+        self.governance_rate = GOVERNANCE_RATES.get(realism_profile, 0.6)
         
         self.scale_multipliers = SCALE_MULTIPLIERS
         
@@ -782,7 +789,7 @@ class EnterpriseGenerator:
     def generate_idp_plane(self) -> IdPPlane:
         objects = []
         
-        coverage = self.corroboration_rate
+        coverage = self.governance_rate
         
         for app in self._saas_selection:
             if self.rng.random() < coverage:
@@ -841,7 +848,7 @@ class EnterpriseGenerator:
     def generate_cmdb_plane(self) -> CMDBPlane:
         cis = []
         
-        coverage = self.corroboration_rate
+        coverage = self.governance_rate
         
         for app in self._saas_selection:
             if self.rng.random() < coverage:

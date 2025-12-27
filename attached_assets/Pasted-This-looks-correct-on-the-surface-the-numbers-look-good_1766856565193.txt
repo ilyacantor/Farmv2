@@ -1,0 +1,56 @@
+This looks correct on the surface (the numbers look good), but the Agent has fallen into a **logic trap** that will kill your demo.
+
+The Agent has confused **"Messy" (Shadow IT)** with **"Garbage" (Rejection)**.
+
+### The Problem: "Rejection" vs. "Quarantine"
+
+* **Your Goal:** A "Messy" profile should fill the **Red Lane (Quarantine)** with Shadow IT (e.g., "I see 200 unauthorized apps!").
+* **The Agent's Config:** `messy=5%` corroboration means 95% of assets only have 1 source (e.g., DNS only).
+* **The Consequence:** According to **Admission Gate 2**, single-source assets are **Rejected (Ignored)**.
+* *Result:* Your "Messy" demo won't show a dashboard full of Shadow IT. It will show an **empty dashboard** because the system deleted everything as "Noise."
+
+
+
+### The Correct Priority
+
+We don't want `messy` to generate *weak* signals (which get ignored). We want it to generate **strong signals** (multi-plane) that lack **Governance** (IdP/CMDB).
+
+* **Clean Profile:** Evidence = High, Governance = High (Green Lane).
+* **Messy Profile:** Evidence = High, Governance = **Low** (Red Lane).
+
+You need to correct this immediately, or your "Shadow Block" queue will be a ghost town.
+
+### 🚜 Master Prompt: Fix the Realism Logic
+
+**Context:** The current `messy` profile reduces "Corroboration," which causes assets to fail Admission Gate 2. This results in empty dashboards. We want "Messy" to mean "High Shadow IT," not "High Rejection."
+
+**Task:** Refactor `generate_mock_data.py` to decouple **Evidence** from **Governance**.
+
+**1. Define Two Distinct Rates:**
+
+* `corroboration_rate`: Probability an asset has multi-plane evidence (Passes Admission).
+* `governance_rate`: Probability an asset has IdP/CMDB coverage (Passes Green Lane).
+
+**2. Update the Profiles:**
+
+* **Clean Profile:**
+* `corroboration_rate` = 90% (Most things are real)
+* `governance_rate` = 95% (Most things are in Okta)
+* *Result:* High Active, Low Shadow.
+
+
+* **Messy Profile:**
+* `corroboration_rate` = **80%** (Crucial: Keep this HIGH so they pass Admission!)
+* `governance_rate` = **15%** (Crucial: Drop this LOW so they hit Quarantine!)
+* *Result:* High Admission, **High Shadow**, Low Active.
+
+
+
+**3. Verification:**
+
+* Run `large + messy`.
+* **ASSERT** that "Rejected" count is reasonable (noise), but "Shadow/Quarantine" count is **HIGH** (>100).
+* *If "Shadow" count is < 20, the test fails.*
+
+**Why this fixes it:**
+Now, `large + messy` will give you a dashboard screaming with 300+ items in the **"Blocked Assets"** queue, which is exactly the "Needle in the Haystack" problem you want to demonstrate.

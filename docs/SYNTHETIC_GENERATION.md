@@ -65,20 +65,22 @@ Simulates different industry IT landscapes:
 
 ### Realism Profile
 
-Controls data quality, conflict levels, and **corroboration rate** (percentage of assets receiving multi-plane evidence):
+Controls data quality by decoupling **evidence strength** from **governance coverage**:
 
-| Profile | Corroboration | IdP/CMDB Coverage | Description |
-|---------|---------------|-------------------|-------------|
-| **clean** | 100% | 100% | All assets well-governed, fully corroborated |
-| **typical** | 40% | 40% | Normal enterprise messiness, partial coverage |
-| **messy** | 5% | 5% | Mostly ungoverned, minimal corroboration |
+| Profile | Corroboration | Governance | Result |
+|---------|---------------|------------|--------|
+| **clean** | 90% | 95% | High admission, low shadow (Green Lane) |
+| **typical** | 80% | 60% | Medium admission, medium shadow |
+| **messy** | 80% | 15% | High admission, **HIGH shadow** (Red Lane!) |
 
-Corroboration rate determines what percentage of assets get:
-- Multiple discovery sources (2+ for admission)
-- IdP presence
-- CMDB entries
+**Corroboration rate** controls multi-source evidence (determines admission):
+- Higher rate = more assets pass noise floor = higher admission
 
-Low corroboration = high rejection rate = realistic "needle in haystack" scenarios.
+**Governance rate** controls IdP/CMDB presence (determines classification):
+- Higher rate = more assets have governance = classified as Clean
+- Lower rate = more assets lack governance = classified as **Shadow**
+
+The key insight: "Messy" doesn't mean weak signals (rejected), it means **ungoverned** signals (quarantined as shadow IT).
 
 ### Data Preset (Challenge Level)
 
