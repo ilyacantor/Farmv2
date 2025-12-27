@@ -30,6 +30,7 @@ class PolicyConfig(BaseModel):
     exclusions: list[str] = []
     infrastructure_seeds: list[str] = []
     corporate_root_domains: list[str] = []
+    banned_domains: list[str] = []
 
     def is_excluded(self, domain: str) -> bool:
         """Check if domain should be excluded from classification."""
@@ -41,6 +42,10 @@ class PolicyConfig(BaseModel):
         if not self.scope.include_infra and domain_lower in self.infrastructure_seeds:
             return True
         return False
+
+    def is_banned(self, domain: str) -> bool:
+        """Check if domain is on the banned/blocked list."""
+        return domain.lower() in [d.lower() for d in self.banned_domains]
 
     def is_admitted(
         self,
@@ -93,6 +98,7 @@ class PolicyConfig(BaseModel):
             exclusions=data.get("exclusions", []),
             infrastructure_seeds=data.get("infrastructure_seeds", []),
             corporate_root_domains=data.get("corporate_root_domains", []),
+            banned_domains=data.get("banned_domains", []),
         )
 
     @classmethod
@@ -130,5 +136,8 @@ class PolicyConfig(BaseModel):
             corporate_root_domains=[
                 "google.com", "microsoft.com", "amazon.com", "apple.com",
                 "hubspot.com", "salesforce.com", "servicenow.com", "oracle.com",
+            ],
+            banned_domains=[
+                "tiktok.com", "bytedance.com", "wechat.com", "weixin.qq.com",
             ],
         )

@@ -104,6 +104,40 @@ ZOMBIE_INTERNAL_SERVICES = [
     {"name": "v1-user-service", "category": "service"},
 ]
 
+STRESS_TEST_SCENARIOS = {
+    "split_brain": {
+        "name": "Monday.com",
+        "vendor": "monday.com",
+        "domain": "monday.com",
+        "description": "Split Brain: Finance (name-only) + Network (domain) must merge into ONE entity"
+    },
+    "toxic_asset": {
+        "name": "Trello",
+        "vendor": "Atlassian",
+        "domain": "trello.com",
+        "description": "Toxic Asset: CMDB=yes, IdP=no, Active usage = identity gap (amber queue)"
+    },
+    "banned_asset": {
+        "name": "TikTok",
+        "vendor": "ByteDance",
+        "domain": "tiktok.com",
+        "description": "Banned Asset: Restricted domain triggers blocked queue"
+    },
+    "zombie_asset": {
+        "name": "Zoom Legacy",
+        "vendor": "Zoom",
+        "domain": "zoom-legacy.com",
+        "description": "Zombie: CMDB=yes, IdP=yes, stale activity (>90 days) = deprovision candidate"
+    },
+}
+
+BANNED_DOMAINS = [
+    "tiktok.com",
+    "bytedance.com",
+    "wechat.com",
+    "weixin.qq.com",
+]
+
 INTERNAL_SERVICES = [
     {"name": "auth-service", "category": "service"},
     {"name": "billing-api", "category": "service"},
@@ -900,6 +934,139 @@ class EnterpriseGenerator:
         
         return FinancePlane(vendors=vendors, contracts=contracts, transactions=transactions)
 
+    def _inject_stress_tests(
+        self,
+        discovery: DiscoveryPlane,
+        idp: IdPPlane,
+        cmdb: CMDBPlane,
+        network: NetworkPlane,
+        finance: FinancePlane
+    ) -> None:
+        """Inject explicit stress test scenarios for triage validation.
+        
+        Scenarios:
+        1. Split Brain: Finance (name-only, no domain) + Network (domain-based) → must merge
+        2. Toxic Asset: CMDB=yes, IdP=no, Active → identity gap (amber queue)
+        3. Banned Asset: Restricted domain → blocked queue
+        4. Zombie: CMDB=yes, IdP=yes, stale (>90 days) → deprovision candidate
+        """
+        
+        split_brain = STRESS_TEST_SCENARIOS["split_brain"]
+        finance.vendors.append(FinanceVendor(
+            vendor_id=f"VND-STRESS-SPLIT",
+            vendor_name=split_brain["name"],
+        ))
+        finance.transactions.append(FinanceTransaction(
+            txn_id=f"TXN-STRESS-SPLIT",
+            vendor_name=split_brain["name"],
+            amount=450.00,
+            currency="USD",
+            date=self._random_recent_date(30),
+            payment_type=PaymentTypeEnum.expense,
+            is_recurring=True,
+            memo="Stress test: Split brain finance observation (name-only, no domain)",
+        ))
+        network.dns.append(NetworkDNS(
+            dns_id=f"DNS-STRESS-SPLIT",
+            queried_domain=split_brain["domain"],
+            source_device="DEV-STRESS-TEST",
+            timestamp=self._random_recent_date(7),
+        ))
+        network.proxy.append(NetworkProxy(
+            proxy_id=f"PRX-STRESS-SPLIT",
+            url=f"https://app.{split_brain['domain']}/dashboard",
+            domain=split_brain["domain"],
+            user_email=self._employees[0]["email"] if self._employees else None,
+            timestamp=self._random_recent_date(7),
+        ))
+        
+        toxic = STRESS_TEST_SCENARIOS["toxic_asset"]
+        emp = self._employees[0] if self._employees else None
+        cmdb.cis.append(CMDBConfigItem(
+            ci_id=f"CI-STRESS-TOXIC",
+            name=toxic["name"],
+            ci_type=CITypeEnum.app,
+            lifecycle=LifecycleEnum.prod,
+            owner=f"{emp['first']} {emp['last']}" if emp else "Stress Test Owner",
+            owner_email=emp["email"] if emp else "stress@test.com",
+            vendor=toxic["vendor"],
+            external_ref=toxic["domain"],
+        ))
+        for i in range(3):
+            discovery.observations.append(DiscoveryObservation(
+                observation_id=f"OBS-STRESS-TOXIC-{i}",
+                observed_at=self._random_recent_date(7),
+                source=SourceEnum.proxy if i == 0 else (SourceEnum.dns if i == 1 else SourceEnum.browser),
+                observed_name=toxic["name"],
+                observed_uri=f"https://app.{toxic['domain']}/board",
+                hostname=f"app.{toxic['domain']}",
+                domain=toxic["domain"],
+                vendor_hint=toxic["vendor"],
+                category_hint=CategoryHintEnum.saas,
+                environment_hint=EnvironmentHintEnum.prod,
+                raw={"stress_test": "toxic_asset", "scenario": "CMDB yes, IdP no = identity gap"},
+            ))
+        
+        banned = STRESS_TEST_SCENARIOS["banned_asset"]
+        for i in range(2):
+            discovery.observations.append(DiscoveryObservation(
+                observation_id=f"OBS-STRESS-BANNED-{i}",
+                observed_at=self._random_recent_date(3),
+                source=SourceEnum.proxy if i == 0 else SourceEnum.dns,
+                observed_name=banned["name"],
+                observed_uri=f"https://www.{banned['domain']}",
+                hostname=f"www.{banned['domain']}",
+                domain=banned["domain"],
+                vendor_hint=banned["vendor"],
+                category_hint=CategoryHintEnum.saas,
+                environment_hint=EnvironmentHintEnum.unknown,
+                raw={"stress_test": "banned_asset", "scenario": "Blocked domain detection"},
+            ))
+        network.dns.append(NetworkDNS(
+            dns_id=f"DNS-STRESS-BANNED",
+            queried_domain=banned["domain"],
+            source_device="DEV-STRESS-TEST",
+            timestamp=self._random_recent_date(3),
+        ))
+        
+        zombie = STRESS_TEST_SCENARIOS["zombie_asset"]
+        stale_date = self._random_stale_date()
+        emp = self._employees[0] if self._employees else None
+        cmdb.cis.append(CMDBConfigItem(
+            ci_id=f"CI-STRESS-ZOMBIE",
+            name=zombie["name"],
+            ci_type=CITypeEnum.app,
+            lifecycle=LifecycleEnum.prod,
+            owner=f"{emp['first']} {emp['last']}" if emp else "Stress Test Owner",
+            owner_email=emp["email"] if emp else "stress@test.com",
+            vendor=zombie["vendor"],
+            external_ref=zombie["domain"],
+        ))
+        idp.objects.append(IdPObject(
+            idp_id=f"IDP-STRESS-ZOMBIE",
+            name=zombie["name"],
+            idp_type=IdPTypeEnum.application,
+            external_ref=zombie["domain"],
+            has_sso=True,
+            has_scim=False,
+            vendor=zombie["vendor"],
+            last_login_at=stale_date,
+        ))
+        for i in range(2):
+            discovery.observations.append(DiscoveryObservation(
+                observation_id=f"OBS-STRESS-ZOMBIE-{i}",
+                observed_at=stale_date,
+                source=SourceEnum.proxy if i == 0 else SourceEnum.dns,
+                observed_name=zombie["name"],
+                observed_uri=f"https://app.{zombie['domain']}/meeting",
+                hostname=f"app.{zombie['domain']}",
+                domain=zombie["domain"],
+                vendor_hint=zombie["vendor"],
+                category_hint=CategoryHintEnum.saas,
+                environment_hint=EnvironmentHintEnum.prod,
+                raw={"stress_test": "zombie_asset", "scenario": "Stale activity >90 days = deprovision candidate"},
+            ))
+
     def generate(self) -> SnapshotResponse:
         self._init_enterprise()
         
@@ -910,6 +1077,8 @@ class EnterpriseGenerator:
         endpoint = self.generate_endpoint_plane()
         network = self.generate_network_plane()
         finance = self.generate_finance_plane()
+        
+        self._inject_stress_tests(discovery, idp, cmdb, network, finance)
         
         planes = AllPlanes(
             discovery=discovery,
