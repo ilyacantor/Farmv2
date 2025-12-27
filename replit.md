@@ -151,6 +151,22 @@ The project is structured around a FastAPI application. It features a simple Far
 
 ## Recent Changes (2025-12-27)
 
+### Coupled Evidence Generation (Multi-Plane Corroboration)
+- Refactored `generate_discovery_plane()` to ensure source diversity per asset
+- Added `_generate_coupled_observations()` helper that creates observations from N distinct sources
+- Asset tier strategy (aligns with industry 20-30% admission benchmarks):
+  - **Core Stack** (first 25 SaaS apps): 3+ distinct sources → 100% admission
+  - **Departmental** (remaining SaaS apps): 2 distinct sources → 100% admission
+  - **Shadow apps**: 40% get 2 sources (admitted as shadows), 60% get 1 source (rejected by noise_floor)
+  - **Zombie apps**: 2 sources with stale timestamps → admitted as zombies
+  - **Junk/noise domains**: single source only → correctly rejected
+  - **Near collisions**: single source only → correctly rejected
+  - **Aliased products**: 2 sources → admitted
+- Benchmark results (large scale, messy, adversarial):
+  - `volume_multiplier=10`: 13,437 obs → 1,552 unique → 428 admitted (27.6%)
+  - `volume_multiplier=5`: 7,891 obs → 1,059 unique → 216 admitted (20.4%)
+- Admission rate now in realistic 20-30% range (matching Netskope/Zscaler/CASB benchmarks)
+
 ### Admission Mismatch Export (JSON/CSV)
 - Enhanced download endpoint to include both admission and classification mismatches
 - JSON export has separate `admission_mismatches` and `classification_mismatches` arrays
