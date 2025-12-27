@@ -120,9 +120,12 @@ The project is structured around a FastAPI application. It features a simple Far
 - **RequestController** - Async request manager to prevent stale response race conditions
 - **TourController** - Guided Validation Run system for cross-system tours with AOD
 
+**Documentation (docs/):**
+- **SYNTHETIC_GENERATION.md** - Comprehensive guide to synthetic data generation, coupled evidence, and configuration parameters
+
 **Technical Implementations:**
 - **Core Framework:** FastAPI for the web API.
-- **Data Generation:** Deterministic generators ensure reproducible results based on seed, scale, and enterprise/realism profiles.
+- **Data Generation:** Deterministic generators ensure reproducible results based on seed, scale, and enterprise/realism profiles. See `docs/SYNTHETIC_GENERATION.md` for details.
 - **Data Planes:** Generates 7 independent data planes (Discovery, IdP, CMDB, Cloud, Endpoint, Network, Finance) designed to correlate only via realistic keys.
 - **API Design:** RESTful API for snapshot management, AOD reconciliation, and status queries.
 - **Schema Versioning:** All snapshots include `meta.schema_version = "farm.v1"`.
