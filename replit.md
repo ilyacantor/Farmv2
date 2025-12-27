@@ -151,6 +151,17 @@ The project is structured around a FastAPI application. It features a simple Far
 
 ## Recent Changes (2025-12-27)
 
+### Volume Multiplier for Enterprise-Scale Generation
+- Added `volume_multiplier` parameter to SnapshotRequest (1-50, default 1)
+- Scales all asset generation formulas by this multiplier
+- Generates synthetic SaaS apps, services, and datastores when exceeding static list sizes
+- Benchmark results (large scale, messy profile):
+  - `volume_multiplier=1`: 50 admitted assets
+  - `volume_multiplier=5`: 241 admitted assets
+  - `volume_multiplier=10`: 471 admitted assets (300-500 target range)
+  - `volume_multiplier=15`: 684 admitted assets
+- Synthetic assets include realistic domains (e.g., `cloudify.io`, `smartbase.com`)
+
 ### Stress Test Scenarios
 - Added 4 deterministic stress test scenarios injected into every snapshot:
   1. **Split Brain (Monday.com)**: Finance vendor (name-only) + Network DNS/Proxy (domain-based) - tests AOD's merge logic
