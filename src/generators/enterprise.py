@@ -538,28 +538,74 @@ class EnterpriseGenerator:
             return False
         return self.rng.random() < self.preset_config.conflict_rate
 
-    def generate_discovery_plane(self) -> DiscoveryPlane:
-        observations = []
-        mult = self.scale_multipliers[self.scale]
+    def _generate_coupled_observations(
+        self, 
+        app: dict, 
+        min_sources: int,
+        obs_per_source: int = 2,
+        is_stale: bool = False,
+    ) -> list[DiscoveryObservation]:
+        """Generate observations for an app from at least min_sources distinct sources.
         
-        for app in self._saas_selection:
-            num_obs = self.rng.randint(2, 5) * mult
-            for _ in range(num_obs):
-                source = self.rng.choice(list(SourceEnum))
+        This is the core of "Coupled Evidence Generation":
+        - Ensures source diversity for admission (noise_floor=2)
+        - Core Stack apps get 3+ sources
+        - Departmental apps get 2+ sources
+        - Shadow/Noise gets 1 source (correctly rejected or edge case)
+        
+        Args:
+            app: Dict with name, domain, vendor
+            min_sources: Minimum distinct sources to use (1-7)
+            obs_per_source: Observations to generate per source
+            is_stale: If True, use stale timestamps (for zombies)
+        """
+        all_sources = list(SourceEnum)
+        sources_to_use = self.rng.sample(all_sources, min(min_sources, len(all_sources)))
+        
+        observations = []
+        for source in sources_to_use:
+            for _ in range(obs_per_source):
                 obs = DiscoveryObservation(
                     observation_id=self._generate_uuid(),
-                    observed_at=self._random_activity_date(),
+                    observed_at=self._random_stale_date() if is_stale else self._random_activity_date(),
                     source=source,
                     observed_name=self._apply_name_drift(app["name"]),
                     observed_uri=f"https://{self.tenant_id.lower()}.{app['domain']}" if self.rng.random() > 0.3 else None,
                     hostname=f"{app['name'].lower().replace(' ', '-')}.{app['domain']}" if self.rng.random() > 0.4 else None,
                     domain=app["domain"],
-                    vendor_hint=app["vendor"] if self.rng.random() > 0.2 else None,
+                    vendor_hint=app.get("vendor") if self.rng.random() > 0.2 else None,
                     category_hint=CategoryHintEnum.saas,
                     environment_hint=self.rng.choice(list(EnvironmentHintEnum)),
                     raw={"bytes_transferred": self.rng.randint(1000, 1000000)},
                 )
                 observations.append(obs)
+        return observations
+
+    def generate_discovery_plane(self) -> DiscoveryPlane:
+        """Generate discovery observations with Coupled Evidence Generation.
+        
+        Asset tiers:
+        - Core Stack (first 25 SaaS): 3+ distinct sources → 100% admission
+        - Departmental (rest of SaaS): 2 distinct sources → 100% admission
+        - Shadow apps (40% multi-plane): 2 sources → admitted as shadows
+        - Shadow apps (60% single-plane): 1 source → rejected (noise floor)
+        - Junk/noise: 1 source → correctly rejected
+        """
+        observations = []
+        mult = self.scale_multipliers[self.scale]
+        
+        CORE_STACK_SIZE = 25
+        for idx, app in enumerate(self._saas_selection):
+            if idx < CORE_STACK_SIZE:
+                min_sources = 3
+                obs_per_source = 2 * mult
+            else:
+                min_sources = 2
+                obs_per_source = max(1, mult)
+            
+            observations.extend(
+                self._generate_coupled_observations(app, min_sources, obs_per_source)
+            )
         
         for svc in self._internal_services:
             num_obs = self.rng.randint(1, 3) * mult
@@ -590,39 +636,34 @@ class EnterpriseGenerator:
             observations.append(obs)
         
         for shadow_app in self._shadow_apps:
-            num_obs = self.rng.randint(2, 4) * mult
-            for _ in range(num_obs):
-                source = self.rng.choice(list(SourceEnum))
-                obs = DiscoveryObservation(
-                    observation_id=self._generate_uuid(),
-                    observed_at=self._random_activity_date(),
-                    source=source,
-                    observed_name=self._apply_name_drift(shadow_app["name"]),
-                    observed_uri=f"https://{self.tenant_id.lower()}.{shadow_app['domain']}" if self.rng.random() > 0.3 else None,
-                    hostname=f"{shadow_app['name'].lower().replace(' ', '-')}.{shadow_app['domain']}" if self.rng.random() > 0.4 else None,
-                    domain=shadow_app["domain"],
-                    vendor_hint=shadow_app["vendor"] if self.rng.random() > 0.2 else None,
-                    category_hint=CategoryHintEnum.saas,
-                    environment_hint=self.rng.choice(list(EnvironmentHintEnum)),
-                    raw={"bytes_transferred": self.rng.randint(1000, 1000000)},
+            is_advanced_shadow = self.rng.random() < 0.40
+            if is_advanced_shadow:
+                observations.extend(
+                    self._generate_coupled_observations(shadow_app, min_sources=2, obs_per_source=max(1, mult))
                 )
-                observations.append(obs)
+            else:
+                single_source = self.rng.choice(list(SourceEnum))
+                num_obs = self.rng.randint(2, 4) * mult
+                for _ in range(num_obs):
+                    obs = DiscoveryObservation(
+                        observation_id=self._generate_uuid(),
+                        observed_at=self._random_activity_date(),
+                        source=single_source,
+                        observed_name=self._apply_name_drift(shadow_app["name"]),
+                        observed_uri=f"https://{self.tenant_id.lower()}.{shadow_app['domain']}" if self.rng.random() > 0.3 else None,
+                        hostname=f"{shadow_app['name'].lower().replace(' ', '-')}.{shadow_app['domain']}" if self.rng.random() > 0.4 else None,
+                        domain=shadow_app["domain"],
+                        vendor_hint=shadow_app["vendor"] if self.rng.random() > 0.2 else None,
+                        category_hint=CategoryHintEnum.saas,
+                        environment_hint=self.rng.choice(list(EnvironmentHintEnum)),
+                        raw={"bytes_transferred": self.rng.randint(1000, 1000000)},
+                    )
+                    observations.append(obs)
         
         for zombie_app in self._zombie_apps:
-            num_obs = self.rng.randint(1, 2)
-            for _ in range(num_obs):
-                obs = DiscoveryObservation(
-                    observation_id=self._generate_uuid(),
-                    observed_at=self._random_stale_date(),
-                    source=self.rng.choice(list(SourceEnum)),
-                    observed_name=self._apply_name_drift(zombie_app["name"]),
-                    domain=zombie_app["domain"],
-                    vendor_hint=zombie_app["vendor"] if self.rng.random() > 0.3 else None,
-                    category_hint=CategoryHintEnum.saas,
-                    environment_hint=self.rng.choice(list(EnvironmentHintEnum)),
-                    raw={"status": "abandoned"},
-                )
-                observations.append(obs)
+            observations.extend(
+                self._generate_coupled_observations(zombie_app, min_sources=2, obs_per_source=1, is_stale=True)
+            )
         
         for zombie_svc in self._zombie_services:
             obs = DiscoveryObservation(
@@ -638,12 +679,13 @@ class EnterpriseGenerator:
             observations.append(obs)
         
         for junk in self._junk_domains:
+            single_source = self.rng.choice([SourceEnum.dns, SourceEnum.proxy, SourceEnum.browser])
             num_obs = self.rng.randint(1, 3)
             for _ in range(num_obs):
                 obs = DiscoveryObservation(
                     observation_id=self._generate_uuid(),
                     observed_at=self._random_activity_date(),
-                    source=self.rng.choice([SourceEnum.dns, SourceEnum.proxy, SourceEnum.browser]),
+                    source=single_source,
                     observed_name=junk["name"],
                     domain=junk["domain"] if self._should_include_domain() else None,
                     category_hint=CategoryHintEnum.unknown,
@@ -653,10 +695,11 @@ class EnterpriseGenerator:
                 observations.append(obs)
         
         for collision in self._near_collisions:
+            single_source = self.rng.choice([SourceEnum.dns, SourceEnum.browser])
             obs = DiscoveryObservation(
                 observation_id=self._generate_uuid(),
                 observed_at=self._random_activity_date(),
-                source=self.rng.choice([SourceEnum.dns, SourceEnum.browser]),
+                source=single_source,
                 observed_name=collision["name"],
                 domain=collision["domain"],
                 category_hint=CategoryHintEnum.saas,
@@ -666,19 +709,9 @@ class EnterpriseGenerator:
             observations.append(obs)
         
         for alias in self._aliased_products:
-            num_obs = self.rng.randint(1, 3) * mult
-            for _ in range(num_obs):
-                obs = DiscoveryObservation(
-                    observation_id=self._generate_uuid(),
-                    observed_at=self._random_activity_date(),
-                    source=self.rng.choice(list(SourceEnum)),
-                    observed_name=self._apply_name_drift(alias["name"]),
-                    domain=alias["domain"],
-                    category_hint=CategoryHintEnum.saas,
-                    environment_hint=self.rng.choice(list(EnvironmentHintEnum)),
-                    raw={"type": "alias", "primary": alias["primary_domain"]},
-                )
-                observations.append(obs)
+            observations.extend(
+                self._generate_coupled_observations(alias, min_sources=2, obs_per_source=max(1, mult))
+            )
         
         return DiscoveryPlane(observations=observations)
 
