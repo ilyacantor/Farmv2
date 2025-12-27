@@ -149,6 +149,18 @@ The project is structured around a FastAPI application. It features a simple Far
 - **Database:** Supabase Postgres (exclusively). Configured via `SUPABASE_DB_URL` or `DATABASE_URL`. Replit DB URLs are ignored if `IGNORE_REPLIT_DB=true`. Schema includes `runs`, `snapshots`, and `reconciliations` tables.
 - **AOD Module (AutonomOS Discover):** Interacts via defined API contracts. Requires `AOD_URL` and optionally `AOD_SHARED_SECRET` for auto-reconciliation. `USE_AOD_EXPLAIN_STUB=true` enables a local stub for testing.
 
+## Recent Changes (2025-12-27)
+
+### Stress Test Scenarios
+- Added 4 deterministic stress test scenarios injected into every snapshot:
+  1. **Split Brain (Monday.com)**: Finance vendor (name-only) + Network DNS/Proxy (domain-based) - tests AOD's merge logic
+  2. **Toxic Asset (Trello)**: CMDB=yes, IdP=no - tests identity gap detection
+  3. **Banned Asset (TikTok)**: Discovery observations for blocked domain - tests banned domain detection
+  4. **Zombie Asset (Zoom Legacy)**: CMDB+IdP present but stale >90 days - tests staleness detection
+- Added `banned_domains` field to PolicyConfig with `is_banned()` method
+- Scenarios inject via `_inject_stress_tests()` method in EnterpriseGenerator
+- Employee dict structure: `{first, last, email}` (not `{name, email}`)
+
 ## Recent Changes (2025-12-26)
 
 ### Reconciliation Performance Fix
