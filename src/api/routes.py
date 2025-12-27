@@ -753,9 +753,7 @@ async def download_reconciliation_diff(
     
     for item in cataloged.get('missed_details', []):
         admission_rows.append({
-            'mismatch_type': 'admission',
             'category': 'cataloged_missed',
-            'severity': 'MATERIAL',
             'asset_key': item.get('asset_key', ''),
             'farm_expected': 'admitted',
             'aod_decision': 'rejected',
@@ -773,9 +771,7 @@ async def download_reconciliation_diff(
     
     for item in cataloged.get('fp_details', []):
         admission_rows.append({
-            'mismatch_type': 'admission',
             'category': 'cataloged_fp',
-            'severity': 'MATERIAL',
             'asset_key': item.get('asset_key', ''),
             'farm_expected': 'rejected',
             'aod_decision': 'admitted',
@@ -793,9 +789,7 @@ async def download_reconciliation_diff(
     
     for item in rejected.get('missed_details', []):
         admission_rows.append({
-            'mismatch_type': 'admission',
             'category': 'rejected_missed',
-            'severity': 'MATERIAL',
             'asset_key': item.get('asset_key', ''),
             'farm_expected': 'rejected',
             'aod_decision': 'admitted',
@@ -813,9 +807,7 @@ async def download_reconciliation_diff(
     
     for item in rejected.get('fp_details', []):
         admission_rows.append({
-            'mismatch_type': 'admission',
             'category': 'rejected_fp',
-            'severity': 'MATERIAL',
             'asset_key': item.get('asset_key', ''),
             'farm_expected': 'admitted',
             'aod_decision': 'rejected',
@@ -833,9 +825,7 @@ async def download_reconciliation_diff(
     
     for item in analysis.get('missed_shadows', []):
         classification_rows.append({
-            'mismatch_type': 'classification',
             'category': 'shadow_missed',
-            'severity': 'minor',
             'asset_key': item.get('asset_key', ''),
             'farm_expected': 'shadow',
             'aod_decision': item.get('aod_explain', {}).get('decision', ''),
@@ -846,9 +836,7 @@ async def download_reconciliation_diff(
     
     for item in analysis.get('missed_zombies', []):
         classification_rows.append({
-            'mismatch_type': 'classification',
             'category': 'zombie_missed',
-            'severity': 'minor',
             'asset_key': item.get('asset_key', ''),
             'farm_expected': 'zombie',
             'aod_decision': item.get('aod_explain', {}).get('decision', ''),
@@ -860,9 +848,7 @@ async def download_reconciliation_diff(
     for item in analysis.get('false_positive_shadows', []):
         investigation = item.get('farm_investigation', {})
         classification_rows.append({
-            'mismatch_type': 'classification',
             'category': 'shadow_fp',
-            'severity': 'minor',
             'asset_key': item.get('asset_key', ''),
             'farm_expected': item.get('farm_classification', 'clean'),
             'aod_decision': 'shadow',
@@ -875,9 +861,7 @@ async def download_reconciliation_diff(
     for item in analysis.get('false_positive_zombies', []):
         investigation = item.get('farm_investigation', {})
         classification_rows.append({
-            'mismatch_type': 'classification',
             'category': 'zombie_fp',
-            'severity': 'minor',
             'asset_key': item.get('asset_key', ''),
             'farm_expected': item.get('farm_classification', 'clean'),
             'aod_decision': 'zombie',
@@ -929,7 +913,7 @@ async def download_reconciliation_diff(
             headers={"Content-Disposition": f"attachment; filename=reconcile_{reconciliation_id}.json"}
         )
     
-    headers = ['mismatch_type', 'severity', 'category', 'asset_key', 'farm_expected', 'aod_decision',
+    headers = ['category', 'asset_key', 'farm_expected', 'aod_decision',
                'farm_reason_codes', 'aod_reason_codes', 'discovery_sources', 'discovery_count',
                'idp_present', 'cmdb_present', 'vendor_governance', 'rejection_reason', 
                'raw_domains', 'farm_classification', 'rca_hint', 'investigation']

@@ -151,15 +151,14 @@ The project is structured around a FastAPI application. It features a simple Far
 
 ## Recent Changes (2025-12-27)
 
-### Material Admission Mismatch Export (JSON/CSV)
-- Enhanced download endpoint to prioritize MATERIAL admission mismatches over classification mismatches
-- JSON export now has separate `admission_mismatches` and `classification_mismatches` arrays
+### Admission Mismatch Export (JSON/CSV)
+- Enhanced download endpoint to include both admission and classification mismatches
+- JSON export has separate `admission_mismatches` and `classification_mismatches` arrays
 - Admission mismatches include full asset details:
   - `farm_reason_codes`, `aod_reason_codes`
   - `discovery_sources`, `discovery_count`
   - `idp_present`, `cmdb_present`, `vendor_governance`
   - `rejection_reason`, `raw_domains`, `farm_classification`
-- CSV export sorted with MATERIAL rows first, minor (classification) rows after
 - Download always recomputes analysis to ensure fresh detail fields
 - Categories: `cataloged_missed`, `cataloged_fp`, `rejected_missed`, `rejected_fp` for admission; `shadow_missed`, `zombie_missed`, `shadow_fp`, `zombie_fp` for classification
 
