@@ -1,5 +1,7 @@
 # AOS Farm: Discovery, Admission & Classification Policy
 
+> **Plain English:** This document explains the three-step pipeline for identifying IT assets. Step 1 (Discovery): Collect raw signals from network logs, SSO, cloud inventories, etc. Step 2 (Admission): Filter out noise—only assets seen by 2+ sources or confirmed in IdP/CMDB make the cut. Step 3 (Classification): Label admitted assets as Shadow (unmanaged), Zombie (abandoned), or Clean (properly governed). Think of it as: Find → Filter → Label.
+
 This document defines the complete policy for how AOS Farm determines which assets are cataloged and how they are classified.
 
 ---

@@ -1,5 +1,7 @@
 # Farm Refactoring Plan: PolicyConfig Integration
 
+> **Plain English:** This document outlines how to make Farm's rules configurable instead of hardcoded. Currently, thresholds like "require 2 sources to admit an asset" or "90 days of inactivity = zombie" are baked into the code. The plan is to pull these from AOD's PolicyConfig API so both systems use the same rules, and so customers can tune thresholds without code changes.
+
 ## Current State Analysis
 
 ### Hardcoded Thresholds (Must Be Parameterized)

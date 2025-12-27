@@ -1,5 +1,7 @@
 # AOD Iron Dome Fix: Unified Admission Gate
 
+> **Plain English:** This document describes a bug where AOD was incorrectly cataloging internal server names (like "cdn674" or "billing-api") as if they were real SaaS applications. The fix is simple: before admitting anything as an asset, check if it has a valid internet domain suffix (like .com or .io). If it doesn't, reject it. This "Iron Dome" filter blocks junk from polluting the asset catalog.
+
 ## Executive Summary
 
 Farm validation run `de663d31abe9` (TechHub-HPC9, adversarial profile) reveals:
