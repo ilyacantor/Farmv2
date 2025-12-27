@@ -600,6 +600,17 @@ async def get_reconciliation(reconciliation_id: str):
         farm_expectations = json.loads(row["farm_expectations_json"])
         
         aod_lists_data = aod_payload.get("aod_lists", {})
+        aod_lists = AODLists(
+            zombie_assets=aod_lists_data.get("zombie_asset_keys") or aod_lists_data.get("zombie_asset_keys_sample") or aod_lists_data.get("zombie_assets", []),
+            shadow_assets=aod_lists_data.get("shadow_asset_keys") or aod_lists_data.get("shadow_asset_keys_sample") or aod_lists_data.get("shadow_assets", []),
+            high_severity_findings=aod_lists_data.get("high_severity_findings", []),
+            actual_reason_codes=aod_lists_data.get("actual_reason_codes", {}),
+            admission_actual=aod_lists_data.get("admission_actual", {}),
+            reason_codes=aod_lists_data.get("reason_codes", {}),
+            admission=aod_lists_data.get("admission", {}),
+            aod_reason_codes=aod_lists_data.get("aod_reason_codes", {}),
+            asset_summaries=aod_lists_data.get("asset_summaries", {}),
+        )
         return ReconcileResponse(
             reconciliation_id=row["reconciliation_id"],
             snapshot_id=row["snapshot_id"],
@@ -609,7 +620,7 @@ async def get_reconciliation(reconciliation_id: str):
             status=ReconcileStatusEnum(row["status"]),
             report_text=row["report_text"],
             aod_summary=AODSummary(**aod_payload["aod_summary"]),
-            aod_lists=AODLists(**aod_lists_data),
+            aod_lists=aod_lists,
             farm_expectations=FarmExpectations(**farm_expectations),
         )
 
