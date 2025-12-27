@@ -156,21 +156,21 @@ The project is structured around a FastAPI application. It features a simple Far
 
 ## Recent Changes (2025-12-27)
 
-### Coupled Evidence Generation (Multi-Plane Corroboration)
-- Refactored `generate_discovery_plane()` to ensure source diversity per asset
-- Added `_generate_coupled_observations()` helper that creates observations from N distinct sources
-- Asset tier strategy (aligns with industry 20-30% admission benchmarks):
-  - **Core Stack** (first 25 SaaS apps): 3+ distinct sources → 100% admission
-  - **Departmental** (remaining SaaS apps): 2 distinct sources → 100% admission
-  - **Shadow apps**: 40% get 2 sources (admitted as shadows), 60% get 1 source (rejected by noise_floor)
-  - **Zombie apps**: 2 sources with stale timestamps → admitted as zombies
-  - **Junk/noise domains**: single source only → correctly rejected
-  - **Near collisions**: single source only → correctly rejected
-  - **Aliased products**: 2 sources → admitted
-- Benchmark results (large scale, messy, adversarial):
-  - `volume_multiplier=10`: 13,437 obs → 1,552 unique → 428 admitted (27.6%)
-  - `volume_multiplier=5`: 7,891 obs → 1,059 unique → 216 admitted (20.4%)
-- Admission rate now in realistic 20-30% range (matching Netskope/Zscaler/CASB benchmarks)
+### Simplified Configuration System
+- **Scale** now controls volume via internal multiplier:
+  - `small=1x`, `medium=4x`, `large=12x`, `enterprise=50x`, `mega=100x`
+- **Realism Profile** controls corroboration rate (% of assets with multi-plane evidence):
+  - `clean=100%`: All assets fully corroborated → high admission
+  - `typical=40%`: Normal enterprise messiness
+  - `messy=5%`: Minimal corroboration → high rejection (needle in haystack)
+- IdP/CMDB coverage tied to corroboration rate for realistic admission gates
+- Zombie CMDB entries now respect coverage rate (fixed unconditional CMDB bug)
+- Benchmark results:
+  | Scale + Realism | Admitted |
+  |----------------|----------|
+  | large + clean | ~396 |
+  | large + typical | ~533 |
+  | large + messy | ~198 |
 
 ### Admission Mismatch Export (JSON/CSV)
 - Enhanced download endpoint to include both admission and classification mismatches
@@ -182,16 +182,6 @@ The project is structured around a FastAPI application. It features a simple Far
   - `rejection_reason`, `raw_domains`, `farm_classification`
 - Download always recomputes analysis to ensure fresh detail fields
 - Categories: `cataloged_missed`, `cataloged_fp`, `rejected_missed`, `rejected_fp` for admission; `shadow_missed`, `zombie_missed`, `shadow_fp`, `zombie_fp` for classification
-
-### Volume Multiplier for Enterprise-Scale Generation
-- Added `volume_multiplier` parameter to SnapshotRequest (1-50, default 1)
-- Scales all asset generation formulas by this multiplier
-- Generates synthetic SaaS apps, services, and datastores when exceeding static list sizes
-- Benchmark results (large scale, messy profile):
-  - `volume_multiplier=1`: 50 admitted assets
-  - `volume_multiplier=5`: 241 admitted assets
-  - `volume_multiplier=10`: 471 admitted assets (300-500 target range)
-  - `volume_multiplier=15`: 684 admitted assets
 - Synthetic assets include realistic domains (e.g., `cloudify.io`, `smartbase.com`)
 
 ### Stress Test Scenarios

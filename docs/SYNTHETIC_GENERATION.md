@@ -42,25 +42,14 @@ This produces admission rates of 20-30%, matching industry benchmarks (Netskope,
 
 ### Scale
 
-Controls the base volume of generated assets:
+Controls volume via internal multiplier. Larger scales produce more assets:
 
-| Scale | SaaS Apps | Internal Services | Datastores |
-|-------|-----------|-------------------|------------|
-| small | 10 | 5 | 3 |
-| medium | 25 | 15 | 8 |
-| large | 50 | 30 | 15 |
-| enterprise | 100 | 60 | 30 |
-
-### Volume Multiplier
-
-Scales all generation formulas by 1-50x for enterprise-scale testing:
-
-| Multiplier | Observations | Unique Assets | Admitted |
-|------------|--------------|---------------|----------|
-| 1x | ~1,500 | ~300 | ~50 |
-| 5x | ~7,900 | ~1,000 | ~216 |
-| 10x | ~13,400 | ~1,550 | ~428 |
-| 15x | ~20,000 | ~2,100 | ~684 |
+| Scale | Multiplier | Admitted (clean) | Admitted (messy) |
+|-------|------------|------------------|------------------|
+| small | 1x | ~16 | ~9 |
+| medium | 4x | ~74 | ~21 |
+| large | 12x | ~396 | ~198 |
+| enterprise | 50x | ~1,500 | ~700 |
 
 When exceeding static app lists, synthetic assets are generated with realistic domains (e.g., `cloudify.io`, `smartbase.com`).
 
@@ -76,13 +65,20 @@ Simulates different industry IT landscapes:
 
 ### Realism Profile
 
-Controls data quality and conflict levels:
+Controls data quality, conflict levels, and **corroboration rate** (percentage of assets receiving multi-plane evidence):
 
-| Profile | Description |
-|---------|-------------|
-| **clean** | Minimal conflicts, consistent data |
-| **typical** | Normal enterprise messiness |
-| **messy** | Significant conflicts, partial telemetry, duplicates |
+| Profile | Corroboration | IdP/CMDB Coverage | Description |
+|---------|---------------|-------------------|-------------|
+| **clean** | 100% | 100% | All assets well-governed, fully corroborated |
+| **typical** | 40% | 40% | Normal enterprise messiness, partial coverage |
+| **messy** | 5% | 5% | Mostly ungoverned, minimal corroboration |
+
+Corroboration rate determines what percentage of assets get:
+- Multiple discovery sources (2+ for admission)
+- IdP presence
+- CMDB entries
+
+Low corroboration = high rejection rate = realistic "needle in haystack" scenarios.
 
 ### Data Preset (Challenge Level)
 

@@ -302,7 +302,6 @@ class SnapshotMeta(BaseModel):
     scale: ScaleEnum
     enterprise_profile: EnterpriseProfileEnum
     realism_profile: RealismProfileEnum
-    volume_multiplier: int = 1
     created_at: str
     counts: dict[str, int] = Field(default_factory=dict)
 
@@ -314,7 +313,6 @@ class SnapshotRequest(BaseModel):
     enterprise_profile: EnterpriseProfileEnum = EnterpriseProfileEnum.modern_saas
     realism_profile: RealismProfileEnum = RealismProfileEnum.typical
     data_preset: Optional[DataPresetEnum] = None
-    volume_multiplier: int = Field(default=1, ge=1, le=50, description="Multiplier for base asset counts (1-50). Use 10+ for enterprise-scale (300-500+ assets).")
 
 
 class SnapshotResponse(BaseModel):

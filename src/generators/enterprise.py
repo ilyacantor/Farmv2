@@ -247,6 +247,21 @@ def load_mock_policy_config() -> PolicyConfig:
     return PolicyConfig.default_fallback()
 
 
+SCALE_MULTIPLIERS = {
+    ScaleEnum.small: 1,
+    ScaleEnum.medium: 4,
+    ScaleEnum.large: 12,
+    ScaleEnum.enterprise: 50,
+    ScaleEnum.mega: 100,
+}
+
+CORROBORATION_RATES = {
+    RealismProfileEnum.clean: 1.0,
+    RealismProfileEnum.typical: 0.40,
+    RealismProfileEnum.messy: 0.05,
+}
+
+
 class EnterpriseGenerator:
     def __init__(
         self,
@@ -258,7 +273,6 @@ class EnterpriseGenerator:
         snapshot_time: Optional[datetime] = None,
         data_preset: Optional[DataPresetEnum] = None,
         policy_config: Optional[PolicyConfig] = None,
-        volume_multiplier: int = 1,
     ):
         self.tenant_id = tenant_id
         self.seed = seed
@@ -271,15 +285,11 @@ class EnterpriseGenerator:
         self.rng = random.Random(seed)
         self.run_id = self._generate_uuid()
         self.base_date = snapshot_time if snapshot_time else datetime.utcnow()
-        self.volume_multiplier = max(1, min(50, volume_multiplier))
         
-        self.scale_multipliers = {
-            ScaleEnum.small: 1,
-            ScaleEnum.medium: 3,
-            ScaleEnum.large: 8,
-            ScaleEnum.enterprise: 20,
-            ScaleEnum.mega: 50,
-        }
+        self.volume_multiplier = SCALE_MULTIPLIERS.get(scale, 1)
+        self.corroboration_rate = CORROBORATION_RATES.get(realism_profile, 0.6)
+        
+        self.scale_multipliers = SCALE_MULTIPLIERS
         
         self._employees: list[dict] = []
         self._saas_selection: list[dict] = []
@@ -582,30 +592,51 @@ class EnterpriseGenerator:
         return observations
 
     def generate_discovery_plane(self) -> DiscoveryPlane:
-        """Generate discovery observations with Coupled Evidence Generation.
+        """Generate discovery observations with corroboration-based evidence.
         
-        Asset tiers:
-        - Core Stack (first 25 SaaS): 3+ distinct sources → 100% admission
-        - Departmental (rest of SaaS): 2 distinct sources → 100% admission
-        - Shadow apps (40% multi-plane): 2 sources → admitted as shadows
-        - Shadow apps (60% single-plane): 1 source → rejected (noise floor)
-        - Junk/noise: 1 source → correctly rejected
+        Corroboration rate (from realism profile) determines multi-plane vs single-plane:
+        - Clean: 90% multi-plane → high admission rate (~400)
+        - Typical: 60% multi-plane → moderate admission  
+        - Messy: 30% multi-plane → low admission, high quarantine (~150)
+        
+        Multi-plane assets get 2-3 distinct sources → admitted
+        Single-plane assets get 1 source → rejected by noise floor
         """
         observations = []
         mult = self.scale_multipliers[self.scale]
         
         CORE_STACK_SIZE = 25
         for idx, app in enumerate(self._saas_selection):
-            if idx < CORE_STACK_SIZE:
-                min_sources = 3
-                obs_per_source = 2 * mult
-            else:
-                min_sources = 2
-                obs_per_source = max(1, mult)
+            is_multi_plane = self.rng.random() < self.corroboration_rate
             
-            observations.extend(
-                self._generate_coupled_observations(app, min_sources, obs_per_source)
-            )
+            if is_multi_plane:
+                if idx < CORE_STACK_SIZE:
+                    min_sources = 3
+                    obs_per_source = 2 * mult
+                else:
+                    min_sources = 2
+                    obs_per_source = max(1, mult)
+                observations.extend(
+                    self._generate_coupled_observations(app, min_sources, obs_per_source)
+                )
+            else:
+                single_source = self.rng.choice(list(SourceEnum))
+                num_obs = self.rng.randint(2, 4) * mult
+                for _ in range(num_obs):
+                    obs = DiscoveryObservation(
+                        observation_id=self._generate_uuid(),
+                        observed_at=self._random_activity_date(),
+                        source=single_source,
+                        observed_name=self._apply_name_drift(app["name"]),
+                        observed_uri=f"https://{self.tenant_id.lower()}.{app['domain']}" if self.rng.random() > 0.3 else None,
+                        hostname=f"{app['name'].lower().replace(' ', '-')}.{app['domain']}" if self.rng.random() > 0.4 else None,
+                        domain=app["domain"],
+                        vendor_hint=app.get("vendor") if self.rng.random() > 0.2 else None,
+                        category_hint=CategoryHintEnum.saas,
+                        environment_hint=self.rng.choice(list(EnvironmentHintEnum)),
+                        raw={"bytes_transferred": self.rng.randint(1000, 1000000)},
+                    )
+                    observations.append(obs)
         
         for svc in self._internal_services:
             num_obs = self.rng.randint(1, 3) * mult
@@ -636,8 +667,8 @@ class EnterpriseGenerator:
             observations.append(obs)
         
         for shadow_app in self._shadow_apps:
-            is_advanced_shadow = self.rng.random() < 0.40
-            if is_advanced_shadow:
+            is_multi_plane = self.rng.random() < self.corroboration_rate
+            if is_multi_plane:
                 observations.extend(
                     self._generate_coupled_observations(shadow_app, min_sources=2, obs_per_source=max(1, mult))
                 )
@@ -661,9 +692,26 @@ class EnterpriseGenerator:
                     observations.append(obs)
         
         for zombie_app in self._zombie_apps:
-            observations.extend(
-                self._generate_coupled_observations(zombie_app, min_sources=2, obs_per_source=1, is_stale=True)
-            )
+            is_multi_plane = self.rng.random() < self.corroboration_rate
+            if is_multi_plane:
+                observations.extend(
+                    self._generate_coupled_observations(zombie_app, min_sources=2, obs_per_source=1, is_stale=True)
+                )
+            else:
+                single_source = self.rng.choice(list(SourceEnum))
+                for _ in range(self.rng.randint(2, 4)):
+                    obs = DiscoveryObservation(
+                        observation_id=self._generate_uuid(),
+                        observed_at=self._random_stale_date(),
+                        source=single_source,
+                        observed_name=self._apply_name_drift(zombie_app["name"]),
+                        domain=zombie_app["domain"],
+                        vendor_hint=zombie_app.get("vendor"),
+                        category_hint=CategoryHintEnum.saas,
+                        environment_hint=EnvironmentHintEnum.unknown,
+                        raw={"stale": True},
+                    )
+                    observations.append(obs)
         
         for zombie_svc in self._zombie_services:
             obs = DiscoveryObservation(
@@ -709,18 +757,32 @@ class EnterpriseGenerator:
             observations.append(obs)
         
         for alias in self._aliased_products:
-            observations.extend(
-                self._generate_coupled_observations(alias, min_sources=2, obs_per_source=max(1, mult))
-            )
+            is_multi_plane = self.rng.random() < self.corroboration_rate
+            if is_multi_plane:
+                observations.extend(
+                    self._generate_coupled_observations(alias, min_sources=2, obs_per_source=max(1, mult))
+                )
+            else:
+                single_source = self.rng.choice(list(SourceEnum))
+                for _ in range(self.rng.randint(2, 4)):
+                    obs = DiscoveryObservation(
+                        observation_id=self._generate_uuid(),
+                        observed_at=self._random_activity_date(),
+                        source=single_source,
+                        observed_name=self._apply_name_drift(alias["name"]),
+                        domain=alias["domain"],
+                        category_hint=CategoryHintEnum.saas,
+                        environment_hint=EnvironmentHintEnum.unknown,
+                        raw={"alias": True},
+                    )
+                    observations.append(obs)
         
         return DiscoveryPlane(observations=observations)
 
     def generate_idp_plane(self) -> IdPPlane:
         objects = []
         
-        coverage = 0.95 if self.realism_profile == RealismProfileEnum.clean else (
-            0.75 if self.realism_profile == RealismProfileEnum.typical else 0.55
-        )
+        coverage = self.corroboration_rate
         
         for app in self._saas_selection:
             if self.rng.random() < coverage:
@@ -749,37 +811,37 @@ class EnterpriseGenerator:
                 objects.append(idp_obj)
         
         for zombie_app in self._zombie_apps:
-            idp_obj = IdPObject(
-                idp_id=f"idp-{self._generate_uuid()[:8]}",
-                name=self._apply_name_drift(zombie_app["name"]),
-                idp_type=IdPTypeEnum.application,
-                external_ref=f"https://{zombie_app['domain']}",
-                has_sso=True,
-                has_scim=False,
-                vendor=zombie_app["vendor"],
-                last_login_at=self._random_stale_date(),
-            )
-            objects.append(idp_obj)
+            if self.rng.random() < coverage:
+                idp_obj = IdPObject(
+                    idp_id=f"idp-{self._generate_uuid()[:8]}",
+                    name=self._apply_name_drift(zombie_app["name"]),
+                    idp_type=IdPTypeEnum.application,
+                    external_ref=f"https://{zombie_app['domain']}",
+                    has_sso=True,
+                    has_scim=False,
+                    vendor=zombie_app["vendor"],
+                    last_login_at=self._random_stale_date(),
+                )
+                objects.append(idp_obj)
         
         for zombie_svc in self._zombie_services:
-            idp_obj = IdPObject(
-                idp_id=f"idp-{self._generate_uuid()[:8]}",
-                name=self._apply_name_drift(zombie_svc["name"]),
-                idp_type=IdPTypeEnum.service_principal,
-                has_sso=False,
-                has_scim=False,
-                last_login_at=self._random_stale_date(),
-            )
-            objects.append(idp_obj)
+            if self.rng.random() < coverage:
+                idp_obj = IdPObject(
+                    idp_id=f"idp-{self._generate_uuid()[:8]}",
+                    name=self._apply_name_drift(zombie_svc["name"]),
+                    idp_type=IdPTypeEnum.service_principal,
+                    has_sso=False,
+                    has_scim=False,
+                    last_login_at=self._random_stale_date(),
+                )
+                objects.append(idp_obj)
         
         return IdPPlane(objects=objects)
 
     def generate_cmdb_plane(self) -> CMDBPlane:
         cis = []
         
-        coverage = 0.9 if self.realism_profile == RealismProfileEnum.clean else (
-            0.7 if self.realism_profile == RealismProfileEnum.typical else 0.5
-        )
+        coverage = self.corroboration_rate
         
         for app in self._saas_selection:
             if self.rng.random() < coverage:
@@ -821,24 +883,26 @@ class EnterpriseGenerator:
                 cis.append(ci)
         
         for zombie_app in self._zombie_apps:
-            ci = CMDBConfigItem(
-                ci_id=f"CI{self.rng.randint(100000, 999999)}",
-                name=self._apply_name_drift(zombie_app["name"]),
-                ci_type=CITypeEnum.app,
-                lifecycle=LifecycleEnum.prod,
-                vendor=zombie_app["vendor"],
-                external_ref=f"https://{zombie_app['domain']}",
-            )
-            cis.append(ci)
+            if self.rng.random() < coverage:
+                ci = CMDBConfigItem(
+                    ci_id=f"CI{self.rng.randint(100000, 999999)}",
+                    name=self._apply_name_drift(zombie_app["name"]),
+                    ci_type=CITypeEnum.app,
+                    lifecycle=LifecycleEnum.prod,
+                    vendor=zombie_app["vendor"],
+                    external_ref=f"https://{zombie_app['domain']}",
+                )
+                cis.append(ci)
         
         for zombie_svc in self._zombie_services:
-            ci = CMDBConfigItem(
-                ci_id=f"CI{self.rng.randint(100000, 999999)}",
-                name=self._apply_name_drift(zombie_svc["name"]),
-                ci_type=CITypeEnum.service,
-                lifecycle=LifecycleEnum.prod,
-            )
-            cis.append(ci)
+            if self.rng.random() < coverage:
+                ci = CMDBConfigItem(
+                    ci_id=f"CI{self.rng.randint(100000, 999999)}",
+                    name=self._apply_name_drift(zombie_svc["name"]),
+                    ci_type=CITypeEnum.service,
+                    lifecycle=LifecycleEnum.prod,
+                )
+                cis.append(ci)
         
         return CMDBPlane(cis=cis)
 
@@ -1213,7 +1277,6 @@ class EnterpriseGenerator:
             scale=self.scale,
             enterprise_profile=self.enterprise_profile,
             realism_profile=self.realism_profile,
-            volume_multiplier=self.volume_multiplier,
             created_at=self.base_date.isoformat() + "Z",
             counts=counts,
         )
