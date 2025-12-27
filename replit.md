@@ -1,5 +1,7 @@
 # AOS Farm
 
+> **Plain English:** AOS Farm is a "test data factory" that creates realistic fake IT environments. It generates the kind of messy, conflicting data you'd find in a real company—network logs, identity records, cloud inventories, spending data—all woven together. We use this synthetic data to test whether our discovery system (AOD) can correctly identify shadow IT, zombie apps, and security gaps. The goal is battle-testing, not happy-path demos.
+
 ## Overview
 AOS Farm is a synthetic enterprise data generator that creates realistic source-of-truth data planes and raw observation streams. Its primary purpose is to generate robust testing data for the AutonomOS AOD (Discover) module, focusing on raw evidence rather than pre-concluded insights. The project aims to eliminate "green-test theater" by enforcing strict rules that ensure all changes preserve real-world semantics, are provable with real-world output, and include negative tests. The business vision is to provide high-fidelity, plausible enterprise data for rigorous testing of AOD's discovery capabilities, thereby improving the accuracy and reliability of anomaly detection in complex enterprise environments.
 

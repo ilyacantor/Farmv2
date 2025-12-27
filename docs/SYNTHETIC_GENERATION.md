@@ -1,5 +1,7 @@
 # Synthetic Data Generation
 
+> **Plain English:** This document explains how Farm creates fake-but-realistic IT environments to test whether AOD can correctly identify shadow IT, zombie apps, and unmanaged assets. Think of it like a flight simulator for IT discovery—we generate messy, conflicted data that mirrors what you'd find in a real enterprise, then see if AOD can navigate it correctly.
+
 ## Overview
 
 AOS Farm generates synthetic enterprise IT environments for testing Asset Observability & Discovery (AOD) systems. The generator creates realistic, conflicted datasets that simulate the complexity of real enterprise environments—not "happy path" demo data.
