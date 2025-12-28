@@ -24,19 +24,18 @@ Farm generates 7 independent data planes that correlate only via realistic keys:
 
 ### Coupled Evidence Generation
 
-Assets receive observations from multiple distinct sources to pass AOD's noise floor (default: 2 sources required for admission).
+Assets receive observations from multiple distinct sources to pass AOD's noise floor (default: 2 sources required for admission). The **corroboration rate** controls what percentage of assets get multi-source evidence.
 
-| Asset Tier | Source Count | Admission Rate |
-|------------|--------------|----------------|
-| **Core Stack** (first 25 SaaS) | 3+ distinct sources | 100% |
-| **Departmental** (remaining SaaS) | 2 distinct sources | 100% |
-| **Shadow apps** (40%) | 2 sources | Admitted as shadows |
-| **Shadow apps** (60%) | 1 source | Rejected (noise floor) |
-| **Zombie apps** | 2 sources (stale) | Admitted as zombies |
-| **Junk/noise domains** | 1 source | Correctly rejected |
-| **Near collisions** | 1 source | Correctly rejected |
+| Asset Tier | Source Count | Governed? | Result |
+|------------|--------------|-----------|--------|
+| **Core Stack** (first 25 SaaS) | 3+ distinct sources | Per governance rate | Admitted |
+| **Departmental** (remaining SaaS) | 2 distinct sources | Per governance rate | Admitted |
+| **Shadow apps** | 2 sources | No (by design) | Admitted as shadows |
+| **Zombie apps** | 2 sources (stale) | Yes (stale) | Admitted as zombies |
+| **Junk/noise domains** | 1 source | No | Correctly rejected |
+| **Near collisions** | 1 source | No | Correctly rejected |
 
-This produces admission rates of 20-30%, matching industry benchmarks (Netskope, Zscaler, CASB audits).
+Admission rates vary by realism profile (see below). Messy profiles have high admission but high shadow count.
 
 ## Configuration Parameters
 
@@ -159,8 +158,7 @@ curl -X POST "http://localhost:5000/api/snapshots" \
     "tenant_id": "TestCorp",
     "scale": "large",
     "realism_profile": "messy",
-    "data_preset": "adversarial",
-    "volume_multiplier": 10
+    "data_preset": "adversarial"
   }'
 ```
 
@@ -173,7 +171,7 @@ curl -X POST "http://localhost:5000/api/snapshots" \
     "schema_version": "farm.v1",
     "generated_at": "2025-12-27T12:00:00Z",
     "scale": "large",
-    "volume_multiplier": 10
+    "realism_profile": "messy"
   }
 }
 ```
