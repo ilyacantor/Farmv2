@@ -350,14 +350,14 @@ def validate_join_hygiene(snapshot: dict, result: ValidationResult) -> None:
             plane_keys_by_field[field_name].add('discovery')
     
     idp = planes.get('idp', {})
-    for entry in idp.get('entries', []):
+    for entry in idp.get('objects', []):
         for field_name in entry.keys():
             if field_name not in plane_keys_by_field:
                 plane_keys_by_field[field_name] = set()
             plane_keys_by_field[field_name].add('idp')
     
     cmdb = planes.get('cmdb', {})
-    for ci in cmdb.get('configuration_items', []):
+    for ci in cmdb.get('cis', []):
         for field_name in ci.keys():
             if field_name not in plane_keys_by_field:
                 plane_keys_by_field[field_name] = set()
@@ -486,27 +486,30 @@ def validate_snapshot_expected(snapshot: dict) -> ValidationResult:
     return result
 
 
-def validate_gradeability(aod_output: dict, result: ValidationResult) -> None:
+def validate_gradeability(aod_lists: dict, result: ValidationResult) -> None:
     """
-    Check 5: Gradeability gate - validate AOD output has required fields.
+    Check 5: Gradeability gate - validate AOD output (aod_lists) has required fields.
     
     Sets INVALID_INPUT_CONTRACT if AOD output is missing required fields.
+    
+    Args:
+        aod_lists: The aod_lists dict from reconciliation request (contains shadows, zombies, actual_reason_codes)
     """
     result.checks_performed.append('GRADEABILITY_GATE')
     
-    if not aod_output:
+    if not aod_lists:
         result.add_error(
-            asset_key='__aod_output__',
+            asset_key='__aod_lists__',
             rule='INVALID_INPUT_CONTRACT',
-            message='AOD output is empty or null - cannot grade',
+            message='aod_lists is empty or null - cannot grade',
             reason_codes=[]
         )
         return
     
-    if isinstance(aod_output, str):
-        if '<html' in aod_output.lower() or '<!doctype' in aod_output.lower():
+    if isinstance(aod_lists, str):
+        if '<html' in aod_lists.lower() or '<!doctype' in aod_lists.lower():
             result.add_error(
-                asset_key='__aod_output__',
+                asset_key='__aod_lists__',
                 rule='UPSTREAM_ERROR',
                 message='AOD returned HTML instead of JSON - upstream error',
                 reason_codes=[]
@@ -517,20 +520,21 @@ def validate_gradeability(aod_output: dict, result: ValidationResult) -> None:
     missing_fields = []
     
     for field in required_fields:
-        if field not in aod_output or aod_output.get(field) is None:
+        if field not in aod_lists or aod_lists.get(field) is None:
             missing_fields.append(field)
     
     if missing_fields:
         result.add_error(
-            asset_key='__aod_output__',
+            asset_key='__aod_lists__',
             rule='INVALID_INPUT_CONTRACT',
-            message=f'AOD output missing required fields: {missing_fields}',
+            message=f'aod_lists missing required fields: {missing_fields}',
             reason_codes=[]
         )
+        return
     
-    actual_reason_codes = aod_output.get('actual_reason_codes', {})
-    shadows = aod_output.get('shadows', [])
-    zombies = aod_output.get('zombies', [])
+    actual_reason_codes = aod_lists.get('actual_reason_codes', {})
+    shadows = aod_lists.get('shadows', [])
+    zombies = aod_lists.get('zombies', [])
     
     classified_assets = set()
     for s in shadows:

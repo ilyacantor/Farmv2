@@ -105,7 +105,14 @@ Explicit errors over silent fallbacks
 Evidence-only derivations over labels
 
 ## Recent Changes (December 28, 2025)
-- **Expected Block Self-Consistency Audit**: Farm-level validation runs on every generated snapshot before any AOD call. Validates: (1) non-empty reason codes for all assets, (2) HAS_ONGOING_FINANCE implies HAS_FINANCE, (3) STALE_ACTIVITY/RECENT_ACTIVITY mutually exclusive, (4) NO_IDP/HAS_IDP mutually exclusive, (5) NO_CMDB/HAS_CMDB mutually exclusive. Fails loudly if grading cannot be trusted. API: `/api/snapshots/{id}/validate`. Stored in `__expected__._validation`.
+- **Comprehensive Farm-Level Validation Suite**: Six validation checks run on every snapshot and reconciliation:
+  1. **Expected Block Consistency**: Non-empty reason codes, mutual exclusion (STALE/RECENT, NO_IDP/HAS_IDP, NO_CMDB/HAS_CMDB), implication rules (HAS_ONGOING_FINANCE ⇒ HAS_FINANCE)
+  2. **Clock Invariants**: No future timestamps, no extreme past (>2 years), validates created_at exists
+  3. **Finance Consistency**: HAS_ONGOING_FINANCE implies HAS_FINANCE, distribution bounds check per realism profile
+  4. **Join Hygiene**: Verifies no suspicious shared fields across planes that aren't realistic correlation keys
+  5. **Gradeability Gate**: 422 INVALID_INPUT_CONTRACT if aod_lists missing shadows/zombies/actual_reason_codes, or HTML returned instead of JSON
+  6. **Stress Test Coverage**: Warns if stress test domains not found in decision traces
+  API: `/api/snapshots/{id}/validate`. Stored in `__expected__._validation`. Checks returned in `checks_performed` array.
 - **Discrepancy-Based Assessment Triggers**: Changed from status-based to discrepancy-based assessment generation. ANY mismatch in ANY category (missed/FP in classification or admission) triggers assessment report, regardless of PASS/WARN/FAIL status. Uses `has_any_discrepancy` flag computed from metrics.
 - **Assessment Reports**: Automatic generation of detailed markdown assessment reports for non-perfect reconciliations. Reports include executive summary, classification analysis (shadows/zombies), RCA hints, and actionable recommendations. Download via `/api/reconcile/{id}/assessment` endpoint with backward-compatible 204 responses (`X-Assessment-Status: perfect-match` or `not-generated`).
 - **Progressive Rendering**: UI now renders snapshots immediately (~0.5s) while reconciliations continue loading in background (~5s). Eliminates perceived "stuck on Loading..." behavior during slow API calls.
