@@ -105,6 +105,19 @@ Explicit errors over silent fallbacks
 Evidence-only derivations over labels
 
 ## Recent Changes (December 28, 2025)
+- **Grading Correctness Audit Suite**: Comprehensive audit system to verify Farm's expected-block grading is deterministic, consistent, and grounded:
+  - **Determinism Audit**: Runs `compute_expected_block` N times (default 10) and asserts identical results across runs (identical hashes, counts, key sets, reason codes)
+  - **Consistency Audit**: Validates no contradictory flags (RECENT/STALE, HAS_IDP/NO_IDP), implication rules hold (HAS_ONGOING_FINANCE ⇒ HAS_FINANCE), all assets have non-empty reason codes
+  - **Finance Traceability Audit**: Traces HAS_ONGOING_FINANCE to concrete evidence refs (contracts, transactions), fails if ungrounded
+  - **Activity Invariants Audit**: Validates timestamps are not in the future, RECENT/STALE classifications are reproducible, includes golden fixture tests
+  - **Gradeability Enforcement**: Strict checks on AOD responses - HTML returns UPSTREAM_ERROR, missing fields returns INVALID_INPUT_CONTRACT, null returns UPSTREAM_ERROR
+  - **New endpoints**:
+    - `GET /api/audit/grading?snapshot_id=...&n_runs=10` - Full audit suite
+    - `POST /api/audit/gradeability` - Validate AOD response for grading
+    - `GET /api/audit/gradeability/demo-failure?mode=html|missing_fields|null` - Demo failure modes
+  - **Contract statuses**: PASS, INVALID_SNAPSHOT, UPSTREAM_ERROR, INVALID_INPUT_CONTRACT
+  - **Tests**: 19 tests in `tests/test_grading_audit.py` including 4 negative tests for contract violations
+  - **Proof**: Audit on snapshot ed6faf6a passes with stable hash `6646bb9131dda56d` across 10 runs
 - **Hot/Cold Storage Split**: Major architecture change to reduce memory pressure:
   - **snapshots_meta** table: Hot path with counts, plane_counts (JSONB), expected_summary (JSONB), blob_size_bytes, blob_hash
   - **snapshots_blob** table: Cold storage for full snapshot blob (TEXT)

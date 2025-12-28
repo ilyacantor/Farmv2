@@ -1524,3 +1524,101 @@ async def get_storage_stats():
             "pending_backfill": pending_backfill,
             "backfill_complete": pending_backfill == 0,
         }
+
+
+from src.services.grading_audit import run_full_audit, audit_gradeability
+
+
+class AuditRequest(BaseModel):
+    snapshot_id: str
+    n_runs: int = 10
+    finance_target_keys: Optional[list] = None
+    activity_window_days: int = 90
+
+
+@router.get("/api/audit/grading")
+async def audit_grading(
+    snapshot_id: str = Query(..., description="Snapshot ID to audit"),
+    n_runs: int = Query(10, description="Number of determinism runs"),
+    activity_window_days: int = Query(90, description="Activity window in days"),
+):
+    """
+    Run the complete grading correctness audit suite on a snapshot.
+    
+    Audits:
+    - Determinism: N runs produce identical results
+    - Consistency: No contradictory flags, all implications hold
+    - Finance traceability: HAS_ONGOING_FINANCE has evidence refs
+    - Activity invariants: Timestamps coherent with classification
+    
+    Returns PASS, INVALID_SNAPSHOT, UPSTREAM_ERROR, or INVALID_INPUT_CONTRACT.
+    """
+    async with db_connection() as conn:
+        row = await conn.fetchrow(
+            "SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1",
+            snapshot_id
+        )
+        
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} not found")
+        
+        snapshot = json.loads(row["snapshot_json"])
+    
+    policy = None
+    try:
+        policy = await fetch_policy_config()
+    except Exception:
+        policy = load_mock_policy_config()
+    
+    report = await run_in_threadpool(
+        run_full_audit,
+        snapshot=snapshot,
+        snapshot_id=snapshot_id,
+        n_runs=n_runs,
+        activity_window_days=activity_window_days,
+        policy=policy,
+    )
+    
+    return report.to_dict()
+
+
+@router.post("/api/audit/gradeability")
+async def audit_gradeability_endpoint(aod_response: dict):
+    """
+    Validate AOD response for grading requirements.
+    
+    Checks:
+    - Response is JSON (not HTML)
+    - Has required fields: shadows, zombies, actual_reason_codes
+    
+    Returns contract_status: PASS, UPSTREAM_ERROR, or INVALID_INPUT_CONTRACT.
+    """
+    result = audit_gradeability(aod_response)
+    return result
+
+
+@router.get("/api/audit/gradeability/demo-failure")
+async def audit_gradeability_demo_failure(mode: str = Query("html", description="Failure mode: html, missing_fields, null")):
+    """
+    Demo endpoint to demonstrate gradeability enforcement failures.
+    
+    Modes:
+    - html: Simulates AOD returning HTML instead of JSON
+    - missing_fields: Simulates AOD missing required fields
+    - null: Simulates null AOD response
+    """
+    if mode == "html":
+        fake_response = "<!DOCTYPE html><html><head><title>Error</title></head><body>503 Service Unavailable</body></html>"
+    elif mode == "missing_fields":
+        fake_response = {"some_field": "value", "other_field": []}
+    elif mode == "null":
+        fake_response = None
+    else:
+        fake_response = {"invalid": True}
+    
+    result = audit_gradeability(fake_response)
+    return {
+        "demo_mode": mode,
+        "simulated_response_type": type(fake_response).__name__ if fake_response else "None",
+        "audit_result": result,
+    }
