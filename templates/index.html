@@ -577,8 +577,109 @@
             expandedItems: {},
             assetListIdCounter: 0,
             lastGenerationTime: null,
-            generationTimeCache: {}
+            generationTimeCache: {},
+            timerState: 'idle',
+            timerStartTime: null,
+            timerIntervalId: null,
+            loadDataRetryCount: 0
         };
+
+        const TimerController = {
+            setState(state) {
+                FarmState.timerState = state;
+                const display = document.getElementById('genTimeDisplay');
+                const valueEl = document.getElementById('genTimeValue');
+                
+                switch (state) {
+                    case 'idle':
+                        display.classList.add('hidden');
+                        this.stopInterval();
+                        break;
+                    case 'running':
+                        display.classList.remove('hidden');
+                        display.className = display.className.replace(/bg-\w+-\d+\/\d+/g, '').replace(/border-\w+-\d+\/\d+/g, '').replace(/text-\w+-\d+/g, '');
+                        display.classList.add('px-2', 'py-1', 'bg-amber-900/50', 'border', 'border-amber-600/50', 'rounded-lg', 'text-xs', 'text-amber-300', 'font-mono');
+                        FarmState.timerStartTime = performance.now();
+                        this.startInterval();
+                        break;
+                    case 'done':
+                        display.classList.remove('hidden');
+                        display.className = 'px-2 py-1 bg-emerald-900/50 border border-emerald-600/50 rounded-lg text-xs text-emerald-300 font-mono';
+                        this.stopInterval();
+                        break;
+                    case 'error':
+                        display.classList.remove('hidden');
+                        display.className = 'px-2 py-1 bg-red-900/50 border border-red-600/50 rounded-lg text-xs text-red-300 font-mono';
+                        valueEl.textContent = 'ERR';
+                        this.stopInterval();
+                        break;
+                }
+            },
+            
+            startInterval() {
+                this.stopInterval();
+                const valueEl = document.getElementById('genTimeValue');
+                FarmState.timerIntervalId = setInterval(() => {
+                    const elapsed = ((performance.now() - FarmState.timerStartTime) / 1000).toFixed(1);
+                    valueEl.textContent = elapsed + '...';
+                }, 100);
+            },
+            
+            stopInterval() {
+                if (FarmState.timerIntervalId) {
+                    clearInterval(FarmState.timerIntervalId);
+                    FarmState.timerIntervalId = null;
+                }
+            },
+            
+            setFinalTime(seconds) {
+                const valueEl = document.getElementById('genTimeValue');
+                valueEl.textContent = seconds;
+                this.setState('done');
+            }
+        };
+
+        class APIError extends Error {
+            constructor(message, status, requestId, path, rawText) {
+                super(message);
+                this.name = 'APIError';
+                this.status = status;
+                this.requestId = requestId;
+                this.path = path;
+                this.rawText = rawText;
+            }
+        }
+
+        async function apiFetch(url, options = {}) {
+            const response = await fetch(url, options);
+            const contentType = response.headers.get('content-type') || '';
+            
+            if (!contentType.includes('application/json')) {
+                const rawText = await response.text();
+                const preview = rawText.substring(0, 200);
+                throw new APIError(
+                    `Server returned non-JSON response (${contentType || 'no content-type'})`,
+                    response.status,
+                    'unknown',
+                    url,
+                    preview
+                );
+            }
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new APIError(
+                    data.error || data.detail || `HTTP ${response.status}`,
+                    response.status,
+                    data.request_id || 'unknown',
+                    url,
+                    null
+                );
+            }
+            
+            return data;
+        }
 
         const RequestController = {
             _pendingRequests: new Map(),
@@ -1094,35 +1195,98 @@
 
         async function loadAllData() {
             return RequestController.fetch('loadAllData', async () => {
-                try {
-                    const [snapshotsRes, reconciliationsRes] = await Promise.all([
-                        fetch('/api/snapshots?limit=100'),
-                        fetch('/api/reconcile?limit=500')
-                    ]);
-                    
-                    FarmState.snapshots = await snapshotsRes.json();
-                    FarmState.reconciliationsListCache = await reconciliationsRes.json();
-                    
+                const snapshotsPromise = apiFetch('/api/snapshots?limit=100').then(d => { 
+                    FarmState.snapshots = d;
+                    FarmState.snapshots.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    document.getElementById('snapshotCount').textContent = FarmState.snapshots.length;
+                    document.getElementById('configSnapshotCount').textContent = FarmState.snapshots.length;
+                    renderConfigSnapshotsList();
+                    return d; 
+                });
+                
+                const reconcilePromise = apiFetch('/api/reconcile?limit=500').then(d => { 
+                    FarmState.reconciliationsListCache = d;
+                    FarmState.reconciliationsListCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                     FarmState.reconciliationsCache = {};
                     for (const rec of FarmState.reconciliationsListCache) {
                         if (!FarmState.reconciliationsCache[rec.snapshot_id]) FarmState.reconciliationsCache[rec.snapshot_id] = [];
                         FarmState.reconciliationsCache[rec.snapshot_id].push(rec);
                     }
-                    
-                    document.getElementById('snapshotCount').textContent = FarmState.snapshots.length;
-                    document.getElementById('configSnapshotCount').textContent = FarmState.snapshots.length;
-                    
-                    FarmState.snapshots.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                    FarmState.reconciliationsListCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-                    
                     renderReconciliationsList();
-                    renderConfigSnapshotsList();
-                } catch (e) {
-                    console.error('Failed to load data:', e);
-                    document.getElementById('reconciliationsList').innerHTML = 
-                        '<div class="text-red-400 text-center py-12">Failed to load data</div>';
-                }
+                    return d; 
+                });
+                
+                await Promise.all([snapshotsPromise, reconcilePromise]);
+                FarmState.loadDataRetryCount = 0;
+                hideLoadDataError();
             });
+        }
+        
+        async function loadAllDataSafely() {
+            try {
+                await loadAllData();
+            } catch (e) {
+                console.error('[loadAllDataSafely] Error:', e);
+                FarmState.loadDataRetryCount++;
+                showLoadDataError(e);
+            }
+        }
+        
+        function showLoadDataError(error) {
+            let errorPanel = document.getElementById('loadDataErrorPanel');
+            if (!errorPanel) {
+                errorPanel = document.createElement('div');
+                errorPanel.id = 'loadDataErrorPanel';
+                errorPanel.className = 'fixed bottom-4 right-4 bg-red-900/90 border border-red-600 rounded-lg p-4 max-w-md z-50 shadow-lg';
+                document.body.appendChild(errorPanel);
+            }
+            
+            const isAPIError = error instanceof APIError;
+            const msg = isAPIError ? error.message : (error.message || 'Unknown error');
+            const reqId = isAPIError ? error.requestId : 'N/A';
+            const rawPreview = isAPIError && error.rawText ? `<div class="text-xs text-red-300/70 mt-1 font-mono truncate">${escapeHtml(error.rawText.substring(0, 80))}...</div>` : '';
+            
+            errorPanel.innerHTML = `
+                <div class="flex items-start gap-3">
+                    <svg class="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <div class="flex-1">
+                        <div class="text-red-200 font-medium text-sm">Data Load Failed</div>
+                        <div class="text-red-300/80 text-xs mt-1">${escapeHtml(msg)}</div>
+                        ${rawPreview}
+                        <div class="text-red-400/60 text-xs mt-1">Request: ${reqId} | Retry #${FarmState.loadDataRetryCount}</div>
+                        <div class="flex gap-2 mt-3">
+                            <button onclick="retryLoadData()" class="px-3 py-1 bg-red-700 hover:bg-red-600 text-white text-xs rounded transition-colors">
+                                Retry Now
+                            </button>
+                            <button onclick="hideLoadDataError()" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded transition-colors">
+                                Dismiss
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            errorPanel.classList.remove('hidden');
+        }
+        
+        function hideLoadDataError() {
+            const panel = document.getElementById('loadDataErrorPanel');
+            if (panel) panel.classList.add('hidden');
+        }
+        
+        async function retryLoadData() {
+            const panel = document.getElementById('loadDataErrorPanel');
+            if (panel) {
+                panel.innerHTML = '<div class="text-amber-300 text-sm py-2 text-center">Retrying...</div>';
+            }
+            await loadAllDataSafely();
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
         
         function parseReportSummary(reportText) {
@@ -2728,7 +2892,7 @@
                 FarmState.expandedSnapshots = {};
                 FarmState.snapshotDataCache = {};
                 FarmState.expectationsCache = {};
-                await loadAllData();
+                await loadAllDataSafely();
                 addLogEntry('All snapshots erased', 'success');
             } catch (e) {
                 console.error('Erase failed:', e);
@@ -3079,7 +3243,7 @@
                 successDiv.classList.remove('hidden');
                 addLogEntry(`Reconciled: ${data.status}`, data.status === 'PASS' ? 'success' : 'info');
                 
-                await loadAllData();
+                await loadAllDataSafely();
                 setTimeout(() => closeModal('reconcileModal'), 2000);
                 
             } catch (e) {
@@ -3093,6 +3257,7 @@
 
         async function generateSnapshot(tenantId, seed, scale, enterpriseProfile, realismProfile, dataPreset) {
             addLogEntry(`Generating ${tenantId} seed:${seed}${dataPreset ? ` [${dataPreset}]` : ''}...`, 'info');
+            TimerController.setState('running');
             
             try {
                 const body = {
@@ -3106,30 +3271,45 @@
                     body.data_preset = dataPreset;
                 }
                 
-                const response = await fetch('/api/snapshots', {
+                const data = await apiFetch('/api/snapshots', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
                 
-                const data = await response.json();
                 const timeStr = data.generation_time_seconds != null ? ` in ${data.generation_time_seconds}s` : '';
                 const dupStr = data.duplicate_of_snapshot_id ? ' (cached)' : '';
                 addLogEntry(`Created ${data.snapshot_id?.substring(0, 8) || 'snapshot'}${timeStr}${dupStr}`, 'success');
+                
                 if (data.generation_time_seconds != null) {
                     FarmState.lastGenerationTime = data.generation_time_seconds;
                     FarmState.generationTimeCache[data.snapshot_id] = data.generation_time_seconds;
-                    document.getElementById('genTimeValue').textContent = data.generation_time_seconds;
-                    document.getElementById('genTimeDisplay').classList.remove('hidden');
+                    TimerController.setFinalTime(data.generation_time_seconds);
                     showToast(`Snapshot generated in <strong>${data.generation_time_seconds}s</strong>`, 'success');
                 } else if (data.duplicate_of_snapshot_id) {
+                    TimerController.setState('done');
+                    document.getElementById('genTimeValue').textContent = 'cache';
                     showToast('Snapshot loaded from cache', 'info');
+                } else {
+                    TimerController.setState('done');
                 }
-                await loadAllData();
+                
                 return data;
             } catch (e) {
-                addLogEntry(`Generation failed: ${e.message}`, 'error');
+                TimerController.setState('error');
+                const isAPIError = e instanceof APIError;
+                const errorMsg = isAPIError 
+                    ? `${e.message} (req: ${e.requestId})` 
+                    : e.message;
+                addLogEntry(`Generation failed: ${errorMsg}`, 'error');
+                
+                if (isAPIError && e.rawText) {
+                    console.error('[generateSnapshot] Non-JSON response:', e.rawText.substring(0, 500));
+                }
+                
                 throw e;
+            } finally {
+                await loadAllDataSafely();
             }
         }
 
@@ -3203,7 +3383,7 @@
                 }
                 
                 addLogEntry('Manual reconciliation complete', 'success');
-                await loadAllData();
+                await loadAllDataSafely();
                 closeModal('reconcileModal');
             } catch (e) {
                 errorDiv.textContent = 'Error: ' + e.message;
@@ -3222,7 +3402,7 @@
 
         async function init() {
             await loadConfig();
-            await loadAllData();
+            await loadAllDataSafely();
             addLogEntry('Farm Console loaded', 'info');
         }
         
@@ -3571,7 +3751,7 @@
                             this.setState(state);
                         }
                         
-                        await loadAllData();
+                        await loadAllDataSafely();
                         
                         const updatedState = this.getState();
                         if (updatedState) {
@@ -3647,7 +3827,7 @@
                 const snapshotId = state?.snapshotId;
                 
                 if (step === 0) {
-                    await loadAllData();
+                    await loadAllDataSafely();
                     
                     this.showOverlay(
                         "<strong>Trust, but Verify</strong><br><br>We're comparing AOD's findings against the Ground Truth we generated earlier. The Farm has two responsibilities - to generate synthetic snapshots of an IT environment, and then to also grade AOD's performance against expected data points."

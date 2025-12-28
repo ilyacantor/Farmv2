@@ -1,13 +1,57 @@
 import json
+import uuid as uuid_mod
+import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.routes import router, init_db, get_pool, compute_fingerprint
+
+
+class APIJSONErrorMiddleware(BaseHTTPMiddleware):
+    """Middleware to guarantee JSON responses for all /api/* routes.
+    
+    Catches any exception under /api/* and returns a structured JSON error
+    with request_id for tracing. Never returns HTML for API routes.
+    """
+    
+    async def dispatch(self, request: Request, call_next):
+        if not request.url.path.startswith('/api'):
+            return await call_next(request)
+        
+        request_id = str(uuid_mod.uuid4())[:8]
+        
+        try:
+            response = await call_next(request)
+            
+            if response.status_code == 404:
+                return JSONResponse(
+                    status_code=404,
+                    content={
+                        "error": "Not found",
+                        "request_id": request_id,
+                        "path": request.url.path
+                    }
+                )
+            
+            return response
+            
+        except Exception as e:
+            error_msg = str(e) if str(e) else type(e).__name__
+            return JSONResponse(
+                status_code=500,
+                content={
+                    "error": error_msg,
+                    "request_id": request_id,
+                    "path": request.url.path,
+                    "type": type(e).__name__
+                }
+            )
 from src.generators.enterprise import EnterpriseGenerator
 from src.models.planes import (
     ScaleEnum,
@@ -113,6 +157,8 @@ import os
 allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
 allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
 
+app.add_middleware(APIJSONErrorMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,  # Explicit whitelist - no wildcards with credentials
@@ -121,7 +167,71 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    """Handle HTTP exceptions with JSON for /api/* routes."""
+    if request.url.path.startswith('/api'):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": exc.detail or "HTTP error",
+                "request_id": str(uuid_mod.uuid4())[:8],
+                "path": request.url.path,
+                "status_code": exc.status_code
+            }
+        )
+    from starlette.responses import PlainTextResponse
+    return PlainTextResponse(str(exc.detail), status_code=exc.status_code)
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """Handle validation errors with JSON for /api/* routes."""
+    if request.url.path.startswith('/api'):
+        return JSONResponse(
+            status_code=422,
+            content={
+                "error": "Validation error",
+                "request_id": str(uuid_mod.uuid4())[:8],
+                "path": request.url.path,
+                "details": exc.errors()
+            }
+        )
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Catch-all exception handler for /api/* routes."""
+    if request.url.path.startswith('/api'):
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": str(exc) if str(exc) else type(exc).__name__,
+                "request_id": str(uuid_mod.uuid4())[:8],
+                "path": request.url.path,
+                "type": type(exc).__name__
+            }
+        )
+    from starlette.responses import PlainTextResponse
+    return PlainTextResponse(f"Internal Server Error: {type(exc).__name__}", status_code=500)
+
 app.include_router(router)
+
+@app.get("/api/_test/error-html")
+async def test_error_html():
+    """Test endpoint: Simulates server returning HTML (for frontend resilience testing).
+    Returns HTML intentionally to test client-side handling."""
+    return HTMLResponse(
+        content="<!DOCTYPE html><html><body>Server Error</body></html>",
+        status_code=500
+    )
+
+@app.get("/api/_test/error-500")
+async def test_error_500():
+    """Test endpoint: Returns a proper JSON 500 error."""
+    raise Exception("Simulated server error for testing")
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")

@@ -104,6 +104,11 @@ Explicit errors over silent fallbacks
 
 Evidence-only derivations over labels
 
+## Recent Changes (December 28, 2025)
+- **Progressive Rendering**: UI now renders snapshots immediately (~0.5s) while reconciliations continue loading in background (~5s). Eliminates perceived "stuck on Loading..." behavior during slow API calls.
+- **Production Hardening**: APIJSONErrorMiddleware guarantees JSON responses for all /api/* routes. Frontend `apiFetch()` validates content-type and response.ok before JSON parsing.
+- **Error Handling**: Error panel with retry CTA for graceful failure handling when server restarts cause 502 proxy errors.
+
 ## System Architecture
 The project is structured around a FastAPI application, featuring a simple Farm Console UI.
 
