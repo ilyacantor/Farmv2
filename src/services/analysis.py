@@ -915,3 +915,342 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     analysis['expected_block'] = expected_block
     
     return (analysis, recomputed_block)
+
+
+def generate_assessment_markdown(
+    reconciliation_id: str,
+    aod_run_id: str,
+    snapshot_id: str,
+    tenant_id: str,
+    created_at: str,
+    analysis: dict,
+    farm_expectations: dict,
+    aod_payload: dict
+) -> str | None:
+    """Generate detailed assessment markdown for a reconciliation.
+    
+    Returns None if the reconciliation is 100% perfect match.
+    """
+    summary = analysis.get('summary', {})
+    classification_metrics = analysis.get('classification_metrics', {})
+    admission_metrics = analysis.get('admission_metrics', {})
+    
+    matched_shadows = analysis.get('matched_shadows', [])
+    matched_zombies = analysis.get('matched_zombies', [])
+    missed_shadows = analysis.get('missed_shadows', [])
+    missed_zombies = analysis.get('missed_zombies', [])
+    false_positive_shadows = analysis.get('false_positive_shadows', [])
+    false_positive_zombies = analysis.get('false_positive_zombies', [])
+    
+    total_expected = classification_metrics.get('expected', 0)
+    total_matched = classification_metrics.get('matched', 0)
+    total_missed = classification_metrics.get('missed', 0)
+    total_fp = classification_metrics.get('false_positives', 0)
+    
+    is_perfect = (
+        total_missed == 0 and 
+        total_fp == 0 and 
+        admission_metrics.get('missed', 0) == 0 and 
+        admission_metrics.get('false_positives', 0) == 0
+    )
+    
+    if is_perfect:
+        return None
+    
+    lines = []
+    
+    lines.append(f"# Reconciliation Assessment Report")
+    lines.append("")
+    lines.append(f"**AOD Run:** `{aod_run_id}`")
+    lines.append(f"**Reconciliation ID:** `{reconciliation_id}`")
+    lines.append(f"**Snapshot ID:** `{snapshot_id}`")
+    lines.append(f"**Tenant:** `{tenant_id}`")
+    lines.append(f"**Generated:** {created_at}")
+    lines.append("")
+    
+    lines.append("---")
+    lines.append("")
+    lines.append("## Executive Summary")
+    lines.append("")
+    
+    overall_status = analysis.get('overall_status', 'UNKNOWN')
+    verdict = analysis.get('verdict', 'N/A')
+    accuracy = analysis.get('accuracy')
+    
+    status_emoji = {'PASS': 'PASS', 'WARN': 'WARN', 'FAIL': 'FAIL'}.get(overall_status, 'UNKNOWN')
+    lines.append(f"**Overall Status:** {status_emoji}")
+    lines.append(f"**Verdict:** {verdict}")
+    if accuracy is not None:
+        lines.append(f"**Combined Accuracy:** {accuracy}%")
+    lines.append("")
+    
+    lines.append("### Summary Table")
+    lines.append("")
+    lines.append("| Category | Farm Expected | AOD Found | Matched | Missed | FP |")
+    lines.append("|----------|---------------|-----------|---------|--------|-----|")
+    
+    farm_shadows = summary.get('farm_shadows', 0)
+    aod_shadows = summary.get('aod_shadows', 0)
+    shadow_matched = len(matched_shadows)
+    shadow_missed = len(missed_shadows)
+    shadow_fp = len(false_positive_shadows)
+    lines.append(f"| Shadows | {farm_shadows} | {aod_shadows} | {shadow_matched} | {shadow_missed} | {shadow_fp} |")
+    
+    farm_zombies = summary.get('farm_zombies', 0)
+    aod_zombies = summary.get('aod_zombies', 0)
+    zombie_matched = len(matched_zombies)
+    zombie_missed = len(missed_zombies)
+    zombie_fp = len(false_positive_zombies)
+    lines.append(f"| Zombies | {farm_zombies} | {aod_zombies} | {zombie_matched} | {zombie_missed} | {zombie_fp} |")
+    
+    lines.append("")
+    
+    lines.append("### Lifecycle Funnel")
+    lines.append("")
+    funnel = analysis.get('lifecycle_funnel', {})
+    lines.append(f"- **Gross Observations:** {funnel.get('gross_observations', 0)}")
+    lines.append(f"- **Unique Assets:** {funnel.get('unique_assets', 0)}")
+    lines.append(f"- **Rejected (not admitted):** {funnel.get('rejected_count', 0)}")
+    lines.append(f"- **Admitted:** {funnel.get('admitted_count', 0)}")
+    lines.append(f"- **Cataloged (final):** {funnel.get('final_cataloged', 0)}")
+    lines.append("")
+    
+    lines.append("---")
+    lines.append("")
+    lines.append("## Classification Analysis")
+    lines.append("")
+    
+    if matched_shadows:
+        lines.append("### Matched Shadows (Correctly Identified)")
+        lines.append("")
+        lines.append(f"**{len(matched_shadows)} assets correctly identified as Shadow IT**")
+        lines.append("")
+        lines.append("| Asset | Farm Reason Codes | AOD Reason Codes | RCA Hint |")
+        lines.append("|-------|-------------------|------------------|----------|")
+        for item in matched_shadows:
+            farm_codes = ', '.join(item.get('farm_reason_codes', [])[:4]) or '-'
+            aod_codes = ', '.join(item.get('aod_reason_codes', [])[:4]) or '-'
+            rca = item.get('rca_hint') or '-'
+            lines.append(f"| {item.get('asset_key', 'N/A')} | {farm_codes} | {aod_codes} | {rca} |")
+        lines.append("")
+    
+    if missed_shadows:
+        lines.append("### Missed Shadows (False Negatives)")
+        lines.append("")
+        lines.append(f"**{len(missed_shadows)} assets missed by AOD - should have been Shadow IT**")
+        lines.append("")
+        for item in missed_shadows:
+            asset_key = item.get('asset_key', 'N/A')
+            lines.append(f"#### `{asset_key}`")
+            lines.append("")
+            lines.append(f"**Headline:** {item.get('headline', 'N/A')}")
+            lines.append("")
+            lines.append(f"- **Farm Detail:** {item.get('farm_detail', 'N/A')}")
+            lines.append(f"- **AOD Detail:** {item.get('aod_detail', 'N/A')}")
+            lines.append(f"- **RCA Hint:** `{item.get('rca_hint', 'N/A')}`")
+            if item.get('is_key_drift'):
+                lines.append(f"- **Key Drift:** Yes - domain exists in AOD evidence but not used as canonical key")
+            lines.append(f"- **Farm Reason Codes:** `{', '.join(item.get('farm_reason_codes', []))}`")
+            lines.append("")
+    
+    if false_positive_shadows:
+        lines.append("### False Positive Shadows")
+        lines.append("")
+        lines.append(f"**{len(false_positive_shadows)} assets incorrectly classified as Shadow IT by AOD**")
+        lines.append("")
+        
+        fp_by_class = {}
+        for fp in false_positive_shadows:
+            farm_class = fp.get('farm_classification', 'unknown')
+            if farm_class not in fp_by_class:
+                fp_by_class[farm_class] = []
+            fp_by_class[farm_class].append(fp)
+        
+        for farm_class, items in fp_by_class.items():
+            lines.append(f"#### Farm Classification: `{farm_class}` ({len(items)} assets)")
+            lines.append("")
+            for item in items:
+                asset_key = item.get('asset_key', 'N/A')
+                lines.append(f"**`{asset_key}`**")
+                lines.append("")
+                lines.append(f"- **Farm Reason Codes:** `{', '.join(item.get('farm_reason_codes', []))}`")
+                lines.append(f"- **AOD Reason Codes:** `{', '.join(item.get('aod_reason_codes', []))}`")
+                
+                farm_codes = set(item.get('farm_reason_codes', []))
+                aod_codes = set(item.get('aod_reason_codes', []))
+                diff_in_farm = farm_codes - aod_codes
+                diff_in_aod = aod_codes - farm_codes
+                if diff_in_farm:
+                    lines.append(f"- **In Farm only:** `{', '.join(diff_in_farm)}`")
+                if diff_in_aod:
+                    lines.append(f"- **In AOD only:** `{', '.join(diff_in_aod)}`")
+                
+                if item.get('farm_investigation'):
+                    inv = item.get('farm_investigation', {})
+                    if inv.get('root_cause'):
+                        lines.append(f"- **Root Cause:** {inv.get('root_cause')}")
+                lines.append("")
+    
+    if matched_zombies:
+        lines.append("### Matched Zombies (Correctly Identified)")
+        lines.append("")
+        lines.append(f"**{len(matched_zombies)} assets correctly identified as Zombie**")
+        lines.append("")
+        lines.append("| Asset | Farm Reason Codes | AOD Reason Codes | RCA Hint |")
+        lines.append("|-------|-------------------|------------------|----------|")
+        for item in matched_zombies:
+            farm_codes = ', '.join(item.get('farm_reason_codes', [])[:4]) or '-'
+            aod_codes = ', '.join(item.get('aod_reason_codes', [])[:4]) or '-'
+            rca = item.get('rca_hint') or '-'
+            lines.append(f"| {item.get('asset_key', 'N/A')} | {farm_codes} | {aod_codes} | {rca} |")
+        lines.append("")
+    
+    if missed_zombies:
+        lines.append("### Missed Zombies (False Negatives)")
+        lines.append("")
+        lines.append(f"**{len(missed_zombies)} assets missed by AOD - should have been Zombie**")
+        lines.append("")
+        for item in missed_zombies:
+            asset_key = item.get('asset_key', 'N/A')
+            lines.append(f"#### `{asset_key}`")
+            lines.append("")
+            lines.append(f"**Headline:** {item.get('headline', 'N/A')}")
+            lines.append("")
+            lines.append(f"- **Farm Detail:** {item.get('farm_detail', 'N/A')}")
+            lines.append(f"- **AOD Detail:** {item.get('aod_detail', 'N/A')}")
+            lines.append(f"- **RCA Hint:** `{item.get('rca_hint', 'N/A')}`")
+            if item.get('is_key_drift'):
+                lines.append(f"- **Key Drift:** Yes - domain exists in AOD evidence but not used as canonical key")
+            lines.append(f"- **Farm Reason Codes:** `{', '.join(item.get('farm_reason_codes', []))}`")
+            lines.append("")
+    
+    if false_positive_zombies:
+        lines.append("### False Positive Zombies")
+        lines.append("")
+        lines.append(f"**{len(false_positive_zombies)} assets incorrectly classified as Zombie by AOD**")
+        lines.append("")
+        
+        fp_by_class = {}
+        for fp in false_positive_zombies:
+            farm_class = fp.get('farm_classification', 'unknown')
+            if farm_class not in fp_by_class:
+                fp_by_class[farm_class] = []
+            fp_by_class[farm_class].append(fp)
+        
+        for farm_class, items in fp_by_class.items():
+            lines.append(f"#### Farm Classification: `{farm_class}` ({len(items)} assets)")
+            lines.append("")
+            for item in items:
+                asset_key = item.get('asset_key', 'N/A')
+                lines.append(f"**`{asset_key}`**")
+                lines.append("")
+                lines.append(f"- **Farm Reason Codes:** `{', '.join(item.get('farm_reason_codes', []))}`")
+                lines.append(f"- **AOD Reason Codes:** `{', '.join(item.get('aod_reason_codes', []))}`")
+                lines.append("")
+    
+    lines.append("---")
+    lines.append("")
+    lines.append("## Admission Analysis")
+    lines.append("")
+    
+    admission_analysis = analysis.get('admission_analysis', {})
+    cataloged_matched = admission_analysis.get('cataloged_matched', [])
+    cataloged_missed = admission_analysis.get('cataloged_missed', [])
+    cataloged_fp = admission_analysis.get('cataloged_fp', [])
+    rejected_matched = admission_analysis.get('rejected_matched', [])
+    rejected_missed = admission_analysis.get('rejected_missed', [])
+    rejected_fp = admission_analysis.get('rejected_fp', [])
+    
+    lines.append("### Admission Metrics")
+    lines.append("")
+    lines.append(f"- **Total Assets:** {admission_metrics.get('total', 0)}")
+    lines.append(f"- **Matched:** {admission_metrics.get('matched', 0)}")
+    lines.append(f"- **Missed:** {admission_metrics.get('missed', 0)}")
+    lines.append(f"- **False Positives:** {admission_metrics.get('false_positives', 0)}")
+    lines.append(f"- **Accuracy:** {admission_metrics.get('accuracy', 0)}%")
+    lines.append("")
+    
+    if cataloged_missed:
+        lines.append("### Cataloged Missed by AOD")
+        lines.append("")
+        lines.append(f"**{len(cataloged_missed)} assets should have been cataloged but weren't**")
+        lines.append("")
+        lines.append("| Asset | Farm Classification |")
+        lines.append("|-------|---------------------|")
+        for key in cataloged_missed[:20]:
+            lines.append(f"| {key} | admitted |")
+        if len(cataloged_missed) > 20:
+            lines.append(f"| ... | ({len(cataloged_missed) - 20} more) |")
+        lines.append("")
+    
+    if rejected_missed:
+        lines.append("### Rejected Missed by AOD")
+        lines.append("")
+        lines.append(f"**{len(rejected_missed)} assets should have been rejected but weren't**")
+        lines.append("")
+        for key in rejected_missed[:10]:
+            lines.append(f"- `{key}`")
+        if len(rejected_missed) > 10:
+            lines.append(f"- ... ({len(rejected_missed) - 10} more)")
+        lines.append("")
+    
+    lines.append("---")
+    lines.append("")
+    lines.append("## Root Cause Analysis Summary")
+    lines.append("")
+    
+    rca_counts = {}
+    for item in missed_shadows + missed_zombies:
+        rca = item.get('rca_hint') or 'UNKNOWN'
+        rca_counts[rca] = rca_counts.get(rca, 0) + 1
+    for item in false_positive_shadows + false_positive_zombies:
+        farm_class = item.get('farm_classification', 'unknown')
+        rca = f"FP_FROM_{farm_class.upper()}"
+        rca_counts[rca] = rca_counts.get(rca, 0) + 1
+    
+    if rca_counts:
+        lines.append("| RCA Hint | Count |")
+        lines.append("|----------|-------|")
+        for rca, count in sorted(rca_counts.items(), key=lambda x: -x[1]):
+            lines.append(f"| {rca} | {count} |")
+        lines.append("")
+    else:
+        lines.append("No issues to analyze.")
+        lines.append("")
+    
+    lines.append("---")
+    lines.append("")
+    lines.append("## Recommendations")
+    lines.append("")
+    
+    recommendations = []
+    
+    if any(item.get('is_key_drift') for item in missed_shadows + missed_zombies):
+        recommendations.append("- **Key Normalization:** AOD has evidence for some assets but is not using the expected canonical keys. Review key normalization logic.")
+    
+    fp_clean_count = sum(1 for fp in false_positive_shadows if fp.get('farm_classification') == 'clean')
+    if fp_clean_count > 0:
+        has_ongoing_finance_fps = [fp for fp in false_positive_shadows 
+                                    if fp.get('farm_classification') == 'clean' 
+                                    and 'HAS_ONGOING_FINANCE' in fp.get('farm_reason_codes', [])]
+        if has_ongoing_finance_fps:
+            recommendations.append(f"- **Finance Governance:** {len(has_ongoing_finance_fps)} assets have `HAS_ONGOING_FINANCE` but AOD classified as shadow. Consider treating ongoing finance as governance.")
+    
+    if len(missed_shadows) > 0:
+        recommendations.append(f"- **Shadow Detection:** {len(missed_shadows)} expected shadows not found. Check shadow classification rules.")
+    
+    if len(missed_zombies) > 0:
+        recommendations.append(f"- **Zombie Detection:** {len(missed_zombies)} expected zombies not found. Check zombie classification rules.")
+    
+    if recommendations:
+        for rec in recommendations:
+            lines.append(rec)
+    else:
+        lines.append("No specific recommendations at this time.")
+    
+    lines.append("")
+    lines.append("---")
+    lines.append("")
+    lines.append("*Generated by AOS Farm Assessment Engine*")
+    
+    return '\n'.join(lines)
