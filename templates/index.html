@@ -2709,7 +2709,11 @@
                                 <div class="mt-1 text-sm text-slate-400">Farm = expected. AOD = actual.</div>
                                 ${verdict ? `<div class="mt-2 text-sm text-slate-300">${verdict}</div>` : ''}
                             </div>
-                            <div class="flex items-center gap-3">
+                            <div class="flex items-center gap-3 flex-wrap">
+                                ${rec.status !== 'PASS' ? `
+                                <a href="/api/reconcile/${reconciliationId}/assessment" 
+                                   class="px-3 py-1.5 text-xs rounded-xl bg-purple-900 text-purple-300 hover:bg-purple-800 ring-1 ring-purple-500/20">Download Assessment</a>
+                                ` : ''}
                                 <a href="/api/reconcile/${reconciliationId}/download?format=csv" 
                                    class="px-3 py-1.5 text-xs rounded-xl bg-blue-900 text-blue-300 hover:bg-blue-800 ring-1 ring-blue-500/20">Download CSV</a>
                                 <a href="/api/reconcile/${reconciliationId}/download?format=json" 

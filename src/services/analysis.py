@@ -929,11 +929,19 @@ def generate_assessment_markdown(
 ) -> str | None:
     """Generate detailed assessment markdown for a reconciliation.
     
-    Returns None if the reconciliation is 100% perfect match.
+    Returns None if:
+    - The reconciliation is 100% perfect match
+    - Analysis data is missing or invalid
+    - No issues to report
+    
+    This function is defensive and will not raise on missing data.
     """
-    summary = analysis.get('summary', {})
-    classification_metrics = analysis.get('classification_metrics', {})
-    admission_metrics = analysis.get('admission_metrics', {})
+    if not analysis or not isinstance(analysis, dict):
+        return None
+    
+    summary = analysis.get('summary') or {}
+    classification_metrics = analysis.get('classification_metrics') or {}
+    admission_metrics = analysis.get('admission_metrics') or {}
     
     matched_shadows = analysis.get('matched_shadows', [])
     matched_zombies = analysis.get('matched_zombies', [])

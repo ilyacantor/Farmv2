@@ -71,6 +71,7 @@ from src.services.analysis import (
     generate_assessment_markdown,
 )
 from src.services.aod_client import call_aod_explain_nonflag, stub_aod_explain_nonflag
+from src.services.logging import trace_log
 import re
 import uuid
 import hashlib
@@ -510,16 +511,24 @@ async def create_reconciliation(request: Request):
         "aod_lists": raw_aod_lists,
     }
     
-    assessment_md = generate_assessment_markdown(
-        reconciliation_id=reconciliation_id,
-        aod_run_id=parsed_request.aod_run_id,
-        snapshot_id=parsed_request.snapshot_id,
-        tenant_id=parsed_request.tenant_id,
-        created_at=created_at,
-        analysis=analysis,
-        farm_expectations=farm_expectations.model_dump(),
-        aod_payload=aod_payload
-    )
+    try:
+        assessment_md = generate_assessment_markdown(
+            reconciliation_id=reconciliation_id,
+            aod_run_id=parsed_request.aod_run_id,
+            snapshot_id=parsed_request.snapshot_id,
+            tenant_id=parsed_request.tenant_id,
+            created_at=created_at,
+            analysis=analysis,
+            farm_expectations=farm_expectations.model_dump(),
+            aod_payload=aod_payload
+        )
+    except Exception as e:
+        trace_log("routes", "assessment_generation_failed", {
+            "reconciliation_id": reconciliation_id,
+            "error": str(e),
+            "status": status.value
+        })
+        assessment_md = None
     
     async with pool.acquire() as conn:
         await conn.execute("""
@@ -962,25 +971,40 @@ async def download_assessment_markdown(reconciliation_id: str):
     """Download the detailed assessment markdown report for a reconciliation.
     
     Returns 404 if the reconciliation doesn't exist.
-    Returns 204 if the reconciliation exists but has no assessment (100% perfect match).
+    Returns JSON with status info if no assessment is available (perfect match or not generated).
     """
     pool = await get_pool()
     
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT reconciliation_id, aod_run_id, snapshot_id, assessment_md FROM reconciliations WHERE reconciliation_id = $1",
+            "SELECT reconciliation_id, aod_run_id, snapshot_id, status, assessment_md FROM reconciliations WHERE reconciliation_id = $1",
             reconciliation_id
         )
         if not row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
         
         assessment_md = row["assessment_md"]
+        status = row["status"]
+        
         if not assessment_md:
-            return Response(
-                status_code=204,
-                content="",
-                headers={"X-Assessment-Status": "perfect-match"}
-            )
+            if status == "PASS":
+                return Response(
+                    status_code=204,
+                    content="",
+                    headers={
+                        "X-Assessment-Status": "perfect-match",
+                        "X-Reconciliation-Status": status
+                    }
+                )
+            else:
+                return Response(
+                    status_code=204,
+                    content="",
+                    headers={
+                        "X-Assessment-Status": "not-generated",
+                        "X-Reconciliation-Status": status
+                    }
+                )
         
         aod_run_id = row["aod_run_id"] or "unknown"
         filename = f"assessment_{aod_run_id}.md"
