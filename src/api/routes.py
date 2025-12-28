@@ -6,6 +6,7 @@ from typing import Optional
 import asyncpg
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
@@ -236,22 +237,25 @@ async def create_snapshot(request: SnapshotRequest):
     
     policy = await fetch_policy_config()
     
-    generator = EnterpriseGenerator(
-        tenant_id=request.tenant_id,
-        seed=request.seed,
-        scale=request.scale,
-        enterprise_profile=request.enterprise_profile,
-        realism_profile=request.realism_profile,
-        data_preset=request.data_preset,
-        policy_config=policy,
-    )
+    def generate_snapshot_sync():
+        """CPU-intensive snapshot generation - runs in thread pool to avoid blocking event loop."""
+        generator = EnterpriseGenerator(
+            tenant_id=request.tenant_id,
+            seed=request.seed,
+            scale=request.scale,
+            enterprise_profile=request.enterprise_profile,
+            realism_profile=request.realism_profile,
+            data_preset=request.data_preset,
+            policy_config=policy,
+        )
+        snapshot = generator.generate()
+        snapshot.meta.snapshot_id = unique_snapshot_id
+        snapshot_dict = snapshot.model_dump()
+        expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
+        snapshot_dict['__expected__'] = expected_block
+        return snapshot, snapshot_dict
     
-    snapshot = generator.generate()
-    snapshot.meta.snapshot_id = unique_snapshot_id
-    snapshot_dict = snapshot.model_dump()
-    
-    expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
-    snapshot_dict['__expected__'] = expected_block
+    snapshot, snapshot_dict = await run_in_threadpool(generate_snapshot_sync)
     
     async with pool.acquire() as conn:
         async with conn.transaction():

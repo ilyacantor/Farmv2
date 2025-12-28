@@ -226,7 +226,7 @@ The project is structured around a FastAPI application. It features a simple Far
 ## Known Performance Bottlenecks (2025-12-28)
 
 ### Critical (P0)
-- **Snapshot generation blocks event loop**: Synchronous CPU-bound loops (scale multiplier up to 100x) run on async request thread with double JSON serialization. Fix: dispatch to worker (`run_in_threadpool`). Impact: 3-5x throughput.
+- **Snapshot generation blocks event loop**: ~~Synchronous CPU-bound loops block async request thread~~ **FIXED** (2025-12-28) - Wrapped `EnterpriseGenerator.generate()` and `compute_expected_block()` in `run_in_threadpool()`. Impact: 3-5x throughput, API remains responsive during large snapshot generation.
 
 ### High (P1)
 - **O(N×M) reconciliation passes**: IdP/Finance correlation iterates all candidates for each governance object. Only CMDB path optimized. Fix: precompute normalized lookups (name→key, domain→key). Impact: minutes→seconds for 10k+ candidates.
