@@ -72,7 +72,7 @@ from src.services.analysis import (
 )
 from src.services.aod_client import call_aod_explain_nonflag, stub_aod_explain_nonflag
 from src.services.logging import trace_log
-from src.services.expected_validation import validate_expected_block, validate_snapshot_expected
+from src.services.expected_validation import validate_expected_block, validate_snapshot_expected, validate_gradeability, ValidationResult
 import re
 import uuid
 import hashlib
@@ -518,6 +518,24 @@ async def create_reconciliation(request: Request):
     mode = parsed_request.mode
     if mode not in ("sprawl", "infra", "all"):
         raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}. Must be 'sprawl', 'infra', or 'all'")
+    
+    gradeability_result = ValidationResult(valid=True)
+    validate_gradeability(raw_aod_lists, gradeability_result)
+    if not gradeability_result.valid:
+        error_messages = [e.message for e in gradeability_result.errors]
+        trace_log("reconciliation", "GRADEABILITY_FAILED", {
+            "snapshot_id": parsed_request.snapshot_id,
+            "errors": error_messages,
+        })
+        raise HTTPException(
+            status_code=422, 
+            detail={
+                "error": "INVALID_INPUT_CONTRACT",
+                "message": "AOD output failed gradeability checks - cannot grade",
+                "errors": error_messages,
+            }
+        )
+    
     pool = await get_pool()
     
     async with pool.acquire() as conn:
