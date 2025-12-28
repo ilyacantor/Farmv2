@@ -120,6 +120,27 @@ Evidence-only derivations over labels
 - **Error Handling**: Error panel with retry CTA for graceful failure handling when server restarts cause 502 proxy errors.
 
 ## System Architecture
+AOS Farm Tech Stack:
+
+Backend:
+
+FastAPI - Python web framework for the REST API
+Uvicorn - ASGI server
+asyncpg - Async PostgreSQL driver
+Pydantic - Data validation and serialization
+Frontend:
+
+Vanilla JavaScript - Single-page app with glassmorphism UI
+Tailwind CSS - Styling (via CDN)
+Jinja2 - HTML templating
+Database:
+
+Supabase PostgreSQL - Managed Postgres with session pooling
+Key Libraries:
+
+python-dateutil - Timestamp handling
+tldextract - Domain/FQDN parsing
+httpx - Async HTTP client for AOD API calls
 The project is structured around a FastAPI application, featuring a simple Farm Console UI.
 
 **Services Layer (src/services/):**

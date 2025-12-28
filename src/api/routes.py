@@ -86,26 +86,34 @@ _db_pool: Optional[asyncpg.Pool] = None
 def get_db_url() -> str:
     """Get database URL. SUPABASE_DB_URL takes priority, else DATABASE_URL.
     Fatal if neither is set (or IGNORE_REPLIT_DB=true and only REPLIT vars exist).
+    Automatically enables pgbouncer mode for Supabase to handle connection pooling.
     """
     ignore_replit = os.environ.get("IGNORE_REPLIT_DB", "").lower() == "true"
     
     supabase_url = os.environ.get("SUPABASE_DB_URL", "")
     database_url = os.environ.get("DATABASE_URL", "")
     
+    url = None
     if supabase_url:
-        return supabase_url
-    
-    if database_url:
+        url = supabase_url
+    elif database_url:
         if ignore_replit and "replit" in database_url.lower():
             raise RuntimeError(
                 "FATAL: IGNORE_REPLIT_DB=true but only Replit DATABASE_URL found. "
                 "Set SUPABASE_DB_URL or unset IGNORE_REPLIT_DB."
             )
-        return database_url
+        url = database_url
+    else:
+        raise RuntimeError(
+            "FATAL: No database URL configured. Set SUPABASE_DB_URL or DATABASE_URL."
+        )
     
-    raise RuntimeError(
-        "FATAL: No database URL configured. Set SUPABASE_DB_URL or DATABASE_URL."
-    )
+    if "supabase" in url.lower() and "pgbouncer=true" not in url.lower():
+        separator = "&" if "?" in url else "?"
+        url = f"{url}{separator}pgbouncer=true"
+        print("[DB] Added pgbouncer=true for Supabase transaction pooling")
+    
+    return url
 
 
 def report_db_provider():
@@ -129,22 +137,22 @@ async def get_pool() -> asyncpg.Pool:
     if _db_pool is None:
         import asyncio
         db_url = get_db_url()
-        max_retries = 5
+        max_retries = 3
         for attempt in range(max_retries):
             try:
                 _db_pool = await asyncpg.create_pool(
                     db_url,
-                    min_size=1,
+                    min_size=0,
                     max_size=2,
                     command_timeout=60.0,
-                    max_inactive_connection_lifetime=60.0,
+                    max_inactive_connection_lifetime=30.0,
                     statement_cache_size=0,
                 )
                 print(f"[DB] Pool connected successfully")
                 break
             except asyncpg.exceptions.InternalServerError as e:
                 if "MaxClientsInSessionMode" in str(e) and attempt < max_retries - 1:
-                    wait_time = 10 + (attempt * 10)
+                    wait_time = 5 + (attempt * 5)
                     print(f"[DB] Pool limit hit, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
                     await asyncio.sleep(wait_time)
                 else:
