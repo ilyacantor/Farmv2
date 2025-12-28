@@ -10,7 +10,8 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.api.routes import router, init_db, get_pool, compute_fingerprint
+from src.api.routes import router, compute_fingerprint
+from src.farm.db import DBUnavailable, close_pool, ensure_schema, connection as db_connection, is_healthy
 
 
 class APIJSONErrorMiddleware(BaseHTTPMiddleware):
@@ -89,9 +90,7 @@ async def seed_initial_snapshots():
     """Seed initial snapshots with run-first workflow."""
     from datetime import datetime
     
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         count = await conn.fetchval("SELECT COUNT(*) FROM snapshots")
         if count and count > 0:
             return
@@ -118,7 +117,7 @@ async def seed_initial_snapshots():
             config["realism_profile"].value,
         )
         
-        async with pool.acquire() as conn:
+        async with db_connection() as conn:
             async with conn.transaction():
                 await conn.execute("""
                     INSERT INTO runs (run_id, run_fingerprint, created_at, seed, schema_version, enterprise_profile, realism_profile, scale, tenant_id)
@@ -139,12 +138,19 @@ async def seed_initial_snapshots():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
-    await seed_initial_snapshots()
+    try:
+        await ensure_schema()
+        await seed_initial_snapshots()
+        print("[Startup] DB initialized successfully")
+    except DBUnavailable as e:
+        print(f"[Startup] DB unavailable, running in degraded mode: {e.message}")
+    except Exception as e:
+        import traceback
+        print(f"[Startup] DB init failed (non-blocking): {type(e).__name__}: {e}")
+        traceback.print_exc()
     try:
         yield
     finally:
-        from src.api.routes import close_pool
         await close_pool()
 
 
@@ -205,6 +211,31 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         )
     return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
+@app.exception_handler(DBUnavailable)
+async def db_unavailable_handler(request: Request, exc: DBUnavailable):
+    """Handle database unavailable errors with 503 and retry info."""
+    retry_after = int(exc.retry_after) if exc.retry_after else 60
+    headers = {"Retry-After": str(retry_after)}
+    
+    if request.url.path.startswith('/api'):
+        return JSONResponse(
+            status_code=503,
+            headers=headers,
+            content={
+                "error": exc.message,
+                "retry_after": retry_after,
+                "request_id": str(uuid_mod.uuid4())[:8],
+                "path": request.url.path,
+                "type": "DBUnavailable"
+            }
+        )
+    from starlette.responses import PlainTextResponse
+    return PlainTextResponse(
+        f"Database temporarily unavailable. Try again in {retry_after}s.",
+        status_code=503,
+        headers=headers
+    )
+
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Catch-all exception handler for /api/* routes."""
@@ -222,6 +253,18 @@ async def general_exception_handler(request: Request, exc: Exception):
     return PlainTextResponse(f"Internal Server Error: {type(exc).__name__}", status_code=500)
 
 app.include_router(router)
+
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint with DB status."""
+    healthy, status_msg = is_healthy()
+    return JSONResponse(
+        status_code=200 if healthy else 503,
+        content={
+            "status": "healthy" if healthy else "degraded",
+            "db": status_msg,
+        }
+    )
 
 @app.get("/api/_test/error-html")
 async def test_error_html():

@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from src.generators.enterprise import EnterpriseGenerator, load_mock_policy_config
 from src.models.policy import PolicyConfig
 from src.services.aod_client import fetch_policy_config
+from src.farm.db import connection as db_connection, ensure_schema, is_healthy, DBUnavailable
 from src.models.planes import (
     SnapshotRequest,
     SnapshotCreateResponse,
@@ -80,171 +81,17 @@ from collections import defaultdict
 
 router = APIRouter()
 
-_db_pool: Optional[asyncpg.Pool] = None
-
-
-def get_db_url() -> str:
-    """Get database URL. SUPABASE_DB_URL takes priority, else DATABASE_URL.
-    Fatal if neither is set (or IGNORE_REPLIT_DB=true and only REPLIT vars exist).
-    Automatically enables pgbouncer mode for Supabase to handle connection pooling.
-    """
-    ignore_replit = os.environ.get("IGNORE_REPLIT_DB", "").lower() == "true"
-    
-    supabase_url = os.environ.get("SUPABASE_DB_URL", "")
-    database_url = os.environ.get("DATABASE_URL", "")
-    
-    url = None
-    if supabase_url:
-        url = supabase_url
-    elif database_url:
-        if ignore_replit and "replit" in database_url.lower():
-            raise RuntimeError(
-                "FATAL: IGNORE_REPLIT_DB=true but only Replit DATABASE_URL found. "
-                "Set SUPABASE_DB_URL or unset IGNORE_REPLIT_DB."
-            )
-        url = database_url
-    else:
-        raise RuntimeError(
-            "FATAL: No database URL configured. Set SUPABASE_DB_URL or DATABASE_URL."
-        )
-    
-    if "supabase" in url.lower() and "pgbouncer=true" not in url.lower():
-        separator = "&" if "?" in url else "?"
-        url = f"{url}{separator}pgbouncer=true"
-        print("[DB] Added pgbouncer=true for Supabase transaction pooling")
-    
-    return url
-
-
-def report_db_provider():
-    """Log which DB provider is being used at startup."""
-    supabase_url = os.environ.get("SUPABASE_DB_URL", "")
-    database_url = os.environ.get("DATABASE_URL", "")
-    
-    if supabase_url:
-        print("[DB] Using SUPABASE_DB_URL (Supabase Postgres)")
-    elif database_url:
-        if "replit" in database_url.lower() or "neon" in database_url.lower():
-            print("[DB] Using DATABASE_URL (Replit/Neon Postgres)")
-        else:
-            print("[DB] Using DATABASE_URL (external Postgres)")
-    else:
-        print("[DB] WARNING: No database URL configured!")
-
-
-async def get_pool() -> asyncpg.Pool:
-    global _db_pool
-    if _db_pool is None:
-        import asyncio
-        db_url = get_db_url()
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                _db_pool = await asyncpg.create_pool(
-                    db_url,
-                    min_size=0,
-                    max_size=2,
-                    command_timeout=60.0,
-                    max_inactive_connection_lifetime=30.0,
-                    statement_cache_size=0,
-                )
-                print(f"[DB] Pool connected successfully")
-                break
-            except asyncpg.exceptions.InternalServerError as e:
-                if "MaxClientsInSessionMode" in str(e) and attempt < max_retries - 1:
-                    wait_time = 5 + (attempt * 5)
-                    print(f"[DB] Pool limit hit, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
-                    await asyncio.sleep(wait_time)
-                else:
-                    raise
-    return _db_pool
-
-
-async def close_pool():
-    """Close the database pool and release all connections."""
-    global _db_pool
-    if _db_pool is not None:
-        try:
-            await _db_pool.close()
-            print("[DB] Pool closed successfully")
-        except Exception as e:
-            print(f"[DB] Error closing pool: {e}")
-        finally:
-            _db_pool = None
-
 
 def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profile: str, realism_profile: str, data_preset: str = "") -> str:
     data = f"{tenant_id}:{seed}:{scale}:{enterprise_profile}:{realism_profile}:{data_preset}"
     return hashlib.sha256(data.encode()).hexdigest()[:16]
 
 
-async def init_db():
-    """Initialize database with runs and snapshots tables (Postgres)."""
-    report_db_provider()
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS runs (
-                run_id TEXT PRIMARY KEY,
-                run_fingerprint TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                seed INTEGER NOT NULL,
-                schema_version TEXT NOT NULL,
-                enterprise_profile TEXT NOT NULL,
-                realism_profile TEXT NOT NULL,
-                scale TEXT NOT NULL,
-                tenant_id TEXT NOT NULL
-            )
-        """)
-        
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS snapshots (
-                snapshot_id TEXT PRIMARY KEY,
-                run_id TEXT NOT NULL REFERENCES runs(run_id),
-                sequence INTEGER DEFAULT 0,
-                snapshot_fingerprint TEXT NOT NULL,
-                tenant_id TEXT NOT NULL,
-                seed INTEGER NOT NULL,
-                scale TEXT NOT NULL,
-                enterprise_profile TEXT NOT NULL,
-                realism_profile TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                schema_version TEXT NOT NULL,
-                snapshot_json TEXT NOT NULL
-            )
-        """)
-        
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_fingerprint ON snapshots(snapshot_fingerprint)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_tenant ON snapshots(tenant_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_created ON snapshots(created_at DESC)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_run ON snapshots(run_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_fingerprint ON runs(run_fingerprint)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_tenant ON runs(tenant_id)")
-        
-        await conn.execute("""
-            CREATE TABLE IF NOT EXISTS reconciliations (
-                reconciliation_id TEXT PRIMARY KEY,
-                snapshot_id TEXT NOT NULL,
-                tenant_id TEXT NOT NULL,
-                aod_run_id TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                aod_payload_json TEXT NOT NULL,
-                farm_expectations_json TEXT NOT NULL,
-                report_text TEXT NOT NULL,
-                status TEXT NOT NULL,
-                analysis_json TEXT
-            )
-        """)
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_snapshot ON reconciliations(snapshot_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_aod_run ON reconciliations(aod_run_id)")
-        await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_created ON reconciliations(created_at DESC)")
 
 
 @router.post("/api/snapshots", response_model=SnapshotCreateResponse)
 async def create_snapshot(request: SnapshotRequest):
     total_start = time.perf_counter()
-    pool = await get_pool()
     
     fingerprint = compute_fingerprint(
         request.tenant_id,
@@ -255,7 +102,7 @@ async def create_snapshot(request: SnapshotRequest):
         request.data_preset.value if request.data_preset else "",
     )
     
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         existing = await conn.fetchrow(
             "SELECT snapshot_id, tenant_id, created_at, schema_version FROM snapshots WHERE snapshot_fingerprint = $1 ORDER BY created_at ASC LIMIT 1",
             fingerprint
@@ -306,7 +153,7 @@ async def create_snapshot(request: SnapshotRequest):
         })
     snapshot_dict['__expected__']['_validation'] = validation_result.to_dict()
     
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         async with conn.transaction():
             await conn.execute("""
                 INSERT INTO runs (run_id, run_fingerprint, created_at, seed, schema_version, enterprise_profile, realism_profile, scale, tenant_id)
@@ -373,9 +220,7 @@ async def get_policy_config(refresh: bool = False):
 
 @router.get("/api/snapshots/{snapshot_id}")
 async def get_snapshot(snapshot_id: str):
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -389,9 +234,7 @@ async def get_snapshot(snapshot_id: str):
 @router.get("/api/snapshots/{snapshot_id}/summary")
 async def get_snapshot_summary(snapshot_id: str):
     """Lightweight endpoint returning only metadata and counts for UI expansion."""
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -429,9 +272,7 @@ async def get_snapshot_summary(snapshot_id: str):
 
 @router.get("/api/snapshots/{snapshot_id}/expectations")
 async def get_snapshot_expectations(snapshot_id: str):
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -460,9 +301,7 @@ async def get_snapshot_expected_block(snapshot_id: str, mode: str = "sprawl"):
     if mode not in ("sprawl", "infra", "all"):
         raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}. Must be 'sprawl', 'infra', or 'all'")
     
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -494,9 +333,7 @@ async def validate_snapshot(snapshot_id: str):
     
     Returns validation result with any errors found.
     """
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -517,9 +354,7 @@ async def list_snapshots(
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
     offset: int = Query(0, ge=0, description="Number of results to skip")
 ):
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         if tenant_id:
             rows = await conn.fetch(
                 "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
@@ -554,9 +389,7 @@ class CleanupResponse(BaseModel):
 
 @router.delete("/api/snapshots/cleanup")
 async def cleanup_old_snapshots(keep: int = Query(3, ge=0, le=100, description="Number of recent snapshots to keep (0 = delete all)")):
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         result = await conn.execute("""
             DELETE FROM snapshots 
             WHERE snapshot_id NOT IN (
@@ -618,9 +451,7 @@ async def create_reconciliation(request: Request):
             }
         )
     
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", parsed_request.snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -673,7 +504,7 @@ async def create_reconciliation(request: Request):
         })
         assessment_md = None
     
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         await conn.execute("""
             INSERT INTO reconciliations (reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, aod_payload_json, farm_expectations_json, report_text, status, analysis_json, assessment_md)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
@@ -708,9 +539,7 @@ async def list_reconciliations(
     snapshot_id: Optional[str] = Query(None, description="Filter by snapshot ID"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results")
 ):
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         if snapshot_id:
             rows = await conn.fetch(
                 "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text, aod_payload_json, analysis_json FROM reconciliations WHERE snapshot_id = $1 ORDER BY created_at DESC LIMIT $2",
@@ -784,9 +613,7 @@ async def list_reconciliations(
 
 @router.get("/api/reconcile/{reconciliation_id}", response_model=ReconcileResponse)
 async def get_reconciliation(reconciliation_id: str):
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         row = await conn.fetchrow("SELECT * FROM reconciliations WHERE reconciliation_id = $1", reconciliation_id)
         if not row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
@@ -826,9 +653,7 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
     
     Uses cached analysis_json if available (fast path). Set force_recompute=true to bypass cache.
     """
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         rec_row = await conn.fetchrow("SELECT * FROM reconciliations WHERE reconciliation_id = $1", reconciliation_id)
         if not rec_row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
@@ -893,9 +718,7 @@ async def get_reconciliation_explain(
     ask: str = Query("shadow", description="What to ask about: shadow or zombie")
 ):
     """Lazy-load AOD explains for specific missed assets. Called on-demand when user expands an asset."""
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         rec_row = await conn.fetchrow("SELECT snapshot_id FROM reconciliations WHERE reconciliation_id = $1", reconciliation_id)
         if not rec_row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
@@ -931,9 +754,7 @@ async def download_reconciliation_diff(
     format: str = Query("csv", description="Export format: csv or json")
 ):
     """Download full reconciliation diff report with all differences and causes."""
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         rec_row = await conn.fetchrow("SELECT * FROM reconciliations WHERE reconciliation_id = $1", reconciliation_id)
         if not rec_row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
@@ -1149,9 +970,7 @@ async def download_assessment_markdown(reconciliation_id: str):
     Returns 404 if the reconciliation doesn't exist.
     Returns 204 with X-Assessment-Status header if no assessment is available.
     """
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         row = await conn.fetchrow(
             "SELECT reconciliation_id, aod_run_id, snapshot_id, status, assessment_md, analysis_json FROM reconciliations WHERE reconciliation_id = $1",
             reconciliation_id
@@ -1226,9 +1045,7 @@ async def auto_reconcile(request: AutoReconcileRequest):
             detail="AOD_URL or AOD_BASE_URL environment variable not configured. Cannot auto-reconcile."
         )
     
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", request.snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -1324,9 +1141,7 @@ async def refresh_reconciliation(reconciliation_id: str):
     
     Use this to update old reconciliations that were created before asset_summaries support.
     """
-    pool = await get_pool()
-    
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         rec_row = await conn.fetchrow(
             "SELECT aod_run_id, snapshot_id, tenant_id FROM reconciliations WHERE reconciliation_id = $1",
             reconciliation_id
@@ -1386,7 +1201,7 @@ async def refresh_reconciliation(reconciliation_id: str):
     }
     
     # Get snapshot for expectations
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
         if snap_row:
             snapshot = json.loads(snap_row["snapshot_json"])
@@ -1415,7 +1230,7 @@ async def refresh_reconciliation(reconciliation_id: str):
     report_text, status = generate_reconcile_report(aod_summary, aod_lists, farm_expectations)
     
     # Update stored data
-    async with pool.acquire() as conn:
+    async with db_connection() as conn:
         await conn.execute("""
             UPDATE reconciliations 
             SET aod_payload_json = $1, 

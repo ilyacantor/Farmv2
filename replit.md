@@ -105,6 +105,14 @@ Explicit errors over silent fallbacks
 Evidence-only derivations over labels
 
 ## Recent Changes (December 28, 2025)
+- **Database Resilience Module**: Comprehensive connection management in `src/farm/db.py`:
+  - Singleton asyncpg pool with conservative settings for Supabase pooler
+  - Circuit breaker: After 8 failures, enters 180s cooldown to prevent connection storms
+  - Exponential backoff: 10s → 20s → 40s... capped at 120s on connection failures
+  - Concurrency semaphore: Limits parallel DB operations to prevent overload
+  - Graceful degradation: Server starts in degraded mode if DB unavailable, returns 503 with `Retry-After` header
+  - Health endpoint: `/api/health` returns DB status ("healthy" or "degraded")
+  - Configuration via environment variables (see `docs/ops_db.md`)
 - **Comprehensive Farm-Level Validation Suite**: Six validation checks run on every snapshot and reconciliation:
   1. **Expected Block Consistency**: Non-empty reason codes, mutual exclusion (STALE/RECENT, NO_IDP/HAS_IDP, NO_CMDB/HAS_CMDB), implication rules (HAS_ONGOING_FINANCE ⇒ HAS_FINANCE)
   2. **Clock Invariants**: No future timestamps, no extreme past (>2 years), validates created_at exists
