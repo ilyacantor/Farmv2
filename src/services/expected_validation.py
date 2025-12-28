@@ -516,12 +516,21 @@ def validate_gradeability(aod_lists: dict, result: ValidationResult) -> None:
             )
             return
     
-    required_fields = ['shadows', 'zombies', 'actual_reason_codes']
-    missing_fields = []
+    shadow_keys = ['shadows', 'shadow_assets', 'shadow_asset_keys', 'shadow_asset_keys_sample']
+    zombie_keys = ['zombies', 'zombie_assets', 'zombie_asset_keys', 'zombie_asset_keys_sample']
+    reason_keys = ['actual_reason_codes', 'reason_codes', 'aod_reason_codes']
     
-    for field in required_fields:
-        if field not in aod_lists or aod_lists.get(field) is None:
-            missing_fields.append(field)
+    has_shadows = any(aod_lists.get(k) is not None for k in shadow_keys)
+    has_zombies = any(aod_lists.get(k) is not None for k in zombie_keys)
+    has_reasons = any(aod_lists.get(k) is not None for k in reason_keys)
+    
+    missing_fields = []
+    if not has_shadows:
+        missing_fields.append('shadows')
+    if not has_zombies:
+        missing_fields.append('zombies')
+    if not has_reasons:
+        missing_fields.append('actual_reason_codes')
     
     if missing_fields:
         result.add_error(
@@ -532,19 +541,39 @@ def validate_gradeability(aod_lists: dict, result: ValidationResult) -> None:
         )
         return
     
-    actual_reason_codes = aod_lists.get('actual_reason_codes', {})
-    shadows = aod_lists.get('shadows', [])
-    zombies = aod_lists.get('zombies', [])
+    actual_reason_codes = (
+        aod_lists.get('actual_reason_codes') or 
+        aod_lists.get('reason_codes') or 
+        aod_lists.get('aod_reason_codes') or {}
+    )
+    shadows = (
+        aod_lists.get('shadows') or 
+        aod_lists.get('shadow_assets') or 
+        aod_lists.get('shadow_asset_keys') or 
+        aod_lists.get('shadow_asset_keys_sample') or []
+    )
+    zombies = (
+        aod_lists.get('zombies') or 
+        aod_lists.get('zombie_assets') or 
+        aod_lists.get('zombie_asset_keys') or 
+        aod_lists.get('zombie_asset_keys_sample') or []
+    )
     
     classified_assets = set()
     for s in shadows:
-        key = s.get('asset_key') or s.get('domain') or s.get('key')
-        if key:
-            classified_assets.add(key)
+        if isinstance(s, str):
+            classified_assets.add(s)
+        elif isinstance(s, dict):
+            key = s.get('asset_key') or s.get('domain') or s.get('key')
+            if key:
+                classified_assets.add(key)
     for z in zombies:
-        key = z.get('asset_key') or z.get('domain') or z.get('key')
-        if key:
-            classified_assets.add(key)
+        if isinstance(z, str):
+            classified_assets.add(z)
+        elif isinstance(z, dict):
+            key = z.get('asset_key') or z.get('domain') or z.get('key')
+            if key:
+                classified_assets.add(key)
     
     assets_missing_reasons = []
     for asset_key in classified_assets:
