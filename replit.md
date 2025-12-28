@@ -105,6 +105,20 @@ Explicit errors over silent fallbacks
 Evidence-only derivations over labels
 
 ## Recent Changes (December 28, 2025)
+- **Hot/Cold Storage Split**: Major architecture change to reduce memory pressure:
+  - **snapshots_meta** table: Hot path with counts, plane_counts (JSONB), expected_summary (JSONB), blob_size_bytes, blob_hash
+  - **snapshots_blob** table: Cold storage for full snapshot blob (TEXT)
+  - **reconciliation_analysis_cache** table: Cached analysis with light/heavy split
+  - Dual-write on ingest: New snapshots write to both old and new tables for backward compatibility
+  - **Backfill script**: `python scripts/backfill_snapshot_tables.py` migrates existing data
+  - **New endpoints**:
+    - `GET /api/snapshots/{id}/blob` - Explicit blob fetch (use sparingly)
+    - `GET /api/snapshots/{id}/summary` - Hot path, no blob fetch
+    - `GET /api/reconcile/{id}/analysis/light` - Counts/KPIs only, no blob
+    - `GET /api/reconcile/{id}/analysis/heavy?category=shadows&list_type=missed&limit=100&offset=0` - Paginated heavy lists
+    - `GET /api/_diagnostics/blob-stats` - Blob fetch counter for monitoring
+    - `GET /api/_diagnostics/storage-stats` - Storage migration status
+  - **Principle**: List/modal flows never touch blob. Heavy analysis is cached and paginated. Full blob fetch is explicit and rare.
 - **Database Resilience Module**: Comprehensive connection management in `src/farm/db.py`:
   - Singleton asyncpg pool with conservative settings for Supabase pooler
   - Circuit breaker: After 8 failures, enters 180s cooldown to prevent connection storms

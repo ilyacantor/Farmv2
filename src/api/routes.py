@@ -15,6 +15,7 @@ from src.generators.enterprise import EnterpriseGenerator, load_mock_policy_conf
 from src.models.policy import PolicyConfig
 from src.services.aod_client import fetch_policy_config
 from src.farm.db import connection as db_connection, ensure_schema, is_healthy, DBUnavailable
+from src.farm.snapshot_utils import compute_snapshot_metadata, increment_blob_fetch, get_blob_fetch_count
 from src.models.planes import (
     SnapshotRequest,
     SnapshotCreateResponse,
@@ -153,6 +154,10 @@ async def create_snapshot(request: SnapshotRequest):
         })
     snapshot_dict['__expected__']['_validation'] = validation_result.to_dict()
     
+    # Serialize blob and compute metadata for hot/cold split
+    blob_json = json.dumps(snapshot_dict)
+    meta = compute_snapshot_metadata(snapshot_dict, blob_json)
+    
     async with db_connection() as conn:
         async with conn.transaction():
             await conn.execute("""
@@ -161,13 +166,31 @@ async def create_snapshot(request: SnapshotRequest):
             """, run_id, fingerprint, created_at, request.seed, SCHEMA_VERSION,
                 request.enterprise_profile.value, request.realism_profile.value, request.scale.value, request.tenant_id)
             
+            # Legacy table (still written for backward compatibility)
             await conn.execute("""
                 INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             """, unique_snapshot_id, run_id, 0, fingerprint,
                 snapshot.meta.tenant_id, snapshot.meta.seed, snapshot.meta.scale.value,
                 snapshot.meta.enterprise_profile.value, snapshot.meta.realism_profile.value,
-                snapshot.meta.created_at, SCHEMA_VERSION, json.dumps(snapshot_dict))
+                snapshot.meta.created_at, SCHEMA_VERSION, blob_json)
+            
+            # New hot path table (metadata only)
+            await conn.execute("""
+                INSERT INTO snapshots_meta (snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, backfill_state)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'complete')
+            """, unique_snapshot_id, run_id, fingerprint,
+                snapshot.meta.tenant_id, snapshot.meta.seed, snapshot.meta.scale.value,
+                snapshot.meta.enterprise_profile.value, snapshot.meta.realism_profile.value,
+                snapshot.meta.created_at, SCHEMA_VERSION,
+                meta['total_assets'], json.dumps(meta['plane_counts']),
+                json.dumps(meta['expected_summary']), meta['blob_size_bytes'], meta['blob_hash'])
+            
+            # New cold storage table (blob only)
+            await conn.execute("""
+                INSERT INTO snapshots_blob (snapshot_id, blob, created_at)
+                VALUES ($1, $2, $3)
+            """, unique_snapshot_id, blob_json, created_at)
     
     total_time = round(time.perf_counter() - total_start, 2)
     return SnapshotCreateResponse(
@@ -220,21 +243,77 @@ async def get_policy_config(refresh: bool = False):
 
 @router.get("/api/snapshots/{snapshot_id}")
 async def get_snapshot(snapshot_id: str):
+    """Get full snapshot including blob. Prefer /api/snapshots/{id}/summary for hot path."""
+    increment_blob_fetch()
     async with db_connection() as conn:
+        row = await conn.fetchrow("SELECT blob FROM snapshots_blob WHERE snapshot_id = $1", snapshot_id)
+        if row:
+            return JSONResponse(content=json.loads(row["blob"]), media_type="application/json")
+        
+        # Fallback to legacy table for unbackfilled data
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
         
-        return JSONResponse(
-            content=json.loads(row["snapshot_json"]),
-            media_type="application/json"
-        )
+        return JSONResponse(content=json.loads(row["snapshot_json"]), media_type="application/json")
+
+
+@router.get("/api/snapshots/{snapshot_id}/blob")
+async def get_snapshot_blob(snapshot_id: str):
+    """Explicit blob retrieval endpoint for drill-down. Use sparingly - this is expensive."""
+    increment_blob_fetch()
+    async with db_connection() as conn:
+        row = await conn.fetchrow("SELECT blob FROM snapshots_blob WHERE snapshot_id = $1", snapshot_id)
+        if row:
+            return JSONResponse(content=json.loads(row["blob"]), media_type="application/json")
+        
+        # Fallback to legacy table
+        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+        return JSONResponse(content=json.loads(row["snapshot_json"]), media_type="application/json")
 
 
 @router.get("/api/snapshots/{snapshot_id}/summary")
 async def get_snapshot_summary(snapshot_id: str):
-    """Lightweight endpoint returning only metadata and counts for UI expansion."""
+    """Lightweight endpoint returning only metadata and counts for UI expansion. Uses hot path (no blob)."""
     async with db_connection() as conn:
+        # Try hot path first (snapshots_meta)
+        meta_row = await conn.fetchrow(
+            "SELECT snapshot_id, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes FROM snapshots_meta WHERE snapshot_id = $1",
+            snapshot_id
+        )
+        
+        if meta_row:
+            plane_counts = json.loads(meta_row["plane_counts"]) if meta_row["plane_counts"] else {}
+            expected_summary = json.loads(meta_row["expected_summary"]) if meta_row["expected_summary"] else {}
+            
+            return {
+                "meta": {
+                    "snapshot_id": meta_row["snapshot_id"],
+                    "tenant_id": meta_row["tenant_id"],
+                    "seed": meta_row["seed"],
+                    "scale": meta_row["scale"],
+                    "enterprise_profile": meta_row["enterprise_profile"],
+                    "realism_profile": meta_row["realism_profile"],
+                    "created_at": meta_row["created_at"],
+                    "schema_version": meta_row["schema_version"],
+                },
+                "plane_counts": plane_counts,
+                "total_assets": meta_row["total_assets"],
+                "blob_size_bytes": meta_row["blob_size_bytes"],
+                "expected_shadows": expected_summary.get('shadows_count', 0),
+                "expected_zombies": expected_summary.get('zombies_count', 0),
+                "expected_clean": expected_summary.get('clean_count', 0),
+                "expected_rejected": expected_summary.get('rejected_count', 0),
+                "total_admitted": expected_summary.get('shadows_count', 0) + expected_summary.get('zombies_count', 0) + expected_summary.get('clean_count', 0),
+                "validation": {},
+                "source": "hot_path",
+            }
+        
+        # Fallback to legacy table (requires blob fetch)
+        increment_blob_fetch()
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -267,6 +346,7 @@ async def get_snapshot_summary(snapshot_id: str):
             "expected_rejected": expected_block.get('total_rejected', 0),
             "total_admitted": expected_block.get('total_admitted', 0),
             "validation": expected_block.get('_validation', {}),
+            "source": "legacy_blob",
         }
 
 
@@ -648,25 +728,26 @@ async def get_reconciliation(reconciliation_id: str):
 
 
 @router.get("/api/reconcile/{reconciliation_id}/analysis")
-async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: bool = Query(False)):
+async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: bool = Query(False), refresh: bool = Query(False)):
     """Get detailed analysis comparing Farm expectations vs AOD results with plain English explanations.
     
-    Uses cached analysis_json if available (fast path). Set force_recompute=true to bypass cache.
+    Uses cached analysis_json if available (fast path). Set force_recompute=true or refresh=1 to bypass cache.
     """
+    force = force_recompute or refresh
+    
     async with db_connection() as conn:
         rec_row = await conn.fetchrow("SELECT * FROM reconciliations WHERE reconciliation_id = $1", reconciliation_id)
         if not rec_row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
         
         cached_analysis = None
-        if not force_recompute:
+        if not force:
             try:
                 cached_analysis = rec_row["analysis_json"]
             except (KeyError, TypeError):
                 pass
         if cached_analysis:
             analysis = json.loads(cached_analysis)
-            # Compute has_any_discrepancy for legacy data if missing
             if 'has_any_discrepancy' not in analysis:
                 cm = analysis.get('classification_metrics', {})
                 am = analysis.get('admission_metrics', {})
@@ -680,11 +761,16 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
             aod_payload = json.loads(rec_row["aod_payload_json"])
             farm_exp = json.loads(rec_row["farm_expectations_json"])
             
-            snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
+            increment_blob_fetch()
+            snap_row = await conn.fetchrow("SELECT blob FROM snapshots_blob WHERE snapshot_id = $1", rec_row["snapshot_id"])
             if snap_row:
-                snapshot = json.loads(snap_row["snapshot_json"])
+                snapshot = json.loads(snap_row["blob"])
             else:
-                snapshot = {'__expected__': farm_exp}
+                snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
+                if snap_row:
+                    snapshot = json.loads(snap_row["snapshot_json"])
+                else:
+                    snapshot = {'__expected__': farm_exp}
             
             analysis, recomputed_block = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
             
@@ -693,7 +779,6 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
                 json.dumps(analysis), reconciliation_id
             )
             
-            # Persist recomputed expected_block to snapshot if it was upgraded to mode="all"
             if recomputed_block and snap_row:
                 snapshot['__expected__'] = recomputed_block
                 await conn.execute(
@@ -708,6 +793,112 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
             'aod_run_id': rec_row["aod_run_id"],
             'status': rec_row["status"],
             'analysis': analysis,
+        }
+
+
+@router.get("/api/reconcile/{reconciliation_id}/analysis/light")
+async def get_reconciliation_analysis_light(reconciliation_id: str):
+    """Light analysis endpoint - returns only counts and KPIs without heavy lists. No blob fetch."""
+    async with db_connection() as conn:
+        rec_row = await conn.fetchrow(
+            "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, status, analysis_json FROM reconciliations WHERE reconciliation_id = $1",
+            reconciliation_id
+        )
+        if not rec_row:
+            raise HTTPException(status_code=404, detail="Reconciliation not found")
+        
+        if rec_row["analysis_json"]:
+            full_analysis = json.loads(rec_row["analysis_json"])
+            
+            light = {
+                'classification_metrics': full_analysis.get('classification_metrics', {}),
+                'admission_metrics': full_analysis.get('admission_metrics', {}),
+                'has_any_discrepancy': full_analysis.get('has_any_discrepancy', False),
+                'shadow_reconciliation': {
+                    'matched': full_analysis.get('shadow_reconciliation', {}).get('matched', 0),
+                    'missed': full_analysis.get('shadow_reconciliation', {}).get('missed', 0),
+                    'false_positives': full_analysis.get('shadow_reconciliation', {}).get('false_positives', 0),
+                },
+                'zombie_reconciliation': {
+                    'matched': full_analysis.get('zombie_reconciliation', {}).get('matched', 0),
+                    'missed': full_analysis.get('zombie_reconciliation', {}).get('missed', 0),
+                    'false_positives': full_analysis.get('zombie_reconciliation', {}).get('false_positives', 0),
+                },
+            }
+        else:
+            light = {
+                'classification_metrics': {},
+                'admission_metrics': {},
+                'has_any_discrepancy': False,
+                'shadow_reconciliation': {'matched': 0, 'missed': 0, 'false_positives': 0},
+                'zombie_reconciliation': {'matched': 0, 'missed': 0, 'false_positives': 0},
+                'cache_miss': True,
+            }
+        
+        return {
+            'reconciliation_id': reconciliation_id,
+            'snapshot_id': rec_row["snapshot_id"],
+            'tenant_id': rec_row["tenant_id"],
+            'aod_run_id': rec_row["aod_run_id"],
+            'status': rec_row["status"],
+            'light': light,
+        }
+
+
+@router.get("/api/reconcile/{reconciliation_id}/analysis/heavy")
+async def get_reconciliation_analysis_heavy(
+    reconciliation_id: str,
+    category: str = Query("shadows", description="Category: shadows, zombies, or admission"),
+    list_type: str = Query("missed", description="List type: missed, fp (false positives), or matched"),
+    limit: int = Query(100, ge=1, le=500, description="Page size"),
+    offset: int = Query(0, ge=0, description="Page offset")
+):
+    """Heavy analysis endpoint - returns paginated detail lists. Requires cached analysis."""
+    async with db_connection() as conn:
+        rec_row = await conn.fetchrow(
+            "SELECT reconciliation_id, analysis_json FROM reconciliations WHERE reconciliation_id = $1",
+            reconciliation_id
+        )
+        if not rec_row:
+            raise HTTPException(status_code=404, detail="Reconciliation not found")
+        
+        if not rec_row["analysis_json"]:
+            raise HTTPException(status_code=400, detail="Analysis not yet computed. Call /analysis first.")
+        
+        full_analysis = json.loads(rec_row["analysis_json"])
+        
+        if category == "shadows":
+            recon = full_analysis.get('shadow_reconciliation', {})
+        elif category == "zombies":
+            recon = full_analysis.get('zombie_reconciliation', {})
+        elif category == "admission":
+            recon = full_analysis.get('admission_reconciliation', {})
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid category: {category}")
+        
+        if list_type == "missed":
+            items = recon.get('missed_details', [])
+        elif list_type == "fp":
+            items = recon.get('fp_details', [])
+        elif list_type == "matched":
+            items = recon.get('matched_details', recon.get('matched', []))
+            if isinstance(items, int):
+                items = []
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid list_type: {list_type}")
+        
+        total = len(items)
+        page_items = items[offset:offset + limit]
+        
+        return {
+            'reconciliation_id': reconciliation_id,
+            'category': category,
+            'list_type': list_type,
+            'total': total,
+            'offset': offset,
+            'limit': limit,
+            'has_more': offset + limit < total,
+            'items': page_items,
         }
 
 
@@ -1299,3 +1490,37 @@ async def check_aod_run_status(
                 status=AODRunStatusEnum.AOD_ERROR,
                 message=f"Could not reach AOD: {str(e)}"
             )
+
+
+@router.get("/api/_diagnostics/blob-stats")
+async def get_blob_stats():
+    """Return blob fetch statistics for monitoring. Lower blob_fetch_count is better."""
+    return {
+        "blob_fetch_count": get_blob_fetch_count(),
+        "message": "This counter tracks blob fetches since server start. Normal UI flows should NOT increment this."
+    }
+
+
+@router.get("/api/_diagnostics/storage-stats")
+async def get_storage_stats():
+    """Return storage statistics comparing legacy vs new tables."""
+    async with db_connection() as conn:
+        legacy_count = await conn.fetchval("SELECT COUNT(*) FROM snapshots")
+        meta_count = await conn.fetchval("SELECT COUNT(*) FROM snapshots_meta")
+        blob_count = await conn.fetchval("SELECT COUNT(*) FROM snapshots_blob")
+        cache_count = await conn.fetchval("SELECT COUNT(*) FROM reconciliation_analysis_cache")
+        
+        pending_backfill = await conn.fetchval("""
+            SELECT COUNT(*) FROM snapshots s
+            LEFT JOIN snapshots_meta m ON s.snapshot_id = m.snapshot_id
+            WHERE m.snapshot_id IS NULL
+        """)
+        
+        return {
+            "legacy_snapshots_count": legacy_count,
+            "snapshots_meta_count": meta_count,
+            "snapshots_blob_count": blob_count,
+            "reconciliation_cache_count": cache_count,
+            "pending_backfill": pending_backfill,
+            "backfill_complete": pending_backfill == 0,
+        }

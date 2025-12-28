@@ -161,9 +161,10 @@ class DatabaseManager:
         
         allowed, retry_after = await self._circuit_breaker.check()
         if not allowed:
+            wait_time = int(retry_after) if retry_after else 60
             raise DBUnavailable(
-                f"Circuit breaker open: DB unavailable. Try again in {int(retry_after)}s",
-                retry_after=retry_after
+                f"Circuit breaker open: DB unavailable. Try again in {wait_time}s",
+                retry_after=retry_after or 60.0
             )
         
         db_url = self._get_db_url()
@@ -220,9 +221,10 @@ class DatabaseManager:
         
         allowed, retry_after = await self._circuit_breaker.check()
         if not allowed:
+            wait_time = int(retry_after) if retry_after else 60
             raise DBUnavailable(
-                f"Circuit breaker open: DB unavailable. Try again in {int(retry_after)}s",
-                retry_after=retry_after
+                f"Circuit breaker open: DB unavailable. Try again in {wait_time}s",
+                retry_after=retry_after or 60.0
             )
         
         async with self._semaphore:
@@ -336,6 +338,56 @@ class DatabaseManager:
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_snapshot ON reconciliations(snapshot_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_aod_run ON reconciliations(aod_run_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_created ON reconciliations(created_at DESC)")
+                
+                # New tables for hot/cold storage split (Phase 2)
+                self._log("Creating snapshots_meta table (hot path)...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS snapshots_meta (
+                        snapshot_id TEXT PRIMARY KEY,
+                        run_id TEXT NOT NULL REFERENCES runs(run_id),
+                        snapshot_fingerprint TEXT NOT NULL,
+                        tenant_id TEXT NOT NULL,
+                        seed INTEGER NOT NULL,
+                        scale TEXT NOT NULL,
+                        enterprise_profile TEXT NOT NULL,
+                        realism_profile TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        schema_version TEXT NOT NULL,
+                        total_assets INTEGER NOT NULL DEFAULT 0,
+                        plane_counts JSONB NOT NULL DEFAULT '{}',
+                        expected_summary JSONB NOT NULL DEFAULT '{}',
+                        blob_size_bytes INTEGER NOT NULL DEFAULT 0,
+                        blob_hash TEXT NOT NULL DEFAULT '',
+                        backfill_state TEXT NOT NULL DEFAULT 'pending'
+                    )
+                """)
+                
+                self._log("Creating snapshots_blob table (cold storage)...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS snapshots_blob (
+                        snapshot_id TEXT PRIMARY KEY,
+                        blob TEXT NOT NULL,
+                        created_at TEXT NOT NULL DEFAULT ''
+                    )
+                """)
+                
+                self._log("Creating reconciliation_analysis_cache table...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS reconciliation_analysis_cache (
+                        reconciliation_id TEXT PRIMARY KEY,
+                        snapshot_id TEXT NOT NULL,
+                        snapshot_hash TEXT NOT NULL DEFAULT '',
+                        light_json JSONB,
+                        heavy_json JSONB,
+                        computed_at TEXT NOT NULL DEFAULT ''
+                    )
+                """)
+                
+                # Indexes for new tables
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_meta_tenant_created ON snapshots_meta(tenant_id, created_at DESC)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_meta_fingerprint ON snapshots_meta(snapshot_fingerprint)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_meta_run ON snapshots_meta(run_id)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_recon_cache_snapshot ON reconciliation_analysis_cache(snapshot_id)")
                 
                 self._schema_initialized = True
                 self._log("Schema initialized")
