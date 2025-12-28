@@ -222,3 +222,19 @@ The project is structured around a FastAPI application. It features a simple Far
 - 456 admission FPs: AOD admitting non-FQDN keys (needs Iron Dome)
 - 287 rejected missed: Same root cause
 - 6 classification missed: High-value FQDNs (okta.com, workday.com) not classified by AOD
+
+## Known Performance Bottlenecks (2025-12-28)
+
+### Critical (P0)
+- **Snapshot generation blocks event loop**: Synchronous CPU-bound loops (scale multiplier up to 100x) run on async request thread with double JSON serialization. Fix: dispatch to worker (`run_in_threadpool`). Impact: 3-5x throughput.
+
+### High (P1)
+- **O(N×M) reconciliation passes**: IdP/Finance correlation iterates all candidates for each governance object. Only CMDB path optimized. Fix: precompute normalized lookups (name→key, domain→key). Impact: minutes→seconds for 10k+ candidates.
+- **Reconciliation recomputes on every GET**: `force_recompute=true` default, no cached `analysis_json` usage. Fix: persist computed analysis, serve cached unless snapshot/run mutated. Impact: 70%+ latency reduction.
+
+### Medium (P2)
+- **Missing database index**: `aod_run_id` column not indexed, APIs scan/limit then filter client-side. Fix: add btree index. Impact: query time seconds→ms.
+- **High memory footprint**: Generator materializes full `AllPlanes` + JSON copy. Fix: yield plane chunks or write to temp file. Impact: ~50% memory reduction.
+
+### Low (P3)
+- **Repeated policy fetch**: External policy fetch per snapshot without cache/backoff. Fix: TTL cache or store with snapshot metadata.
