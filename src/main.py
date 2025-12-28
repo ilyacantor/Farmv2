@@ -141,7 +141,11 @@ async def seed_initial_snapshots():
 async def lifespan(app: FastAPI):
     await init_db()
     await seed_initial_snapshots()
-    yield
+    try:
+        yield
+    finally:
+        from src.api.routes import close_pool
+        await close_pool()
 
 
 app = FastAPI(

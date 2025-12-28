@@ -127,15 +127,42 @@ def report_db_provider():
 async def get_pool() -> asyncpg.Pool:
     global _db_pool
     if _db_pool is None:
+        import asyncio
         db_url = get_db_url()
-        _db_pool = await asyncpg.create_pool(
-            db_url,
-            min_size=1,
-            max_size=20,
-            command_timeout=60.0,
-            max_inactive_connection_lifetime=300.0
-        )
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                _db_pool = await asyncpg.create_pool(
+                    db_url,
+                    min_size=1,
+                    max_size=2,
+                    command_timeout=60.0,
+                    max_inactive_connection_lifetime=60.0,
+                    statement_cache_size=0,
+                )
+                print(f"[DB] Pool connected successfully")
+                break
+            except asyncpg.exceptions.InternalServerError as e:
+                if "MaxClientsInSessionMode" in str(e) and attempt < max_retries - 1:
+                    wait_time = 10 + (attempt * 10)
+                    print(f"[DB] Pool limit hit, retrying in {wait_time}s (attempt {attempt + 1}/{max_retries})")
+                    await asyncio.sleep(wait_time)
+                else:
+                    raise
     return _db_pool
+
+
+async def close_pool():
+    """Close the database pool and release all connections."""
+    global _db_pool
+    if _db_pool is not None:
+        try:
+            await _db_pool.close()
+            print("[DB] Pool closed successfully")
+        except Exception as e:
+            print(f"[DB] Error closing pool: {e}")
+        finally:
+            _db_pool = None
 
 
 def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profile: str, realism_profile: str, data_preset: str = "") -> str:
@@ -208,6 +235,7 @@ async def init_db():
 
 @router.post("/api/snapshots", response_model=SnapshotCreateResponse)
 async def create_snapshot(request: SnapshotRequest):
+    total_start = time.perf_counter()
     pool = await get_pool()
     
     fingerprint = compute_fingerprint(
@@ -243,7 +271,6 @@ async def create_snapshot(request: SnapshotRequest):
     
     def generate_snapshot_sync():
         """CPU-intensive snapshot generation - runs in thread pool to avoid blocking event loop."""
-        gen_start = time.perf_counter()
         generator = EnterpriseGenerator(
             tenant_id=request.tenant_id,
             seed=request.seed,
@@ -258,10 +285,9 @@ async def create_snapshot(request: SnapshotRequest):
         snapshot_dict = snapshot.model_dump()
         expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
         snapshot_dict['__expected__'] = expected_block
-        gen_elapsed = round(time.perf_counter() - gen_start, 2)
-        return snapshot, snapshot_dict, gen_elapsed
+        return snapshot, snapshot_dict
     
-    snapshot, snapshot_dict, generation_time = await run_in_threadpool(generate_snapshot_sync)
+    snapshot, snapshot_dict = await run_in_threadpool(generate_snapshot_sync)
     
     validation_result = validate_snapshot_expected(snapshot_dict)
     if not validation_result.valid:
@@ -288,6 +314,7 @@ async def create_snapshot(request: SnapshotRequest):
                 snapshot.meta.enterprise_profile.value, snapshot.meta.realism_profile.value,
                 snapshot.meta.created_at, SCHEMA_VERSION, json.dumps(snapshot_dict))
     
+    total_time = round(time.perf_counter() - total_start, 2)
     return SnapshotCreateResponse(
         snapshot_id=unique_snapshot_id,
         snapshot_fingerprint=fingerprint,
@@ -295,7 +322,7 @@ async def create_snapshot(request: SnapshotRequest):
         created_at=snapshot.meta.created_at,
         schema_version=SCHEMA_VERSION,
         duplicate_of_snapshot_id=None,
-        generation_time_seconds=generation_time,
+        generation_time_seconds=total_time,
         validation_passed=validation_result.valid,
         validation_error_count=len(validation_result.errors),
     )
@@ -351,6 +378,47 @@ async def get_snapshot(snapshot_id: str):
         )
 
 
+@router.get("/api/snapshots/{snapshot_id}/summary")
+async def get_snapshot_summary(snapshot_id: str):
+    """Lightweight endpoint returning only metadata and counts for UI expansion."""
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+        snapshot = json.loads(row["snapshot_json"])
+        meta = snapshot.get('meta', {})
+        planes = snapshot.get('planes', {})
+        expected_block = snapshot.get('__expected__', {})
+        
+        plane_counts = {
+            'discovery': len(planes.get('discovery', {}).get('observations', [])),
+            'idp': len(planes.get('idp', {}).get('objects', [])),
+            'cmdb': len(planes.get('cmdb', {}).get('cis', [])),
+            'cloud': len(planes.get('cloud', {}).get('resources', [])),
+            'endpoint': len(planes.get('endpoint', {}).get('devices', [])),
+            'network': (len(planes.get('network', {}).get('dns_records', [])) +
+                       len(planes.get('network', {}).get('proxy_logs', [])) +
+                       len(planes.get('network', {}).get('certificates', []))),
+            'finance': (len(planes.get('finance', {}).get('vendors', [])) +
+                       len(planes.get('finance', {}).get('contracts', [])) +
+                       len(planes.get('finance', {}).get('transactions', []))),
+        }
+        
+        return {
+            "meta": meta,
+            "plane_counts": plane_counts,
+            "expected_shadows": expected_block.get('total_shadows', 0),
+            "expected_zombies": expected_block.get('total_zombies', 0),
+            "expected_clean": expected_block.get('total_clean', 0),
+            "expected_rejected": expected_block.get('total_rejected', 0),
+            "total_admitted": expected_block.get('total_admitted', 0),
+            "validation": expected_block.get('_validation', {}),
+        }
+
+
 @router.get("/api/snapshots/{snapshot_id}/expectations")
 async def get_snapshot_expectations(snapshot_id: str):
     pool = await get_pool()
@@ -361,9 +429,15 @@ async def get_snapshot_expectations(snapshot_id: str):
             raise HTTPException(status_code=404, detail="Snapshot not found")
         
         snapshot = json.loads(row["snapshot_json"])
-        policy = await fetch_policy_config()
-        expectations = analyze_snapshot_for_expectations(snapshot, policy=policy)
-        return expectations.model_dump()
+        expected_block = snapshot.get('__expected__', {})
+        return {
+            "expected_shadows": expected_block.get('total_shadows', 0),
+            "expected_zombies": expected_block.get('total_zombies', 0),
+            "expected_clean": expected_block.get('total_clean', 0),
+            "expected_rejected": expected_block.get('total_rejected', 0),
+            "total_admitted": expected_block.get('total_admitted', 0),
+            "classifications": expected_block.get('classifications', {}),
+        }
 
 
 @router.get("/api/snapshots/{snapshot_id}/expected")

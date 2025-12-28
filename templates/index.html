@@ -2919,14 +2919,18 @@
             container.innerHTML = '<div class="p-4 text-slate-400 text-sm">Loading snapshot data...</div>';
             
             try {
-                const fetches = [];
                 if (!FarmState.snapshotDataCache[snapshotId]) {
-                    fetches.push(fetch(`/api/snapshots/${snapshotId}`).then(r => r.json()).then(d => FarmState.snapshotDataCache[snapshotId] = d));
+                    const summary = await fetch(`/api/snapshots/${snapshotId}/summary`).then(r => r.json());
+                    FarmState.snapshotDataCache[snapshotId] = {
+                        meta: summary.meta,
+                        planes: {},
+                        plane_counts: summary.plane_counts,
+                    };
+                    FarmState.expectationsCache[snapshotId] = {
+                        expected_shadows: summary.expected_shadows,
+                        expected_zombies: summary.expected_zombies,
+                    };
                 }
-                if (!FarmState.expectationsCache[snapshotId]) {
-                    fetches.push(fetch(`/api/snapshots/${snapshotId}/expectations`).then(r => r.json()).then(d => FarmState.expectationsCache[snapshotId] = d));
-                }
-                await Promise.all(fetches);
                 renderSnapshotExpanded(snapshotId, FarmState.snapshotDataCache[snapshotId]);
                 renderConfigSnapshotsList();
             } catch (e) {
@@ -2948,14 +2952,15 @@
                 finance: '<svg class="w-4 h-4 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>'
             };
             const p = data.planes || {};
+            const pc = data.plane_counts || {};
             const planes = [
-                { key: 'discovery', name: 'Discovery', icon: planeIcons.discovery, items: p.discovery?.observations || [] },
-                { key: 'idp', name: 'IdP', icon: planeIcons.idp, items: p.idp?.objects || [] },
-                { key: 'cmdb', name: 'CMDB', icon: planeIcons.cmdb, items: p.cmdb?.config_items || [] },
-                { key: 'cloud', name: 'Cloud', icon: planeIcons.cloud, items: p.cloud?.resources || [] },
-                { key: 'endpoint', name: 'Endpoint', icon: planeIcons.endpoint, items: p.endpoint?.devices || [] },
-                { key: 'network', name: 'Network', icon: planeIcons.network, items: p.network ? [...(p.network.dns_records || []), ...(p.network.proxy_logs || []), ...(p.network.certificates || [])] : [] },
-                { key: 'finance', name: 'Finance', icon: planeIcons.finance, items: p.finance ? [...(p.finance.vendors || []), ...(p.finance.contracts || []), ...(p.finance.transactions || [])] : [] }
+                { key: 'discovery', name: 'Discovery', icon: planeIcons.discovery, count: pc.discovery ?? (p.discovery?.observations?.length || 0) },
+                { key: 'idp', name: 'IdP', icon: planeIcons.idp, count: pc.idp ?? (p.idp?.objects?.length || 0) },
+                { key: 'cmdb', name: 'CMDB', icon: planeIcons.cmdb, count: pc.cmdb ?? (p.cmdb?.cis?.length || 0) },
+                { key: 'cloud', name: 'Cloud', icon: planeIcons.cloud, count: pc.cloud ?? (p.cloud?.resources?.length || 0) },
+                { key: 'endpoint', name: 'Endpoint', icon: planeIcons.endpoint, count: pc.endpoint ?? (p.endpoint?.devices?.length || 0) },
+                { key: 'network', name: 'Network', icon: planeIcons.network, count: pc.network ?? ((p.network?.dns_records?.length || 0) + (p.network?.proxy_logs?.length || 0) + (p.network?.certificates?.length || 0)) },
+                { key: 'finance', name: 'Finance', icon: planeIcons.finance, count: pc.finance ?? ((p.finance?.vendors?.length || 0) + (p.finance?.contracts?.length || 0) + (p.finance?.transactions?.length || 0)) }
             ];
             
             const exp = FarmState.expectationsCache[snapshotId] || {};
@@ -2990,23 +2995,12 @@
                     </div>
                     <div class="divide-y divide-slate-700/30">
                         ${planes.map(plane => {
-                            const planeKey = `${snapshotId}-${plane.key}`;
-                            const isPlaneExpanded = FarmState.expandedPlanes[planeKey];
                             return `
-                                <div>
-                                    <div class="px-4 py-2 flex items-center justify-between cursor-pointer hover:bg-slate-800/50"
-                                         onclick="event.stopPropagation(); togglePlaneExpand('${snapshotId}', '${plane.key}')">
-                                        <div class="flex items-center gap-2">
-                                            <svg class="w-3 h-3 text-slate-500 transition-transform ${isPlaneExpanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                                            </svg>
-                                            <span class="text-sm">${plane.icon} ${plane.name}</span>
-                                        </div>
-                                        <span class="text-xs text-slate-500">${plane.items.length} items</span>
+                                <div class="px-4 py-2 flex items-center justify-between">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm">${plane.icon} ${plane.name}</span>
                                     </div>
-                                    <div id="plane-${planeKey}" class="${isPlaneExpanded ? '' : 'hidden'} bg-slate-950/50 max-h-64 overflow-y-auto">
-                                        ${renderPlaneItems(plane.items, plane.key)}
-                                    </div>
+                                    <span class="text-xs text-slate-500">${plane.count} items</span>
                                 </div>
                             `;
                         }).join('')}
