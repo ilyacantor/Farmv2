@@ -72,6 +72,7 @@ from src.services.analysis import (
 )
 from src.services.aod_client import call_aod_explain_nonflag, stub_aod_explain_nonflag
 from src.services.logging import trace_log
+from src.services.expected_validation import validate_expected_block, validate_snapshot_expected
 import re
 import uuid
 import hashlib
@@ -262,6 +263,15 @@ async def create_snapshot(request: SnapshotRequest):
     
     snapshot, snapshot_dict, generation_time = await run_in_threadpool(generate_snapshot_sync)
     
+    validation_result = validate_snapshot_expected(snapshot_dict)
+    if not validation_result.valid:
+        trace_log("expected_validation", "FAILED", {
+            "snapshot_id": unique_snapshot_id,
+            "error_count": len(validation_result.errors),
+            "errors": [e.message for e in validation_result.errors[:5]],
+        })
+    snapshot_dict['__expected__']['_validation'] = validation_result.to_dict()
+    
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute("""
@@ -286,6 +296,8 @@ async def create_snapshot(request: SnapshotRequest):
         schema_version=SCHEMA_VERSION,
         duplicate_of_snapshot_id=None,
         generation_time_seconds=generation_time,
+        validation_passed=validation_result.valid,
+        validation_error_count=len(validation_result.errors),
     )
 
 
@@ -384,6 +396,37 @@ async def get_snapshot_expected_block(snapshot_id: str, mode: str = "sprawl"):
             "source": "aod" if os.environ.get("AOD_BASE_URL") or os.environ.get("AOD_URL") else "mock",
         }
         return expected_block
+
+
+@router.get("/api/snapshots/{snapshot_id}/validate")
+async def validate_snapshot(snapshot_id: str):
+    """
+    Run self-consistency audit on the expected block.
+    
+    Checks for:
+    - Non-empty reason codes for all assets
+    - HAS_ONGOING_FINANCE => HAS_FINANCE (implication rule)
+    - STALE_ACTIVITY and RECENT_ACTIVITY mutually exclusive
+    - NO_IDP and HAS_IDP mutually exclusive
+    - NO_CMDB and HAS_CMDB mutually exclusive
+    
+    Returns validation result with any errors found.
+    """
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+        snapshot = json.loads(row["snapshot_json"])
+        result = validate_snapshot_expected(snapshot)
+        
+        return {
+            "snapshot_id": snapshot_id,
+            "validation": result.to_dict(),
+            "grading_trustworthy": result.valid,
+        }
 
 
 @router.get("/api/snapshots", response_model=list[SnapshotMetadata])

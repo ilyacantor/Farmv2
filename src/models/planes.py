@@ -328,6 +328,8 @@ class SnapshotCreateResponse(BaseModel):
     schema_version: str = SCHEMA_VERSION
     duplicate_of_snapshot_id: Optional[str] = None
     generation_time_seconds: Optional[float] = None
+    validation_passed: Optional[bool] = None
+    validation_error_count: Optional[int] = None
 
 
 class SnapshotMetadata(BaseModel):
