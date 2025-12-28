@@ -197,6 +197,8 @@ async def init_db():
             )
         """)
         await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_snapshot ON reconciliations(snapshot_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_aod_run ON reconciliations(aod_run_id)")
+        await conn.execute("CREATE INDEX IF NOT EXISTS idx_reconciliations_created ON reconciliations(created_at DESC)")
 
 
 @router.post("/api/snapshots", response_model=SnapshotCreateResponse)

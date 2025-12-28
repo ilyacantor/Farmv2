@@ -233,7 +233,7 @@ The project is structured around a FastAPI application. It features a simple Far
 - **Reconciliation recomputes on every GET**: `force_recompute=true` default, no cached `analysis_json` usage. Fix: persist computed analysis, serve cached unless snapshot/run mutated. Impact: 70%+ latency reduction.
 
 ### Medium (P2)
-- **Missing database index**: `aod_run_id` column not indexed, APIs scan/limit then filter client-side. Fix: add btree index. Impact: query time seconds→ms.
+- **Missing database index**: ~~`aod_run_id` column not indexed~~ **FIXED** (2025-12-28) - Added `idx_reconciliations_aod_run` and `idx_reconciliations_created` indexes.
 - **High memory footprint**: Generator materializes full `AllPlanes` + JSON copy. Fix: yield plane chunks or write to temp file. Impact: ~50% memory reduction.
 
 ### Low (P3)
