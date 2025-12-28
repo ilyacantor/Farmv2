@@ -507,11 +507,11 @@ async def create_reconciliation(request: Request):
     
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO reconciliations (reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, aod_payload_json, farm_expectations_json, report_text, status)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO reconciliations (reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, aod_payload_json, farm_expectations_json, report_text, status, analysis_json)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         """, reconciliation_id, parsed_request.snapshot_id, parsed_request.tenant_id, parsed_request.aod_run_id,
             created_at, json.dumps(aod_payload), json.dumps(farm_expectations.model_dump()),
-            report_text, status.value)
+            report_text, status.value, json.dumps(analysis))
         
         # Persist recomputed expected_block to snapshot if it was upgraded to mode="all"
         if recomputed_block:

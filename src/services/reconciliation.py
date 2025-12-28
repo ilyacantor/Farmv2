@@ -109,6 +109,28 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             elif is_stale(ts, window_days, reference):
                 candidates[key]['stale_timestamps'].append(ts)
     
+    # PERFORMANCE: Build reverse indexes BEFORE processing governance planes
+    # This enables O(1) lookups instead of O(N) scans for IdP, CMDB, and Finance matching
+    key_to_normalized = {key: normalize_name(key) for key in candidates.keys()}
+    normalized_to_keys = defaultdict(set)
+    vendor_to_keys = defaultdict(set)
+    name_to_keys = defaultdict(set)
+    domain_to_keys = defaultdict(set)
+
+    for key, cand in candidates.items():
+        # Index by normalized key
+        normalized_to_keys[key_to_normalized[key]].add(key)
+        # Index by normalized vendors
+        for vendor in cand['vendors']:
+            vendor_to_keys[normalize_name(vendor)].add(key)
+        # Index by normalized names
+        for name in cand['names']:
+            name_to_keys[normalize_name(name)].add(key)
+        # Index by domains
+        for domain in cand['domains']:
+            domain_to_keys[domain].add(key)
+
+    # Process IdP objects with O(N) complexity using precomputed indexes
     idp_objects = planes.get('idp', {}).get('objects', [])
     for obj in idp_objects:
         name = normalize_name(obj.get('name', ''))
@@ -116,16 +138,24 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         idp_registered = extract_registered_domain(raw_domain) if raw_domain else None
         matched_keys = set()
         
-        for key, cand in candidates.items():
-            if name and (name == normalize_name(key) or any(name == normalize_name(n) for n in cand['names'])):
-                cand['idp_present'] = True
-                matched_keys.add(key)
-            if idp_registered and idp_registered == key:
-                cand['idp_present'] = True
-                matched_keys.add(key)
-            elif raw_domain and raw_domain in cand['domains']:
-                cand['idp_present'] = True
-                matched_keys.add(key)
+        # O(1) lookups instead of O(N) scans
+        if name:
+            # Match by normalized key
+            matched_keys.update(normalized_to_keys.get(name, set()))
+            # Match by normalized names in candidates
+            matched_keys.update(name_to_keys.get(name, set()))
+        
+        if idp_registered:
+            # Direct key match
+            if idp_registered in candidates:
+                matched_keys.add(idp_registered)
+        elif raw_domain:
+            # Domain lookup
+            matched_keys.update(domain_to_keys.get(raw_domain, set()))
+        
+        # Mark matched candidates
+        for key in matched_keys:
+            candidates[key]['idp_present'] = True
         
         ts = obj.get('last_login_at')
         if ts and matched_keys:
@@ -141,24 +171,6 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
                         cand['activity_source'] = 'idp'
                 elif is_stale(ts, window_days, reference):
                     cand['stale_timestamps'].append(ts)
-    
-    # PERFORMANCE: Build reverse indexes to avoid O(N*M) nested loops
-    # Pre-compute normalized values for all candidates to avoid repeated normalize_name() calls
-    key_to_normalized = {key: normalize_name(key) for key in candidates.keys()}
-    vendor_to_keys = defaultdict(set)
-    name_to_keys = defaultdict(set)
-    domain_to_keys = defaultdict(set)
-
-    for key, cand in candidates.items():
-        # Index by normalized vendors
-        for vendor in cand['vendors']:
-            vendor_to_keys[normalize_name(vendor)].add(key)
-        # Index by normalized names
-        for name in cand['names']:
-            name_to_keys[normalize_name(name)].add(key)
-        # Index by domains
-        for domain in cand['domains']:
-            domain_to_keys[domain].add(key)
 
     # Process CMDB CIs with O(N) complexity instead of O(N*M)
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])

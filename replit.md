@@ -1,9 +1,7 @@
 # AOS Farm
 
-> **Plain English:** AOS Farm is a "test data factory" that creates realistic fake IT environments. It generates the kind of messy, conflicting data you'd find in a real company—network logs, identity records, cloud inventories, spending data—all woven together. We use this synthetic data to test whether our discovery system (AOD) can correctly identify shadow IT, zombie apps, and security gaps. The goal is battle-testing, not happy-path demos.
-
 ## Overview
-AOS Farm is a synthetic enterprise data generator that creates realistic source-of-truth data planes and raw observation streams. Its primary purpose is to generate robust testing data for the AutonomOS AOD (Discover) module, focusing on raw evidence rather than pre-concluded insights. The project aims to eliminate "green-test theater" by enforcing strict rules that ensure all changes preserve real-world semantics, are provable with real-world output, and include negative tests. The business vision is to provide high-fidelity, plausible enterprise data for rigorous testing of AOD's discovery capabilities, thereby improving the accuracy and reliability of anomaly detection in complex enterprise environments.
+AOS Farm is a synthetic enterprise data generator that creates realistic source-of-truth data planes and raw observation streams. Its primary purpose is to generate robust testing data for the AutonomOS AOD (Discover) module, focusing on raw evidence. The project aims to eliminate "green-test theater" by enforcing strict rules that ensure all changes preserve real-world semantics, are provable with real-world output, and include negative tests. The business vision is to provide high-fidelity, plausible enterprise data for rigorous testing of AOD's discovery capabilities, thereby improving the accuracy and reliability of anomaly detection in complex enterprise environments.
 
 ## User Preferences
 Guardrail: No “green-test theater” (Stop optimizing for “done without errors”) The anti-pattern we are eliminating
@@ -107,134 +105,42 @@ Explicit errors over silent fallbacks
 Evidence-only derivations over labels
 
 ## System Architecture
-The project is structured around a FastAPI application. It features a simple Farm Console UI via `templates/index.html`.
+The project is structured around a FastAPI application, featuring a simple Farm Console UI.
 
 **Services Layer (src/services/):**
-- **constants.py** - Domain/vendor constants (VENDOR_DOMAIN_SETS, INFRASTRUCTURE_DOMAINS, TLD sets)
-- **key_normalization.py** - Key processing functions (normalize_name, extract_domain, to_domain_key)
-- **reconciliation.py** - Core reconciliation logic (build_candidate_flags, propagate_vendor_governance, compute_expected_block)
-- **analysis.py** - Analysis and investigation functions (build_reconciliation_analysis, investigate_mismatch)
-- **logging.py** - Trace logging utilities with mismatch counters
-- **aod_client.py** - AOD API client with per-run caching and circuit breaker pattern
+- Provides core logic for key normalization, reconciliation, analysis, and AOD client interaction. Includes domain constants and logging utilities.
 
 **Frontend Architecture (templates/index.html):**
-- **FarmState** - Namespace object for all global state (snapshots, caches, UI state)
-- **RequestController** - Async request manager to prevent stale response race conditions
-- **TourController** - Guided Validation Run system for cross-system tours with AOD
+- Manages global state (`FarmState`), asynchronous requests (`RequestController`), and guided validation runs (`TourController`).
 
 **Documentation (docs/):**
-- **SYNTHETIC_GENERATION.md** - Comprehensive guide to synthetic data generation, coupled evidence, and configuration parameters
+- `SYNTHETIC_GENERATION.md`: Comprehensive guide to synthetic data generation.
 
 **Technical Implementations:**
-- **Core Framework:** FastAPI for the web API.
-- **Data Generation:** Deterministic generators ensure reproducible results based on seed, scale, and enterprise/realism profiles. See `docs/SYNTHETIC_GENERATION.md` for details.
-- **Data Planes:** Generates 7 independent data planes (Discovery, IdP, CMDB, Cloud, Endpoint, Network, Finance) designed to correlate only via realistic keys.
+- **Core Framework:** FastAPI.
+- **Data Generation:** Deterministic generators for reproducible results based on seed, scale, and enterprise/realism profiles. Generates 7 independent data planes designed to correlate only via realistic keys.
 - **API Design:** RESTful API for snapshot management, AOD reconciliation, and status queries.
 - **Schema Versioning:** All snapshots include `meta.schema_version = "farm.v1"`.
-- **Design Principles:** Independence of data planes, no "conclusions" fields, deterministic generation, and timestamps anchored to snapshot creation with realistic recency distributions.
+- **Design Principles:** Independence of data planes, no "conclusions" fields, deterministic generation, and timestamps anchored to snapshot creation.
 
 **Feature Specifications:**
-- **Snapshot Management:** API to generate, retrieve, list, and delete data snapshots, each including an `__expected__` block for grading metadata.
-- **Reconciliation System:** Compares AOD results against Farm's expectations, supporting manual and auto-reconciliation. Reconciliation `contract_status` indicates gradeability.
-- **AOD Interaction:** Defines clear contracts for AOD output and an optional `explain-nonflag` endpoint.
+- **Snapshot Management:** API for generating, retrieving, listing, and deleting data snapshots, each with an `__expected__` block for grading metadata.
+- **Reconciliation System:** Compares AOD results against Farm's expectations, indicating gradeability via `contract_status`.
+- **AOD Interaction:** Defines contracts for AOD output and an optional `explain-nonflag` endpoint.
 - **Finance Evidence Rules:** Classifies assets based on finance data, emphasizing `HAS_ONGOING_FINANCE` for shadow classification.
+- **Stress Test Scenarios:** Includes 4 deterministic stress test scenarios (Split Brain, Toxic Asset, Banned Asset, Zombie Asset) injected into every snapshot.
 
 **System Design Choices:**
 - **Ownership Boundaries:** AOD never consumes Farm's expected data; Farm owns the reconciliation UI; AOD owns structured actual output.
-- **Error Handling:** Emphasizes failing loudly with explicit error statuses (e.g., `UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`).
-- **Configuration:** Supports `Scale` (small to enterprise), `Enterprise Profile` (e.g., modern_saas, regulated_finance), and `Realism Profile` (clean, typical, messy).
-- **Data Presets:** Provides 3-tier challenge levels (`clean_baseline`, `enterprise_mess`, `adversarial`) controlling domain coverage, conflict rate, junk domains, near-collisions, and aliasing rate.
+- **Error Handling:** Emphasizes explicit error statuses (e.g., `UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`).
+- **Configuration:** Supports `Scale` (small to enterprise), `Enterprise Profile` (e.g., modern_saas), and `Realism Profile` (clean, typical, messy).
+- **Data Presets:** Provides 3-tier challenge levels (`clean_baseline`, `enterprise_mess`, `adversarial`) controlling various parameters like conflict rate and aliasing.
 - **Canonical Key Rules:** Domain-first for assets with a domain; normalized name for internal services.
-- **CMDB Resolution:** Handles multiple CMDB matches with `cmdb_resolution_reason` codes (`NONE`, `MULTI_ENV`, `LEGACY`, `DUPLICATE`, `PARENT_VENDOR`). CMDB matching prioritizes exact name, then exact domain, then vendor fallback.
-- **Reconciliation Modes:** Supports `sprawl` (default, external domains), `infra` (internal services), and `all` for varying testing scopes.
-- **Admission Rules:** An entity is admitted for classification if it meets specific criteria (e.g., discovery strength ≥ 2 distinct sources, cloud evidence, IdP match, or CMDB match). Rejected entities are explicitly marked with `admitted: false` and a `rejection_reason`.
-- **Ground Truth Classification:** Admitted assets are classified as Shadow, Zombie, or Clean based on evidence flags and governance propagation logic across vendor domain sets. Exclusions are defined for infrastructure domains.
+- **CMDB Resolution:** Handles multiple CMDB matches with `cmdb_resolution_reason` codes (`NONE`, `MULTI_ENV`, `LEGACY`, `DUPLICATE`, `PARENT_VENDOR`).
+- **Reconciliation Modes:** Supports `sprawl`, `infra`, and `all` for varying testing scopes.
+- **Admission Rules:** An entity is admitted for classification if it meets specific criteria (e.g., discovery strength ≥ 2 distinct sources, cloud evidence, IdP match, or CMDB match). Rejected entities are explicitly marked.
+- **Ground Truth Classification:** Admitted assets are classified as Shadow, Zombie, or Clean based on evidence flags and governance propagation logic.
 
 ## External Dependencies
-- **Database:** Supabase Postgres (exclusively). Configured via `SUPABASE_DB_URL` or `DATABASE_URL`. Replit DB URLs are ignored if `IGNORE_REPLIT_DB=true`. Schema includes `runs`, `snapshots`, and `reconciliations` tables.
-- **AOD Module (AutonomOS Discover):** Interacts via defined API contracts. Requires `AOD_URL` and optionally `AOD_SHARED_SECRET` for auto-reconciliation. `USE_AOD_EXPLAIN_STUB=true` enables a local stub for testing.
-
-## Recent Changes (2025-12-27)
-
-### Simplified Configuration System
-- **Scale** now controls volume via internal multiplier:
-  - `small=1x`, `medium=4x`, `large=12x`, `enterprise=50x`, `mega=100x`
-- **Realism Profile** decouples evidence strength from governance coverage:
-  - `clean`: corroboration=90%, governance=95% → High admission, low shadow
-  - `typical`: corroboration=80%, governance=60% → Medium shadow
-  - `messy`: corroboration=80%, governance=15% → High admission, **HIGH shadow**
-- "Messy" means ungoverned (shadow IT), not weak signals (rejected)
-- Zombie CMDB entries now respect coverage rate (fixed unconditional CMDB bug)
-- Benchmark results:
-  | Scale + Realism | Admitted | Shadow | Clean |
-  |-----------------|----------|--------|-------|
-  | large + clean | ~396 | ~1 | ~382 |
-  | large + typical | ~400 | ~120 | ~200 |
-  | large + messy | ~622 | **~311** | ~251 |
-
-### Admission Mismatch Export (JSON/CSV)
-- Enhanced download endpoint to include both admission and classification mismatches
-- JSON export has separate `admission_mismatches` and `classification_mismatches` arrays
-- Admission mismatches include full asset details:
-  - `farm_reason_codes`, `aod_reason_codes`
-  - `discovery_sources`, `discovery_count`
-  - `idp_present`, `cmdb_present`, `vendor_governance`
-  - `rejection_reason`, `raw_domains`, `farm_classification`
-- Download always recomputes analysis to ensure fresh detail fields
-- Categories: `cataloged_missed`, `cataloged_fp`, `rejected_missed`, `rejected_fp` for admission; `shadow_missed`, `zombie_missed`, `shadow_fp`, `zombie_fp` for classification
-- Synthetic assets include realistic domains (e.g., `cloudify.io`, `smartbase.com`)
-
-### Stress Test Scenarios
-- Added 4 deterministic stress test scenarios injected into every snapshot:
-  1. **Split Brain (Monday.com)**: Finance vendor (name-only) + Network DNS/Proxy (domain-based) - tests AOD's merge logic
-  2. **Toxic Asset (Trello)**: CMDB=yes, IdP=no - tests identity gap detection
-  3. **Banned Asset (TikTok)**: Discovery observations for blocked domain - tests banned domain detection
-  4. **Zombie Asset (Zoom Legacy)**: CMDB+IdP present but stale >90 days - tests staleness detection
-- Added `banned_domains` field to PolicyConfig with `is_banned()` method
-- Scenarios inject via `_inject_stress_tests()` method in EnterpriseGenerator
-- Employee dict structure: `{first, last, email}` (not `{name, email}`)
-
-## Recent Changes (2025-12-26)
-
-### Reconciliation Performance Fix
-- Fixed `build_reconciliation_analysis` to use cached `__expected__` block from snapshot
-- Previously: Always recomputed expectations from scratch (17.7s for 712 candidates)
-- After: Uses cached block when available (0.01s)
-- **Speedup: 1837x** for large snapshots
-
-## Recent Changes (2025-12-25)
-
-### FQDN Validation Filter
-- Added `is_valid_fqdn()` function using tldextract to reject keys without valid TLD suffix
-- Applied in `compute_expected_block()` to filter out internal hostnames from expectations
-- Fixes: Prevents `paymentgateway`, `identity856`, etc. from appearing in expected lists
-
-### Exclusion Sync
-- Added noise domains to `PolicyConfig.default_fallback()` exclusions:
-  - `tech.net`, `cloud.net`, `world.net`, `services.io`, `plus.net`
-- These are generated by the junk domain generator but should not be expected as shadows
-
-### Classification Accuracy
-- Before: 46.2%
-- After: 92.3% (TechHub-HPC9 adversarial profile)
-
-### Remaining AOD Gaps (documented in docs/AOD_IRON_DOME_FIX.md)
-- 456 admission FPs: AOD admitting non-FQDN keys (needs Iron Dome)
-- 287 rejected missed: Same root cause
-- 6 classification missed: High-value FQDNs (okta.com, workday.com) not classified by AOD
-
-## Known Performance Bottlenecks (2025-12-28)
-
-### Critical (P0)
-- **Snapshot generation blocks event loop**: ~~Synchronous CPU-bound loops block async request thread~~ **FIXED** (2025-12-28) - Wrapped `EnterpriseGenerator.generate()` and `compute_expected_block()` in `run_in_threadpool()`. Impact: 3-5x throughput, API remains responsive during large snapshot generation.
-
-### High (P1)
-- **O(N×M) reconciliation passes**: IdP/Finance correlation iterates all candidates for each governance object. Only CMDB path optimized. Fix: precompute normalized lookups (name→key, domain→key). Impact: minutes→seconds for 10k+ candidates.
-- **Reconciliation recomputes on every GET**: `force_recompute=true` default, no cached `analysis_json` usage. Fix: persist computed analysis, serve cached unless snapshot/run mutated. Impact: 70%+ latency reduction.
-
-### Medium (P2)
-- **Missing database index**: ~~`aod_run_id` column not indexed~~ **FIXED** (2025-12-28) - Added `idx_reconciliations_aod_run` and `idx_reconciliations_created` indexes.
-- **High memory footprint**: Generator materializes full `AllPlanes` + JSON copy. Fix: yield plane chunks or write to temp file. Impact: ~50% memory reduction.
-
-### Low (P3)
-- **Repeated policy fetch**: External policy fetch per snapshot without cache/backoff. Fix: TTL cache or store with snapshot metadata.
+- **Database:** Supabase Postgres. Configured via `SUPABASE_DB_URL` or `DATABASE_URL`. Schema includes `runs`, `snapshots`, and `reconciliations` tables.
+- **AOD Module (AutonomOS Discover):** Interacts via defined API contracts. Requires `AOD_URL` and optionally `AOD_SHARED_SECRET`. `USE_AOD_EXPLAIN_STUB=true` enables a local stub for testing.

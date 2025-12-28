@@ -1,0 +1,75 @@
+Here is the prompt for **Step 3 (The P1 Algorithmic Fix)**.
+
+I have also included **Step 4 (Caching)** immediately after. Together, these two prompts complete "Phase 2: Optimization" of your plan.
+
+### Prompt 3: The Algorithmic Fix (O(N×M) → O(N))
+
+**Run this after the P0 fix is stable.**
+
+This instructs the agent to stop iterating through the entire list of assets every time it checks for an IdP or Finance match.
+
+```text
+Task: Optimize Reconciliation Logic (O(N) Complexity)
+
+Context:
+The current reconciliation logic in `src/services/reconciliation.py` performs O(N×M) passes. It iterates through all candidates for every governance object (IdP, Finance), causing performance issues with large datasets (>10k items).
+The goal is to replace nested loops with O(1) hash map lookups.
+
+Files to Edit:
+- src/services/reconciliation.py
+
+Instructions:
+1. Locate the `build_candidate_flags` or `propagate_vendor_governance` functions (or similar core loops).
+2. Before the main iteration over candidates, precompute lookup dictionaries (Hash Maps) for:
+   - IdP Data: Create a map keyed by normalized domain (and/or name).
+   - Finance Data: Create a map keyed by normalized vendor name/domain.
+3. Ensure that expensive helper functions like `normalize_name` and `extract_domain` are called ONLY during the map creation phase, not inside the main loop.
+4. Refactor the matching logic to use these precomputed maps instead of iterating through the raw lists for every candidate.
+
+Constraint:
+- The logic must remain semantically identical (same matches found).
+- Do not remove the existing CMDB optimization; this task focuses on bringing IdP and Finance up to parity.
+
+```
+
+---
+
+### Prompt 4: The Caching Fix (Stop Recomputing)
+
+**Run this once the Algorithmic Fix (Step 3) is verified.**
+
+Even with faster code (Step 3), you shouldn't run the math on every page load. This prompt forces the system to save the result and serve the static JSON on subsequent visits.
+
+```text
+Task: Enable Reconciliation Analysis Caching
+
+Context:
+Currently, the "Analysis" view recomputes the entire reconciliation logic on every GET request (`force_recompute=true` is effectively the default).
+We have an existing database column `reconciliations.analysis_json` that is currently unused or underutilized.
+
+Files to Edit:
+- src/services/analysis.py (or the relevant service handling reconciliation retrieval)
+- src/api/routes.py
+
+Instructions:
+1. Modify the reconciliation retrieval logic:
+   - Check if `analysis_json` exists and is not null for the requested run.
+   - If it exists, return the cached JSON immediately (skipping computation).
+2. Modify the reconciliation execution logic:
+   - After computing the analysis (e.g., inside `build_reconciliation_analysis`), explicitly save the result into the `reconciliations.analysis_json` column.
+3. Add a "Refresh" mechanism:
+   - Allow the API to accept a `force_recompute=true` query parameter that bypasses the cache, runs the computation, and updates the stored JSON.
+
+Constraint:
+- Ensure that the cached JSON structure matches exactly what the frontend expects from the live computation.
+
+```
+
+### Summary of Your Execution Path
+
+1. **Step 1 (DB Index):** [Prompt provided in previous turn] - *Immediate stability.*
+2. **Step 2 (P0 Async):** [Prompt provided in previous turn] - *Fixes server blocking.*
+3. **Step 3 (P1 Algo):** [Prompt above] - *Makes the math fast.*
+4. **Step 4 (P1 Cache):** [Prompt above] - *Makes the UI instant.*
+
+**Next Step:** Would you like me to create the **Verification Plan** (a checklist of 3 specific tests) you can run to prove these fixes actually worked?
