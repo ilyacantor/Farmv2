@@ -212,6 +212,9 @@
                     </nav>
                 </div>
                 <div class="flex items-center gap-4">
+                    <div id="genTimeDisplay" class="hidden px-2 py-1 bg-emerald-900/50 border border-emerald-600/50 rounded-lg text-xs text-emerald-300 font-mono">
+                        <span class="text-emerald-500">Gen:</span> <span id="genTimeValue">--</span>s
+                    </div>
                     <div class="text-xs text-slate-500">
                         <span id="snapshotCount">0</span> snapshots
                     </div>
@@ -572,7 +575,9 @@
             currentTestSnapshotId: null,
             expandedPlanes: {},
             expandedItems: {},
-            assetListIdCounter: 0
+            assetListIdCounter: 0,
+            lastGenerationTime: null,
+            generationTimeCache: {}
         };
 
         const RequestController = {
@@ -2627,7 +2632,7 @@
                                     <span class="text-slate-600 text-xs">seed:${snap.seed}</span>
                                 </div>
                                 <div class="text-xs text-slate-500">
-                                    ${snap.scale} | ${snap.enterprise_profile.replace('_', ' ')} | ${snap.realism_profile}
+                                    ${snap.scale} | ${snap.enterprise_profile.replace('_', ' ')} | ${snap.realism_profile}${FarmState.generationTimeCache[snap.snapshot_id] ? ` | <span class="text-emerald-400">${FarmState.generationTimeCache[snap.snapshot_id]}s</span>` : ''}
                                 </div>
                                 ${rec ? `<div class="text-xs text-slate-400 mt-1">${renderReconciliationOneLiner(rec)}</div>` : ''}
                             </div>
@@ -2688,7 +2693,7 @@
                                     <span class="text-slate-600 text-xs">seed:${snap.seed}</span>
                                 </div>
                                 <div class="text-xs text-slate-500 ml-6">
-                                    ${snap.scale} | ${snap.enterprise_profile.replace('_', ' ')} | ${snap.realism_profile}
+                                    ${snap.scale} | ${snap.enterprise_profile.replace('_', ' ')} | ${snap.realism_profile}${FarmState.generationTimeCache[snap.snapshot_id] ? ` | <span class="text-emerald-400">${FarmState.generationTimeCache[snap.snapshot_id]}s</span>` : ''}
                                 </div>
                             </div>
                             <div class="text-xs text-slate-500">${getTimeAgo(created)}</div>
@@ -3112,6 +3117,10 @@
                 const dupStr = data.duplicate_of_snapshot_id ? ' (cached)' : '';
                 addLogEntry(`Created ${data.snapshot_id?.substring(0, 8) || 'snapshot'}${timeStr}${dupStr}`, 'success');
                 if (data.generation_time_seconds != null) {
+                    FarmState.lastGenerationTime = data.generation_time_seconds;
+                    FarmState.generationTimeCache[data.snapshot_id] = data.generation_time_seconds;
+                    document.getElementById('genTimeValue').textContent = data.generation_time_seconds;
+                    document.getElementById('genTimeDisplay').classList.remove('hidden');
                     showToast(`Snapshot generated in <strong>${data.generation_time_seconds}s</strong>`, 'success');
                 } else if (data.duplicate_of_snapshot_id) {
                     showToast('Snapshot loaded from cache', 'info');
