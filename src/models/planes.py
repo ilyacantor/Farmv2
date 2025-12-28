@@ -281,6 +281,22 @@ class FinancePlane(BaseModel):
     transactions: list[FinanceTransaction] = Field(default_factory=list)
 
 
+class SecurityAttestation(BaseModel):
+    attestation_id: str
+    asset_name: str
+    domain: Optional[str] = None
+    vendor: Optional[str] = None
+    attestation_date: str
+    attester_email: Optional[str] = None
+    attestation_type: str = "security_review"
+    valid_until: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SecurityPlane(BaseModel):
+    attestations: list[SecurityAttestation] = Field(default_factory=list)
+
+
 class AllPlanes(BaseModel):
     discovery: DiscoveryPlane
     idp: IdPPlane
@@ -289,6 +305,7 @@ class AllPlanes(BaseModel):
     endpoint: EndpointPlane
     network: NetworkPlane
     finance: FinancePlane
+    security: Optional[SecurityPlane] = None
 
 
 SCHEMA_VERSION = "farm.v1"

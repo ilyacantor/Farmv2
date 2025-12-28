@@ -19,6 +19,7 @@ from src.models.planes import (
     FinanceVendor,
     FinanceContract,
     FinanceTransaction,
+    SecurityAttestation,
     DiscoveryPlane,
     IdPPlane,
     CMDBPlane,
@@ -26,6 +27,7 @@ from src.models.planes import (
     EndpointPlane,
     NetworkPlane,
     FinancePlane,
+    SecurityPlane,
     AllPlanes,
     SnapshotMeta,
     SnapshotResponse,
@@ -1106,6 +1108,48 @@ class EnterpriseGenerator:
         
         return FinancePlane(vendors=vendors, contracts=contracts, transactions=transactions)
 
+    def generate_security_plane(self) -> SecurityPlane:
+        """Generate security attestations for governed apps.
+        
+        Logic:
+        - SAAS_APPS (governed): 80% probability of attestation
+        - SHADOW_SAAS_APPS: never (they're ungoverned)
+        - ZOMBIE_APPS: always (they were once governed)
+        """
+        attestations = []
+        attestation_types = ["security_review", "compliance_audit", "vendor_assessment"]
+        
+        for app in self._saas_selection:
+            if self.rng.random() < 0.80:
+                employee = self.rng.choice(self._employees) if self._employees else None
+                attestations.append(SecurityAttestation(
+                    attestation_id=f"ATT-{self._generate_uuid()[:8].upper()}",
+                    asset_name=app["name"],
+                    domain=app.get("domain"),
+                    vendor=app.get("vendor"),
+                    attestation_date=self._random_date(365),
+                    attester_email=employee["email"] if employee else None,
+                    attestation_type=self.rng.choice(attestation_types),
+                    valid_until=self._random_future_date(365) if self.rng.random() > 0.3 else None,
+                    notes=f"Annual security review for {app['name']}" if self.rng.random() > 0.5 else None,
+                ))
+        
+        for app in self._zombie_apps:
+            employee = self.rng.choice(self._employees) if self._employees else None
+            attestations.append(SecurityAttestation(
+                attestation_id=f"ATT-{self._generate_uuid()[:8].upper()}",
+                asset_name=app["name"],
+                domain=app.get("domain"),
+                vendor=app.get("vendor"),
+                attestation_date=self._random_date(730),
+                attester_email=employee["email"] if employee else None,
+                attestation_type=self.rng.choice(attestation_types),
+                valid_until=self._random_date(90),
+                notes=f"Historical attestation for {app['name']} (now deprecated)" if self.rng.random() > 0.5 else None,
+            ))
+        
+        return SecurityPlane(attestations=attestations)
+
     def _inject_stress_tests(
         self,
         discovery: DiscoveryPlane,
@@ -1249,6 +1293,7 @@ class EnterpriseGenerator:
         endpoint = self.generate_endpoint_plane()
         network = self.generate_network_plane()
         finance = self.generate_finance_plane()
+        security = self.generate_security_plane()
         
         self._inject_stress_tests(discovery, idp, cmdb, network, finance)
         
@@ -1260,6 +1305,7 @@ class EnterpriseGenerator:
             endpoint=endpoint,
             network=network,
             finance=finance,
+            security=security,
         )
         
         counts = {
@@ -1275,6 +1321,7 @@ class EnterpriseGenerator:
             "finance_vendors": len(finance.vendors),
             "finance_contracts": len(finance.contracts),
             "finance_transactions": len(finance.transactions),
+            "security_attestations": len(security.attestations),
         }
         
         meta = SnapshotMeta(

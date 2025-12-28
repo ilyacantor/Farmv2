@@ -86,6 +86,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         'discovery_sources': set(),
         'activity_status': ActivityStatus.NONE,
         'anchored': False,
+        'security_attested': False,
     })
     
     observations = planes.get('discovery', {}).get('observations', [])
@@ -296,6 +297,43 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
     for key, cand in candidates.items():
         cand['cmdb_resolution_reason'] = determine_cmdb_resolution_reason(cand['cmdb_matches'], cand['vendors'])
     
+    security_plane = planes.get('security', {})
+    attestations = security_plane.get('attestations', []) if security_plane else []
+    
+    security_domain_index = defaultdict(set)
+    security_name_index = defaultdict(set)
+    for i, att in enumerate(attestations):
+        domain = att.get('domain')
+        name = normalize_name(att.get('asset_name', ''))
+        vendor = normalize_name(att.get('vendor', '') or '')
+        
+        if domain:
+            reg_domain = extract_registered_domain(domain)
+            if reg_domain:
+                security_domain_index[reg_domain].add(i)
+            security_domain_index[domain].add(i)
+        if name:
+            security_name_index[name].add(i)
+        if vendor:
+            security_name_index[vendor].add(i)
+    
+    for key, cand in candidates.items():
+        matched_attestation_indices = set()
+        
+        for domain in cand.get('domains', set()):
+            matched_attestation_indices.update(security_domain_index.get(domain, set()))
+        
+        matched_attestation_indices.update(security_domain_index.get(key, set()))
+        
+        for name in cand.get('names', set()):
+            matched_attestation_indices.update(security_name_index.get(normalize_name(name), set()))
+        
+        for vendor in cand.get('vendors', set()):
+            matched_attestation_indices.update(security_name_index.get(normalize_name(vendor), set()))
+        
+        if matched_attestation_indices:
+            cand['security_attested'] = True
+    
     for key, cand in candidates.items():
         if cand['activity_present']:
             cand['activity_status'] = ActivityStatus.RECENT
@@ -378,11 +416,17 @@ def determine_cmdb_resolution_reason(cmdb_matches: list, candidate_vendors: set)
     return 'NONE'
 
 
-def derive_reason_codes(cand: dict, idp_present: bool = None, cmdb_present: bool = None) -> list[str]:
+def derive_reason_codes(cand: dict, idp_present: bool = None, cmdb_present: bool = None, security_attested: bool = None) -> list[str]:
     """Derive canonical reason codes from candidate flags.
     
-    If idp_present/cmdb_present are provided, use those (for governance propagation).
+    If idp_present/cmdb_present/security_attested are provided, use those (for governance propagation).
     Otherwise, use the raw candidate values.
+    
+    Includes Governance Trinity codes:
+    - HAS_VISIBILITY / MISSING_VISIBILITY (CMDB registration)
+    - HAS_VALIDATION / MISSING_VALIDATION (security attestation)
+    - HAS_CONTROL / MISSING_CONTROL (IdP lifecycle management)
+    - GOVERNANCE_TRINITY_PASS / GOVERNANCE_TRINITY_FAIL
     """
     codes = []
     if cand.get('discovery_present'):
@@ -390,15 +434,37 @@ def derive_reason_codes(cand: dict, idp_present: bool = None, cmdb_present: bool
     
     effective_idp = idp_present if idp_present is not None else cand.get('idp_present')
     effective_cmdb = cmdb_present if cmdb_present is not None else cand.get('cmdb_present')
+    effective_security = security_attested if security_attested is not None else cand.get('security_attested')
     
     if effective_idp:
         codes.append('HAS_IDP')
+        codes.append('HAS_CONTROL')
     else:
         codes.append('NO_IDP')
+        codes.append('MISSING_CONTROL')
     if effective_cmdb:
         codes.append('HAS_CMDB')
+        codes.append('HAS_VISIBILITY')
     else:
         codes.append('NO_CMDB')
+        codes.append('MISSING_VISIBILITY')
+    if effective_security:
+        codes.append('HAS_SECURITY_ATTESTATION')
+        codes.append('HAS_VALIDATION')
+    else:
+        codes.append('NO_SECURITY_ATTESTATION')
+        codes.append('MISSING_VALIDATION')
+    
+    has_visibility = effective_cmdb
+    has_validation = effective_security
+    has_control = effective_idp
+    is_governed = has_visibility and has_validation and has_control
+    
+    if is_governed:
+        codes.append('GOVERNANCE_TRINITY_PASS')
+    else:
+        codes.append('GOVERNANCE_TRINITY_FAIL')
+    
     if cand.get('finance_present'):
         codes.append('HAS_FINANCE')
     if cand.get('has_ongoing_finance'):
@@ -526,8 +592,10 @@ def compute_expected_block(
         
         idp_present_direct = cand['idp_present']
         cmdb_present_direct = cand['cmdb_present']
+        security_attested_direct = cand.get('security_attested', False)
         idp_present = idp_present_direct
         cmdb_present = cmdb_present_direct
+        security_attested = security_attested_direct
         vendor_name = None
         governed_via_vendor = False
         
@@ -541,7 +609,7 @@ def compute_expected_block(
                 cmdb_present = True
                 governed_via_vendor = True
         
-        reasons = derive_reason_codes(cand, idp_present=idp_present, cmdb_present=cmdb_present)
+        reasons = derive_reason_codes(cand, idp_present=idp_present, cmdb_present=cmdb_present, security_attested=security_attested)
         if governed_via_vendor:
             reasons.append('GOVERNED_VIA_VENDOR')
         expected_reasons[key] = reasons
@@ -563,6 +631,19 @@ def compute_expected_block(
         activity_status = cand.get('activity_status', ActivityStatus.NONE)
         anchored = cand.get('anchored', False)
         
+        has_visibility = cmdb_present
+        has_validation = security_attested
+        has_control = idp_present
+        is_governed = has_visibility and has_validation and has_control
+        
+        missing_trinity = []
+        if not has_visibility:
+            missing_trinity.append('MISSING_VISIBILITY')
+        if not has_validation:
+            missing_trinity.append('MISSING_VALIDATION')
+        if not has_control:
+            missing_trinity.append('MISSING_CONTROL')
+        
         if is_excluded:
             rejection_reason = 'EXCLUDED_BY_POLICY'
             reasons.append('POLICY_EXCLUDED')
@@ -577,9 +658,9 @@ def compute_expected_block(
             )
             
             if is_admitted:
-                is_shadow = is_external and activity_status == ActivityStatus.RECENT and not anchored
-                is_zombie = anchored and activity_status == ActivityStatus.STALE
-                is_parked = is_external and not anchored and activity_status == ActivityStatus.STALE
+                is_shadow = is_external and activity_status == ActivityStatus.RECENT and not is_governed
+                is_zombie = is_governed and activity_status == ActivityStatus.STALE
+                is_parked = is_external and not is_governed and activity_status == ActivityStatus.STALE
         
         raw_domains = list(cand.get('domains', set()))[:10]
         decision_traces[key] = {
@@ -596,6 +677,13 @@ def compute_expected_block(
             'idp_present_direct': idp_present_direct,
             'cmdb_present': cmdb_present,
             'cmdb_present_direct': cmdb_present_direct,
+            'security_attested': security_attested,
+            'security_attested_direct': security_attested_direct,
+            'has_visibility': has_visibility,
+            'has_validation': has_validation,
+            'has_control': has_control,
+            'is_governed': is_governed,
+            'missing_trinity': missing_trinity,
             'vendor_governance': vendor_name,
             'policy_excluded': is_excluded,
             'admitted': is_admitted,
@@ -688,6 +776,7 @@ def analyze_snapshot_for_expectations(
         
         idp_present = cand['idp_present']
         cmdb_present = cand['cmdb_present']
+        security_attested = cand.get('security_attested', False)
         key_lower = key.lower()
         if key_lower in vendor_governance:
             vendor_has_idp, vendor_has_cmdb, _ = vendor_governance[key_lower]
@@ -709,11 +798,15 @@ def analyze_snapshot_for_expectations(
             continue
         
         activity_status = cand.get('activity_status', ActivityStatus.NONE)
-        anchored = cand.get('anchored', False)
         
-        if is_external and activity_status == ActivityStatus.RECENT and not anchored:
+        has_visibility = cmdb_present
+        has_validation = security_attested
+        has_control = idp_present
+        is_governed = has_visibility and has_validation and has_control
+        
+        if is_external and activity_status == ActivityStatus.RECENT and not is_governed:
             shadow_keys.append(key)
-        elif anchored and activity_status == ActivityStatus.STALE:
+        elif is_governed and activity_status == ActivityStatus.STALE:
             zombie_keys.append(key)
     
     return FarmExpectations(
