@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -239,6 +240,7 @@ async def create_snapshot(request: SnapshotRequest):
     
     def generate_snapshot_sync():
         """CPU-intensive snapshot generation - runs in thread pool to avoid blocking event loop."""
+        gen_start = time.perf_counter()
         generator = EnterpriseGenerator(
             tenant_id=request.tenant_id,
             seed=request.seed,
@@ -253,9 +255,10 @@ async def create_snapshot(request: SnapshotRequest):
         snapshot_dict = snapshot.model_dump()
         expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
         snapshot_dict['__expected__'] = expected_block
-        return snapshot, snapshot_dict
+        gen_elapsed = round(time.perf_counter() - gen_start, 2)
+        return snapshot, snapshot_dict, gen_elapsed
     
-    snapshot, snapshot_dict = await run_in_threadpool(generate_snapshot_sync)
+    snapshot, snapshot_dict, generation_time = await run_in_threadpool(generate_snapshot_sync)
     
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -280,6 +283,7 @@ async def create_snapshot(request: SnapshotRequest):
         created_at=snapshot.meta.created_at,
         schema_version=SCHEMA_VERSION,
         duplicate_of_snapshot_id=None,
+        generation_time_seconds=generation_time,
     )
 
 

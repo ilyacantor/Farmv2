@@ -327,6 +327,7 @@ class SnapshotCreateResponse(BaseModel):
     created_at: str
     schema_version: str = SCHEMA_VERSION
     duplicate_of_snapshot_id: Optional[str] = None
+    generation_time_seconds: Optional[float] = None
 
 
 class SnapshotMetadata(BaseModel):
