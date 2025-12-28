@@ -872,6 +872,15 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     }
     analysis['overall_status'] = overall_status
     
+    # ANY mismatch in ANY category requires explanation
+    has_any_discrepancy = (
+        total_missed > 0 or 
+        total_fp > 0 or 
+        admission_missed > 0 or 
+        admission_fp > 0
+    )
+    analysis['has_any_discrepancy'] = has_any_discrepancy
+    
     has_asset_summaries = bool(asset_summaries)
     payload_version = aod_payload.get('payload_version') or aod_lists.get('payload_version')
     

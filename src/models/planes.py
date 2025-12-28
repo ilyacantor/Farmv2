@@ -424,6 +424,7 @@ class ReconcileMetadata(BaseModel):
     status: str
     report_text: str = ""
     contract_status: str = "UNKNOWN"
+    has_any_discrepancy: bool = False
 
 
 class AutoReconcileRequest(BaseModel):

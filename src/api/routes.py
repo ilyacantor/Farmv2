@@ -570,12 +570,12 @@ async def list_reconciliations(
     async with pool.acquire() as conn:
         if snapshot_id:
             rows = await conn.fetch(
-                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text, aod_payload_json FROM reconciliations WHERE snapshot_id = $1 ORDER BY created_at DESC LIMIT $2",
+                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text, aod_payload_json, analysis_json FROM reconciliations WHERE snapshot_id = $1 ORDER BY created_at DESC LIMIT $2",
                 snapshot_id, limit
             )
         else:
             rows = await conn.fetch(
-                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text, aod_payload_json FROM reconciliations ORDER BY created_at DESC LIMIT $1",
+                "SELECT reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, status, report_text, aod_payload_json, analysis_json FROM reconciliations ORDER BY created_at DESC LIMIT $1",
                 limit
             )
         
@@ -603,6 +603,28 @@ async def list_reconciliations(
                 
                 contract_status = "INCONSISTENT_CONTRACT" if has_mismatch else "CURRENT"
             
+            # Extract has_any_discrepancy from analysis (compute from metrics for legacy data)
+            has_any_discrepancy = False
+            analysis_json = row["analysis_json"]
+            if analysis_json:
+                try:
+                    analysis = json.loads(analysis_json)
+                    # Check explicit flag first, then compute from metrics for legacy data
+                    if 'has_any_discrepancy' in analysis:
+                        has_any_discrepancy = analysis['has_any_discrepancy']
+                    else:
+                        # Compute from metrics for legacy reconciliations
+                        cm = analysis.get('classification_metrics', {})
+                        am = analysis.get('admission_metrics', {})
+                        has_any_discrepancy = (
+                            (cm.get('missed', 0) or 0) > 0 or
+                            (cm.get('false_positives', 0) or 0) > 0 or
+                            (am.get('missed', 0) or 0) > 0 or
+                            (am.get('false_positives', 0) or 0) > 0
+                        )
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            
             results.append(ReconcileMetadata(
                 reconciliation_id=row["reconciliation_id"],
                 snapshot_id=row["snapshot_id"],
@@ -612,6 +634,7 @@ async def list_reconciliations(
                 status=row["status"],
                 report_text=row["report_text"] or "",
                 contract_status=contract_status,
+                has_any_discrepancy=has_any_discrepancy,
             ))
         return results
 
@@ -675,6 +698,16 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
                 pass
         if cached_analysis:
             analysis = json.loads(cached_analysis)
+            # Compute has_any_discrepancy for legacy data if missing
+            if 'has_any_discrepancy' not in analysis:
+                cm = analysis.get('classification_metrics', {})
+                am = analysis.get('admission_metrics', {})
+                analysis['has_any_discrepancy'] = (
+                    (cm.get('missed', 0) or 0) > 0 or
+                    (cm.get('false_positives', 0) or 0) > 0 or
+                    (am.get('missed', 0) or 0) > 0 or
+                    (am.get('false_positives', 0) or 0) > 0
+                )
         else:
             aod_payload = json.loads(rec_row["aod_payload_json"])
             farm_exp = json.loads(rec_row["farm_expectations_json"])
@@ -971,13 +1004,13 @@ async def download_assessment_markdown(reconciliation_id: str):
     """Download the detailed assessment markdown report for a reconciliation.
     
     Returns 404 if the reconciliation doesn't exist.
-    Returns JSON with status info if no assessment is available (perfect match or not generated).
+    Returns 204 with X-Assessment-Status header if no assessment is available.
     """
     pool = await get_pool()
     
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT reconciliation_id, aod_run_id, snapshot_id, status, assessment_md FROM reconciliations WHERE reconciliation_id = $1",
+            "SELECT reconciliation_id, aod_run_id, snapshot_id, status, assessment_md, analysis_json FROM reconciliations WHERE reconciliation_id = $1",
             reconciliation_id
         )
         if not row:
@@ -985,9 +1018,31 @@ async def download_assessment_markdown(reconciliation_id: str):
         
         assessment_md = row["assessment_md"]
         status = row["status"]
+        analysis_json = row["analysis_json"]
+        
+        # Check for discrepancies in analysis (compute from metrics for legacy data)
+        has_any_discrepancy = False
+        if analysis_json:
+            try:
+                analysis = json.loads(analysis_json)
+                # Check explicit flag first, then compute from metrics for legacy data
+                if 'has_any_discrepancy' in analysis:
+                    has_any_discrepancy = analysis['has_any_discrepancy']
+                else:
+                    # Compute from metrics for legacy reconciliations
+                    cm = analysis.get('classification_metrics', {})
+                    am = analysis.get('admission_metrics', {})
+                    has_any_discrepancy = (
+                        (cm.get('missed', 0) or 0) > 0 or
+                        (cm.get('false_positives', 0) or 0) > 0 or
+                        (am.get('missed', 0) or 0) > 0 or
+                        (am.get('false_positives', 0) or 0) > 0
+                    )
+            except (json.JSONDecodeError, TypeError):
+                pass
         
         if not assessment_md:
-            if status == "PASS":
+            if not has_any_discrepancy:
                 return Response(
                     status_code=204,
                     content="",
