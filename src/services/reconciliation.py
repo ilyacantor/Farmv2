@@ -1,9 +1,19 @@
 from datetime import datetime
 from typing import Optional
 from collections import defaultdict
+from enum import Enum
 from dateutil import parser as dateutil_parser
 
 from src.models.planes import FarmExpectations, ReconcileStatusEnum
+
+
+class ActivityStatus(str, Enum):
+    """Activity status for asset classification."""
+    RECENT = "RECENT"  # Has activity within the detection window
+    STALE = "STALE"    # Has activity but older than detection window
+    NONE = "NONE"      # No activity timestamps at all
+
+
 from src.models.policy import PolicyConfig
 from src.services.constants import (
     INFRASTRUCTURE_DOMAINS,
@@ -74,6 +84,8 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         'latest_activity_at': None,
         'activity_source': 'none',
         'discovery_sources': set(),
+        'activity_status': ActivityStatus.NONE,
+        'anchored': False,
     })
     
     observations = planes.get('discovery', {}).get('observations', [])
@@ -284,16 +296,37 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
     for key, cand in candidates.items():
         cand['cmdb_resolution_reason'] = determine_cmdb_resolution_reason(cand['cmdb_matches'], cand['vendors'])
     
+    for key, cand in candidates.items():
+        if cand['activity_present']:
+            cand['activity_status'] = ActivityStatus.RECENT
+        elif len(cand['stale_timestamps']) > 0:
+            cand['activity_status'] = ActivityStatus.STALE
+        else:
+            cand['activity_status'] = ActivityStatus.NONE
+        
+        cand['anchored'] = (
+            cand['idp_present'] or 
+            cand['cmdb_present'] or 
+            cand['has_ongoing_finance'] or 
+            cand['cloud_present']
+        )
+    
     discovery_count = sum(1 for c in candidates.values() if c.get('discovery_present'))
     idp_count = sum(1 for c in candidates.values() if c.get('idp_present'))
     cmdb_count = sum(1 for c in candidates.values() if c.get('cmdb_present'))
     finance_count = sum(1 for c in candidates.values() if c.get('finance_present'))
+    anchored_count = sum(1 for c in candidates.values() if c.get('anchored'))
+    recent_count = sum(1 for c in candidates.values() if c.get('activity_status') == ActivityStatus.RECENT)
+    stale_count = sum(1 for c in candidates.values() if c.get('activity_status') == ActivityStatus.STALE)
     trace_log("reconciliation", "build_candidate_flags", {
         "total_candidates": len(candidates),
         "discovery_present": discovery_count,
         "idp_present": idp_count,
         "cmdb_present": cmdb_count,
         "finance_present": finance_count,
+        "anchored": anchored_count,
+        "activity_recent": recent_count,
+        "activity_stale": stale_count,
     })
     
     return dict(candidates)
@@ -463,6 +496,7 @@ def compute_expected_block(
     shadow_expected = []
     zombie_expected = []
     clean_expected = []
+    parked_expected = []
     expected_reasons = {}
     expected_admission = {}
     expected_rca_hint = {}
@@ -522,8 +556,12 @@ def compute_expected_block(
         
         is_shadow = False
         is_zombie = False
+        is_parked = False
         rejection_reason = None
         is_admitted = False
+        
+        activity_status = cand.get('activity_status', ActivityStatus.NONE)
+        anchored = cand.get('anchored', False)
         
         if is_excluded:
             rejection_reason = 'EXCLUDED_BY_POLICY'
@@ -539,8 +577,9 @@ def compute_expected_block(
             )
             
             if is_admitted:
-                is_shadow = is_external and cand['activity_present'] and not idp_present and not cmdb_present
-                is_zombie = (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0
+                is_shadow = is_external and activity_status == ActivityStatus.RECENT and not anchored
+                is_zombie = anchored and activity_status == ActivityStatus.STALE
+                is_parked = is_external and not anchored and activity_status == ActivityStatus.STALE
         
         raw_domains = list(cand.get('domains', set()))[:10]
         decision_traces[key] = {
@@ -548,7 +587,8 @@ def compute_expected_block(
             'registered_domain': extract_registered_domain(key),
             'raw_domains_seen': raw_domains,
             'is_external': is_external,
-            'is_active': cand['activity_present'],
+            'activity_status': activity_status.value if isinstance(activity_status, ActivityStatus) else activity_status,
+            'anchored': anchored,
             'activity_window_days': window_days,
             'activity_source': cand.get('activity_source', 'none'),
             'latest_activity_at': cand.get('latest_activity_at'),
@@ -563,6 +603,8 @@ def compute_expected_block(
             'discovery_sources_list': discovery_sources_list,
             'rejection_reason': rejection_reason,
             'is_shadow': is_shadow,
+            'is_zombie': is_zombie,
+            'is_parked': is_parked,
             'reason_codes': reasons,
         }
         
@@ -582,16 +624,21 @@ def compute_expected_block(
             rca = derive_rca_hint('zombie', cand)
             if rca:
                 expected_rca_hint[key] = rca
+        elif is_parked:
+            parked_expected.append({'asset_key': key})
+            expected_admission[key] = 'parked'
         else:
             if cand['discovery_present']:
                 clean_expected.append({'asset_key': key})
                 expected_admission[key] = 'admitted'
     
     rejected_count = sum(1 for v in expected_admission.values() if v == 'rejected')
+    parked_count = sum(1 for v in expected_admission.values() if v == 'parked')
     trace_log("reconciliation", "compute_expected_block", {
         "mode": mode,
         "shadows": len(shadow_expected),
         "zombies": len(zombie_expected),
+        "parked": len(parked_expected),
         "clean": len(clean_expected),
         "rejected": rejected_count,
         "excluded_by_mode": len(excluded_by_mode),
@@ -600,6 +647,7 @@ def compute_expected_block(
     return {
         'shadow_expected': shadow_expected,
         'zombie_expected': zombie_expected,
+        'parked_expected': parked_expected,
         'clean_expected': clean_expected,
         'expected_reasons': expected_reasons,
         'expected_admission': expected_admission,
@@ -660,9 +708,12 @@ def analyze_snapshot_for_expectations(
         if not is_admitted:
             continue
         
-        if is_external and cand['activity_present'] and not idp_present and not cmdb_present:
+        activity_status = cand.get('activity_status', ActivityStatus.NONE)
+        anchored = cand.get('anchored', False)
+        
+        if is_external and activity_status == ActivityStatus.RECENT and not anchored:
             shadow_keys.append(key)
-        elif (idp_present or cmdb_present) and not cand['activity_present'] and len(cand['stale_timestamps']) > 0:
+        elif anchored and activity_status == ActivityStatus.STALE:
             zombie_keys.append(key)
     
     return FarmExpectations(

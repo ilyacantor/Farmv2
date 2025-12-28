@@ -331,6 +331,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     
     farm_shadows = {a['asset_key'] for a in expected_block.get('shadow_expected', [])}
     farm_zombies = {a['asset_key'] for a in expected_block.get('zombie_expected', [])}
+    farm_parked = {a['asset_key'] for a in expected_block.get('parked_expected', [])}
     farm_clean = {a['asset_key'] for a in expected_block.get('clean_expected', [])}
     expected_reasons = expected_block.get('expected_reasons', {})
     expected_rca = expected_block.get('expected_rca_hint', {})
@@ -435,6 +436,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     rejected_count = sum(1 for v in expected_admission.values() if v == 'rejected')
     admitted_count = unique_assets - rejected_count
     
+    parked_count = sum(1 for v in expected_admission.values() if v == 'parked')
+    
     lifecycle_funnel = {
         'gross_observations': gross_observations,
         'unique_assets': unique_assets,
@@ -442,6 +445,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         'admitted_count': admitted_count,
         'shadow_count': len(farm_shadows),
         'zombie_count': len(farm_zombies),
+        'parked_count': len(farm_parked),
         'clean_count': len(farm_clean),
         'final_cataloged': admitted_count,
     }
@@ -450,6 +454,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         'summary': {
             'farm_shadows': len(farm_shadows),
             'farm_zombies': len(farm_zombies),
+            'farm_parked': len(farm_parked),
             'farm_clean': len(farm_clean),
             'aod_shadows': len(aod_shadows),
             'aod_zombies': len(aod_zombies),
@@ -461,9 +466,11 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'entity_level_zombie_count': len(aod_zombies),
             'domain_level_zombie_count': len(aod_zombie_domain_keys),
             'farm_expected_zombie_count': len(farm_zombies),
+            'farm_expected_parked_count': len(farm_parked),
             'gross_observations': gross_observations,
             'cataloged': admitted_count,
             'rejected': rejected_count,
+            'parked': parked_count,
         },
         'lifecycle_funnel': lifecycle_funnel,
         'payload_health': payload_health,
@@ -581,6 +588,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     
     farm_shadow_domain_keys = {to_domain_key(k) for k in farm_shadows}
     farm_zombie_domain_keys = {to_domain_key(k) for k in farm_zombies}
+    farm_parked_domain_keys = {to_domain_key(k) for k in farm_parked}
     farm_clean_domain_keys = {to_domain_key(k) for k in farm_clean}
     
     decision_traces = expected_block.get('decision_traces', {})
@@ -598,9 +606,11 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     norm_traces = {norm_key(k): v for k, v in decision_traces.items()}
     
     def get_farm_classification(domain_key, rep_key):
-        """Determine Farm's classification with not-admitted awareness."""
+        """Determine Farm's classification with not-admitted and parked awareness."""
         if domain_key in farm_zombie_domain_keys:
             return 'zombie', None
+        if domain_key in farm_parked_domain_keys:
+            return 'parked', None
         if domain_key in farm_clean_domain_keys:
             return 'clean', None
         
@@ -621,6 +631,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             )
             rejection_reason = trace.get('rejection_reason') if trace else None
             return 'not-admitted', rejection_reason
+        if admission_status == 'parked':
+            return 'parked', None
         return 'unknown', None
     
     for domain_key, domain_info in aod_shadow_domains.items():
