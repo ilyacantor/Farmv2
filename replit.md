@@ -1,7 +1,7 @@
 # AOS Farm
 
 ## Overview
-AOS Farm is a synthetic enterprise data generator that creates realistic source-of-truth data planes and raw observation streams. Its primary purpose is to generate robust testing data for the AutonomOS AOD (Discover) module, focusing on raw evidence. The project aims to eliminate "green-test theater" by enforcing strict rules that ensure all changes preserve real-world semantics, are provable with real-world output, and include negative tests. The business vision is to provide high-fidelity, plausible enterprise data for rigorous testing of AOD's discovery capabilities, thereby improving the accuracy and reliability of anomaly detection in complex enterprise environments.
+AOS Farm is a synthetic enterprise data generator designed to create realistic source-of-truth data planes and raw observation streams. Its primary purpose is to generate robust testing data for the AutonomOS AOD (Discover) module, specifically focusing on raw evidence to improve the accuracy and reliability of anomaly detection. The project aims to eliminate "green-test theater" by enforcing strict rules that ensure all changes preserve real-world semantics, are provable with real-world output, and include negative tests. The business vision is to provide high-fidelity, plausible enterprise data for rigorous testing of AOD's discovery capabilities in complex enterprise environments.
 
 ## User Preferences
 Guardrail: No “green-test theater” (Stop optimizing for “done without errors”) The anti-pattern we are eliminating
@@ -104,114 +104,29 @@ Explicit errors over silent fallbacks
 
 Evidence-only derivations over labels
 
-## Recent Changes (December 28, 2025)
-- **Grading Correctness Audit Suite**: Comprehensive audit system to verify Farm's expected-block grading is deterministic, consistent, and grounded:
-  - **Determinism Audit**: Runs `compute_expected_block` N times (default 10) and asserts identical results across runs (identical hashes, counts, key sets, reason codes)
-  - **Consistency Audit**: Validates no contradictory flags (RECENT/STALE, HAS_IDP/NO_IDP), implication rules hold (HAS_ONGOING_FINANCE ⇒ HAS_FINANCE), all assets have non-empty reason codes
-  - **Finance Traceability Audit**: Traces HAS_ONGOING_FINANCE to concrete evidence refs (contracts, transactions), fails if ungrounded
-  - **Activity Invariants Audit**: Validates timestamps are not in the future, RECENT/STALE classifications are reproducible, includes golden fixture tests
-  - **Gradeability Enforcement**: Strict checks on AOD responses - HTML returns UPSTREAM_ERROR, missing fields returns INVALID_INPUT_CONTRACT, null returns UPSTREAM_ERROR
-  - **New endpoints**:
-    - `GET /api/audit/grading?snapshot_id=...&n_runs=10` - Full audit suite
-    - `POST /api/audit/gradeability` - Validate AOD response for grading
-    - `GET /api/audit/gradeability/demo-failure?mode=html|missing_fields|null` - Demo failure modes
-  - **Contract statuses**: PASS, INVALID_SNAPSHOT, UPSTREAM_ERROR, INVALID_INPUT_CONTRACT
-  - **Tests**: 19 tests in `tests/test_grading_audit.py` including 4 negative tests for contract violations
-  - **Proof**: Audit on snapshot ed6faf6a passes with stable hash `6646bb9131dda56d` across 10 runs
-- **Hot/Cold Storage Split**: Major architecture change to reduce memory pressure:
-  - **snapshots_meta** table: Hot path with counts, plane_counts (JSONB), expected_summary (JSONB), blob_size_bytes, blob_hash
-  - **snapshots_blob** table: Cold storage for full snapshot blob (TEXT)
-  - **reconciliation_analysis_cache** table: Cached analysis with light/heavy split
-  - Dual-write on ingest: New snapshots write to both old and new tables for backward compatibility
-  - **Backfill script**: `python scripts/backfill_snapshot_tables.py` migrates existing data
-  - **New endpoints**:
-    - `GET /api/snapshots/{id}/blob` - Explicit blob fetch (use sparingly)
-    - `GET /api/snapshots/{id}/summary` - Hot path, no blob fetch
-    - `GET /api/reconcile/{id}/analysis/light` - Counts/KPIs only, no blob
-    - `GET /api/reconcile/{id}/analysis/heavy?category=shadows&list_type=missed&limit=100&offset=0` - Paginated heavy lists
-    - `GET /api/_diagnostics/blob-stats` - Blob fetch counter for monitoring
-    - `GET /api/_diagnostics/storage-stats` - Storage migration status
-  - **Principle**: List/modal flows never touch blob. Heavy analysis is cached and paginated. Full blob fetch is explicit and rare.
-- **Database Resilience Module**: Comprehensive connection management in `src/farm/db.py`:
-  - Singleton asyncpg pool with conservative settings for Supabase pooler
-  - Circuit breaker: After 8 failures, enters 180s cooldown to prevent connection storms
-  - Exponential backoff: 10s → 20s → 40s... capped at 120s on connection failures
-  - Concurrency semaphore: Limits parallel DB operations to prevent overload
-  - Graceful degradation: Server starts in degraded mode if DB unavailable, returns 503 with `Retry-After` header
-  - Health endpoint: `/api/health` returns DB status ("healthy" or "degraded")
-  - Configuration via environment variables (see `docs/ops_db.md`)
-- **Comprehensive Farm-Level Validation Suite**: Six validation checks run on every snapshot and reconciliation:
-  1. **Expected Block Consistency**: Non-empty reason codes, mutual exclusion (STALE/RECENT, NO_IDP/HAS_IDP, NO_CMDB/HAS_CMDB), implication rules (HAS_ONGOING_FINANCE ⇒ HAS_FINANCE)
-  2. **Clock Invariants**: No future timestamps, no extreme past (>2 years), validates created_at exists
-  3. **Finance Consistency**: HAS_ONGOING_FINANCE implies HAS_FINANCE, distribution bounds check per realism profile
-  4. **Join Hygiene**: Verifies no suspicious shared fields across planes that aren't realistic correlation keys
-  5. **Gradeability Gate**: 422 INVALID_INPUT_CONTRACT if aod_lists missing shadows/zombies/actual_reason_codes, or HTML returned instead of JSON
-  6. **Stress Test Coverage**: Warns if stress test domains not found in decision traces
-  API: `/api/snapshots/{id}/validate`. Stored in `__expected__._validation`. Checks returned in `checks_performed` array.
-- **Discrepancy-Based Assessment Triggers**: Changed from status-based to discrepancy-based assessment generation. ANY mismatch in ANY category (missed/FP in classification or admission) triggers assessment report, regardless of PASS/WARN/FAIL status. Uses `has_any_discrepancy` flag computed from metrics.
-- **Assessment Reports**: Automatic generation of detailed markdown assessment reports for non-perfect reconciliations. Reports include executive summary, classification analysis (shadows/zombies), RCA hints, and actionable recommendations. Download via `/api/reconcile/{id}/assessment` endpoint with backward-compatible 204 responses (`X-Assessment-Status: perfect-match` or `not-generated`).
-- **Progressive Rendering**: UI now renders snapshots immediately (~0.5s) while reconciliations continue loading in background (~5s). Eliminates perceived "stuck on Loading..." behavior during slow API calls.
-- **Production Hardening**: APIJSONErrorMiddleware guarantees JSON responses for all /api/* routes. Frontend `apiFetch()` validates content-type and response.ok before JSON parsing.
-- **Error Handling**: Error panel with retry CTA for graceful failure handling when server restarts cause 502 proxy errors.
-
 ## System Architecture
-AOS Farm Tech Stack:
+AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase PostgreSQL database. The frontend is a Vanilla JavaScript single-page application with Tailwind CSS and Jinja2 templating.
 
-Backend:
-
-FastAPI - Python web framework for the REST API
-Uvicorn - ASGI server
-asyncpg - Async PostgreSQL driver
-Pydantic - Data validation and serialization
-Frontend:
-
-Vanilla JavaScript - Single-page app with glassmorphism UI
-Tailwind CSS - Styling (via CDN)
-Jinja2 - HTML templating
-Database:
-
-Supabase PostgreSQL - Managed Postgres with session pooling
-Key Libraries:
-
-python-dateutil - Timestamp handling
-tldextract - Domain/FQDN parsing
-httpx - Async HTTP client for AOD API calls
-The project is structured around a FastAPI application, featuring a simple Farm Console UI.
-
-**Services Layer (src/services/):**
-- Provides core logic for key normalization, reconciliation, analysis, and AOD client interaction. Includes domain constants and logging utilities.
-
-**Frontend Architecture (templates/index.html):**
-- Manages global state (`FarmState`), asynchronous requests (`RequestController`), and guided validation runs (`TourController`).
-
-**Documentation (docs/):**
-- `SYNTHETIC_GENERATION.md`: Comprehensive guide to synthetic data generation.
-
-**Technical Implementations:**
-- **Core Framework:** FastAPI.
-- **Data Generation:** Deterministic generators for reproducible results based on seed, scale, and enterprise/realism profiles. Generates 7 independent data planes designed to correlate only via realistic keys.
-- **API Design:** RESTful API for snapshot management, AOD reconciliation, and status queries.
-- **Schema Versioning:** All snapshots include `meta.schema_version = "farm.v1"`.
-- **Design Principles:** Independence of data planes, no "conclusions" fields, deterministic generation, and timestamps anchored to snapshot creation.
-
-**Feature Specifications:**
-- **Snapshot Management:** API for generating, retrieving, listing, and deleting data snapshots, each with an `__expected__` block for grading metadata.
+**Core Principles & Features:**
+- **Deterministic Data Generation:** Generates reproducible synthetic data based on seed, scale, and enterprise/realism profiles, yielding 7 independent data planes designed to correlate only via realistic keys.
+- **Governance Trinity Framework:** Classifies assets as GOVERNED, SHADOW, or ZOMBIE based on Visibility, Validation, and Control criteria, with strict rules and no "Grey IT."
+- **Snapshot Management:** Provides APIs for generating, retrieving, listing, and deleting data snapshots, each with an `__expected__` block for grading metadata.
 - **Reconciliation System:** Compares AOD results against Farm's expectations, indicating gradeability via `contract_status`.
-- **AOD Interaction:** Defines contracts for AOD output and an optional `explain-nonflag` endpoint.
-- **Finance Evidence Rules:** Classifies assets based on finance data, emphasizing `HAS_ONGOING_FINANCE` for shadow classification.
-- **Stress Test Scenarios:** Includes 4 deterministic stress test scenarios (Split Brain, Toxic Asset, Banned Asset, Zombie Asset) injected into every snapshot.
+- **Validation Suite:** Comprehensive validation checks on every snapshot and reconciliation, including expected block consistency, clock invariants, finance consistency, join hygiene, and gradeability gates.
+- **Hot/Cold Storage Split:** Optimizes performance by separating snapshot metadata (hot path) from full snapshot blobs (cold storage).
+- **Database Resilience:** Implements connection pooling, circuit breaker, exponential backoff, and a concurrency semaphore for robust database interactions.
+- **Discrepancy-Based Assessment Triggers:** Automatic generation of detailed markdown assessment reports for non-perfect reconciliations, triggered by any classification or admission mismatch.
+- **Error Handling:** Emphasizes explicit error statuses (`UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`) and guarantees JSON responses for API errors.
 
-**System Design Choices:**
-- **Ownership Boundaries:** AOD never consumes Farm's expected data; Farm owns the reconciliation UI; AOD owns structured actual output.
-- **Error Handling:** Emphasizes explicit error statuses (e.g., `UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`).
-- **Configuration:** Supports `Scale` (small to enterprise), `Enterprise Profile` (e.g., modern_saas), and `Realism Profile` (clean, typical, messy).
-- **Data Presets:** Provides 3-tier challenge levels (`clean_baseline`, `enterprise_mess`, `adversarial`) controlling various parameters like conflict rate and aliasing.
-- **Canonical Key Rules:** Domain-first for assets with a domain; normalized name for internal services.
-- **CMDB Resolution:** Handles multiple CMDB matches with `cmdb_resolution_reason` codes (`NONE`, `MULTI_ENV`, `LEGACY`, `DUPLICATE`, `PARENT_VENDOR`).
-- **Reconciliation Modes:** Supports `sprawl`, `infra`, and `all` for varying testing scopes.
-- **Admission Rules:** An entity is admitted for classification if it meets specific criteria (e.g., discovery strength ≥ 2 distinct sources, cloud evidence, IdP match, or CMDB match). Rejected entities are explicitly marked.
-- **Ground Truth Classification:** Admitted assets are classified as Shadow, Zombie, or Clean based on evidence flags and governance propagation logic.
+**Design Choices:**
+- **Ownership Boundaries:** Farm owns the reconciliation UI, while AOD owns structured actual output, with AOD never consuming Farm's expected data.
+- **Configuration:** Supports various `Scale`, `Enterprise Profile`, and `Realism Profile` settings.
+- **Data Presets:** Includes `clean_baseline`, `enterprise_mess`, and `adversarial` challenge levels.
+- **Canonical Key Rules:** Defines clear rules for asset identification.
+- **CMDB Resolution:** Handles multiple CMDB matches with specific `cmdb_resolution_reason` codes.
+- **Admission Rules:** Defines criteria for entities to be admitted for classification.
+- **Ground Truth Classification:** Admitted assets are classified based on evidence flags and governance propagation logic.
 
 ## External Dependencies
-- **Database:** Supabase Postgres. Configured via `SUPABASE_DB_URL` or `DATABASE_URL`. Schema includes `runs`, `snapshots`, and `reconciliations` tables.
-- **AOD Module (AutonomOS Discover):** Interacts via defined API contracts. Requires `AOD_URL` and optionally `AOD_SHARED_SECRET`. `USE_AOD_EXPLAIN_STUB=true` enables a local stub for testing.
+- **Database:** Supabase PostgreSQL (managed Postgres with session pooling), configured via `SUPABASE_DB_URL` or `DATABASE_URL`.
+- **AOD Module (AutonomOS Discover):** Interacts via defined API contracts, requiring `AOD_URL` and optionally `AOD_SHARED_SECRET`. A local stub can be enabled with `USE_AOD_EXPLAIN_STUB=true`.
