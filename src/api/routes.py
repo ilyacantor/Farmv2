@@ -68,6 +68,7 @@ from src.services.analysis import (
     extract_aod_evidence_domains,
     check_key_in_aod_evidence,
     build_reconciliation_analysis,
+    generate_assessment_markdown,
 )
 from src.services.aod_client import call_aod_explain_nonflag, stub_aod_explain_nonflag
 import re
@@ -509,13 +510,24 @@ async def create_reconciliation(request: Request):
         "aod_lists": raw_aod_lists,
     }
     
+    assessment_md = generate_assessment_markdown(
+        reconciliation_id=reconciliation_id,
+        aod_run_id=parsed_request.aod_run_id,
+        snapshot_id=parsed_request.snapshot_id,
+        tenant_id=parsed_request.tenant_id,
+        created_at=created_at,
+        analysis=analysis,
+        farm_expectations=farm_expectations.model_dump(),
+        aod_payload=aod_payload
+    )
+    
     async with pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO reconciliations (reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, aod_payload_json, farm_expectations_json, report_text, status, analysis_json)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO reconciliations (reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, aod_payload_json, farm_expectations_json, report_text, status, analysis_json, assessment_md)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         """, reconciliation_id, parsed_request.snapshot_id, parsed_request.tenant_id, parsed_request.aod_run_id,
             created_at, json.dumps(aod_payload), json.dumps(farm_expectations.model_dump()),
-            report_text, status.value, json.dumps(analysis))
+            report_text, status.value, json.dumps(analysis), assessment_md)
         
         # Persist recomputed expected_block to snapshot if it was upgraded to mode="all"
         if recomputed_block:
@@ -943,6 +955,41 @@ async def download_reconciliation_diff(
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename=reconcile_{reconciliation_id}.csv"}
     )
+
+
+@router.get("/api/reconcile/{reconciliation_id}/assessment")
+async def download_assessment_markdown(reconciliation_id: str):
+    """Download the detailed assessment markdown report for a reconciliation.
+    
+    Returns 404 if the reconciliation doesn't exist.
+    Returns 204 if the reconciliation exists but has no assessment (100% perfect match).
+    """
+    pool = await get_pool()
+    
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT reconciliation_id, aod_run_id, snapshot_id, assessment_md FROM reconciliations WHERE reconciliation_id = $1",
+            reconciliation_id
+        )
+        if not row:
+            raise HTTPException(status_code=404, detail="Reconciliation not found")
+        
+        assessment_md = row["assessment_md"]
+        if not assessment_md:
+            return Response(
+                status_code=204,
+                content="",
+                headers={"X-Assessment-Status": "perfect-match"}
+            )
+        
+        aod_run_id = row["aod_run_id"] or "unknown"
+        filename = f"assessment_{aod_run_id}.md"
+        
+        return Response(
+            content=assessment_md,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
 
 
 @router.post("/api/reconcile/auto", response_model=AutoReconcileResponse)
