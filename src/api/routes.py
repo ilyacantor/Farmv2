@@ -81,51 +81,55 @@ from collections import defaultdict
 router = APIRouter()
 
 _db_pool: Optional[asyncpg.Pool] = None
+_db_initialized: bool = False
 
 
 def get_db_url() -> str:
-    """Get database URL. SUPABASE_DB_URL takes priority, else DATABASE_URL.
-    Fatal if neither is set (or IGNORE_REPLIT_DB=true and only REPLIT vars exist).
+    """Get database URL. Uses PG* env vars when USE_REPLIT_DB=true, else SUPABASE_DB_URL or DATABASE_URL.
+    Fatal if no valid configuration found.
     """
-    ignore_replit = os.environ.get("IGNORE_REPLIT_DB", "").lower() == "true"
+    use_replit_fallback = os.environ.get("USE_REPLIT_DB", "").lower() == "true"
+    
+    if use_replit_fallback:
+        pghost = os.environ.get("PGHOST", "")
+        pgport = os.environ.get("PGPORT", "5432")
+        pguser = os.environ.get("PGUSER", "")
+        pgpassword = os.environ.get("PGPASSWORD", "")
+        pgdatabase = os.environ.get("PGDATABASE", "")
+        
+        if pghost and pguser and pgdatabase:
+            return f"postgresql://{pguser}:{pgpassword}@{pghost}:{pgport}/{pgdatabase}"
     
     supabase_url = os.environ.get("SUPABASE_DB_URL", "")
-    database_url = os.environ.get("DATABASE_URL", "")
-    
     if supabase_url:
         return supabase_url
     
+    database_url = os.environ.get("DATABASE_URL", "")
     if database_url:
-        if ignore_replit and "replit" in database_url.lower():
-            raise RuntimeError(
-                "FATAL: IGNORE_REPLIT_DB=true but only Replit DATABASE_URL found. "
-                "Set SUPABASE_DB_URL or unset IGNORE_REPLIT_DB."
-            )
         return database_url
     
     raise RuntimeError(
-        "FATAL: No database URL configured. Set SUPABASE_DB_URL or DATABASE_URL."
+        "FATAL: No database URL configured. Set SUPABASE_DB_URL, DATABASE_URL, or USE_REPLIT_DB=true with PG* vars."
     )
 
 
 def report_db_provider():
     """Log which DB provider is being used at startup."""
-    supabase_url = os.environ.get("SUPABASE_DB_URL", "")
-    database_url = os.environ.get("DATABASE_URL", "")
+    db_url = get_db_url()
+    use_replit = os.environ.get("USE_REPLIT_DB", "").lower() == "true"
     
-    if supabase_url:
+    if use_replit:
+        print("[DB] Using DATABASE_URL (Replit fallback mode)")
+    elif "supabase" in db_url.lower():
         print("[DB] Using SUPABASE_DB_URL (Supabase Postgres)")
-    elif database_url:
-        if "replit" in database_url.lower() or "neon" in database_url.lower():
-            print("[DB] Using DATABASE_URL (Replit/Neon Postgres)")
-        else:
-            print("[DB] Using DATABASE_URL (external Postgres)")
+    elif "replit" in db_url.lower() or "neon" in db_url.lower():
+        print("[DB] Using DATABASE_URL (Replit/Neon Postgres)")
     else:
-        print("[DB] WARNING: No database URL configured!")
+        print("[DB] Using DATABASE_URL (external Postgres)")
 
 
 async def get_pool() -> asyncpg.Pool:
-    global _db_pool
+    global _db_pool, _db_initialized
     if _db_pool is None:
         import asyncio
         db_url = get_db_url()
@@ -149,6 +153,9 @@ async def get_pool() -> asyncpg.Pool:
                     await asyncio.sleep(wait_time)
                 else:
                     raise
+        if not _db_initialized:
+            await _init_db_schema(_db_pool)
+            _db_initialized = True
     return _db_pool
 
 
@@ -170,11 +177,8 @@ def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profil
     return hashlib.sha256(data.encode()).hexdigest()[:16]
 
 
-async def init_db():
+async def _init_db_schema(pool: asyncpg.Pool):
     """Initialize database with runs and snapshots tables (Postgres)."""
-    report_db_provider()
-    pool = await get_pool()
-    
     async with pool.acquire() as conn:
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS runs (
