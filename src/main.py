@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.api.routes import router, get_pool, compute_fingerprint
+from src.api.routes import router, init_db, get_pool, compute_fingerprint
 
 
 class APIJSONErrorMiddleware(BaseHTTPMiddleware):
@@ -139,9 +139,8 @@ async def seed_initial_snapshots():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from src.api.routes import report_db_provider
-    report_db_provider()
-    print("[Startup] Server ready. Database connection will be established on first request.")
+    await init_db()
+    await seed_initial_snapshots()
     try:
         yield
     finally:
