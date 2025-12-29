@@ -1170,13 +1170,15 @@ def generate_assessment_markdown(
     lines.append("## Admission Analysis")
     lines.append("")
     
-    admission_analysis = analysis.get('admission_analysis', {})
-    cataloged_matched = admission_analysis.get('cataloged_matched', [])
-    cataloged_missed = admission_analysis.get('cataloged_missed', [])
-    cataloged_fp = admission_analysis.get('cataloged_fp', [])
-    rejected_matched = admission_analysis.get('rejected_matched', [])
-    rejected_missed = admission_analysis.get('rejected_missed', [])
-    rejected_fp = admission_analysis.get('rejected_fp', [])
+    admission_analysis = analysis.get('admission_reconciliation', {})
+    cataloged_data = admission_analysis.get('cataloged', {})
+    rejected_data = admission_analysis.get('rejected', {})
+    cataloged_matched = cataloged_data.get('matched_keys', [])
+    cataloged_missed = cataloged_data.get('missed_keys', [])
+    cataloged_fp = cataloged_data.get('fp_keys', [])
+    rejected_matched = rejected_data.get('matched_keys', [])
+    rejected_missed = rejected_data.get('missed_keys', [])
+    rejected_fp = rejected_data.get('fp_keys', [])
     
     lines.append("### Admission Metrics")
     lines.append("")
@@ -1209,6 +1211,61 @@ def generate_assessment_markdown(
             lines.append(f"- `{key}`")
         if len(rejected_missed) > 10:
             lines.append(f"- ... ({len(rejected_missed) - 10} more)")
+        lines.append("")
+    
+    cataloged_fp_details = cataloged_data.get('fp_details', [])
+    if cataloged_fp_details or cataloged_fp:
+        lines.append("### Admission False Positives (Cataloged)")
+        lines.append("")
+        fp_count = len(cataloged_fp_details) if cataloged_fp_details else len(cataloged_fp)
+        lines.append(f"**{fp_count} assets AOD cataloged but Farm expected rejection**")
+        lines.append("")
+        lines.append("These assets should have been rejected (not admitted) based on Farm's admission policy.")
+        lines.append("")
+        lines.append("| Asset Key | Discovery Sources | Rejection Reason | Farm Reason Codes |")
+        lines.append("|-----------|-------------------|------------------|-------------------|")
+        
+        if cataloged_fp_details:
+            for item in cataloged_fp_details:
+                asset_key = item.get('asset_key', 'N/A')
+                discovery_count = item.get('discovery_count', 0)
+                discovery_sources = ', '.join(item.get('discovery_sources', [])) or 'none'
+                rejection_reason = item.get('rejection_reason', 'N/A')
+                reason_codes = ', '.join(item.get('farm_reason_codes', [])[:5]) or 'N/A'
+                if len(item.get('farm_reason_codes', [])) > 5:
+                    reason_codes += '...'
+                lines.append(f"| `{asset_key}` | {discovery_count} ({discovery_sources}) | {rejection_reason} | {reason_codes} |")
+        else:
+            for key in cataloged_fp[:50]:
+                lines.append(f"| `{key}` | - | - | - |")
+            if len(cataloged_fp) > 50:
+                lines.append(f"| ... | | | ({len(cataloged_fp) - 50} more) |")
+        lines.append("")
+    
+    rejected_fp_details = rejected_data.get('fp_details', [])
+    if rejected_fp_details or rejected_fp:
+        lines.append("### Admission False Positives (Rejected)")
+        lines.append("")
+        fp_count = len(rejected_fp_details) if rejected_fp_details else len(rejected_fp)
+        lines.append(f"**{fp_count} assets AOD rejected but Farm expected admission**")
+        lines.append("")
+        lines.append("| Asset Key | Discovery Sources | Farm Reason Codes |")
+        lines.append("|-----------|-------------------|-------------------|")
+        
+        if rejected_fp_details:
+            for item in rejected_fp_details:
+                asset_key = item.get('asset_key', 'N/A')
+                discovery_count = item.get('discovery_count', 0)
+                discovery_sources = ', '.join(item.get('discovery_sources', [])) or 'none'
+                reason_codes = ', '.join(item.get('farm_reason_codes', [])[:5]) or 'N/A'
+                if len(item.get('farm_reason_codes', [])) > 5:
+                    reason_codes += '...'
+                lines.append(f"| `{asset_key}` | {discovery_count} ({discovery_sources}) | {reason_codes} |")
+        else:
+            for key in rejected_fp[:20]:
+                lines.append(f"| `{key}` | - | - |")
+            if len(rejected_fp) > 20:
+                lines.append(f"| ... | | ({len(rejected_fp) - 20} more) |")
         lines.append("")
     
     lines.append("---")
