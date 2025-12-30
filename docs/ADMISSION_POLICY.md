@@ -86,27 +86,24 @@ These are tools, not SaaS applications.
 ### Applies To
 Only **admitted** assets are classified. Rejected assets have no classification.
 
-### Governance Trinity Framework
+### Governance Definition
 
-Classification is based on the **Governance Trinity** - three criteria that ALL must be present for an asset to be considered "Governed":
+**Governed = IdP OR CMDB** (always OR, never AND)
 
-| Criterion | Definition | Evidence Source |
-|-----------|------------|-----------------|
-| **Visibility** | Asset is documented in system of record | CMDB presence |
-| **Validation** | Asset has security attestation | Security plane evidence |
-| **Control** | Asset has identity governance | IdP presence |
+An asset is considered "governed" if it appears in either:
+- Identity Provider (IdP) - has identity lifecycle management
+- CMDB - has system-of-record documentation
 
-**Trinity Logic:**
-- **PASS** = Has ALL THREE (Visibility + Validation + Control)
-- **FAIL** = Missing ANY of the three
+Security attestation is tracked separately for audit purposes but does NOT affect governance status.
 
 ### Classification Matrix
 
 | Classification | Criteria |
 |----------------|----------|
-| **Shadow** | Trinity FAIL + Active (missing Visibility, Validation, OR Control) |
-| **Zombie** | Trinity PASS + Stale Activity (governed but abandoned) |
-| **Clean** | Trinity PASS + Active (fully governed and in use) |
+| **Shadow** | Ungoverned (no IdP AND no CMDB) + Active |
+| **Zombie** | Governed (has IdP OR CMDB) + Stale Activity |
+| **Parked** | Ungoverned + Stale (discovered but abandoned, never anchored) |
+| **Clean** | Governed + Active |
 
 ### Key Definitions
 
@@ -134,12 +131,14 @@ Classification is based on the **Governance Trinity** - three criteria that ALL 
 
 ### Classification Examples
 
-| Asset | CMDB | IdP | Security | Activity | Trinity | Classification |
-|-------|------|-----|----------|----------|---------|----------------|
-| slack.com | NO | YES | NO | Active | FAIL | **Shadow** |
-| okta.com | YES | YES | YES | Active | PASS | **Clean** |
-| oldapp.com | YES | YES | YES | Stale | PASS | **Zombie** |
-| notion.so | NO | NO | NO | Active | FAIL | **Shadow** |
+| Asset | CMDB | IdP | Activity | Governed? | Classification |
+|-------|------|-----|----------|-----------|----------------|
+| slack.com | NO | YES | Active | YES (IdP) | **Clean** |
+| okta.com | YES | YES | Active | YES (both) | **Clean** |
+| maxify.ai | NO | YES | Stale | YES (IdP) | **Zombie** |
+| notion.so | NO | NO | Active | NO | **Shadow** |
+| oldapp.com | YES | NO | Stale | YES (CMDB) | **Zombie** |
+| random.io | NO | NO | Stale | NO | **Parked** |
 
 ---
 
@@ -228,15 +227,12 @@ This provides full auditability for why each asset was classified.
 | `HAS_NETWORK` | Seen in network traffic |
 | `GOVERNED_VIA_VENDOR` | Governance inherited from vendor parent |
 
-### Governance Trinity Codes
+### Governance Codes
 | Code | Meaning |
 |------|---------|
-| `HAS_VISIBILITY` / `MISSING_VISIBILITY` | CMDB presence (Visibility criterion) |
-| `HAS_VALIDATION` / `MISSING_VALIDATION` | Security attestation (Validation criterion) |
-| `HAS_CONTROL` / `MISSING_CONTROL` | IdP presence (Control criterion) |
-| `HAS_SECURITY_ATTESTATION` / `NO_SECURITY_ATTESTATION` | Security plane evidence |
-| `GOVERNANCE_TRINITY_PASS` | All three criteria met |
-| `GOVERNANCE_TRINITY_FAIL` | Missing at least one criterion |
+| `GOVERNED` | Has IdP OR CMDB (anchored in system of record) |
+| `UNGOVERNED` | No IdP AND no CMDB |
+| `HAS_SECURITY_ATTESTATION` / `NO_SECURITY_ATTESTATION` | Security plane evidence (audit only) |
 
 ### Activity Codes
 | Code | Meaning |
@@ -273,22 +269,22 @@ REJECTED (with reason)
     
 IF ADMITTED:
     ↓
-[Check Governance Trinity]
+[Check Governance: IdP OR CMDB?]
     ↓
 ┌─────────────────────────────────────────────────┐
-│ Has Visibility (CMDB)?           □              │
-│ Has Validation (Security)?       □              │
-│ Has Control (IdP)?               □              │
+│ Has IdP?                         □              │
+│ Has CMDB?                        □              │
 │                                                 │
-│ ALL THREE = Trinity PASS                        │
-│ MISSING ANY = Trinity FAIL                      │
+│ EITHER = GOVERNED                               │
+│ NEITHER = UNGOVERNED                            │
 └─────────────────────────────────────────────────┘
     ↓
 [Check Activity + Apply Classification]
     ↓
 ┌─────────────────────────────────────────────────┐
-│ Trinity FAIL + Active?           → SHADOW       │
-│ Trinity PASS + Stale?            → ZOMBIE       │
-│ Trinity PASS + Active?           → CLEAN        │
+│ Ungoverned + Active?             → SHADOW       │
+│ Governed + Stale?                → ZOMBIE       │
+│ Ungoverned + Stale?              → PARKED       │
+│ Governed + Active?               → CLEAN        │
 └─────────────────────────────────────────────────┘
 ```

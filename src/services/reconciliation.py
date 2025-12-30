@@ -446,11 +446,8 @@ def derive_reason_codes(cand: dict, idp_present: bool = None, cmdb_present: bool
     If idp_present/cmdb_present/security_attested are provided, use those (for governance propagation).
     Otherwise, use the raw candidate values.
     
-    Includes Governance Trinity codes:
-    - HAS_VISIBILITY / MISSING_VISIBILITY (CMDB registration)
-    - HAS_VALIDATION / MISSING_VALIDATION (security attestation)
-    - HAS_CONTROL / MISSING_CONTROL (IdP lifecycle management)
-    - GOVERNANCE_TRINITY_PASS / GOVERNANCE_TRINITY_FAIL
+    Governance = IdP OR CMDB (always OR, never AND).
+    Security attestation is tracked separately for audit purposes.
     """
     codes = []
     if cand.get('discovery_present'):
@@ -462,32 +459,23 @@ def derive_reason_codes(cand: dict, idp_present: bool = None, cmdb_present: bool
     
     if effective_idp:
         codes.append('HAS_IDP')
-        codes.append('HAS_CONTROL')
     else:
         codes.append('NO_IDP')
-        codes.append('MISSING_CONTROL')
     if effective_cmdb:
         codes.append('HAS_CMDB')
-        codes.append('HAS_VISIBILITY')
     else:
         codes.append('NO_CMDB')
-        codes.append('MISSING_VISIBILITY')
     if effective_security:
         codes.append('HAS_SECURITY_ATTESTATION')
-        codes.append('HAS_VALIDATION')
     else:
         codes.append('NO_SECURITY_ATTESTATION')
-        codes.append('MISSING_VALIDATION')
     
-    has_visibility = effective_cmdb
-    has_validation = effective_security
-    has_control = effective_idp
-    is_governed = has_visibility and has_validation and has_control
+    is_governed = effective_idp or effective_cmdb
     
     if is_governed:
-        codes.append('GOVERNANCE_TRINITY_PASS')
+        codes.append('GOVERNED')
     else:
-        codes.append('GOVERNANCE_TRINITY_FAIL')
+        codes.append('UNGOVERNED')
     
     if cand.get('finance_present'):
         codes.append('HAS_FINANCE')
@@ -658,16 +646,13 @@ def compute_expected_block(
         has_visibility = cmdb_present
         has_validation = security_attested
         has_control = idp_present
-        is_trinity_governed = has_visibility and has_validation and has_control
-        is_anchor_governed = idp_present or cmdb_present
+        is_governed = idp_present or cmdb_present
         
-        missing_trinity = []
-        if not has_visibility:
-            missing_trinity.append('MISSING_VISIBILITY')
-        if not has_validation:
-            missing_trinity.append('MISSING_VALIDATION')
-        if not has_control:
-            missing_trinity.append('MISSING_CONTROL')
+        missing_governance = []
+        if not idp_present:
+            missing_governance.append('NO_IDP')
+        if not cmdb_present:
+            missing_governance.append('NO_CMDB')
         
         if is_excluded:
             rejection_reason = 'EXCLUDED_BY_POLICY'
@@ -683,9 +668,9 @@ def compute_expected_block(
             )
             
             if is_admitted:
-                is_shadow = is_external and activity_status == ActivityStatus.RECENT and not is_trinity_governed
-                is_zombie = is_anchor_governed and activity_status == ActivityStatus.STALE
-                is_parked = is_external and not is_anchor_governed and activity_status == ActivityStatus.STALE
+                is_shadow = is_external and activity_status == ActivityStatus.RECENT and not is_governed
+                is_zombie = is_governed and activity_status == ActivityStatus.STALE
+                is_parked = is_external and not is_governed and activity_status == ActivityStatus.STALE
         
         raw_domains = list(cand.get('domains', set()))[:10]
         decision_traces[key] = {
@@ -707,9 +692,8 @@ def compute_expected_block(
             'has_visibility': has_visibility,
             'has_validation': has_validation,
             'has_control': has_control,
-            'is_trinity_governed': is_trinity_governed,
-            'is_anchor_governed': is_anchor_governed,
-            'missing_trinity': missing_trinity,
+            'is_governed': is_governed,
+            'missing_governance': missing_governance,
             'vendor_governance': vendor_name,
             'policy_excluded': is_excluded,
             'admitted': is_admitted,
@@ -825,10 +809,7 @@ def analyze_snapshot_for_expectations(
         
         activity_status = cand.get('activity_status', ActivityStatus.NONE)
         
-        has_visibility = cmdb_present
-        has_validation = security_attested
-        has_control = idp_present
-        is_governed = has_visibility and has_validation and has_control
+        is_governed = idp_present or cmdb_present
         
         if is_external and activity_status == ActivityStatus.RECENT and not is_governed:
             shadow_keys.append(key)
