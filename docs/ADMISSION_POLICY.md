@@ -86,31 +86,58 @@ These are tools, not SaaS applications.
 ### Applies To
 Only **admitted** assets are classified. Rejected assets have no classification.
 
+### Governance Trinity Framework
+
+Classification is based on the **Governance Trinity** - three criteria that ALL must be present for an asset to be considered "Governed":
+
+| Criterion | Definition | Evidence Source |
+|-----------|------------|-----------------|
+| **Visibility** | Asset is documented in system of record | CMDB presence |
+| **Validation** | Asset has security attestation | Security plane evidence |
+| **Control** | Asset has identity governance | IdP presence |
+
+**Trinity Logic:**
+- **PASS** = Has ALL THREE (Visibility + Validation + Control)
+- **FAIL** = Missing ANY of the three
+
 ### Classification Matrix
 
 | Classification | Criteria |
 |----------------|----------|
-| **Shadow** | `is_external` AND `is_active` AND NOT `idp_present` AND NOT `cmdb_present` AND NOT `is_infra_excluded` |
-| **Zombie** | (`idp_present` OR `cmdb_present`) AND NOT `is_active` AND `has_stale_timestamps` |
-| **Clean** | Everything else that's admitted |
+| **Shadow** | Trinity FAIL + Active (missing Visibility, Validation, OR Control) |
+| **Zombie** | Trinity PASS + Stale Activity (governed but abandoned) |
+| **Clean** | Trinity PASS + Active (fully governed and in use) |
 
 ### Key Definitions
 
 **is_external**: Domain has a public TLD (.com, .io, .org, etc.)
 
-**is_active**: Activity observed within the window (default 90 days). Activity sources:
+**is_active / RECENT_ACTIVITY**: Activity observed within the window (default 90 days). Activity sources:
 - Authentication events
 - Network traffic
 - API calls
 - User sessions
 
-**idp_present**: Found in Identity Provider. Can be:
+**STALE_ACTIVITY**: No activity within the staleness window (default 90 days).
+
+**idp_present (Control)**: Found in Identity Provider. Can be:
 - Direct match on this domain
 - Vendor propagation (e.g., `teams.microsoft.com` inherits from `microsoft.com`)
 
-**cmdb_present**: Found in Configuration Management Database. Same propagation rules as IdP.
+**cmdb_present (Visibility)**: Found in Configuration Management Database. Same propagation rules as IdP.
+
+**security_attestation (Validation)**: Has security review, compliance check, or attestation evidence.
 
 **is_infra_excluded**: Domain is in `INFRASTRUCTURE_DOMAINS` set.
+
+### Classification Examples
+
+| Asset | CMDB | IdP | Security | Activity | Trinity | Classification |
+|-------|------|-----|----------|----------|---------|----------------|
+| slack.com | NO | YES | NO | Active | FAIL | **Shadow** |
+| okta.com | YES | YES | YES | Active | PASS | **Clean** |
+| oldapp.com | YES | YES | YES | Stale | PASS | **Zombie** |
+| notion.so | NO | NO | NO | Active | FAIL | **Shadow** |
 
 ---
 
@@ -187,20 +214,40 @@ This provides full auditability for why each asset was classified.
 
 ## Reason Codes
 
+### Evidence Codes
 | Code | Meaning |
 |------|---------|
 | `HAS_DISCOVERY` | Discovered by at least one source |
-| `IS_ACTIVE` | Activity within window |
-| `HAS_IDP` | Found in Identity Provider |
-| `HAS_CMDB` | Found in CMDB |
+| `HAS_IDP` / `NO_IDP` | Found / Not found in Identity Provider |
+| `HAS_CMDB` / `NO_CMDB` | Found / Not found in CMDB |
 | `HAS_CLOUD` | Has cloud plane evidence |
-| `HAS_FINANCE` | Has finance/procurement records |
+| `HAS_FINANCE` / `HAS_ONGOING_FINANCE` | Has finance/recurring spend records |
 | `HAS_ENDPOINT` | Detected on endpoints |
 | `HAS_NETWORK` | Seen in network traffic |
-| `NO_IDP` | Not in Identity Provider |
-| `NO_CMDB` | Not in CMDB |
 | `GOVERNED_VIA_VENDOR` | Governance inherited from vendor parent |
-| `STALE_ACTIVITY` | Last activity is stale |
+
+### Governance Trinity Codes
+| Code | Meaning |
+|------|---------|
+| `HAS_VISIBILITY` / `MISSING_VISIBILITY` | CMDB presence (Visibility criterion) |
+| `HAS_VALIDATION` / `MISSING_VALIDATION` | Security attestation (Validation criterion) |
+| `HAS_CONTROL` / `MISSING_CONTROL` | IdP presence (Control criterion) |
+| `HAS_SECURITY_ATTESTATION` / `NO_SECURITY_ATTESTATION` | Security plane evidence |
+| `GOVERNANCE_TRINITY_PASS` | All three criteria met |
+| `GOVERNANCE_TRINITY_FAIL` | Missing at least one criterion |
+
+### Activity Codes
+| Code | Meaning |
+|------|---------|
+| `RECENT_ACTIVITY` | Activity within window (default 90 days) |
+| `STALE_ACTIVITY` | No activity within staleness window |
+
+### Classification Codes
+| Code | Meaning |
+|------|---------|
+| `SHADOW_CLASSIFICATION` | Asset classified as Shadow IT |
+| `ZOMBIE_CLASSIFICATION` | Asset classified as Zombie |
+| `CLEAN_CLASSIFICATION` | Asset classified as Clean/Governed |
 
 ---
 
@@ -224,11 +271,22 @@ REJECTED (with reason)
     
 IF ADMITTED:
     ↓
-[Check Classification]
+[Check Governance Trinity]
     ↓
-┌─────────────────────────────────┐
-│ external + active + ungoverned? │──→ SHADOW
-│ governed + inactive + stale?    │──→ ZOMBIE  
-│ else                            │──→ CLEAN
-└─────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│ Has Visibility (CMDB)?           □              │
+│ Has Validation (Security)?       □              │
+│ Has Control (IdP)?               □              │
+│                                                 │
+│ ALL THREE = Trinity PASS                        │
+│ MISSING ANY = Trinity FAIL                      │
+└─────────────────────────────────────────────────┘
+    ↓
+[Check Activity + Apply Classification]
+    ↓
+┌─────────────────────────────────────────────────┐
+│ Trinity FAIL + Active?           → SHADOW       │
+│ Trinity PASS + Stale?            → ZOMBIE       │
+│ Trinity PASS + Active?           → CLEAN        │
+└─────────────────────────────────────────────────┘
 ```
