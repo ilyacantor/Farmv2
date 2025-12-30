@@ -101,9 +101,11 @@ Security attestation is tracked separately for audit purposes but does NOT affec
 | Classification | Criteria |
 |----------------|----------|
 | **Shadow** | Ungoverned (no IdP AND no CMDB) + Active |
-| **Zombie** | Governed (has IdP OR CMDB) + Stale Activity |
+| **Zombie** | Governed (has IdP OR CMDB) + Stale Activity + Ongoing Finance |
 | **Parked** | Ungoverned + Stale (discovered but abandoned, never anchored) |
 | **Clean** | Governed + Active |
+
+**Note on Zombie Classification:** An asset must have ongoing finance (active contract or recurring transactions) to be classified as a zombie. Rationale: If there's no ongoing spend, it's not costing money and doesn't warrant the "zombie" classification for cost-saving prioritization.
 
 ### Key Definitions
 

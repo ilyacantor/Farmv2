@@ -109,7 +109,7 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 
 **Core Principles & Features:**
 - **Deterministic Data Generation:** Generates reproducible synthetic data based on seed, scale, and enterprise/realism profiles, yielding 7 independent data planes designed to correlate only via realistic keys.
-- **Governance Framework:** Classifies assets based on governance status (IdP OR CMDB = governed). Shadow = ungoverned + active. Zombie = governed + stale. Parked = ungoverned + stale.
+- **Governance Framework:** Classifies assets based on governance status (IdP OR CMDB = governed). Shadow = ungoverned + active. Zombie = governed + stale + ongoing finance. Parked = ungoverned + stale.
 - **Snapshot Management:** Provides APIs for generating, retrieving, listing, and deleting data snapshots, each with an `__expected__` block for grading metadata.
 - **Reconciliation System:** Compares AOD results against Farm's expectations, indicating gradeability via `contract_status`.
 - **Validation Suite:** Comprehensive validation checks on every snapshot and reconciliation, including expected block consistency, clock invariants, finance consistency, join hygiene, and gradeability gates.

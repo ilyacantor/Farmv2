@@ -668,8 +668,9 @@ def compute_expected_block(
             )
             
             if is_admitted:
+                has_ongoing_finance = cand.get('has_ongoing_finance', False)
                 is_shadow = is_external and activity_status == ActivityStatus.RECENT and not is_governed
-                is_zombie = is_governed and activity_status == ActivityStatus.STALE
+                is_zombie = is_governed and activity_status == ActivityStatus.STALE and has_ongoing_finance
                 is_parked = is_external and not is_governed and activity_status == ActivityStatus.STALE
         
         raw_domains = list(cand.get('domains', set()))[:10]
@@ -810,10 +811,11 @@ def analyze_snapshot_for_expectations(
         activity_status = cand.get('activity_status', ActivityStatus.NONE)
         
         is_governed = idp_present or cmdb_present
+        has_ongoing_finance = cand.get('has_ongoing_finance', False)
         
         if is_external and activity_status == ActivityStatus.RECENT and not is_governed:
             shadow_keys.append(key)
-        elif is_governed and activity_status == ActivityStatus.STALE:
+        elif is_governed and activity_status == ActivityStatus.STALE and has_ongoing_finance:
             zombie_keys.append(key)
     
     return FarmExpectations(
