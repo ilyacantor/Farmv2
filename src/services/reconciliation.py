@@ -144,6 +144,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             domain_to_keys[domain].add(key)
 
     # Process IdP objects with O(N) complexity using precomputed indexes
+    # POLICY: If asset is in IdP, admit it - create candidate if not exists
     idp_objects = planes.get('idp', {}).get('objects', [])
     for obj in idp_objects:
         name = normalize_name(obj.get('name', ''))
@@ -166,6 +167,16 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             # Domain lookup
             matched_keys.update(domain_to_keys.get(raw_domain, set()))
         
+        # POLICY: Create candidate for IdP-only assets (no discovery required)
+        if not matched_keys and idp_registered:
+            key = idp_registered
+            candidates[key]['key'] = key
+            candidates[key]['names'].add(obj.get('name', ''))
+            if raw_domain:
+                candidates[key]['domains'].add(raw_domain)
+                candidates[key]['domains'].add(key)
+            matched_keys.add(key)
+        
         # Mark matched candidates
         for key in matched_keys:
             candidates[key]['idp_present'] = True
@@ -186,6 +197,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
                     cand['stale_timestamps'].append(ts)
 
     # Process CMDB CIs with O(N) complexity instead of O(N*M)
+    # POLICY: If asset is in CMDB, admit it - create candidate if not exists
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])
     for ci in cmdb_cis:
         name = normalize_name(ci.get('name', ''))
@@ -203,6 +215,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             matched_keys.update(name_to_keys.get(name, set()))
 
         if cmdb_registered:
+            # Always include the registered domain as a match
             matched_keys.add(cmdb_registered)
         elif raw_domain:
             matched_keys.update(domain_to_keys.get(raw_domain, set()))
@@ -210,6 +223,17 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
         if ci_vendor:
             vendor_keys = vendor_to_keys.get(ci_vendor, set())
             matched_by_vendor.update(vendor_keys - matched_keys)
+
+        # POLICY: Create candidate for CMDB-only assets (no discovery required)
+        if cmdb_registered and cmdb_registered not in candidates:
+            key = cmdb_registered
+            candidates[key]['key'] = key
+            candidates[key]['names'].add(ci.get('name', ''))
+            if raw_domain:
+                candidates[key]['domains'].add(raw_domain)
+                candidates[key]['domains'].add(key)
+            if ci_vendor:
+                candidates[key]['vendors'].add(ci_vendor)
 
         # Update candidates with matches
         for key in matched_keys:

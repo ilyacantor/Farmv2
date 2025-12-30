@@ -124,7 +124,7 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - **Data Presets:** Includes `clean_baseline`, `enterprise_mess`, and `adversarial` challenge levels.
 - **Canonical Key Rules:** Defines clear rules for asset identification.
 - **CMDB Resolution:** Handles multiple CMDB matches with specific `cmdb_resolution_reason` codes.
-- **Admission Rules:** Defines criteria for entities to be admitted for classification.
+- **Admission Rules:** If an asset is in CMDB or IdP, it is admitted regardless of discovery evidence. Assets without CMDB/IdP presence require 2+ discovery sources, cloud evidence, or sufficient finance spend to be admitted.
 - **Ground Truth Classification:** Admitted assets are classified based on evidence flags and governance propagation logic.
 
 ## External Dependencies
