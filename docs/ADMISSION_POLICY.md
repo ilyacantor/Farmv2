@@ -120,6 +120,8 @@ Classification is based on the **Governance Trinity** - three criteria that ALL 
 
 **STALE_ACTIVITY**: No activity within the staleness window (default 90 days).
 
+**No Timestamp Available**: If an asset has no activity timestamps at all, it defaults to **Clean** (not Zombie). Rationale: You can't prove abandonment without evidence. Missing telemetry ≠ abandoned.
+
 **idp_present (Control)**: Found in Identity Provider. Can be:
 - Direct match on this domain
 - Vendor propagation (e.g., `teams.microsoft.com` inherits from `microsoft.com`)
