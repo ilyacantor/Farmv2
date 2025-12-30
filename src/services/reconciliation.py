@@ -658,7 +658,8 @@ def compute_expected_block(
         has_visibility = cmdb_present
         has_validation = security_attested
         has_control = idp_present
-        is_governed = has_visibility and has_validation and has_control
+        is_trinity_governed = has_visibility and has_validation and has_control
+        is_anchor_governed = idp_present or cmdb_present
         
         missing_trinity = []
         if not has_visibility:
@@ -682,9 +683,9 @@ def compute_expected_block(
             )
             
             if is_admitted:
-                is_shadow = is_external and activity_status == ActivityStatus.RECENT and not is_governed
-                is_zombie = is_governed and activity_status == ActivityStatus.STALE
-                is_parked = is_external and not is_governed and activity_status == ActivityStatus.STALE
+                is_shadow = is_external and activity_status == ActivityStatus.RECENT and not is_trinity_governed
+                is_zombie = is_anchor_governed and activity_status == ActivityStatus.STALE
+                is_parked = is_external and not is_anchor_governed and activity_status == ActivityStatus.STALE
         
         raw_domains = list(cand.get('domains', set()))[:10]
         decision_traces[key] = {
@@ -706,7 +707,8 @@ def compute_expected_block(
             'has_visibility': has_visibility,
             'has_validation': has_validation,
             'has_control': has_control,
-            'is_governed': is_governed,
+            'is_trinity_governed': is_trinity_governed,
+            'is_anchor_governed': is_anchor_governed,
             'missing_trinity': missing_trinity,
             'vendor_governance': vendor_name,
             'policy_excluded': is_excluded,
