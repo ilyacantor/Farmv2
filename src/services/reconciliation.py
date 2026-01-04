@@ -674,6 +674,11 @@ def compute_expected_block(
                 is_parked = is_external and not is_governed and activity_status == ActivityStatus.STALE
         
         raw_domains = list(cand.get('domains', set()))[:10]
+        
+        # Collect all activity timestamps for debugging
+        all_activity_ts = cand.get('activity_timestamps', [])
+        stale_ts = cand.get('stale_timestamps', [])
+        
         decision_traces[key] = {
             'asset_key_used': key,
             'registered_domain': extract_registered_domain(key),
@@ -684,6 +689,8 @@ def compute_expected_block(
             'activity_window_days': window_days,
             'activity_source': cand.get('activity_source', 'none'),
             'latest_activity_at': cand.get('latest_activity_at'),
+            'all_activity_timestamps': all_activity_ts[:10],  # All timestamps with sources
+            'stale_timestamps': stale_ts[:5],  # Timestamps classified as stale
             'idp_present': idp_present,
             'idp_present_direct': idp_present_direct,
             'cmdb_present': cmdb_present,

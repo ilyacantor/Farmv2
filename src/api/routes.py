@@ -1615,3 +1615,118 @@ async def audit_gradeability_demo_failure(mode: str = Query("html", description=
         "simulated_response_type": type(fake_response).__name__ if fake_response else "None",
         "audit_result": result,
     }
+
+
+@router.get("/api/reconcile/{reconciliation_id}/asset-compare")
+async def compare_asset_data(
+    reconciliation_id: str,
+    asset_key: str = Query(..., description="Asset key to investigate (e.g., cloudsync.dev)"),
+):
+    """
+    Compare Farm snapshot data vs AOD data for a specific asset.
+    
+    Helps debug discrepancies like STALE vs RECENT activity status.
+    Shows all timestamps Farm considered and what AOD reported.
+    """
+    async with db_connection() as conn:
+        rec_row = await conn.fetchrow(
+            "SELECT snapshot_id, aod_payload_json, analysis_json FROM reconciliations WHERE reconciliation_id = $1",
+            reconciliation_id
+        )
+        if not rec_row:
+            raise HTTPException(status_code=404, detail="Reconciliation not found")
+        
+        snap_row = await conn.fetchrow(
+            "SELECT blob FROM snapshots_blob WHERE snapshot_id = $1",
+            rec_row["snapshot_id"]
+        )
+        if not snap_row:
+            snap_row = await conn.fetchrow(
+                "SELECT snapshot_json as blob FROM snapshots WHERE snapshot_id = $1",
+                rec_row["snapshot_id"]
+            )
+        
+        if not snap_row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        
+        snapshot = json.loads(snap_row["blob"])
+        aod_payload = json.loads(rec_row["aod_payload_json"])
+        analysis = json.loads(rec_row["analysis_json"]) if rec_row["analysis_json"] else {}
+        
+        # Get decision trace for this asset from analysis
+        decision_traces = analysis.get('decision_traces', {})
+        farm_trace = decision_traces.get(asset_key) or decision_traces.get(asset_key.lower())
+        
+        # Search for similar keys if exact match not found
+        similar_keys = [k for k in decision_traces.keys() if asset_key.lower() in k.lower() or k.lower() in asset_key.lower()]
+        
+        # Get AOD data for this asset
+        aod_lists = aod_payload.get('aod_lists', {})
+        asset_summaries = aod_lists.get('asset_summaries', {})
+        aod_asset = asset_summaries.get(asset_key) or asset_summaries.get(asset_key.lower())
+        
+        # Search for similar AOD keys
+        similar_aod_keys = [k for k in asset_summaries.keys() if asset_key.lower() in k.lower() or k.lower() in asset_key.lower()]
+        
+        # Get raw snapshot data for this domain
+        planes = snapshot.get('planes', {})
+        discovery_obs = planes.get('discovery', {}).get('observations', [])
+        idp_objects = planes.get('idp', {}).get('objects', [])
+        cmdb_cis = planes.get('cmdb', {}).get('cis', [])
+        
+        # Find matching observations
+        matching_discovery = [
+            {
+                'domain': obs.get('domain'),
+                'observed_at': obs.get('observed_at'),
+                'source': obs.get('source'),
+                'observed_name': obs.get('observed_name'),
+            }
+            for obs in discovery_obs
+            if asset_key.lower() in (obs.get('domain', '') or '').lower()
+        ]
+        
+        matching_idp = [
+            {
+                'name': obj.get('name'),
+                'external_ref': obj.get('external_ref'),
+                'last_login_at': obj.get('last_login_at'),
+            }
+            for obj in idp_objects
+            if asset_key.lower() in (obj.get('name', '') or '').lower() 
+            or asset_key.lower() in (obj.get('external_ref', '') or '').lower()
+        ]
+        
+        matching_cmdb = [
+            {
+                'name': ci.get('name'),
+                'external_ref': ci.get('external_ref'),
+                'vendor': ci.get('vendor'),
+            }
+            for ci in cmdb_cis
+            if asset_key.lower() in (ci.get('name', '') or '').lower()
+            or asset_key.lower() in (ci.get('external_ref', '') or '').lower()
+        ]
+        
+        return {
+            'asset_key': asset_key,
+            'reconciliation_id': reconciliation_id,
+            'snapshot_id': rec_row["snapshot_id"],
+            'farm_decision_trace': farm_trace,
+            'farm_similar_keys': similar_keys[:10],
+            'aod_asset_summary': aod_asset,
+            'aod_similar_keys': similar_aod_keys[:10],
+            'raw_snapshot_data': {
+                'discovery_observations': matching_discovery[:20],
+                'idp_objects': matching_idp[:10],
+                'cmdb_cis': matching_cmdb[:10],
+            },
+            'comparison': {
+                'farm_activity_status': farm_trace.get('activity_status') if farm_trace else None,
+                'farm_latest_activity': farm_trace.get('latest_activity_at') if farm_trace else None,
+                'farm_all_timestamps': farm_trace.get('all_activity_timestamps') if farm_trace else None,
+                'aod_latest_activity': aod_asset.get('latest_activity_at') if aod_asset else None,
+                'aod_is_zombie': aod_asset.get('is_zombie') if aod_asset else None,
+                'aod_is_shadow': aod_asset.get('is_shadow') if aod_asset else None,
+            } if farm_trace or aod_asset else {'note': 'Asset not found in either Farm or AOD data'},
+        }
