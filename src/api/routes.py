@@ -592,13 +592,10 @@ async def create_reconciliation(request: Request):
             created_at, json.dumps(aod_payload), json.dumps(farm_expectations.model_dump()),
             report_text, status.value, json.dumps(analysis), assessment_md)
         
-        # Persist recomputed expected_block to snapshot if it was upgraded to mode="all"
-        if recomputed_block:
-            snapshot['__expected__'] = recomputed_block
-            await conn.execute(
-                "UPDATE snapshots SET snapshot_json = $1 WHERE snapshot_id = $2",
-                json.dumps(snapshot), parsed_request.snapshot_id
-            )
+        # NOTE: We intentionally do NOT update the snapshot's __expected__ block here.
+        # Snapshots are immutable after creation - the expected block reflects the logic
+        # at snapshot generation time. Reconciliations store their own analysis_json
+        # which captures the comparison at reconciliation creation time.
     
     return ReconcileResponse(
         reconciliation_id=reconciliation_id,
@@ -779,12 +776,8 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
                 json.dumps(analysis), reconciliation_id
             )
             
-            if recomputed_block and snap_row:
-                snapshot['__expected__'] = recomputed_block
-                await conn.execute(
-                    "UPDATE snapshots SET snapshot_json = $1 WHERE snapshot_id = $2",
-                    json.dumps(snapshot), rec_row["snapshot_id"]
-                )
+            # NOTE: We intentionally do NOT update the snapshot here.
+            # Snapshots are immutable - recomputed analysis is stored in reconciliation only.
         
         return {
             'reconciliation_id': reconciliation_id,
