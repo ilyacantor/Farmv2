@@ -780,14 +780,18 @@ class EnterpriseGenerator:
             observations.append(obs)
         
         for alias in self._aliased_products:
+            if len(observations) >= DISCOVERY_MAX_OBSERVATIONS:
+                break
             is_multi_plane = self.rng.random() < self.corroboration_rate
             if is_multi_plane:
                 observations.extend(
-                    self._generate_coupled_observations(alias, min_sources=2, obs_per_source=max(1, mult))
+                    self._generate_coupled_observations(alias, min_sources=2, obs_per_source=1)  # Constant, not * mult
                 )
             else:
                 single_source = self.rng.choice(list(SourceEnum))
                 for _ in range(self.rng.randint(2, 4)):
+                    if len(observations) >= DISCOVERY_MAX_OBSERVATIONS:
+                        break
                     obs = DiscoveryObservation(
                         observation_id=self._generate_uuid(),
                         observed_at=self._random_activity_date(),
