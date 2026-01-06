@@ -343,14 +343,8 @@ async def get_snapshot_summary(snapshot_id: str):
         clean_count = len(expected_block.get('clean_expected', []))
         rejected_count = sum(1 for v in expected_block.get('expected_admission', {}).values() if v == 'rejected')
         
-        # If expected block is empty/missing, recompute on-the-fly
-        if shadow_count == 0 and zombie_count == 0 and clean_count == 0:
-            policy = await fetch_policy_config()
-            recomputed = compute_expected_block(snapshot, mode="all", policy=policy)
-            shadow_count = len(recomputed.get('shadow_expected', []))
-            zombie_count = len(recomputed.get('zombie_expected', []))
-            clean_count = len(recomputed.get('clean_expected', []))
-            rejected_count = sum(1 for v in recomputed.get('expected_admission', {}).values() if v == 'rejected')
+        # Note: If expected block is empty, return 0s - on-the-fly recomputation is too expensive
+        # Use /api/snapshots/{id}/expected endpoint for full recomputation when needed
         
         return {
             "meta": meta,
