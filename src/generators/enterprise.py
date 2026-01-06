@@ -1000,14 +1000,21 @@ class EnterpriseGenerator:
         dns_records = []
         proxy_records = []
         certs = []
-        mult = self.scale_multipliers[self.scale]
+        
+        # Global caps to prevent runaway - total volume grows with #items, not per-item intensity
+        NETWORK_MAX_DNS_RECORDS = 5000
+        NETWORK_MAX_PROXY_RECORDS = 5000
         
         domains_to_query = [app["domain"] for app in self._saas_selection]
         domains_to_query.extend([f"{svc['name']}.internal.{self.tenant_id.lower()}.com" for svc in self._internal_services])
         
         for domain in domains_to_query:
-            num_queries = self.rng.randint(5, 20) * mult
+            if len(dns_records) >= NETWORK_MAX_DNS_RECORDS:
+                break
+            num_queries = self.rng.randint(5, 20)  # Constant per-item, not * mult
             for _ in range(num_queries):
+                if len(dns_records) >= NETWORK_MAX_DNS_RECORDS:
+                    break
                 dns_records.append(NetworkDNS(
                     dns_id=f"DNS-{self._generate_uuid()[:8].upper()}",
                     queried_domain=domain,
@@ -1016,8 +1023,12 @@ class EnterpriseGenerator:
                 ))
         
         for app in self._saas_selection:
-            num_proxy = self.rng.randint(10, 30) * mult
+            if len(proxy_records) >= NETWORK_MAX_PROXY_RECORDS:
+                break
+            num_proxy = self.rng.randint(10, 30)  # Constant per-item, not * mult
             for _ in range(num_proxy):
+                if len(proxy_records) >= NETWORK_MAX_PROXY_RECORDS:
+                    break
                 employee = self.rng.choice(self._employees) if self._employees else None
                 proxy_records.append(NetworkProxy(
                     proxy_id=f"PRX-{self._generate_uuid()[:8].upper()}",
@@ -1041,7 +1052,9 @@ class EnterpriseGenerator:
         vendors = []
         contracts = []
         transactions = []
-        mult = self.scale_multipliers[self.scale]
+        
+        # Global cap for transactions - volume grows with #items, not per-item intensity
+        FINANCE_MAX_TRANSACTIONS = 2000
         
         for app in self._saas_selection:
             vendor_name = self._apply_name_drift(app["vendor"])
@@ -1060,7 +1073,9 @@ class EnterpriseGenerator:
                 owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
             ))
             
-            num_txns = self.rng.randint(1, 4) * mult
+            if len(transactions) >= FINANCE_MAX_TRANSACTIONS:
+                continue
+            num_txns = self.rng.randint(1, 4)  # Constant per-item, not * mult
             for _ in range(num_txns):
                 transactions.append(FinanceTransaction(
                     txn_id=f"TXN-{self._generate_uuid()[:8].upper()}",
@@ -1093,8 +1108,12 @@ class EnterpriseGenerator:
                     owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
                 ))
             
-            num_txns = self.rng.randint(1, 3) * mult
+            if len(transactions) >= FINANCE_MAX_TRANSACTIONS:
+                continue
+            num_txns = self.rng.randint(1, 3)  # Constant per-item, not * mult
             for _ in range(num_txns):
+                if len(transactions) >= FINANCE_MAX_TRANSACTIONS:
+                    break
                 transactions.append(FinanceTransaction(
                     txn_id=f"TXN-{self._generate_uuid()[:8].upper()}",
                     vendor_name=vendor_name,
