@@ -675,16 +675,8 @@ async def debug_reconcile_raw(request: Request):
     }
 
 
-@router.post("/api/reconcile", response_model=ReconcileResponse)
-async def create_reconciliation(request: Request):
-    body = await request.body()
-    raw_json = json.loads(body)
-    
-    raw_aod_lists = raw_json.get('aod_lists', {})
-    print(f"[DEBUG] Raw request aod_lists keys: {list(raw_aod_lists.keys())}")
-    print(f"[DEBUG] Raw actual_reason_codes: {list(raw_aod_lists.get('actual_reason_codes', {}).keys())[:5]}")
-    
-    parsed_request = ReconcileRequest(**raw_json)
+async def _create_reconciliation_internal(parsed_request: ReconcileRequest, raw_aod_lists: dict) -> ReconcileResponse:
+    """Internal reconciliation logic - shared by HTTP endpoint and auto-reconcile."""
     mode = parsed_request.mode
     if mode not in ("sprawl", "infra", "all"):
         raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}. Must be 'sprawl', 'infra', or 'all'")
@@ -722,7 +714,12 @@ async def create_reconciliation(request: Request):
     )
     report_text, _ = generate_reconcile_report(parsed_request.aod_summary, parsed_request.aod_lists, farm_expectations)
     
-    analysis, recomputed_block = build_reconciliation_analysis(snapshot, raw_json, expected_block)
+    aod_payload = {
+        "aod_summary": parsed_request.aod_summary.model_dump(),
+        "aod_lists": raw_aod_lists,
+    }
+    
+    analysis, recomputed_block = build_reconciliation_analysis(snapshot, aod_payload, expected_block)
     
     overall_status = analysis.get('overall_status', 'PASS')
     if overall_status == 'PASS':
@@ -734,11 +731,6 @@ async def create_reconciliation(request: Request):
     
     reconciliation_id = str(uuid.uuid4())
     created_at = datetime.utcnow().isoformat() + "Z"
-    
-    aod_payload = {
-        "aod_summary": parsed_request.aod_summary.model_dump(),
-        "aod_lists": raw_aod_lists,
-    }
     
     try:
         assessment_md = generate_assessment_markdown(
@@ -784,6 +776,20 @@ async def create_reconciliation(request: Request):
         aod_lists=parsed_request.aod_lists,
         farm_expectations=farm_expectations,
     )
+
+
+@router.post("/api/reconcile", response_model=ReconcileResponse)
+async def create_reconciliation(request: Request):
+    """HTTP endpoint wrapper for reconciliation."""
+    body = await request.body()
+    raw_json = json.loads(body)
+    
+    raw_aod_lists = raw_json.get('aod_lists', {})
+    print(f"[DEBUG] Raw request aod_lists keys: {list(raw_aod_lists.keys())}")
+    print(f"[DEBUG] Raw actual_reason_codes: {list(raw_aod_lists.get('actual_reason_codes', {}).keys())[:5]}")
+    
+    parsed_request = ReconcileRequest(**raw_json)
+    return await _create_reconciliation_internal(parsed_request, raw_aod_lists)
 
 
 @router.get("/api/reconcile", response_model=list[ReconcileMetadata])
@@ -1482,7 +1488,7 @@ async def auto_reconcile(request: AutoReconcileRequest):
         aod_lists=aod_lists,
     )
     
-    result = await create_reconciliation(reconcile_request)
+    result = await _create_reconciliation_internal(reconcile_request, aod_lists_data)
     
     return AutoReconcileResponse(
         reconciliation_id=result.reconciliation_id,
