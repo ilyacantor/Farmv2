@@ -337,14 +337,29 @@ async def get_snapshot_summary(snapshot_id: str):
                        len(planes.get('finance', {}).get('transactions', []))),
         }
         
+        # Extract counts from expected block arrays
+        shadow_count = len(expected_block.get('shadow_expected', []))
+        zombie_count = len(expected_block.get('zombie_expected', []))
+        clean_count = len(expected_block.get('clean_expected', []))
+        rejected_count = sum(1 for v in expected_block.get('expected_admission', {}).values() if v == 'rejected')
+        
+        # If expected block is empty/missing, recompute on-the-fly
+        if shadow_count == 0 and zombie_count == 0 and clean_count == 0:
+            policy = await fetch_policy_config()
+            recomputed = compute_expected_block(snapshot, mode="all", policy=policy)
+            shadow_count = len(recomputed.get('shadow_expected', []))
+            zombie_count = len(recomputed.get('zombie_expected', []))
+            clean_count = len(recomputed.get('clean_expected', []))
+            rejected_count = sum(1 for v in recomputed.get('expected_admission', {}).values() if v == 'rejected')
+        
         return {
             "meta": meta,
             "plane_counts": plane_counts,
-            "expected_shadows": expected_block.get('total_shadows', 0),
-            "expected_zombies": expected_block.get('total_zombies', 0),
-            "expected_clean": expected_block.get('total_clean', 0),
-            "expected_rejected": expected_block.get('total_rejected', 0),
-            "total_admitted": expected_block.get('total_admitted', 0),
+            "expected_shadows": shadow_count,
+            "expected_zombies": zombie_count,
+            "expected_clean": clean_count,
+            "expected_rejected": rejected_count,
+            "total_admitted": shadow_count + zombie_count + clean_count,
             "validation": expected_block.get('_validation', {}),
             "source": "legacy_blob",
         }
@@ -359,12 +374,19 @@ async def get_snapshot_expectations(snapshot_id: str):
         
         snapshot = json.loads(row["snapshot_json"])
         expected_block = snapshot.get('__expected__', {})
+        
+        # Extract counts from expected block arrays
+        shadow_count = len(expected_block.get('shadow_expected', []))
+        zombie_count = len(expected_block.get('zombie_expected', []))
+        clean_count = len(expected_block.get('clean_expected', []))
+        rejected_count = sum(1 for v in expected_block.get('expected_admission', {}).values() if v == 'rejected')
+        
         return {
-            "expected_shadows": expected_block.get('total_shadows', 0),
-            "expected_zombies": expected_block.get('total_zombies', 0),
-            "expected_clean": expected_block.get('total_clean', 0),
-            "expected_rejected": expected_block.get('total_rejected', 0),
-            "total_admitted": expected_block.get('total_admitted', 0),
+            "expected_shadows": shadow_count,
+            "expected_zombies": zombie_count,
+            "expected_clean": clean_count,
+            "expected_rejected": rejected_count,
+            "total_admitted": shadow_count + zombie_count + clean_count,
             "classifications": expected_block.get('classifications', {}),
         }
 
