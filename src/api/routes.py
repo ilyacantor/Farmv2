@@ -127,6 +127,8 @@ async def create_snapshot(request: SnapshotRequest):
     
     def generate_snapshot_sync():
         """CPU-intensive snapshot generation - runs in thread pool to avoid blocking event loop."""
+        import gc
+        
         generator = EnterpriseGenerator(
             tenant_id=request.tenant_id,
             seed=request.seed,
@@ -138,12 +140,31 @@ async def create_snapshot(request: SnapshotRequest):
         )
         snapshot = generator.generate()
         snapshot.meta.snapshot_id = unique_snapshot_id
+        
+        # Extract metadata we need before dumping
+        meta_info = {
+            'tenant_id': snapshot.meta.tenant_id,
+            'seed': snapshot.meta.seed,
+            'scale': snapshot.meta.scale.value,
+            'enterprise_profile': snapshot.meta.enterprise_profile.value,
+            'realism_profile': snapshot.meta.realism_profile.value,
+            'created_at': snapshot.meta.created_at,
+        }
+        
+        # Convert to dict and immediately free the Pydantic object
         snapshot_dict = snapshot.model_dump()
+        del snapshot
+        gc.collect()
+        
+        # Compute expected block
         expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
         snapshot_dict['__expected__'] = expected_block
-        return snapshot, snapshot_dict
+        del expected_block
+        gc.collect()
+        
+        return meta_info, snapshot_dict
     
-    snapshot, snapshot_dict = await run_in_threadpool(generate_snapshot_sync)
+    meta_info, snapshot_dict = await run_in_threadpool(generate_snapshot_sync)
     
     validation_result = validate_snapshot_expected(snapshot_dict)
     if not validation_result.valid:
@@ -171,18 +192,18 @@ async def create_snapshot(request: SnapshotRequest):
                 INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             """, unique_snapshot_id, run_id, 0, fingerprint,
-                snapshot.meta.tenant_id, snapshot.meta.seed, snapshot.meta.scale.value,
-                snapshot.meta.enterprise_profile.value, snapshot.meta.realism_profile.value,
-                snapshot.meta.created_at, SCHEMA_VERSION, blob_json)
+                meta_info['tenant_id'], meta_info['seed'], meta_info['scale'],
+                meta_info['enterprise_profile'], meta_info['realism_profile'],
+                meta_info['created_at'], SCHEMA_VERSION, blob_json)
             
             # New hot path table (metadata only)
             await conn.execute("""
                 INSERT INTO snapshots_meta (snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, backfill_state)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'complete')
             """, unique_snapshot_id, run_id, fingerprint,
-                snapshot.meta.tenant_id, snapshot.meta.seed, snapshot.meta.scale.value,
-                snapshot.meta.enterprise_profile.value, snapshot.meta.realism_profile.value,
-                snapshot.meta.created_at, SCHEMA_VERSION,
+                meta_info['tenant_id'], meta_info['seed'], meta_info['scale'],
+                meta_info['enterprise_profile'], meta_info['realism_profile'],
+                meta_info['created_at'], SCHEMA_VERSION,
                 meta['total_assets'], json.dumps(meta['plane_counts']),
                 json.dumps(meta['expected_summary']), meta['blob_size_bytes'], meta['blob_hash'])
             
@@ -196,8 +217,8 @@ async def create_snapshot(request: SnapshotRequest):
     return SnapshotCreateResponse(
         snapshot_id=unique_snapshot_id,
         snapshot_fingerprint=fingerprint,
-        tenant_id=snapshot.meta.tenant_id,
-        created_at=snapshot.meta.created_at,
+        tenant_id=meta_info['tenant_id'],
+        created_at=meta_info['created_at'],
         schema_version=SCHEMA_VERSION,
         duplicate_of_snapshot_id=None,
         generation_time_seconds=total_time,
