@@ -88,6 +88,74 @@ def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profil
     return hashlib.sha256(data.encode()).hexdigest()[:16]
 
 
+async def complete_expected_block_async(snapshot_id: str, policy):
+    """Background task to compute expected block for large snapshots after initial storage."""
+    import gc
+    try:
+        trace_log("background_expected", "START", {"snapshot_id": snapshot_id})
+        
+        # Load snapshot from DB
+        async with db_connection() as conn:
+            row = await conn.fetchrow(
+                "SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1",
+                snapshot_id
+            )
+            if not row:
+                trace_log("background_expected", "ERROR", {"snapshot_id": snapshot_id, "error": "snapshot not found"})
+                return
+        
+        # Parse and compute expected block
+        snapshot_dict = json.loads(row["snapshot_json"])
+        del row
+        gc.collect()
+        
+        expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
+        snapshot_dict['__expected__'] = expected_block
+        del expected_block
+        gc.collect()
+        
+        # Validate
+        validation_result = validate_snapshot_expected(snapshot_dict)
+        snapshot_dict['__expected__']['_validation'] = validation_result.to_dict()
+        
+        # Serialize
+        blob_json = json.dumps(snapshot_dict)
+        meta = compute_snapshot_metadata(snapshot_dict, blob_json)
+        del snapshot_dict
+        gc.collect()
+        
+        # Update DB
+        async with db_connection() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "UPDATE snapshots SET snapshot_json = $1 WHERE snapshot_id = $2",
+                    blob_json, snapshot_id
+                )
+                await conn.execute(
+                    "UPDATE snapshots_blob SET blob = $1 WHERE snapshot_id = $2",
+                    blob_json, snapshot_id
+                )
+                await conn.execute(
+                    """UPDATE snapshots_meta SET 
+                        backfill_state = 'complete',
+                        expected_summary = $1
+                    WHERE snapshot_id = $2""",
+                    json.dumps(meta['expected_summary']), snapshot_id
+                )
+        
+        trace_log("background_expected", "COMPLETE", {"snapshot_id": snapshot_id, "validation_passed": validation_result.valid})
+        
+    except Exception as e:
+        trace_log("background_expected", "ERROR", {"snapshot_id": snapshot_id, "error": str(e)})
+        # Mark as failed
+        try:
+            async with db_connection() as conn:
+                await conn.execute(
+                    "UPDATE snapshots_meta SET backfill_state = 'failed' WHERE snapshot_id = $1",
+                    snapshot_id
+                )
+        except:
+            pass
 
 
 @router.post("/api/snapshots", response_model=SnapshotCreateResponse)
@@ -125,6 +193,9 @@ async def create_snapshot(request: SnapshotRequest):
     
     policy = await fetch_policy_config()
     
+    # Check if this is a large scale that needs deferred expected computation
+    is_large_scale = request.scale.value in ('mega', 'enterprise')
+    
     def generate_snapshot_sync():
         """CPU-intensive snapshot generation - runs in thread pool to avoid blocking event loop."""
         import gc
@@ -154,17 +225,84 @@ async def create_snapshot(request: SnapshotRequest):
         # Convert to dict and immediately free the Pydantic object
         snapshot_dict = snapshot.model_dump()
         del snapshot
-        gc.collect()
-        
-        # Compute expected block
-        expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
-        snapshot_dict['__expected__'] = expected_block
-        del expected_block
+        del generator
         gc.collect()
         
         return meta_info, snapshot_dict
     
     meta_info, snapshot_dict = await run_in_threadpool(generate_snapshot_sync)
+    
+    # For large scales, defer expected block computation to background task
+    if is_large_scale:
+        # Store snapshot WITHOUT expected block first
+        snapshot_dict['__expected__'] = {'_pending': True, '_validation': {'valid': True, 'errors': [], 'warnings': []}}
+        blob_json = json.dumps(snapshot_dict)
+        meta = compute_snapshot_metadata(snapshot_dict, blob_json)
+        
+        async with db_connection() as conn:
+            async with conn.transaction():
+                await conn.execute("""
+                    INSERT INTO runs (run_id, run_fingerprint, created_at, seed, schema_version, enterprise_profile, realism_profile, scale, tenant_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                """, run_id, fingerprint, created_at, request.seed, SCHEMA_VERSION,
+                    request.enterprise_profile.value, request.realism_profile.value, request.scale.value, request.tenant_id)
+                
+                await conn.execute("""
+                    INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                """, unique_snapshot_id, run_id, 0, fingerprint,
+                    meta_info['tenant_id'], meta_info['seed'], meta_info['scale'],
+                    meta_info['enterprise_profile'], meta_info['realism_profile'],
+                    meta_info['created_at'], SCHEMA_VERSION, blob_json)
+                
+                await conn.execute("""
+                    INSERT INTO snapshots_meta (snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, backfill_state)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending_expected')
+                """, unique_snapshot_id, run_id, fingerprint,
+                    meta_info['tenant_id'], meta_info['seed'], meta_info['scale'],
+                    meta_info['enterprise_profile'], meta_info['realism_profile'],
+                    meta_info['created_at'], SCHEMA_VERSION,
+                    meta['total_assets'], json.dumps(meta['plane_counts']),
+                    json.dumps(meta['expected_summary']), meta['blob_size_bytes'], meta['blob_hash'])
+                
+                await conn.execute("""
+                    INSERT INTO snapshots_blob (snapshot_id, blob, created_at)
+                    VALUES ($1, $2, $3)
+                """, unique_snapshot_id, blob_json, created_at)
+        
+        # Free memory before background task
+        del snapshot_dict
+        del blob_json
+        import gc
+        gc.collect()
+        
+        # Start background task to compute expected block
+        import asyncio
+        asyncio.create_task(complete_expected_block_async(unique_snapshot_id, policy))
+        
+        total_time = round(time.perf_counter() - total_start, 2)
+        return SnapshotCreateResponse(
+            snapshot_id=unique_snapshot_id,
+            snapshot_fingerprint=fingerprint,
+            tenant_id=meta_info['tenant_id'],
+            created_at=meta_info['created_at'],
+            schema_version=SCHEMA_VERSION,
+            duplicate_of_snapshot_id=None,
+            generation_time_seconds=total_time,
+            validation_passed=True,
+            validation_error_count=0,
+            backfill_state="pending_expected",
+        )
+    
+    # For smaller scales, compute expected block inline (original behavior)
+    def compute_expected_sync():
+        import gc
+        expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
+        snapshot_dict['__expected__'] = expected_block
+        del expected_block
+        gc.collect()
+    
+    await run_in_threadpool(compute_expected_sync)
     
     validation_result = validate_snapshot_expected(snapshot_dict)
     if not validation_result.valid:

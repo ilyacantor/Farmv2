@@ -347,6 +347,7 @@ class SnapshotCreateResponse(BaseModel):
     generation_time_seconds: Optional[float] = None
     validation_passed: Optional[bool] = None
     validation_error_count: Optional[int] = None
+    backfill_state: Optional[str] = None
 
 
 class SnapshotMetadata(BaseModel):
