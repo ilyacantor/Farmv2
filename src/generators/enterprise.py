@@ -288,7 +288,7 @@ class EnterpriseGenerator:
         self.enterprise_profile = enterprise_profile
         self.realism_profile = realism_profile
         self.data_preset = data_preset
-        self.preset_config = PresetConfig.from_preset(data_preset) if data_preset else None
+        self.preset_config = PresetConfig.from_preset(data_preset, scale=scale) if data_preset else None
         self.policy = policy_config or load_mock_policy_config()
         self.rng = random.Random(seed)
         self.run_id = self._generate_uuid()

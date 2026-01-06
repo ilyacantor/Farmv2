@@ -104,7 +104,8 @@ class PresetConfig(BaseModel):
     near_collision_count: int = Field(ge=0, description="Near-collision names for adversarial")
     
     @classmethod
-    def from_preset(cls, preset: DataPresetEnum) -> "PresetConfig":
+    def from_preset(cls, preset: DataPresetEnum, scale: Optional["ScaleEnum"] = None) -> "PresetConfig":
+        # Base configs
         configs = {
             DataPresetEnum.clean_baseline: cls(
                 name="Clean Baseline",
@@ -134,7 +135,29 @@ class PresetConfig(BaseModel):
                 near_collision_count=50,
             ),
         }
-        return configs[preset]
+        config = configs[preset]
+        
+        # Scale down junk for large scales to avoid OOM
+        if scale and preset == DataPresetEnum.adversarial:
+            scale_factors = {
+                "small": 1.0,
+                "medium": 1.0,
+                "large": 0.5,
+                "enterprise": 0.2,
+                "mega": 0.1,
+            }
+            factor = scale_factors.get(scale.value if hasattr(scale, 'value') else scale, 1.0)
+            config = cls(
+                name=config.name,
+                description=config.description,
+                domain_coverage=config.domain_coverage,
+                conflict_rate=config.conflict_rate,
+                junk_domain_count=int(config.junk_domain_count * factor),
+                aliasing_rate=config.aliasing_rate,
+                near_collision_count=int(config.near_collision_count * factor),
+            )
+        
+        return config
 
 
 class DiscoveryObservation(BaseModel):
