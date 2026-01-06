@@ -269,25 +269,28 @@
                             </div>
                             
                             <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Realism</label>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Behavior</label>
                                 <select id="realismProfile" 
                                     class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="clean">Clean</option>
-                                    <option value="typical" selected>Typical</option>
-                                    <option value="messy">Messy</option>
+                                    <option value="clean">Clean / Modern</option>
+                                    <option value="typical" selected>Typical Enterprise</option>
+                                    <option value="messy">Messy / Legacy</option>
                                 </select>
                             </div>
                         </div>
+                        <p class="text-xs text-slate-500 -mt-2 mb-2">Data coverage, hygiene, ownership discipline</p>
                         
-                        <div>
-                            <label class="block text-xs font-medium text-slate-400 mb-1">Data Preset <span class="text-slate-500">(AOD challenge level)</span></label>
+                        <div class="border-t border-slate-700/50 pt-3">
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Test Mode</label>
                             <select id="dataPreset" 
-                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                <option value="">None (default)</option>
-                                <option value="clean_baseline">Clean Baseline (95% coverage, minimal noise)</option>
-                                <option value="enterprise_mess">Enterprise Mess (70% coverage, junk domains)</option>
-                                <option value="adversarial">Adversarial (50% coverage, near-collisions)</option>
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white focus:border-cyan-500 outline-none"
+                                onchange="updateScenarioSummary()">
+                                <option value="clean_baseline" selected>Baseline (sanity check, deterministic)</option>
+                                <option value="enterprise_mess">Noisy Enterprise (junk, gaps, partial signals)</option>
+                                <option value="adversarial">Adversarial (near-collisions, conflicts)</option>
                             </select>
+                            <p class="text-xs text-slate-500 mt-1">Injected pathologies independent of enterprise maturity</p>
+                            <p id="scenarioSummary" class="text-xs text-cyan-400/70 mt-2 hidden"></p>
                         </div>
                         
                         <button type="submit" id="generateBtn"
@@ -3253,6 +3256,38 @@
             }
         }
 
+        function updateScenarioSummary() {
+            const behavior = document.getElementById('realismProfile');
+            const testMode = document.getElementById('dataPreset');
+            const summary = document.getElementById('scenarioSummary');
+            
+            const behaviorLabels = {
+                'clean': 'Clean/Modern company',
+                'typical': 'Typical enterprise',
+                'messy': 'Messy/Legacy org'
+            };
+            const testLabels = {
+                'clean_baseline': 'baseline checks',
+                'enterprise_mess': 'noisy enterprise signals',
+                'adversarial': 'intentionally ambiguous signals'
+            };
+            
+            const b = behaviorLabels[behavior.value] || behavior.value;
+            const t = testLabels[testMode.value] || testMode.value;
+            
+            if (testMode.value === 'adversarial') {
+                summary.innerHTML = `<span class="text-amber-400">⚠</span> ${b} + ${t}`;
+                summary.classList.remove('hidden');
+            } else if (testMode.value === 'enterprise_mess') {
+                summary.textContent = `${b} + ${t}`;
+                summary.classList.remove('hidden');
+            } else {
+                summary.classList.add('hidden');
+            }
+        }
+        
+        document.getElementById('realismProfile').addEventListener('change', updateScenarioSummary);
+
         async function generateSnapshot(tenantId, seed, scale, enterpriseProfile, realismProfile, dataPreset) {
             addLogEntry(`Generating ${tenantId} seed:${seed}${dataPreset ? ` [${dataPreset}]` : ''}...`, 'info');
             TimerController.setState('running');
@@ -3632,7 +3667,7 @@
                     this.highlight('realismProfile');
                     el.focus();
                     this.showOverlay(
-                        "<strong>Stress Testing</strong><br><br>Clean data doesn't exist in the wild. Select <strong>Messy</strong> or <strong>Adversarial</strong> to inject conflicting records, partial telemetry, and duplicates—forcing the system to resolve ambiguity that simple asset managers can't handle.",
+                        "<strong>Enterprise Behavior</strong><br><br>What kind of company is this? <strong>Clean/Modern</strong> = high data hygiene. <strong>Typical</strong> = realistic gaps. <strong>Messy/Legacy</strong> = M&A chaos, stale owners, partial coverage.",
                         { hideNext: true }
                     );
                     this.waitForSelection('realismProfile');
@@ -3642,7 +3677,7 @@
                     this.highlight('dataPreset');
                     el.focus();
                     this.showOverlay(
-                        "<strong>Challenge Level</strong><br><br><strong>Clean Baseline</strong> = minimal conflicts. <strong>Enterprise Mess</strong> = realistic chaos. <strong>Adversarial</strong> = intentional edge cases that break naive systems.",
+                        "<strong>Test Mode</strong><br><br>How hard do we challenge AOD? <strong>Baseline</strong> = sanity check. <strong>Noisy Enterprise</strong> = junk domains, gaps. <strong>Adversarial</strong> = near-collisions and conflicts that break naive systems.",
                         { hideNext: true }
                     );
                     this.waitForSelection('dataPreset');
