@@ -3320,20 +3320,6 @@
                     body: JSON.stringify(body)
                 });
                 
-                const elapsedTime = TimerController.stopAndShowElapsed();
-                const dupStr = data.duplicate_of_snapshot_id ? ' (cached)' : '';
-                addLogEntry(`Created ${data.snapshot_id?.substring(0, 8) || 'snapshot'} in ${elapsedTime}s${dupStr}`, 'success');
-                
-                FarmState.lastGenerationTime = elapsedTime;
-                FarmState.generationTimeCache[data.snapshot_id] = elapsedTime;
-                
-                if (data.duplicate_of_snapshot_id) {
-                    document.getElementById('genTimeValue').textContent = 'cache';
-                    showToast('Snapshot loaded from cache', 'info');
-                } else {
-                    showToast(`Snapshot generated in <strong>${elapsedTime}s</strong>`, 'success');
-                }
-                
                 return data;
             } catch (e) {
                 TimerController.setState('error');
@@ -3368,8 +3354,10 @@
             const btn = document.getElementById('generateBtn');
             setButtonLoading(btn, true);
             
+            let result = null;
+            let hadError = false;
             try {
-                const result = await generateSnapshot(
+                result = await generateSnapshot(
                     generateTenantId(),
                     generateSeed(),
                     document.getElementById('scale').value,
@@ -3377,8 +3365,26 @@
                     document.getElementById('realismProfile').value,
                     document.getElementById('dataPreset').value || null
                 );
+            } catch (e) {
+                hadError = true;
             } finally {
                 setButtonLoading(btn, false);
+                
+                if (!hadError && result) {
+                    const elapsedTime = TimerController.stopAndShowElapsed();
+                    const dupStr = result.duplicate_of_snapshot_id ? ' (cached)' : '';
+                    addLogEntry(`Created ${result.snapshot_id?.substring(0, 8) || 'snapshot'} in ${elapsedTime}s${dupStr}`, 'success');
+                    
+                    FarmState.lastGenerationTime = elapsedTime;
+                    FarmState.generationTimeCache[result.snapshot_id] = elapsedTime;
+                    
+                    if (result.duplicate_of_snapshot_id) {
+                        document.getElementById('genTimeValue').textContent = 'cache';
+                        showToast('Snapshot loaded from cache', 'info');
+                    } else {
+                        showToast(`Snapshot generated in <strong>${elapsedTime}s</strong>`, 'success');
+                    }
+                }
             }
         });
 
