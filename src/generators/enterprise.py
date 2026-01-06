@@ -612,26 +612,32 @@ class EnterpriseGenerator:
         Single-plane assets get 1 source → rejected by noise floor
         """
         observations = []
-        mult = self.scale_multipliers[self.scale]
+        
+        # Global cap to prevent runaway - volume grows with #items, not per-item intensity
+        DISCOVERY_MAX_OBSERVATIONS = 10000
         
         CORE_STACK_SIZE = 25
         for idx, app in enumerate(self._saas_selection):
+            if len(observations) >= DISCOVERY_MAX_OBSERVATIONS:
+                break
             is_multi_plane = self.rng.random() < self.corroboration_rate
             
             if is_multi_plane:
                 if idx < CORE_STACK_SIZE:
                     min_sources = 3
-                    obs_per_source = 2 * mult
+                    obs_per_source = 2  # Constant per-item, not * mult
                 else:
                     min_sources = 2
-                    obs_per_source = max(1, mult)
+                    obs_per_source = 1  # Constant per-item, not * mult
                 observations.extend(
                     self._generate_coupled_observations(app, min_sources, obs_per_source)
                 )
             else:
                 single_source = self.rng.choice(list(SourceEnum))
-                num_obs = self.rng.randint(2, 4) * mult
+                num_obs = self.rng.randint(2, 4)  # Constant per-item, not * mult
                 for _ in range(num_obs):
+                    if len(observations) >= DISCOVERY_MAX_OBSERVATIONS:
+                        break
                     obs = DiscoveryObservation(
                         observation_id=self._generate_uuid(),
                         observed_at=self._random_activity_date(),
@@ -648,8 +654,12 @@ class EnterpriseGenerator:
                     observations.append(obs)
         
         for svc in self._internal_services:
-            num_obs = self.rng.randint(1, 3) * mult
+            if len(observations) >= DISCOVERY_MAX_OBSERVATIONS:
+                break
+            num_obs = self.rng.randint(1, 3)  # Constant per-item, not * mult
             for _ in range(num_obs):
+                if len(observations) >= DISCOVERY_MAX_OBSERVATIONS:
+                    break
                 obs = DiscoveryObservation(
                     observation_id=self._generate_uuid(),
                     observed_at=self._random_activity_date(),
@@ -676,15 +686,19 @@ class EnterpriseGenerator:
             observations.append(obs)
         
         for shadow_app in self._shadow_apps:
+            if len(observations) >= DISCOVERY_MAX_OBSERVATIONS:
+                break
             is_multi_plane = self.rng.random() < self.corroboration_rate
             if is_multi_plane:
                 observations.extend(
-                    self._generate_coupled_observations(shadow_app, min_sources=2, obs_per_source=max(1, mult))
+                    self._generate_coupled_observations(shadow_app, min_sources=2, obs_per_source=1)  # Constant, not * mult
                 )
             else:
                 single_source = self.rng.choice(list(SourceEnum))
-                num_obs = self.rng.randint(2, 4) * mult
+                num_obs = self.rng.randint(2, 4)  # Constant per-item, not * mult
                 for _ in range(num_obs):
+                    if len(observations) >= DISCOVERY_MAX_OBSERVATIONS:
+                        break
                     obs = DiscoveryObservation(
                         observation_id=self._generate_uuid(),
                         observed_at=self._random_activity_date(),
