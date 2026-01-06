@@ -640,6 +640,15 @@
                 const valueEl = document.getElementById('genTimeValue');
                 valueEl.textContent = seconds;
                 this.setState('done');
+            },
+            
+            stopAndShowElapsed() {
+                this.stopInterval();
+                const elapsed = ((performance.now() - FarmState.timerStartTime) / 1000).toFixed(2);
+                const valueEl = document.getElementById('genTimeValue');
+                valueEl.textContent = elapsed;
+                this.setState('done');
+                return parseFloat(elapsed);
             }
         };
 
@@ -3311,21 +3320,18 @@
                     body: JSON.stringify(body)
                 });
                 
-                const timeStr = data.generation_time_seconds != null ? ` in ${data.generation_time_seconds}s` : '';
+                const elapsedTime = TimerController.stopAndShowElapsed();
                 const dupStr = data.duplicate_of_snapshot_id ? ' (cached)' : '';
-                addLogEntry(`Created ${data.snapshot_id?.substring(0, 8) || 'snapshot'}${timeStr}${dupStr}`, 'success');
+                addLogEntry(`Created ${data.snapshot_id?.substring(0, 8) || 'snapshot'} in ${elapsedTime}s${dupStr}`, 'success');
                 
-                if (data.generation_time_seconds != null) {
-                    FarmState.lastGenerationTime = data.generation_time_seconds;
-                    FarmState.generationTimeCache[data.snapshot_id] = data.generation_time_seconds;
-                    TimerController.setFinalTime(data.generation_time_seconds);
-                    showToast(`Snapshot generated in <strong>${data.generation_time_seconds}s</strong>`, 'success');
-                } else if (data.duplicate_of_snapshot_id) {
-                    TimerController.setState('done');
+                FarmState.lastGenerationTime = elapsedTime;
+                FarmState.generationTimeCache[data.snapshot_id] = elapsedTime;
+                
+                if (data.duplicate_of_snapshot_id) {
                     document.getElementById('genTimeValue').textContent = 'cache';
                     showToast('Snapshot loaded from cache', 'info');
                 } else {
-                    TimerController.setState('done');
+                    showToast(`Snapshot generated in <strong>${elapsedTime}s</strong>`, 'success');
                 }
                 
                 return data;
