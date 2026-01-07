@@ -792,6 +792,23 @@ async def create_reconciliation(request: Request):
     return await _create_reconciliation_internal(parsed_request, raw_aod_lists)
 
 
+@router.delete("/api/reconcile/cleanup")
+async def cleanup_reconciliations(keep: int = Query(0, ge=0, le=100, description="Number of recent reconciliations to keep (0 = delete all)")):
+    """Delete reconciliations, optionally keeping the most recent ones."""
+    async with db_connection() as conn:
+        result = await conn.execute("""
+            DELETE FROM reconciliations 
+            WHERE reconciliation_id NOT IN (
+                SELECT reconciliation_id FROM reconciliations ORDER BY created_at DESC LIMIT $1
+            )
+        """, keep)
+        deleted_count = int(result.split()[-1]) if result else 0
+        
+        remaining = await conn.fetchval("SELECT COUNT(*) FROM reconciliations")
+        
+        return CleanupResponse(deleted_count=deleted_count, remaining_count=remaining)
+
+
 @router.get("/api/reconcile", response_model=list[ReconcileMetadata])
 async def list_reconciliations(
     snapshot_id: Optional[str] = Query(None, description="Filter by snapshot ID"),

@@ -327,7 +327,17 @@
             <div class="bg-slate-800/60 rounded-xl border border-slate-700 min-w-0">
                 <div class="flex items-center justify-between p-4 border-b border-slate-700">
                     <h2 class="text-lg font-semibold text-purple-400">Validation Lab</h2>
-                    <div class="flex gap-2">
+                    <div class="flex items-center gap-3">
+                        <div id="eraseReconcileNormal">
+                            <button onclick="showReconcileEraseConfirm()" class="text-xs px-2 py-1 bg-red-900/40 hover:bg-red-800/60 text-red-400 rounded border border-red-800/50 transition-colors">
+                                Erase All
+                            </button>
+                        </div>
+                        <div id="eraseReconcileConfirm" class="hidden flex items-center gap-2">
+                            <span class="text-xs text-red-400">Sure?</span>
+                            <button onclick="doEraseAllReconciliations()" class="text-xs px-2 py-1 bg-red-600 hover:bg-red-500 text-white rounded transition-colors">Yes</button>
+                            <button onclick="hideReconcileEraseConfirm()" class="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors">No</button>
+                        </div>
                         <select id="filterReconcileStatus" onchange="renderReconciliationsList()" class="bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white">
                             <option value="">All Status</option>
                             <option value="PASS">Pass</option>
@@ -2913,6 +2923,31 @@
                 addLogEntry('All snapshots erased', 'success');
             } catch (e) {
                 console.error('Erase failed:', e);
+                addLogEntry('Erase failed: ' + e.message, 'error');
+            }
+        }
+
+        function showReconcileEraseConfirm() {
+            if (FarmState.reconciliations.length === 0) return;
+            document.getElementById('eraseReconcileNormal').classList.add('hidden');
+            document.getElementById('eraseReconcileConfirm').classList.remove('hidden');
+        }
+        
+        function hideReconcileEraseConfirm() {
+            document.getElementById('eraseReconcileConfirm').classList.add('hidden');
+            document.getElementById('eraseReconcileNormal').classList.remove('hidden');
+        }
+        
+        async function doEraseAllReconciliations() {
+            hideReconcileEraseConfirm();
+            try {
+                await fetch('/api/reconcile/cleanup?keep=0', { method: 'DELETE' });
+                FarmState.reconciliations = [];
+                FarmState.selectedReconciliation = null;
+                await loadAllDataSafely();
+                addLogEntry('All reconciliations erased', 'success');
+            } catch (e) {
+                console.error('Erase reconciliations failed:', e);
                 addLogEntry('Erase failed: ' + e.message, 'error');
             }
         }
