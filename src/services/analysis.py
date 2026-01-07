@@ -881,15 +881,16 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         'admission_missed': admission_missed,
         'admission_fp': admission_fp,
     }
-    max_per_category = max(per_category_counts.values()) if per_category_counts.values() else 0
     
-    if max_per_category <= 3:
+    categories_over_threshold = [k for k, v in per_category_counts.items() if v > 3]
+    if not categories_over_threshold:
         overall_status = 'PASS'
-        analysis['grading_override'] = f'all categories ≤3 mismatches (max={max_per_category}) → forced PASS'
+        analysis['grading_override'] = 'no category exceeds 3 mismatches → forced PASS'
     
     analysis['overall_status'] = overall_status
     analysis['total_mismatches'] = total_mismatches
     analysis['per_category_mismatches'] = per_category_counts
+    analysis['categories_exceeding_threshold'] = categories_over_threshold
     
     # ANY mismatch in ANY category requires explanation
     has_any_discrepancy = (
