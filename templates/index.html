@@ -1218,18 +1218,32 @@
 
         async function loadAllData() {
             return RequestController.fetch('loadAllData', async () => {
+                // Process each API call independently - render as soon as data arrives
                 const snapshotsPromise = apiFetch('/api/snapshots?limit=100').then(d => { 
-                    FarmState.snapshots = d;
+                    FarmState.snapshots = d || [];
                     FarmState.snapshots.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
                     document.getElementById('snapshotCount').textContent = FarmState.snapshots.length;
                     document.getElementById('configSnapshotCount').textContent = FarmState.snapshots.length;
                     renderConfigSnapshotsList();
                     return d; 
+                }).catch(e => {
+                    console.error('[loadAllData] Snapshots API error:', e);
+                    FarmState.snapshots = [];
+                    document.getElementById('snapshotCount').textContent = '0';
+                    document.getElementById('configSnapshotCount').textContent = '0';
+                    renderConfigSnapshotsList();
+                    throw e;
                 });
                 
                 const reconcilePromise = apiFetch('/api/reconcile?limit=500').then(d => { 
+                    if (!Array.isArray(d)) {
+                        console.error('[loadAllData] Unexpected reconcile response type:', typeof d);
+                        d = [];
+                    }
                     FarmState.reconciliationsListCache = d;
-                    FarmState.reconciliationsListCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    if (FarmState.reconciliationsListCache.length > 0) {
+                        FarmState.reconciliationsListCache.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+                    }
                     FarmState.reconciliationsCache = {};
                     for (const rec of FarmState.reconciliationsListCache) {
                         if (!FarmState.reconciliationsCache[rec.snapshot_id]) FarmState.reconciliationsCache[rec.snapshot_id] = [];
@@ -1237,9 +1251,16 @@
                     }
                     renderReconciliationsList();
                     return d; 
+                }).catch(e => {
+                    console.error('[loadAllData] Reconcile API error:', e);
+                    FarmState.reconciliationsListCache = [];
+                    FarmState.reconciliationsCache = {};
+                    renderReconciliationsList();
+                    throw e;
                 });
                 
-                await Promise.all([snapshotsPromise, reconcilePromise]);
+                // Wait for both but don't block rendering on either
+                await Promise.allSettled([snapshotsPromise, reconcilePromise]);
                 FarmState.loadDataRetryCount = 0;
                 hideLoadDataError();
             });
@@ -1322,56 +1343,70 @@
         }
 
         function renderReconciliationsList() {
-            const container = document.getElementById('reconciliationsList');
-            const filterStatus = document.getElementById('filterReconcileStatus')?.value || '';
-            
-            let filtered = FarmState.reconciliationsListCache;
-            if (filterStatus) filtered = filtered.filter(r => r.status === filterStatus);
-            
-            if (filtered.length === 0) {
-                container.innerHTML = '<div class="text-slate-500 text-center py-12">No reconciliations yet</div>';
-                return;
-            }
-            
-            container.innerHTML = filtered.map(rec => {
-                const created = new Date(rec.created_at);
-                const timeAgo = getTimeAgo(created);
-                const contractStatus = rec.contract_status || 'UNKNOWN';
-                const isGradeable = contractStatus === 'CURRENT';
+            try {
+                console.log('[renderReconciliationsList] Called with', FarmState.reconciliationsListCache?.length || 0, 'items');
+                const container = document.getElementById('reconciliationsList');
+                if (!container) {
+                    console.error('[renderReconciliationsList] Container not found!');
+                    return;
+                }
+                const filterStatus = document.getElementById('filterReconcileStatus')?.value || '';
                 
-                const contractBadge = contractStatus === 'STALE_CONTRACT' 
-                    ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-900/50 text-amber-400 ring-1 ring-amber-500/30">STALE</span>'
-                    : contractStatus === 'INCONSISTENT_CONTRACT'
-                    ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-red-900/50 text-red-400 ring-1 ring-red-500/30">INCONSISTENT</span>'
-                    : getStatusBadge(rec.status);
+                let filtered = FarmState.reconciliationsListCache || [];
+                if (filterStatus) filtered = filtered.filter(r => r.status === filterStatus);
                 
-                const contractMsg = contractStatus === 'STALE_CONTRACT' 
-                    ? '<span class="text-amber-500 ml-2">Legacy payload - rerun required</span>'
-                    : contractStatus === 'INCONSISTENT_CONTRACT'
-                    ? '<span class="text-red-500 ml-2">Count mismatch - rerun required</span>'
-                    : '';
+                if (filtered.length === 0) {
+                    container.innerHTML = '<div class="text-slate-500 text-center py-12">No reconciliations yet</div>';
+                    return;
+                }
                 
-                return `
-                    <div class="reconciliation-item p-4 hover:bg-slate-900/40 transition-colors cursor-pointer" 
-                         data-rec-id="${rec.reconciliation_id}" 
-                         data-snapshot-id="${rec.snapshot_id}"
-                         onclick="viewReconciliationReport('${rec.reconciliation_id}')">
-                        <div class="flex items-start justify-between gap-4">
-                            <div class="flex-1 min-w-0">
-                                <div class="flex items-center gap-2 mb-1">
-                                    ${contractBadge}
-                                    <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
+                container.innerHTML = filtered.map(rec => {
+                    const created = new Date(rec.created_at);
+                    const timeAgo = getTimeAgo(created);
+                    const contractStatus = rec.contract_status || 'UNKNOWN';
+                    const isGradeable = contractStatus === 'CURRENT';
+                    
+                    const contractBadge = contractStatus === 'STALE_CONTRACT' 
+                        ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-amber-900/50 text-amber-400 ring-1 ring-amber-500/30">STALE</span>'
+                        : contractStatus === 'INCONSISTENT_CONTRACT'
+                        ? '<span class="px-2 py-0.5 text-xs font-medium rounded-full bg-red-900/50 text-red-400 ring-1 ring-red-500/30">INCONSISTENT</span>'
+                        : getStatusBadge(rec.status);
+                    
+                    const contractMsg = contractStatus === 'STALE_CONTRACT' 
+                        ? '<span class="text-amber-500 ml-2">Legacy payload - rerun required</span>'
+                        : contractStatus === 'INCONSISTENT_CONTRACT'
+                        ? '<span class="text-red-500 ml-2">Count mismatch - rerun required</span>'
+                        : '';
+                    
+                    return `
+                        <div class="reconciliation-item p-4 hover:bg-slate-900/40 transition-colors cursor-pointer" 
+                             data-rec-id="${rec.reconciliation_id}" 
+                             data-snapshot-id="${rec.snapshot_id}"
+                             onclick="viewReconciliationReport('${rec.reconciliation_id}')">
+                            <div class="flex items-start justify-between gap-4">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        ${contractBadge}
+                                        <span class="text-cyan-400 font-medium">${rec.tenant_id}</span>
+                                    </div>
+                                    <div class="text-xs text-slate-600 mt-1">
+                                        ${rec.snapshot_id.substring(0, 8)} | AOD: ${rec.aod_run_id || 'N/A'}
+                                        ${contractMsg}
+                                    </div>
                                 </div>
-                                <div class="text-xs text-slate-600 mt-1">
-                                    ${rec.snapshot_id.substring(0, 8)} | AOD: ${rec.aod_run_id || 'N/A'}
-                                    ${contractMsg}
-                                </div>
+                                <div class="text-xs text-slate-500">${timeAgo}</div>
                             </div>
-                            <div class="text-xs text-slate-500">${timeAgo}</div>
                         </div>
-                    </div>
-                `;
-            }).join('');
+                    `;
+                }).join('');
+                console.log('[renderReconciliationsList] Successfully rendered', filtered.length, 'items');
+            } catch (e) {
+                console.error('[renderReconciliationsList] Error:', e);
+                const container = document.getElementById('reconciliationsList');
+                if (container) {
+                    container.innerHTML = `<div class="text-red-500 text-center py-12">Error loading: ${e.message}</div>`;
+                }
+            }
         }
         
         function computeMisalignment(farmKeys, aodKeys, aodCount) {
@@ -3533,6 +3568,13 @@
             await loadConfig();
             await loadAllDataSafely();
             addLogEntry('Farm Console loaded', 'info');
+            
+            // Ensure reconciliations are rendered after data loads
+            const container = document.getElementById('reconciliationsList');
+            if (container && container.textContent.includes('Loading')) {
+                console.log('[init] Reconciliations still loading, force render');
+                renderReconciliationsList();
+            }
         }
         
         init();
