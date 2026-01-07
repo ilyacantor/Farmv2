@@ -870,27 +870,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         'accuracy': admission_accuracy,
         'status': admission_score,
     }
-    
-    total_mismatches = total_missed + total_fp + admission_missed + admission_fp
-    
-    per_category_counts = {
-        'shadow_missed': len(analysis['missed_shadows']),
-        'shadow_fp': len(analysis['false_positive_shadows']),
-        'zombie_missed': len(analysis['missed_zombies']),
-        'zombie_fp': len(analysis['false_positive_zombies']),
-        'admission_missed': admission_missed,
-        'admission_fp': admission_fp,
-    }
-    
-    categories_over_threshold = [k for k, v in per_category_counts.items() if v > 3]
-    if not categories_over_threshold:
-        overall_status = 'PASS'
-        analysis['grading_override'] = 'no category exceeds 3 mismatches → forced PASS'
-    
     analysis['overall_status'] = overall_status
-    analysis['total_mismatches'] = total_mismatches
-    analysis['per_category_mismatches'] = per_category_counts
-    analysis['categories_exceeding_threshold'] = categories_over_threshold
     
     # ANY mismatch in ANY category requires explanation
     has_any_discrepancy = (
