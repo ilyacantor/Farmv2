@@ -33,16 +33,16 @@ import asyncpg
 
 T = TypeVar('T')
 
-DB_POOL_MIN = int(os.environ.get("DB_POOL_MIN", "0"))
-DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "2"))
+DB_POOL_MIN = int(os.environ.get("DB_POOL_MIN", "1"))
+DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "5"))
 DB_CONNECT_TIMEOUT = float(os.environ.get("DB_CONNECT_TIMEOUT", "30"))
-DB_COMMAND_TIMEOUT = float(os.environ.get("DB_COMMAND_TIMEOUT", "15"))
-DB_MAX_INACTIVE_LIFETIME = float(os.environ.get("DB_MAX_INACTIVE_LIFETIME", "10"))
-DB_BACKOFF_BASE = float(os.environ.get("DB_BACKOFF_BASE", "10"))
-DB_BACKOFF_CAP = float(os.environ.get("DB_BACKOFF_CAP", "120"))
-DB_FAIL_THRESHOLD = int(os.environ.get("DB_FAIL_THRESHOLD", "8"))
-DB_COOLDOWN_SECONDS = float(os.environ.get("DB_COOLDOWN_SECONDS", "180"))
-DB_CONCURRENCY = int(os.environ.get("DB_CONCURRENCY", "2"))
+DB_COMMAND_TIMEOUT = float(os.environ.get("DB_COMMAND_TIMEOUT", "30"))
+DB_MAX_INACTIVE_LIFETIME = float(os.environ.get("DB_MAX_INACTIVE_LIFETIME", "30"))
+DB_BACKOFF_BASE = float(os.environ.get("DB_BACKOFF_BASE", "5"))
+DB_BACKOFF_CAP = float(os.environ.get("DB_BACKOFF_CAP", "60"))
+DB_FAIL_THRESHOLD = int(os.environ.get("DB_FAIL_THRESHOLD", "5"))
+DB_COOLDOWN_SECONDS = float(os.environ.get("DB_COOLDOWN_SECONDS", "60"))
+DB_CONCURRENCY = int(os.environ.get("DB_CONCURRENCY", "4"))
 DB_SIMULATE_DOWN = os.environ.get("DB_SIMULATE_DOWN", "").lower() == "true"
 
 
