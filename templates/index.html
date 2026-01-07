@@ -2928,7 +2928,7 @@
         }
 
         function showReconcileEraseConfirm() {
-            if (!FarmState.reconciliations || FarmState.reconciliations.length === 0) return;
+            if (!FarmState.reconciliationsListCache || FarmState.reconciliationsListCache.length === 0) return;
             document.getElementById('eraseReconcileNormal').classList.add('hidden');
             document.getElementById('eraseReconcileConfirm').classList.remove('hidden');
         }
@@ -2942,7 +2942,8 @@
             hideReconcileEraseConfirm();
             try {
                 await fetch('/api/reconcile/cleanup?keep=0', { method: 'DELETE' });
-                FarmState.reconciliations = [];
+                FarmState.reconciliationsListCache = [];
+                FarmState.reconciliationsCache = {};
                 FarmState.selectedReconciliation = null;
                 await loadAllDataSafely();
                 addLogEntry('All reconciliations erased', 'success');
