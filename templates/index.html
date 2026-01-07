@@ -3420,6 +3420,10 @@
                     } else {
                         showToast(`Snapshot generated in <strong>${elapsedTime}s</strong>`, 'success');
                     }
+                } else if (hadError) {
+                    TimerController.setState('error');
+                } else {
+                    TimerController.setState('idle');
                 }
             }
         });
