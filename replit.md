@@ -115,6 +115,8 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - **Validation Suite:** Comprehensive validation checks on every snapshot and reconciliation, including expected block consistency, clock invariants, finance consistency, join hygiene, and gradeability gates.
 - **Hot/Cold Storage Split:** Optimizes performance by separating snapshot metadata (hot path) from full snapshot blobs (cold storage).
 - **Database Resilience:** Implements connection pooling, circuit breaker, exponential backoff, and a concurrency semaphore for robust database interactions.
+- **Background Job System:** Mega/Enterprise scale snapshots use a background job pattern (202 + job_id) to avoid holding database pooler sessions. Jobs have progress tracking and are polled by the UI.
+- **Supabase Pooler Optimized:** Uses transaction pooling with statement timeouts (30s), max 2 concurrent DB operations, and batch inserts with commit-per-batch to prevent pooler saturation.
 - **Discrepancy-Based Assessment Triggers:** Automatic generation of detailed markdown assessment reports for non-perfect reconciliations, triggered by any classification or admission mismatch.
 - **Error Handling:** Emphasizes explicit error statuses (`UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`) and guarantees JSON responses for API errors.
 

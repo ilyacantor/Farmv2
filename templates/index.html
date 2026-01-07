@@ -3333,9 +3333,43 @@
         
         document.getElementById('realismProfile').addEventListener('change', updateScenarioSummary);
 
+        async function pollJobStatus(jobId, btn, tenantId) {
+            const maxPolls = 180;
+            const pollInterval = 2000;
+            
+            for (let i = 0; i < maxPolls; i++) {
+                await new Promise(resolve => setTimeout(resolve, pollInterval));
+                
+                try {
+                    const job = await apiFetch(`/api/jobs/${jobId}`);
+                    
+                    if (job.progress && job.progress.message) {
+                        const pct = job.progress.percent || 0;
+                        setButtonLoading(btn, true, `${job.progress.message} (${pct}%)`);
+                    }
+                    
+                    if (job.status === 'completed') {
+                        return job.result;
+                    } else if (job.status === 'failed') {
+                        throw new Error(job.error || 'Job failed');
+                    }
+                } catch (e) {
+                    if (e.message && !e.message.includes('Job failed')) {
+                        console.warn('[pollJobStatus] Poll error, continuing:', e.message);
+                    } else {
+                        throw e;
+                    }
+                }
+            }
+            
+            throw new Error('Job timed out after 6 minutes');
+        }
+        
         async function generateSnapshot(tenantId, seed, scale, enterpriseProfile, realismProfile, dataPreset) {
             addLogEntry(`Generating ${tenantId} seed:${seed}${dataPreset ? ` [${dataPreset}]` : ''}...`, 'info');
             TimerController.setState('running');
+            
+            const btn = document.getElementById('generateBtn');
             
             try {
                 const body = {
@@ -3349,11 +3383,25 @@
                     body.data_preset = dataPreset;
                 }
                 
-                const data = await apiFetch('/api/snapshots', {
+                const response = await fetch('/api/snapshots', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
                 });
+                
+                const data = await response.json();
+                
+                if (response.status === 202 && data.job_id) {
+                    addLogEntry(`Background job started: ${data.job_id.substring(0, 8)}...`, 'info');
+                    setButtonLoading(btn, true, 'Starting...');
+                    
+                    const result = await pollJobStatus(data.job_id, btn, tenantId);
+                    return result;
+                }
+                
+                if (!response.ok) {
+                    throw new APIError(data.detail || 'Generation failed', response.status, response.headers.get('x-request-id') || '', '/api/snapshots');
+                }
                 
                 return data;
             } catch (e) {

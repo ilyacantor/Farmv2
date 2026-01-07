@@ -37,12 +37,15 @@ DB_POOL_MIN = int(os.environ.get("DB_POOL_MIN", "1"))
 DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "5"))
 DB_CONNECT_TIMEOUT = float(os.environ.get("DB_CONNECT_TIMEOUT", "30"))
 DB_COMMAND_TIMEOUT = float(os.environ.get("DB_COMMAND_TIMEOUT", "30"))
+DB_STATEMENT_TIMEOUT = int(os.environ.get("DB_STATEMENT_TIMEOUT", "30"))
 DB_MAX_INACTIVE_LIFETIME = float(os.environ.get("DB_MAX_INACTIVE_LIFETIME", "30"))
-DB_BACKOFF_BASE = float(os.environ.get("DB_BACKOFF_BASE", "5"))
-DB_BACKOFF_CAP = float(os.environ.get("DB_BACKOFF_CAP", "60"))
+DB_BACKOFF_BASE = float(os.environ.get("DB_BACKOFF_BASE", "2"))
+DB_BACKOFF_CAP = float(os.environ.get("DB_BACKOFF_CAP", "30"))
 DB_FAIL_THRESHOLD = int(os.environ.get("DB_FAIL_THRESHOLD", "5"))
 DB_COOLDOWN_SECONDS = float(os.environ.get("DB_COOLDOWN_SECONDS", "60"))
-DB_CONCURRENCY = int(os.environ.get("DB_CONCURRENCY", "4"))
+DB_CONCURRENCY = int(os.environ.get("DB_CONCURRENCY", "2"))
+DB_BATCH_SIZE = int(os.environ.get("DB_BATCH_SIZE", "500"))
+DB_MAX_RETRIES = int(os.environ.get("DB_MAX_RETRIES", "3"))
 DB_SIMULATE_DOWN = os.environ.get("DB_SIMULATE_DOWN", "").lower() == "true"
 
 
@@ -383,11 +386,29 @@ class DatabaseManager:
                     )
                 """)
                 
+                self._log("Creating jobs table...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS jobs (
+                        job_id TEXT PRIMARY KEY,
+                        job_type TEXT NOT NULL,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        created_at TEXT NOT NULL,
+                        started_at TEXT,
+                        completed_at TEXT,
+                        progress_json JSONB DEFAULT '{}',
+                        result_json JSONB,
+                        error TEXT,
+                        input_params_json JSONB
+                    )
+                """)
+                
                 # Indexes for new tables
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_meta_tenant_created ON snapshots_meta(tenant_id, created_at DESC)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_meta_fingerprint ON snapshots_meta(snapshot_fingerprint)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_meta_run ON snapshots_meta(run_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_recon_cache_snapshot ON reconciliation_analysis_cache(snapshot_id)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC)")
                 
                 self._schema_initialized = True
                 self._log("Schema initialized")
@@ -431,3 +452,120 @@ async def close_pool():
 
 def is_healthy() -> tuple[bool, str]:
     return db.is_healthy()
+
+
+import random as _random
+
+def _jitter(delay: float, factor: float = 0.25) -> float:
+    """Add random jitter to delay (0.75x to 1.25x)."""
+    return delay * (1 + ((_random.random() - 0.5) * 2 * factor))
+
+
+async def execute_with_retry(
+    query: str,
+    *args,
+    max_retries: int = DB_MAX_RETRIES,
+    statement_timeout_seconds: int = DB_STATEMENT_TIMEOUT,
+) -> Any:
+    """Execute a single query with retry and per-statement timeout."""
+    last_error = None
+    for attempt in range(max_retries + 1):
+        try:
+            async with connection() as conn:
+                await conn.execute(f"SET statement_timeout = '{statement_timeout_seconds}s'")
+                result = await conn.execute(query, *args)
+                return result
+        except DBUnavailable as e:
+            last_error = e
+            if attempt < max_retries:
+                delay = _jitter(DB_BACKOFF_BASE * (2 ** attempt))
+                print(f"[DB:Retry] Attempt {attempt + 1}/{max_retries + 1} failed, retrying in {delay:.1f}s: {e.message}")
+                await asyncio.sleep(delay)
+            else:
+                raise
+        except asyncio.TimeoutError as e:
+            last_error = e
+            delay = _jitter(DB_BACKOFF_BASE * (2 ** attempt))
+            if attempt < max_retries:
+                print(f"[DB:Retry] Timeout on attempt {attempt + 1}/{max_retries + 1}, retrying in {delay:.1f}s")
+                await asyncio.sleep(delay)
+            else:
+                raise DBUnavailable(f"Query timeout after {max_retries + 1} attempts", retry_after=delay)
+    raise last_error or DBUnavailable("Query failed after retries")
+
+
+async def batch_insert(
+    table: str,
+    columns: list[str],
+    rows: list[tuple],
+    batch_size: int = DB_BATCH_SIZE,
+    on_conflict: str = "",
+    statement_timeout_seconds: int = DB_STATEMENT_TIMEOUT,
+) -> int:
+    """
+    Insert rows in batches with commit per batch.
+    Each batch uses its own connection and transaction to avoid holding pooler session.
+    
+    Returns total rows inserted.
+    """
+    if not rows:
+        return 0
+    
+    total_inserted = 0
+    num_batches = (len(rows) + batch_size - 1) // batch_size
+    
+    for batch_num in range(num_batches):
+        start_idx = batch_num * batch_size
+        end_idx = min(start_idx + batch_size, len(rows))
+        batch_rows = rows[start_idx:end_idx]
+        
+        # Retry logic for each batch
+        last_error = None
+        for attempt in range(DB_MAX_RETRIES + 1):
+            try:
+                async with connection() as conn:
+                    await conn.execute(f"SET statement_timeout = '{statement_timeout_seconds}s'")
+                    
+                    # Use copy_records_to_table for bulk insert (fastest)
+                    await conn.copy_records_to_table(
+                        table,
+                        records=batch_rows,
+                        columns=columns,
+                    )
+                    total_inserted += len(batch_rows)
+                    break  # Success
+                    
+            except DBUnavailable as e:
+                last_error = e
+                if attempt < DB_MAX_RETRIES:
+                    delay = _jitter(DB_BACKOFF_BASE * (2 ** attempt))
+                    print(f"[DB:BatchInsert] Batch {batch_num + 1}/{num_batches} attempt {attempt + 1} failed, retrying in {delay:.1f}s")
+                    await asyncio.sleep(delay)
+                else:
+                    print(f"[DB:BatchInsert] Batch {batch_num + 1}/{num_batches} failed after {DB_MAX_RETRIES + 1} attempts")
+                    raise
+                    
+            except asyncio.TimeoutError:
+                last_error = DBUnavailable("Batch insert timeout")
+                if attempt < DB_MAX_RETRIES:
+                    delay = _jitter(DB_BACKOFF_BASE * (2 ** attempt))
+                    print(f"[DB:BatchInsert] Batch {batch_num + 1}/{num_batches} timeout, retrying in {delay:.1f}s")
+                    await asyncio.sleep(delay)
+                else:
+                    raise DBUnavailable(f"Batch insert timeout after {DB_MAX_RETRIES + 1} attempts")
+    
+    return total_inserted
+
+
+async def insert_single_row(
+    table: str,
+    columns: list[str],
+    values: tuple,
+    statement_timeout_seconds: int = DB_STATEMENT_TIMEOUT,
+) -> None:
+    """Insert a single row with retry and statement timeout."""
+    placeholders = ", ".join(f"${i+1}" for i in range(len(values)))
+    col_str = ", ".join(columns)
+    query = f"INSERT INTO {table} ({col_str}) VALUES ({placeholders})"
+    
+    await execute_with_retry(query, *values, statement_timeout_seconds=statement_timeout_seconds)

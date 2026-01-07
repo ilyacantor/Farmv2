@@ -14,8 +14,9 @@ from pydantic import BaseModel
 from src.generators.enterprise import EnterpriseGenerator, load_mock_policy_config
 from src.models.policy import PolicyConfig
 from src.services.aod_client import fetch_policy_config
-from src.farm.db import connection as db_connection, ensure_schema, is_healthy, DBUnavailable
+from src.farm.db import connection as db_connection, ensure_schema, is_healthy, DBUnavailable, DB_STATEMENT_TIMEOUT
 from src.farm.snapshot_utils import compute_snapshot_metadata, increment_blob_fetch, get_blob_fetch_count
+from src.farm.jobs import job_manager, JobStatus
 from src.models.planes import (
     SnapshotRequest,
     SnapshotCreateResponse,
@@ -86,6 +87,150 @@ router = APIRouter()
 def compute_fingerprint(tenant_id: str, seed: int, scale: str, enterprise_profile: str, realism_profile: str, data_preset: str = "") -> str:
     data = f"{tenant_id}:{seed}:{scale}:{enterprise_profile}:{realism_profile}:{data_preset}"
     return hashlib.sha256(data.encode()).hexdigest()[:16]
+
+
+async def generate_snapshot_background_job(
+    job_id: str,
+    request_params: dict,
+    fingerprint: str,
+    run_id: str,
+    unique_snapshot_id: str,
+    created_at: str,
+    policy_dict: dict,
+):
+    """
+    Background job for Mega/Enterprise snapshot generation.
+    Uses batched inserts with commit-per-batch to avoid holding pooler session.
+    """
+    import gc
+    from src.models.policy import PolicyConfig
+    
+    try:
+        await job_manager.update_progress(job_id, "initializing", 0, 5, "Starting snapshot generation...")
+        
+        policy = PolicyConfig(**policy_dict)
+        
+        await job_manager.update_progress(job_id, "generating", 1, 5, "Generating synthetic data...")
+        
+        def generate_snapshot_sync():
+            from src.generators.enterprise import EnterpriseGenerator
+            from src.models.planes import ScaleEnum, EnterpriseProfileEnum, RealismProfileEnum, DataPresetEnum
+            
+            generator = EnterpriseGenerator(
+                tenant_id=request_params['tenant_id'],
+                seed=request_params['seed'],
+                scale=ScaleEnum(request_params['scale']),
+                enterprise_profile=EnterpriseProfileEnum(request_params['enterprise_profile']),
+                realism_profile=RealismProfileEnum(request_params['realism_profile']),
+                data_preset=DataPresetEnum(request_params['data_preset']) if request_params.get('data_preset') else None,
+                policy_config=policy,
+            )
+            snapshot = generator.generate()
+            snapshot.meta.snapshot_id = unique_snapshot_id
+            
+            meta_info = {
+                'tenant_id': snapshot.meta.tenant_id,
+                'seed': snapshot.meta.seed,
+                'scale': snapshot.meta.scale.value,
+                'enterprise_profile': snapshot.meta.enterprise_profile.value,
+                'realism_profile': snapshot.meta.realism_profile.value,
+                'created_at': snapshot.meta.created_at,
+            }
+            
+            snapshot_dict = snapshot.model_dump()
+            del snapshot
+            del generator
+            gc.collect()
+            
+            return meta_info, snapshot_dict
+        
+        meta_info, snapshot_dict = await run_in_threadpool(generate_snapshot_sync)
+        
+        await job_manager.update_progress(job_id, "computing_expected", 2, 5, "Computing expected classifications...")
+        
+        def compute_expected_sync():
+            expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
+            snapshot_dict['__expected__'] = expected_block
+            gc.collect()
+        
+        await run_in_threadpool(compute_expected_sync)
+        
+        validation_result = validate_snapshot_expected(snapshot_dict)
+        snapshot_dict['__expected__']['_validation'] = validation_result.to_dict()
+        
+        await job_manager.update_progress(job_id, "serializing", 3, 5, "Serializing snapshot data...")
+        
+        blob_json = json.dumps(snapshot_dict)
+        meta = compute_snapshot_metadata(snapshot_dict, blob_json)
+        del snapshot_dict
+        gc.collect()
+        
+        await job_manager.update_progress(job_id, "storing", 4, 5, "Storing to database...")
+        
+        async with db_connection() as conn:
+            await conn.execute(f"SET statement_timeout = '{DB_STATEMENT_TIMEOUT}s'")
+            
+            await conn.execute("""
+                INSERT INTO runs (run_id, run_fingerprint, created_at, seed, schema_version, enterprise_profile, realism_profile, scale, tenant_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            """, run_id, fingerprint, created_at, request_params['seed'], SCHEMA_VERSION,
+                request_params['enterprise_profile'], request_params['realism_profile'], request_params['scale'], request_params['tenant_id'])
+        
+        async with db_connection() as conn:
+            await conn.execute(f"SET statement_timeout = '{DB_STATEMENT_TIMEOUT}s'")
+            
+            await conn.execute("""
+                INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            """, unique_snapshot_id, run_id, 0, fingerprint,
+                meta_info['tenant_id'], meta_info['seed'], meta_info['scale'],
+                meta_info['enterprise_profile'], meta_info['realism_profile'],
+                meta_info['created_at'], SCHEMA_VERSION, blob_json)
+        
+        async with db_connection() as conn:
+            await conn.execute(f"SET statement_timeout = '{DB_STATEMENT_TIMEOUT}s'")
+            
+            await conn.execute("""
+                INSERT INTO snapshots_meta (snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, backfill_state)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'complete')
+            """, unique_snapshot_id, run_id, fingerprint,
+                meta_info['tenant_id'], meta_info['seed'], meta_info['scale'],
+                meta_info['enterprise_profile'], meta_info['realism_profile'],
+                meta_info['created_at'], SCHEMA_VERSION,
+                meta['total_assets'], json.dumps(meta['plane_counts']),
+                json.dumps(meta['expected_summary']), meta['blob_size_bytes'], meta['blob_hash'])
+        
+        async with db_connection() as conn:
+            await conn.execute(f"SET statement_timeout = '{DB_STATEMENT_TIMEOUT}s'")
+            
+            await conn.execute("""
+                INSERT INTO snapshots_blob (snapshot_id, blob, created_at)
+                VALUES ($1, $2, $3)
+            """, unique_snapshot_id, blob_json, created_at)
+        
+        del blob_json
+        gc.collect()
+        
+        await job_manager.complete_job(job_id, result={
+            "snapshot_id": unique_snapshot_id,
+            "snapshot_fingerprint": fingerprint,
+            "tenant_id": meta_info['tenant_id'],
+            "created_at": meta_info['created_at'],
+            "schema_version": SCHEMA_VERSION,
+            "validation_passed": validation_result.valid,
+            "validation_error_count": len(validation_result.errors),
+        })
+        
+        trace_log("background_snapshot", "COMPLETE", {
+            "job_id": job_id,
+            "snapshot_id": unique_snapshot_id,
+            "validation_passed": validation_result.valid,
+        })
+        
+    except Exception as e:
+        trace_log("background_snapshot", "ERROR", {"job_id": job_id, "error": str(e)})
+        await job_manager.fail_job(job_id, str(e))
+        raise
 
 
 async def complete_expected_block_async(snapshot_id: str, policy):
@@ -193,8 +338,63 @@ async def create_snapshot(request: SnapshotRequest):
     
     policy = await fetch_policy_config()
     
-    # Check if this is a large scale that needs deferred expected computation
+    # Check if this is a large scale that needs background job processing
     is_large_scale = request.scale.value in ('mega', 'enterprise')
+    
+    if is_large_scale:
+        request_params = {
+            'tenant_id': request.tenant_id,
+            'seed': request.seed,
+            'scale': request.scale.value,
+            'enterprise_profile': request.enterprise_profile.value,
+            'realism_profile': request.realism_profile.value,
+            'data_preset': request.data_preset.value if request.data_preset else None,
+        }
+        
+        policy_dict = {
+            'admission': {
+                'noise_floor': policy.admission.noise_floor,
+                'minimum_spend': policy.admission.minimum_spend,
+                'zombie_window_days': policy.admission.zombie_window_days,
+            },
+            'scope': {
+                'include_infra': policy.scope.include_infra,
+                'treat_directory_as_idp': policy.scope.treat_directory_as_idp,
+                'use_policy_engine': policy.scope.use_policy_engine,
+            },
+            'exclusions': policy.exclusions,
+            'infrastructure_seeds': policy.infrastructure_seeds,
+            'corporate_root_domains': policy.corporate_root_domains,
+        }
+        
+        job_id = await job_manager.create_job("snapshot_generation", input_params={
+            "request": request_params,
+            "fingerprint": fingerprint,
+            "snapshot_id": unique_snapshot_id,
+        })
+        
+        job_manager.run_in_background(
+            job_id,
+            generate_snapshot_background_job,
+            request_params=request_params,
+            fingerprint=fingerprint,
+            run_id=run_id,
+            unique_snapshot_id=unique_snapshot_id,
+            created_at=created_at,
+            policy_dict=policy_dict,
+        )
+        
+        return JSONResponse(
+            status_code=202,
+            content={
+                "job_id": job_id,
+                "snapshot_id": unique_snapshot_id,
+                "snapshot_fingerprint": fingerprint,
+                "tenant_id": request.tenant_id,
+                "status": "pending",
+                "message": f"Snapshot generation started. Poll GET /api/jobs/{job_id} for status.",
+            }
+        )
     
     def generate_snapshot_sync():
         """CPU-intensive snapshot generation - runs in thread pool to avoid blocking event loop."""
@@ -212,7 +412,6 @@ async def create_snapshot(request: SnapshotRequest):
         snapshot = generator.generate()
         snapshot.meta.snapshot_id = unique_snapshot_id
         
-        # Extract metadata we need before dumping
         meta_info = {
             'tenant_id': snapshot.meta.tenant_id,
             'seed': snapshot.meta.seed,
@@ -222,7 +421,6 @@ async def create_snapshot(request: SnapshotRequest):
             'created_at': snapshot.meta.created_at,
         }
         
-        # Convert to dict and immediately free the Pydantic object
         snapshot_dict = snapshot.model_dump()
         del snapshot
         del generator
@@ -232,69 +430,7 @@ async def create_snapshot(request: SnapshotRequest):
     
     meta_info, snapshot_dict = await run_in_threadpool(generate_snapshot_sync)
     
-    # For large scales, defer expected block computation to background task
-    if is_large_scale:
-        # Store snapshot WITHOUT expected block first
-        snapshot_dict['__expected__'] = {'_pending': True, '_validation': {'valid': True, 'errors': [], 'warnings': []}}
-        blob_json = json.dumps(snapshot_dict)
-        meta = compute_snapshot_metadata(snapshot_dict, blob_json)
-        
-        async with db_connection() as conn:
-            async with conn.transaction():
-                await conn.execute("""
-                    INSERT INTO runs (run_id, run_fingerprint, created_at, seed, schema_version, enterprise_profile, realism_profile, scale, tenant_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                """, run_id, fingerprint, created_at, request.seed, SCHEMA_VERSION,
-                    request.enterprise_profile.value, request.realism_profile.value, request.scale.value, request.tenant_id)
-                
-                await conn.execute("""
-                    INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                """, unique_snapshot_id, run_id, 0, fingerprint,
-                    meta_info['tenant_id'], meta_info['seed'], meta_info['scale'],
-                    meta_info['enterprise_profile'], meta_info['realism_profile'],
-                    meta_info['created_at'], SCHEMA_VERSION, blob_json)
-                
-                await conn.execute("""
-                    INSERT INTO snapshots_meta (snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, backfill_state)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'pending_expected')
-                """, unique_snapshot_id, run_id, fingerprint,
-                    meta_info['tenant_id'], meta_info['seed'], meta_info['scale'],
-                    meta_info['enterprise_profile'], meta_info['realism_profile'],
-                    meta_info['created_at'], SCHEMA_VERSION,
-                    meta['total_assets'], json.dumps(meta['plane_counts']),
-                    json.dumps(meta['expected_summary']), meta['blob_size_bytes'], meta['blob_hash'])
-                
-                await conn.execute("""
-                    INSERT INTO snapshots_blob (snapshot_id, blob, created_at)
-                    VALUES ($1, $2, $3)
-                """, unique_snapshot_id, blob_json, created_at)
-        
-        # Free memory before background task
-        del snapshot_dict
-        del blob_json
-        import gc
-        gc.collect()
-        
-        # Start background task to compute expected block
-        import asyncio
-        asyncio.create_task(complete_expected_block_async(unique_snapshot_id, policy))
-        
-        total_time = round(time.perf_counter() - total_start, 2)
-        return SnapshotCreateResponse(
-            snapshot_id=unique_snapshot_id,
-            snapshot_fingerprint=fingerprint,
-            tenant_id=meta_info['tenant_id'],
-            created_at=meta_info['created_at'],
-            schema_version=SCHEMA_VERSION,
-            duplicate_of_snapshot_id=None,
-            generation_time_seconds=total_time,
-            validation_passed=True,
-            validation_error_count=0,
-            backfill_state="pending_expected",
-        )
-    
-    # For smaller scales, compute expected block inline (original behavior)
+    # For smaller scales, compute expected block inline
     def compute_expected_sync():
         import gc
         expected_block = compute_expected_block(snapshot_dict, mode="all", policy=policy)
@@ -1928,3 +2064,23 @@ async def compare_asset_data(
                 'aod_is_shadow': aod_asset.get('is_shadow') if aod_asset else None,
             } if farm_trace or aod_asset else {'note': 'Asset not found in either Farm or AOD data'},
         }
+
+
+@router.get("/api/jobs/{job_id}")
+async def get_job(job_id: str):
+    """Get status and progress of a background job."""
+    job = await job_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job.to_dict()
+
+
+@router.get("/api/jobs")
+async def list_jobs(
+    limit: int = Query(default=50, le=100),
+    status: Optional[str] = Query(default=None),
+):
+    """List recent background jobs."""
+    job_status = JobStatus(status) if status else None
+    jobs = await job_manager.list_jobs(limit=limit, status=job_status)
+    return [job.to_dict() for job in jobs]
