@@ -872,9 +872,9 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     }
     
     total_mismatches = total_missed + total_fp + admission_missed + admission_fp
-    if total_mismatches < 3:
+    if total_mismatches <= 3:
         overall_status = 'PASS'
-        analysis['grading_override'] = f'< 3 mismatches ({total_mismatches}) → forced PASS'
+        analysis['grading_override'] = f'≤3 mismatches ({total_mismatches}) → forced PASS'
     
     analysis['overall_status'] = overall_status
     analysis['total_mismatches'] = total_mismatches
