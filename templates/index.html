@@ -2928,7 +2928,7 @@
         }
 
         function showReconcileEraseConfirm() {
-            if (FarmState.reconciliations.length === 0) return;
+            if (!FarmState.reconciliations || FarmState.reconciliations.length === 0) return;
             document.getElementById('eraseReconcileNormal').classList.add('hidden');
             document.getElementById('eraseReconcileConfirm').classList.remove('hidden');
         }
