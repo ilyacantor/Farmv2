@@ -161,37 +161,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configure CORS - allow Replit domains and localhost for development
-# The frontend is served from the same server, so same-origin requests work without CORS
+# Configure CORS with explicit origin whitelist for security
+# Default to localhost for development, override via CORS_ORIGINS env var
 import os
-replit_domains = os.getenv("REPLIT_DOMAINS", "").split(",")
-replit_dev_domain = os.getenv("REPLIT_DEV_DOMAIN", "")
-custom_origins = os.getenv("CORS_ORIGINS", "").split(",")
-
-allowed_origins = [
-    "http://localhost:3000",
-    "http://localhost:5000",
-    "http://localhost:5173",
-    "http://127.0.0.1:5000",
-]
-# Add Replit domains
-for domain in replit_domains:
-    domain = domain.strip()
-    if domain:
-        allowed_origins.append(f"https://{domain}")
-if replit_dev_domain:
-    allowed_origins.append(f"https://{replit_dev_domain}")
-# Add any custom origins from env
-for origin in custom_origins:
-    origin = origin.strip()
-    if origin and origin not in allowed_origins:
-        allowed_origins.append(origin)
+allowed_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
+allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
 
 app.add_middleware(APIJSONErrorMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=allowed_origins,  # Explicit whitelist - no wildcards with credentials
     allow_credentials=True,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],

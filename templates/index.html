@@ -674,20 +674,7 @@
         }
 
         async function apiFetch(url, options = {}) {
-            let response;
-            try {
-                response = await fetch(url, options);
-            } catch (networkError) {
-                // Network-level error (CORS, offline, proxy timeout, etc)
-                throw new APIError(
-                    `Network error: ${networkError?.message || 'Failed to connect'}`,
-                    0,
-                    'network',
-                    url,
-                    null
-                );
-            }
-            
+            const response = await fetch(url, options);
             const contentType = response.headers.get('content-type') || '';
             
             if (!contentType.includes('application/json')) {
@@ -702,18 +689,7 @@
                 );
             }
             
-            let data;
-            try {
-                data = await response.json();
-            } catch (parseError) {
-                throw new APIError(
-                    `JSON parse error: ${parseError?.message || 'Invalid JSON'}`,
-                    response.status,
-                    'parse',
-                    url,
-                    null
-                );
-            }
+            const data = await response.json();
             
             if (!response.ok) {
                 throw new APIError(
@@ -728,13 +704,6 @@
             return data;
         }
 
-        class StaleRequestError extends Error {
-            constructor() {
-                super('Request superseded by newer request');
-                this.name = 'StaleRequestError';
-            }
-        }
-
         const RequestController = {
             _pendingRequests: new Map(),
             _requestId: 0,
@@ -745,7 +714,7 @@
                 try {
                     const result = await fetchFn();
                     if (this._pendingRequests.get(key) !== id) {
-                        throw new StaleRequestError();
+                        return null;
                     }
                     return result;
                 } finally {
@@ -1258,13 +1227,7 @@
                     renderConfigSnapshotsList();
                     return d; 
                 }).catch(e => {
-                    // Ignore stale request errors - don't clear cache
-                    if (e instanceof StaleRequestError || e?.name === 'StaleRequestError') {
-                        console.debug('[loadAllData] Snapshots request superseded, keeping existing cache');
-                        return FarmState.snapshots || [];
-                    }
-                    const errMsg = e?.message || e?.toString?.() || JSON.stringify(e) || 'Unknown error';
-                    console.error('[loadAllData] Snapshots API error:', errMsg, e);
+                    console.error('[loadAllData] Snapshots API error:', e);
                     FarmState.snapshots = [];
                     document.getElementById('snapshotCount').textContent = '0';
                     document.getElementById('configSnapshotCount').textContent = '0';
@@ -1289,14 +1252,7 @@
                     renderReconciliationsList();
                     return d; 
                 }).catch(e => {
-                    // Ignore stale request errors - don't clear cache
-                    if (e instanceof StaleRequestError || e?.name === 'StaleRequestError') {
-                        console.debug('[loadAllData] Reconcile request superseded, keeping existing cache');
-                        return FarmState.reconciliationsListCache || [];
-                    }
-                    // Log with better details for debugging
-                    const errMsg = e?.message || e?.toString?.() || JSON.stringify(e) || 'Unknown error';
-                    console.error('[loadAllData] Reconcile API error:', errMsg, e);
+                    console.error('[loadAllData] Reconcile API error:', e);
                     FarmState.reconciliationsListCache = [];
                     FarmState.reconciliationsCache = {};
                     renderReconciliationsList();
