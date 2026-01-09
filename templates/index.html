@@ -674,34 +674,69 @@
         }
 
         async function apiFetch(url, options = {}) {
-            const response = await fetch(url, options);
-            const contentType = response.headers.get('content-type') || '';
+            const timeout = options.timeout || 30000;
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeout);
             
-            if (!contentType.includes('application/json')) {
-                const rawText = await response.text();
-                const preview = rawText.substring(0, 200);
-                throw new APIError(
-                    `Server returned non-JSON response (${contentType || 'no content-type'})`,
-                    response.status,
-                    'unknown',
-                    url,
-                    preview
-                );
+            try {
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                
+                const contentType = response.headers.get('content-type') || '';
+                
+                if (!contentType.includes('application/json')) {
+                    const rawText = await response.text();
+                    const preview = rawText.substring(0, 200);
+                    throw new APIError(
+                        `Server returned non-JSON response (${contentType || 'no content-type'})`,
+                        response.status,
+                        'unknown',
+                        url,
+                        preview
+                    );
+                }
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new APIError(
+                        data.error || data.detail || `HTTP ${response.status}`,
+                        response.status,
+                        data.request_id || 'unknown',
+                        url,
+                        null
+                    );
+                }
+                
+                return data;
+            } catch (err) {
+                clearTimeout(timeoutId);
+                if (err.name === 'AbortError') {
+                    throw new APIError('Network error: Request timed out', 0, 'timeout', url, null);
+                }
+                if (err instanceof APIError) throw err;
+                throw new APIError(`Network error: ${err.message}`, 0, 'network', url, null);
             }
-            
-            const data = await response.json();
-            
-            if (!response.ok) {
-                throw new APIError(
-                    data.error || data.detail || `HTTP ${response.status}`,
-                    response.status,
-                    data.request_id || 'unknown',
-                    url,
-                    null
-                );
+        }
+        
+        async function apiFetchWithRetry(url, options = {}, maxRetries = 2) {
+            let lastError;
+            for (let attempt = 0; attempt <= maxRetries; attempt++) {
+                try {
+                    return await apiFetch(url, { ...options, timeout: 45000 });
+                } catch (err) {
+                    lastError = err;
+                    if (attempt < maxRetries && (err.status === 0 || err.requestId === 'timeout')) {
+                        await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+                        continue;
+                    }
+                    throw err;
+                }
             }
-            
-            return data;
+            throw lastError;
         }
 
         const RequestController = {
@@ -1235,7 +1270,7 @@
                     throw e;
                 });
                 
-                const reconcilePromise = apiFetch('/api/reconcile?limit=500').then(d => { 
+                const reconcilePromise = apiFetchWithRetry('/api/reconcile?limit=500').then(d => { 
                     if (!Array.isArray(d)) {
                         console.error('[loadAllData] Unexpected reconcile response type:', typeof d);
                         d = [];
