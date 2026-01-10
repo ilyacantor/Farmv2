@@ -118,6 +118,9 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - **Background Job System:** Mega/Enterprise scale snapshots use a background job pattern (202 + job_id) to avoid holding database pooler sessions. Jobs have progress tracking and are polled by the UI.
 - **Supabase Pooler Optimized:** Uses transaction pooling with statement timeouts (30s), max 2 concurrent DB operations, and batch inserts with commit-per-batch to prevent pooler saturation.
 - **Discrepancy-Based Assessment Triggers:** Automatic generation of detailed markdown assessment reports for non-perfect reconciliations, triggered by any classification or admission mismatch.
+- **Policy Differences Tracking:** Reconciliation analysis identifies and explains expected discrepancies due to intentional design choices between Farm and AOD:
+  - *Governance-Only Admission:* Farm admits assets based on governance presence alone (IdP/CMDB = system-of-record truth), while AOD requires discovery evidence (live observable surface area). These produce expected false negatives and are NOT defects.
+  - *Key Normalization:* Domain canonicalization differences between Farm and AOD may result in missed matches even when both systems processed the same evidence.
 - **Error Handling:** Emphasizes explicit error statuses (`UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`) and guarantees JSON responses for API errors.
 
 **Design Choices:**

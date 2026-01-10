@@ -821,6 +821,62 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         }
     }
     
+    # Policy Differences: Identify expected discrepancies due to intentional design choices
+    # Farm admits assets based on governance presence alone (IdP/CMDB = system-of-record truth)
+    # AOD requires discovery evidence (live observable surface area)
+    # These are NOT defects - they are expected false negatives relative to each other
+    policy_diff_governance_only = []
+    policy_diff_key_normalization = []
+    
+    for entry in cataloged_missed_details:
+        is_governed = entry.get('idp_present', False) or entry.get('cmdb_present', False)
+        discovery_count = entry.get('discovery_count', 0)
+        
+        # Pattern 1: Governance-based admission (Farm trusts IdP/CMDB, AOD requires discovery)
+        if is_governed and discovery_count < 2:
+            policy_diff_governance_only.append({
+                'asset_key': entry.get('asset_key'),
+                'idp_present': entry.get('idp_present', False),
+                'cmdb_present': entry.get('cmdb_present', False),
+                'vendor_governance': entry.get('vendor_governance'),
+                'discovery_count': discovery_count,
+                'discovery_sources': entry.get('discovery_sources', []),
+                'farm_classification': entry.get('farm_classification', 'admitted'),
+                'reason': 'GOVERNANCE_ONLY_ADMISSION',
+            })
+    
+    # Pattern 2: Key normalization differences (domain canonicalization mismatch)
+    for entry in analysis['missed_shadows'] + analysis['missed_zombies']:
+        if entry.get('is_key_drift', False) or entry.get('rca_hint') == 'KEY_NORMALIZATION_MISMATCH':
+            policy_diff_key_normalization.append({
+                'asset_key': entry.get('asset_key'),
+                'farm_reason_codes': entry.get('farm_reason_codes', []),
+                'reason': 'KEY_NORMALIZATION_MISMATCH',
+            })
+    
+    analysis['policy_differences'] = {
+        'governance_only_admission': {
+            'count': len(policy_diff_governance_only),
+            'assets': policy_diff_governance_only,
+            'explanation': (
+                "Farm intentionally admits assets based on governance presence alone (IdP/CMDB), "
+                "modeling enterprise system-of-record truth. AOD intentionally requires discovery "
+                "evidence, modeling live observable surface area. These produce expected false "
+                "negatives relative to each other and are not defects."
+            ),
+        },
+        'key_normalization': {
+            'count': len(policy_diff_key_normalization),
+            'assets': policy_diff_key_normalization,
+            'explanation': (
+                "Domain key normalization differences between Farm and AOD. Farm uses one "
+                "canonicalization approach, AOD uses another. These may result in missed "
+                "matches even when both systems processed the same underlying evidence."
+            ),
+        },
+        'total_policy_diff_count': len(policy_diff_governance_only) + len(policy_diff_key_normalization),
+    }
+    
     classification_materiality = max(2, int(total_expected * 0.1))
     admission_total = len(farm_admitted_keys) + len(farm_rejected_keys)
     admission_matched = len(cataloged_matched) + len(rejected_matched)
@@ -1031,6 +1087,55 @@ def generate_assessment_markdown(
     lines.append(f"- **Admitted:** {funnel.get('admitted_count', 0)}")
     lines.append(f"- **Cataloged (final):** {funnel.get('final_cataloged', 0)}")
     lines.append("")
+    
+    # Policy Differences Section
+    policy_diffs = analysis.get('policy_differences', {})
+    total_policy_diff = policy_diffs.get('total_policy_diff_count', 0)
+    
+    if total_policy_diff > 0:
+        lines.append("---")
+        lines.append("")
+        lines.append("## Policy Differences (Expected Discrepancies)")
+        lines.append("")
+        lines.append("> **Note:** The following discrepancies are expected due to intentional design differences between Farm and AOD. They are NOT defects.")
+        lines.append("")
+        
+        governance_only = policy_diffs.get('governance_only_admission', {})
+        if governance_only.get('count', 0) > 0:
+            lines.append("### Governance-Only Admission")
+            lines.append("")
+            lines.append(f"**{governance_only.get('count', 0)} assets** admitted by Farm based on governance presence alone.")
+            lines.append("")
+            lines.append(f"> {governance_only.get('explanation', '')}")
+            lines.append("")
+            lines.append("| Asset | IdP | CMDB | Vendor | Discovery Count |")
+            lines.append("|-------|-----|------|--------|-----------------|")
+            for asset in governance_only.get('assets', [])[:20]:
+                idp = 'Yes' if asset.get('idp_present') else 'No'
+                cmdb = 'Yes' if asset.get('cmdb_present') else 'No'
+                vendor = asset.get('vendor_governance') or '-'
+                disc = asset.get('discovery_count', 0)
+                lines.append(f"| {asset.get('asset_key', 'N/A')} | {idp} | {cmdb} | {vendor} | {disc} |")
+            if governance_only.get('count', 0) > 20:
+                lines.append(f"| ... and {governance_only.get('count', 0) - 20} more | | | | |")
+            lines.append("")
+        
+        key_norm = policy_diffs.get('key_normalization', {})
+        if key_norm.get('count', 0) > 0:
+            lines.append("### Key Normalization Mismatch")
+            lines.append("")
+            lines.append(f"**{key_norm.get('count', 0)} assets** with domain canonicalization differences.")
+            lines.append("")
+            lines.append(f"> {key_norm.get('explanation', '')}")
+            lines.append("")
+            lines.append("| Asset | Farm Reason Codes |")
+            lines.append("|-------|-------------------|")
+            for asset in key_norm.get('assets', [])[:20]:
+                codes = ', '.join(asset.get('farm_reason_codes', [])[:3]) or '-'
+                lines.append(f"| {asset.get('asset_key', 'N/A')} | {codes} |")
+            if key_norm.get('count', 0) > 20:
+                lines.append(f"| ... and {key_norm.get('count', 0) - 20} more | |")
+            lines.append("")
     
     lines.append("---")
     lines.append("")
