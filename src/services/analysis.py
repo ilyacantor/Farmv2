@@ -1059,8 +1059,27 @@ def generate_assessment_markdown(
     
     lines.append("### Summary Table")
     lines.append("")
+    
+    admission_analysis = analysis.get('admission_reconciliation', {})
+    cataloged_data = admission_analysis.get('cataloged', {})
+    rejected_data = admission_analysis.get('rejected', {})
+    cataloged_matched = cataloged_data.get('matched_keys', [])
+    cataloged_missed = cataloged_data.get('missed_keys', [])
+    cataloged_fp = cataloged_data.get('fp_keys', [])
+    rejected_matched = rejected_data.get('matched_keys', [])
+    rejected_missed = rejected_data.get('missed_keys', [])
+    rejected_fp = rejected_data.get('fp_keys', [])
+    
     lines.append("| Category | Farm Expected | AOD Found | Matched | Missed | FP |")
     lines.append("|----------|---------------|-----------|---------|--------|-----|")
+    
+    farm_cataloged = len(cataloged_matched) + len(cataloged_missed)
+    aod_cataloged = len(cataloged_matched) + len(cataloged_fp)
+    lines.append(f"| **Cataloged** | {farm_cataloged} | {aod_cataloged} | {len(cataloged_matched)} | {len(cataloged_missed)} | {len(cataloged_fp)} |")
+    
+    farm_rejected = len(rejected_matched) + len(rejected_missed)
+    aod_rejected = len(rejected_matched) + len(rejected_fp)
+    lines.append(f"| **Rejected** | {farm_rejected} | {aod_rejected} | {len(rejected_matched)} | {len(rejected_missed)} | {len(rejected_fp)} |")
     
     farm_shadows = summary.get('farm_shadows', 0)
     aod_shadows = summary.get('aod_shadows', 0)
