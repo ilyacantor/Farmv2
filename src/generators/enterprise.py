@@ -567,10 +567,10 @@ class EnterpriseGenerator:
         """Generate observations for an app from at least min_sources distinct sources.
         
         This is the core of "Coupled Evidence Generation":
-        - Ensures source diversity for admission (noise_floor=2)
+        - Ensures source diversity for admission (noise_floor=1)
         - Core Stack apps get 3+ sources
         - Departmental apps get 2+ sources
-        - Shadow/Noise gets 1 source (correctly rejected or edge case)
+        - Shadow/Noise gets 1 source (admitted with single source)
         
         Args:
             app: Dict with name, domain, vendor

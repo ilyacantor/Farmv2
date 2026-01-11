@@ -7,7 +7,7 @@ from typing import Optional
 class AdmissionConfig(BaseModel):
     """Thresholds for admission gates."""
     minimum_spend: int = 200
-    noise_floor: int = 2
+    noise_floor: int = 1
     zombie_window_days: int = 90
 
 
@@ -71,9 +71,7 @@ class PolicyConfig(BaseModel):
         if finance_spend >= self.admission.minimum_spend:
             return True, None
         
-        if discovery_sources_count == 1:
-            return False, "Single source"
-        elif discovery_sources_count == 0:
+        if discovery_sources_count == 0:
             return False, "No discovery sources"
         else:
             return False, "No admission criteria satisfied"
@@ -87,7 +85,7 @@ class PolicyConfig(BaseModel):
         return cls(
             admission=AdmissionConfig(
                 minimum_spend=admission_data.get("minimum_spend", 200),
-                noise_floor=admission_data.get("noise_floor", 2),
+                noise_floor=admission_data.get("noise_floor", 1),
                 zombie_window_days=admission_data.get("zombie_window_days", 90),
             ),
             scope=ScopeConfig(
@@ -112,7 +110,7 @@ class PolicyConfig(BaseModel):
         return cls(
             admission=AdmissionConfig(
                 minimum_spend=200,
-                noise_floor=2,
+                noise_floor=1,
                 zombie_window_days=90,
             ),
             scope=ScopeConfig(
