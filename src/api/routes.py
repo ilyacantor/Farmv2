@@ -316,21 +316,22 @@ async def create_snapshot(request: SnapshotRequest):
         request.data_preset.value if request.data_preset else "",
     )
     
-    async with db_connection() as conn:
-        existing = await conn.fetchrow(
-            "SELECT snapshot_id, tenant_id, created_at, schema_version FROM snapshots WHERE snapshot_fingerprint = $1 ORDER BY created_at ASC LIMIT 1",
-            fingerprint
-        )
-        
-        if existing:
-            return SnapshotCreateResponse(
-                snapshot_id=existing["snapshot_id"],
-                snapshot_fingerprint=fingerprint,
-                tenant_id=existing["tenant_id"],
-                created_at=existing["created_at"],
-                schema_version=existing["schema_version"],
-                duplicate_of_snapshot_id=existing["snapshot_id"],
+    if not request.force:
+        async with db_connection() as conn:
+            existing = await conn.fetchrow(
+                "SELECT snapshot_id, tenant_id, created_at, schema_version FROM snapshots WHERE snapshot_fingerprint = $1 ORDER BY created_at ASC LIMIT 1",
+                fingerprint
             )
+            
+            if existing:
+                return SnapshotCreateResponse(
+                    snapshot_id=existing["snapshot_id"],
+                    snapshot_fingerprint=fingerprint,
+                    tenant_id=existing["tenant_id"],
+                    created_at=existing["created_at"],
+                    schema_version=existing["schema_version"],
+                    duplicate_of_snapshot_id=existing["snapshot_id"],
+                )
     
     run_id = str(uuid.uuid4())
     unique_snapshot_id = str(uuid.uuid4())

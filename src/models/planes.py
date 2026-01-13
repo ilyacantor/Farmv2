@@ -353,6 +353,7 @@ class SnapshotRequest(BaseModel):
     enterprise_profile: EnterpriseProfileEnum = EnterpriseProfileEnum.modern_saas
     realism_profile: RealismProfileEnum = RealismProfileEnum.typical
     data_preset: Optional[DataPresetEnum] = None
+    force: bool = False
 
 
 class SnapshotResponse(BaseModel):
