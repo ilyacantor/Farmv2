@@ -285,14 +285,29 @@ async def fetch_policy_config(force_refresh: bool = False) -> PolicyConfig:
             
             if resp.status_code == 200:
                 data = resp.json()
+                
+                raw_admission = data.get("admission", {})
+                raw_noise_floor = raw_admission.get("noise_floor")
+                print(f"[POLICY_DEBUG] raw_noise_floor={raw_noise_floor} type={type(raw_noise_floor).__name__}")
+                print(f"[POLICY_DEBUG] raw_admission_keys={list(raw_admission.keys()) if raw_admission else []}")
+                print(f"[POLICY_DEBUG] top_level_keys={list(data.keys())}")
+                trace_log("aod_client", "policy_raw_debug", {
+                    "raw_noise_floor_value": raw_noise_floor,
+                    "raw_noise_floor_type": type(raw_noise_floor).__name__,
+                    "raw_admission_keys": list(raw_admission.keys()) if raw_admission else [],
+                    "top_level_keys": list(data.keys()),
+                })
+                
                 policy = PolicyConfig.from_aod_response(data)
                 _record_success()
                 
                 _policy_cache = policy
                 _policy_cache_time = time.time()
                 
+                print(f"[POLICY_DEBUG] parsed_noise_floor={policy.admission.noise_floor} type={type(policy.admission.noise_floor).__name__}")
                 trace_log("aod_client", "policy_fetch_success", {
                     "noise_floor": policy.admission.noise_floor,
+                    "noise_floor_type": type(policy.admission.noise_floor).__name__,
                     "minimum_spend": policy.admission.minimum_spend,
                     "zombie_window_days": policy.admission.zombie_window_days,
                     "exclusions_count": len(policy.exclusions),
