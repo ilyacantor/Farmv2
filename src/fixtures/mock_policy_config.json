@@ -1,7 +1,7 @@
 {
   "admission": {
     "minimum_spend": 200,
-    "noise_floor": 2,
+    "noise_floor": 1,
     "zombie_window_days": 90
   },
   "scope": {
