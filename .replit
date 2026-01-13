@@ -43,4 +43,3 @@ run = ["python", "-m", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port",
 [userenv.shared]
 AOD_BASE_URL = "https://76e34f41-bf5c-472f-b3ef-fba343165178-00-8ykfyky4oicj.worf.replit.dev/"
 FARM_URL = "https://63971109-a901-48bc-a71f-89583b2e11d4-00-1do0vncksilxt.janeway.replit.dev/"
-USE_AOD_EXPLAIN_STUB = "true"
