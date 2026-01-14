@@ -125,16 +125,57 @@ class PolicyConfig(BaseModel):
 
     @classmethod
     def from_aod_response(cls, data: dict) -> "PolicyConfig":
-        """Parse AOD's /api/v1/policy/config response."""
+        """Parse AOD's /api/v1/policy/config response.
+        
+        AOD uses nested structure:
+        - exclusion_lists.banned_domains, .infrastructure_domains, .custom_exclusions
+        - admission_gates for secondary gate settings
+        - scope_toggles for scope settings
+        - activity_windows for zombie_window_days
+        
+        Also supports flat structure from policy_master.json for backwards compatibility.
+        """
+        # AOD nested structures
         admission_data = data.get("admission", {})
-        scope_data = data.get("scope", {})
+        admission_gates = data.get("admission_gates", {})
+        scope_data = data.get("scope", data.get("scope_toggles", {}))
+        activity_windows = data.get("activity_windows", {})
+        exclusion_lists = data.get("exclusion_lists", {})
         secondary_gates_data = data.get("secondary_gates", {})
+        
+        # Merge admission settings from multiple sources
+        minimum_spend = admission_data.get("minimum_spend") or data.get("finance_thresholds", {}).get("minimum_spend", 200)
+        noise_floor = admission_data.get("noise_floor") or admission_gates.get("noise_floor", 1)
+        zombie_window = admission_data.get("zombie_window_days") or activity_windows.get("zombie_window_days", 90)
+        
+        # Secondary gates can come from admission_gates, admission, or secondary_gates
+        require_sso = (
+            secondary_gates_data.get("require_sso_for_idp") or
+            admission_gates.get("require_sso_for_idp") or
+            admission_data.get("require_sso_for_idp", True)
+        )
+        require_valid_ci = (
+            secondary_gates_data.get("require_valid_ci_type") or
+            admission_gates.get("require_valid_ci_type") or
+            admission_data.get("require_valid_ci_type", True)
+        )
+        require_valid_lifecycle = (
+            secondary_gates_data.get("require_valid_lifecycle") or
+            admission_gates.get("require_valid_lifecycle") or
+            admission_data.get("require_valid_lifecycle", True)
+        )
+        
+        # Exclusion lists - check nested structure first, then flat
+        exclusions = exclusion_lists.get("custom_exclusions") or data.get("exclusions", [])
+        infrastructure_seeds = exclusion_lists.get("infrastructure_domains") or data.get("infrastructure_seeds", [])
+        corporate_root_domains = exclusion_lists.get("corporate_root_domains") or data.get("corporate_root_domains", [])
+        banned_domains = exclusion_lists.get("banned_domains") or data.get("banned_domains", [])
         
         return cls(
             admission=AdmissionConfig(
-                minimum_spend=admission_data.get("minimum_spend", 200),
-                noise_floor=admission_data.get("noise_floor", 1),
-                zombie_window_days=admission_data.get("zombie_window_days", 90),
+                minimum_spend=int(minimum_spend),
+                noise_floor=int(noise_floor),
+                zombie_window_days=int(zombie_window),
             ),
             scope=ScopeConfig(
                 include_infra=scope_data.get("include_infra", False),
@@ -142,17 +183,17 @@ class PolicyConfig(BaseModel):
                 use_policy_engine=scope_data.get("use_policy_engine", False),
             ),
             secondary_gates=SecondaryGatesConfig(
-                require_sso_for_idp=secondary_gates_data.get("require_sso_for_idp", True),
-                require_valid_ci_type=secondary_gates_data.get("require_valid_ci_type", True),
-                require_valid_lifecycle=secondary_gates_data.get("require_valid_lifecycle", True),
+                require_sso_for_idp=require_sso,
+                require_valid_ci_type=require_valid_ci,
+                require_valid_lifecycle=require_valid_lifecycle,
                 valid_ci_types=secondary_gates_data.get("valid_ci_types", ["application", "service", "database", "server", "network_device", "storage"]),
                 valid_lifecycle_states=secondary_gates_data.get("valid_lifecycle_states", ["active", "development", "staging", "production", "maintenance"]),
                 invalid_lifecycle_states=secondary_gates_data.get("invalid_lifecycle_states", ["retired", "decommissioned", "deprecated", "archived"]),
             ),
-            exclusions=data.get("exclusions", []),
-            infrastructure_seeds=data.get("infrastructure_seeds", []),
-            corporate_root_domains=data.get("corporate_root_domains", []),
-            banned_domains=data.get("banned_domains", []),
+            exclusions=exclusions,
+            infrastructure_seeds=infrastructure_seeds,
+            corporate_root_domains=corporate_root_domains,
+            banned_domains=banned_domains,
         )
 
     @classmethod
