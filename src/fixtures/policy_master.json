@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.0.0",
+  "description": "Single source of truth for Farm and AOD admission/classification policy. Changes here auto-sync both systems.",
+  
+  "admission": {
+    "minimum_spend": 200,
+    "noise_floor": 1,
+    "zombie_window_days": 90
+  },
+  
+  "scope": {
+    "include_infra": false,
+    "treat_directory_as_idp": false,
+    "use_policy_engine": false
+  },
+  
+  "secondary_gates": {
+    "require_sso_for_idp": true,
+    "require_valid_ci_type": true,
+    "require_valid_lifecycle": true,
+    "valid_ci_types": ["application", "service", "database", "server", "network_device", "storage"],
+    "valid_lifecycle_states": ["active", "development", "staging", "production", "maintenance"],
+    "invalid_lifecycle_states": ["retired", "decommissioned", "deprecated", "archived"]
+  },
+  
+  "exclusions": [],
+  
+  "infrastructure_seeds": [
+    "postgresql.org",
+    "mysql.com",
+    "apache.org",
+    "redis.io",
+    "redis.com",
+    "mongodb.com",
+    "elastic.co",
+    "elasticsearch.com",
+    "kafka.apache.org",
+    "nginx.org",
+    "docker.com",
+    "kubernetes.io",
+    "linux.org",
+    "gnu.org",
+    "python.org",
+    "nodejs.org",
+    "golang.org",
+    "rust-lang.org",
+    "ruby-lang.org",
+    "grafana.com",
+    "jenkins.io",
+    "terraform.io",
+    "hashicorp.com",
+    "prometheus.io"
+  ],
+  
+  "corporate_root_domains": [
+    "google.com",
+    "microsoft.com",
+    "amazon.com",
+    "apple.com",
+    "hubspot.com",
+    "salesforce.com",
+    "servicenow.com",
+    "oracle.com",
+    "adobe.com",
+    "atlassian.com",
+    "dropbox.com",
+    "slack.com",
+    "zoom.com"
+  ],
+  
+  "banned_domains": [
+    "tiktok.com",
+    "bytedance.com",
+    "wechat.com",
+    "weixin.qq.com"
+  ]
+}

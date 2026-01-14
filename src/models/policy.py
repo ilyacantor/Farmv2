@@ -1,5 +1,7 @@
 """PolicyConfig schema - consumed from AOD, never defined locally."""
 
+import json
+import os
 from pydantic import BaseModel
 from typing import Optional
 
@@ -18,19 +20,64 @@ class ScopeConfig(BaseModel):
     use_policy_engine: bool = False
 
 
+class SecondaryGatesConfig(BaseModel):
+    """Secondary admission gates that filter IdP/CMDB evidence.
+    
+    When enabled, these gates cause IdP/CMDB records that don't meet criteria
+    to be treated as if they don't exist (NO_IDP/NO_CMDB).
+    """
+    require_sso_for_idp: bool = True
+    require_valid_ci_type: bool = True
+    require_valid_lifecycle: bool = True
+    valid_ci_types: list[str] = ["application", "service", "database", "server", "network_device", "storage"]
+    valid_lifecycle_states: list[str] = ["active", "development", "staging", "production", "maintenance"]
+    invalid_lifecycle_states: list[str] = ["retired", "decommissioned", "deprecated", "archived"]
+
+
 class PolicyConfig(BaseModel):
     """
     Central configuration for admission/classification logic.
     
     INVARIANT: Farm NEVER defines these values locally.
-    They are always fetched from AOD or passed as parameters.
+    They are always fetched from AOD or loaded from policy_master.json.
     """
     admission: AdmissionConfig = AdmissionConfig()
     scope: ScopeConfig = ScopeConfig()
+    secondary_gates: SecondaryGatesConfig = SecondaryGatesConfig()
     exclusions: list[str] = []
     infrastructure_seeds: list[str] = []
     corporate_root_domains: list[str] = []
     banned_domains: list[str] = []
+
+    def idp_passes_gates(self, has_sso: bool) -> bool:
+        """Check if an IdP object passes secondary gates.
+        
+        When require_sso_for_idp is true, IdP objects without SSO
+        are treated as if they don't exist (NO_IDP).
+        """
+        if not self.secondary_gates.require_sso_for_idp:
+            return True
+        return has_sso
+
+    def cmdb_passes_gates(self, ci_type: Optional[str], lifecycle: Optional[str]) -> bool:
+        """Check if a CMDB CI passes secondary gates.
+        
+        When require_valid_ci_type/require_valid_lifecycle are true,
+        CIs with invalid types/lifecycles are treated as NO_CMDB.
+        """
+        if self.secondary_gates.require_valid_ci_type and ci_type:
+            ci_type_lower = ci_type.lower()
+            valid_types = [t.lower() for t in self.secondary_gates.valid_ci_types]
+            if ci_type_lower not in valid_types:
+                return False
+        
+        if self.secondary_gates.require_valid_lifecycle and lifecycle:
+            lifecycle_lower = lifecycle.lower()
+            invalid_states = [s.lower() for s in self.secondary_gates.invalid_lifecycle_states]
+            if lifecycle_lower in invalid_states:
+                return False
+        
+        return True
 
     def is_excluded(self, domain: str) -> bool:
         """Check if domain should be excluded from classification."""
@@ -81,6 +128,7 @@ class PolicyConfig(BaseModel):
         """Parse AOD's /api/v1/policy/config response."""
         admission_data = data.get("admission", {})
         scope_data = data.get("scope", {})
+        secondary_gates_data = data.get("secondary_gates", {})
         
         return cls(
             admission=AdmissionConfig(
@@ -93,11 +141,37 @@ class PolicyConfig(BaseModel):
                 treat_directory_as_idp=scope_data.get("treat_directory_as_idp", False),
                 use_policy_engine=scope_data.get("use_policy_engine", False),
             ),
+            secondary_gates=SecondaryGatesConfig(
+                require_sso_for_idp=secondary_gates_data.get("require_sso_for_idp", True),
+                require_valid_ci_type=secondary_gates_data.get("require_valid_ci_type", True),
+                require_valid_lifecycle=secondary_gates_data.get("require_valid_lifecycle", True),
+                valid_ci_types=secondary_gates_data.get("valid_ci_types", ["application", "service", "database", "server", "network_device", "storage"]),
+                valid_lifecycle_states=secondary_gates_data.get("valid_lifecycle_states", ["active", "development", "staging", "production", "maintenance"]),
+                invalid_lifecycle_states=secondary_gates_data.get("invalid_lifecycle_states", ["retired", "decommissioned", "deprecated", "archived"]),
+            ),
             exclusions=data.get("exclusions", []),
             infrastructure_seeds=data.get("infrastructure_seeds", []),
             corporate_root_domains=data.get("corporate_root_domains", []),
             banned_domains=data.get("banned_domains", []),
         )
+
+    @classmethod
+    def from_policy_master(cls, path: Optional[str] = None) -> "PolicyConfig":
+        """Load policy from policy_master.json - single source of truth for Farm and AOD.
+        
+        This ensures both systems use identical admission gates.
+        """
+        if path is None:
+            path = os.path.join(os.path.dirname(__file__), "..", "fixtures", "policy_master.json")
+        
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            return cls.from_aod_response(data)
+        except FileNotFoundError:
+            from src.services.logging import trace_log
+            trace_log("policy", "policy_master_not_found", {"path": path})
+            return cls.default_fallback()
 
     @classmethod
     def default_fallback(cls) -> "PolicyConfig":
