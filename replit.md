@@ -121,6 +121,13 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - **Policy Differences Tracking:** Reconciliation analysis identifies and explains expected discrepancies due to intentional design choices between Farm and AOD:
   - *Governance-Only Admission:* Farm admits assets based on governance presence alone (IdP/CMDB = system-of-record truth), while AOD requires discovery evidence (live observable surface area). These produce expected false negatives and are NOT defects.
   - *Key Normalization:* Domain canonicalization differences between Farm and AOD may result in missed matches even when both systems processed the same evidence.
+- **Analysis Versioning:** Prevents stale cached analyses from resurfacing as logic evolves:
+  - `CURRENT_ANALYSIS_VERSION` constant in `src/services/constants.py` - bump when categorization logic changes
+  - `analysis_version` and `analysis_computed_at` columns track when each analysis was computed
+  - Auto-recompute on version mismatch: if cached version != CURRENT_ANALYSIS_VERSION, recompute automatically
+  - Migration endpoint `/api/admin/migrate-stale-analyses` clears all stale cached analyses
+  - Stats endpoint `/api/admin/analysis-version-stats` shows version distribution across reconciliations
+  - Assessment reports show "Analysis vN computed at <time>" in header for transparency
 - **Error Handling:** Emphasizes explicit error statuses (`UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`) and guarantees JSON responses for API errors.
 
 **Design Choices:**

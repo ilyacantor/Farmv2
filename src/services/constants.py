@@ -1,3 +1,7 @@
+# Analysis versioning - bump when categorization logic changes
+# This triggers auto-recompute of stale cached analyses
+CURRENT_ANALYSIS_VERSION = 1
+
 INFRASTRUCTURE_DOMAINS = {
     'postgresql.org',
     'mysql.com',

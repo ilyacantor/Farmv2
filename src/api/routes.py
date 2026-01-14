@@ -40,6 +40,7 @@ from src.services.constants import (
     DOMAIN_TO_VENDOR,
     EXTERNAL_DOMAIN_TLDS,
     get_domain_to_vendor_map,
+    CURRENT_ANALYSIS_VERSION,
 )
 from src.services.key_normalization import (
     normalize_name,
@@ -890,6 +891,8 @@ async def _create_reconciliation_internal(parsed_request: ReconcileRequest, raw_
     reconciliation_id = str(uuid.uuid4())
     created_at = datetime.utcnow().isoformat() + "Z"
     
+    analysis_computed_at = created_at
+    
     try:
         assessment_md = generate_assessment_markdown(
             reconciliation_id=reconciliation_id,
@@ -899,7 +902,9 @@ async def _create_reconciliation_internal(parsed_request: ReconcileRequest, raw_
             created_at=created_at,
             analysis=analysis,
             farm_expectations=farm_expectations.model_dump(),
-            aod_payload=aod_payload
+            aod_payload=aod_payload,
+            analysis_version=CURRENT_ANALYSIS_VERSION,
+            analysis_computed_at=analysis_computed_at
         )
     except Exception as e:
         trace_log("routes", "assessment_generation_failed", {
@@ -911,11 +916,11 @@ async def _create_reconciliation_internal(parsed_request: ReconcileRequest, raw_
     
     async with db_connection() as conn:
         await conn.execute("""
-            INSERT INTO reconciliations (reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, aod_payload_json, farm_expectations_json, report_text, status, analysis_json, assessment_md)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            INSERT INTO reconciliations (reconciliation_id, snapshot_id, tenant_id, aod_run_id, created_at, aod_payload_json, farm_expectations_json, report_text, status, analysis_json, assessment_md, analysis_version, analysis_computed_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         """, reconciliation_id, parsed_request.snapshot_id, parsed_request.tenant_id, parsed_request.aod_run_id,
             created_at, json.dumps(aod_payload), json.dumps(farm_expectations.model_dump()),
-            report_text, status.value, json.dumps(analysis), assessment_md)
+            report_text, status.value, json.dumps(analysis), assessment_md, CURRENT_ANALYSIS_VERSION, analysis_computed_at)
         
         # NOTE: We intentionally do NOT update the snapshot's __expected__ block here.
         # Snapshots are immutable after creation - the expected block reflects the logic
@@ -1084,7 +1089,8 @@ async def get_reconciliation(reconciliation_id: str):
 async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: bool = Query(False), refresh: bool = Query(False)):
     """Get detailed analysis comparing Farm expectations vs AOD results with plain English explanations.
     
-    Uses cached analysis_json if available (fast path). Set force_recompute=true or refresh=1 to bypass cache.
+    Uses cached analysis_json if available AND analysis_version matches CURRENT_ANALYSIS_VERSION.
+    Auto-recomputes on version mismatch. Set force_recompute=true or refresh=1 to bypass cache.
     """
     force = force_recompute or refresh
     
@@ -1093,12 +1099,19 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
         if not rec_row:
             raise HTTPException(status_code=404, detail="Reconciliation not found")
         
+        # Check version: auto-recompute if version is stale or missing
+        cached_version = rec_row.get("analysis_version")
+        version_stale = cached_version is None or cached_version != CURRENT_ANALYSIS_VERSION
+        
         cached_analysis = None
-        if not force:
+        analysis_computed_at = rec_row.get("analysis_computed_at")
+        
+        if not force and not version_stale:
             try:
                 cached_analysis = rec_row["analysis_json"]
             except (KeyError, TypeError):
                 pass
+        
         if cached_analysis:
             analysis = json.loads(cached_analysis)
             if 'has_any_discrepancy' not in analysis:
@@ -1111,6 +1124,7 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
                     (am.get('false_positives', 0) or 0) > 0
                 )
         else:
+            # Recompute analysis (cache miss, version stale, or forced)
             aod_payload = json.loads(rec_row["aod_payload_json"])
             farm_exp = json.loads(rec_row["farm_expectations_json"])
             
@@ -1126,11 +1140,14 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
                     snapshot = {'__expected__': farm_exp}
             
             analysis, recomputed_block = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
+            analysis_computed_at = datetime.utcnow().isoformat() + "Z"
             
+            # Persist with version and timestamp
             await conn.execute(
-                "UPDATE reconciliations SET analysis_json = $1 WHERE reconciliation_id = $2",
-                json.dumps(analysis), reconciliation_id
+                "UPDATE reconciliations SET analysis_json = $1, analysis_version = $2, analysis_computed_at = $3 WHERE reconciliation_id = $4",
+                json.dumps(analysis), CURRENT_ANALYSIS_VERSION, analysis_computed_at, reconciliation_id
             )
+            cached_version = CURRENT_ANALYSIS_VERSION
             
             # NOTE: We intentionally do NOT update the snapshot here.
             # Snapshots are immutable - recomputed analysis is stored in reconciliation only.
@@ -1142,6 +1159,8 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
             'aod_run_id': rec_row["aod_run_id"],
             'status': rec_row["status"],
             'analysis': analysis,
+            'analysis_version': cached_version,
+            'analysis_computed_at': analysis_computed_at,
         }
 
 
@@ -2106,3 +2125,91 @@ async def list_jobs(
     job_status = JobStatus(status) if status else None
     jobs = await job_manager.list_jobs(limit=limit, status=job_status)
     return [job.to_dict() for job in jobs]
+
+
+@router.post("/api/admin/migrate-stale-analyses")
+async def migrate_stale_analyses():
+    """Clear stale cached analyses so they auto-recompute on next access.
+    
+    Clears analysis_json where:
+    - analysis_version IS NULL (never versioned)
+    - analysis_version < CURRENT_ANALYSIS_VERSION (outdated logic)
+    
+    This migration ensures old categorizations don't resurface.
+    """
+    async with db_connection() as conn:
+        # Count stale before migration
+        count_row = await conn.fetchrow("""
+            SELECT 
+                COUNT(*) FILTER (WHERE analysis_version IS NULL AND analysis_json IS NOT NULL) as null_version,
+                COUNT(*) FILTER (WHERE analysis_version IS NOT NULL AND analysis_version < $1 AND analysis_json IS NOT NULL) as outdated_version,
+                COUNT(*) FILTER (WHERE analysis_version = $1) as current_version,
+                COUNT(*) as total
+            FROM reconciliations
+        """, CURRENT_ANALYSIS_VERSION)
+        
+        null_version = count_row["null_version"]
+        outdated_version = count_row["outdated_version"]
+        current_version = count_row["current_version"]
+        total = count_row["total"]
+        
+        stale_count = null_version + outdated_version
+        
+        if stale_count == 0:
+            return {
+                "message": "No stale analyses found",
+                "current_analysis_version": CURRENT_ANALYSIS_VERSION,
+                "stats": {
+                    "null_version": null_version,
+                    "outdated_version": outdated_version,
+                    "current_version": current_version,
+                    "total": total,
+                    "cleared": 0,
+                }
+            }
+        
+        # Clear stale analyses (set to NULL so auto-recompute triggers on next access)
+        await conn.execute("""
+            UPDATE reconciliations 
+            SET analysis_json = NULL, analysis_version = NULL, analysis_computed_at = NULL
+            WHERE analysis_version IS NULL OR analysis_version < $1
+        """, CURRENT_ANALYSIS_VERSION)
+        
+        return {
+            "message": f"Cleared {stale_count} stale analyses",
+            "current_analysis_version": CURRENT_ANALYSIS_VERSION,
+            "stats": {
+                "null_version": null_version,
+                "outdated_version": outdated_version,
+                "current_version": current_version,
+                "total": total,
+                "cleared": stale_count,
+            }
+        }
+
+
+@router.get("/api/admin/analysis-version-stats")
+async def get_analysis_version_stats():
+    """Get statistics on analysis versions across reconciliations."""
+    async with db_connection() as conn:
+        stats_row = await conn.fetchrow("""
+            SELECT 
+                COUNT(*) FILTER (WHERE analysis_json IS NULL) as no_analysis,
+                COUNT(*) FILTER (WHERE analysis_version IS NULL AND analysis_json IS NOT NULL) as unversioned,
+                COUNT(*) FILTER (WHERE analysis_version IS NOT NULL AND analysis_version < $1 AND analysis_json IS NOT NULL) as outdated,
+                COUNT(*) FILTER (WHERE analysis_version = $1) as current,
+                COUNT(*) as total
+            FROM reconciliations
+        """, CURRENT_ANALYSIS_VERSION)
+        
+        return {
+            "current_analysis_version": CURRENT_ANALYSIS_VERSION,
+            "stats": {
+                "no_analysis": stats_row["no_analysis"],
+                "unversioned": stats_row["unversioned"],
+                "outdated": stats_row["outdated"],
+                "current": stats_row["current"],
+                "total": stats_row["total"],
+                "stale_requiring_recompute": stats_row["unversioned"] + stats_row["outdated"],
+            }
+        }

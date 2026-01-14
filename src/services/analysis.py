@@ -1102,7 +1102,9 @@ def generate_assessment_markdown(
     created_at: str,
     analysis: dict,
     farm_expectations: dict,
-    aod_payload: dict
+    aod_payload: dict,
+    analysis_version: int | None = None,
+    analysis_computed_at: str | None = None
 ) -> str | None:
     """Generate detailed assessment markdown for a reconciliation.
     
@@ -1151,6 +1153,13 @@ def generate_assessment_markdown(
     lines.append(f"**Snapshot ID:** `{snapshot_id}`")
     lines.append(f"**Tenant:** `{tenant_id}`")
     lines.append(f"**Generated:** {created_at}")
+    
+    # Analysis version transparency
+    if analysis_version is not None:
+        version_line = f"**Analysis v{analysis_version}**"
+        if analysis_computed_at:
+            version_line += f" computed at {analysis_computed_at}"
+        lines.append(version_line)
     lines.append("")
     
     lines.append("---")

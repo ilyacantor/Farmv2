@@ -328,9 +328,19 @@ class DatabaseManager:
                         report_text TEXT NOT NULL,
                         status TEXT NOT NULL,
                         analysis_json TEXT,
-                        assessment_md TEXT
+                        assessment_md TEXT,
+                        analysis_version INTEGER,
+                        analysis_computed_at TEXT
                     )
                 """)
+                
+                # Migration: Add analysis_version and analysis_computed_at columns if missing
+                try:
+                    await conn.execute("ALTER TABLE reconciliations ADD COLUMN IF NOT EXISTS analysis_version INTEGER")
+                    await conn.execute("ALTER TABLE reconciliations ADD COLUMN IF NOT EXISTS analysis_computed_at TEXT")
+                    self._log("Added analysis_version and analysis_computed_at columns")
+                except Exception as e:
+                    self._log(f"Analysis version columns already exist or migration skipped: {e}")
                 
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_fingerprint ON snapshots(snapshot_fingerprint)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_tenant ON snapshots(tenant_id)")
