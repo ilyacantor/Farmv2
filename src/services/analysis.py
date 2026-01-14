@@ -17,6 +17,8 @@ EXPLANATION_TEMPLATES = {
         'default': "AOD failed to identify {key} as shadow IT.",
         'UNGOVERNED_ACTIVE': "AOD missed {key}: has recent activity but no governance record in IdP/CMDB. This is ungoverned app sprawl.",
         'KEY_NORMALIZATION_MISMATCH': "AOD missed {key}: the domain exists in AOD's ingested evidence (URLs, asset_summaries) but was not normalized to a domain-keyed asset. AOD should use domain as the canonical key.",
+        'CMDB_CORRELATION_MISMATCH': "AOD missed {key}: Farm expected NO_CMDB but AOD found a CMDB correlation, classifying it as governed instead of shadow. AOD's CMDB correlation logic differs from Farm's.",
+        'IDP_CORRELATION_MISMATCH': "AOD missed {key}: Farm expected NO_IDP but AOD found an IdP correlation, classifying it as governed instead of shadow. AOD's IdP correlation logic differs from Farm's.",
     },
     'zombie_missed': {
         'default': "AOD failed to identify {key} as a zombie asset.",
@@ -24,6 +26,8 @@ EXPLANATION_TEMPLATES = {
         'HAS_IDP+STALE_ACTIVITY': "AOD missed {key}: still provisioned in IdP but activity is stale (90+ days old). This app might be abandoned.",
         'HAS_CMDB+STALE_ACTIVITY': "AOD missed {key}: still in CMDB as managed asset but no recent usage detected. Potential cost savings by decommissioning.",
         'KEY_NORMALIZATION_MISMATCH': "AOD missed {key}: the domain exists in AOD's ingested evidence (URLs, asset_summaries) but was not normalized to a domain-keyed asset. AOD should use domain as the canonical key.",
+        'CMDB_CORRELATION_MISMATCH': "AOD missed {key}: Farm expected different CMDB status but AOD found a correlation. AOD's CMDB correlation logic differs from Farm's.",
+        'IDP_CORRELATION_MISMATCH': "AOD missed {key}: Farm expected different IdP status but AOD found a correlation. AOD's IdP correlation logic differs from Farm's.",
     },
     'false_positive_shadow': {
         'default': "AOD incorrectly flagged {key} as shadow IT, but Farm expected it to be clean.",
@@ -59,11 +63,19 @@ def generate_asset_analysis(mismatch_type: str, key: str, farm_reasons: list, rc
         headline = f"AOD missed {key} as shadow IT"
         if rca_hint == 'KEY_NORMALIZATION_MISMATCH':
             headline += " - domain exists in AOD evidence but not used as canonical key"
+        elif rca_hint == 'CMDB_CORRELATION_MISMATCH':
+            headline += " - AOD found CMDB correlation that Farm didn't"
+        elif rca_hint == 'IDP_CORRELATION_MISMATCH':
+            headline += " - AOD found IdP correlation that Farm didn't"
         elif rca_hint == 'UNGOVERNED_ACTIVE':
             headline += " - active but missing from governance systems"
         farm_detail = f"Farm expected SHADOW because: {farm_reasons_str}"
         if rca_hint == 'KEY_NORMALIZATION_MISMATCH':
             aod_detail = f"AOD has evidence for {key} but did not normalize to domain key"
+        elif rca_hint == 'CMDB_CORRELATION_MISMATCH':
+            aod_detail = f"AOD correlated {key} to a CMDB CI that Farm did not correlate"
+        elif rca_hint == 'IDP_CORRELATION_MISMATCH':
+            aod_detail = f"AOD correlated {key} to an IdP object that Farm did not correlate"
         else:
             aod_detail = "AOD did not flag this asset" if not aod_reasons else f"AOD saw: {aod_reasons_str} but didn't classify as shadow"
         
@@ -71,6 +83,10 @@ def generate_asset_analysis(mismatch_type: str, key: str, farm_reasons: list, rc
         headline = f"AOD missed {key} as zombie"
         if rca_hint == 'KEY_NORMALIZATION_MISMATCH':
             headline += " - domain exists in AOD evidence but not used as canonical key"
+        elif rca_hint == 'CMDB_CORRELATION_MISMATCH':
+            headline += " - AOD found different CMDB correlation"
+        elif rca_hint == 'IDP_CORRELATION_MISMATCH':
+            headline += " - AOD found different IdP correlation"
         elif 'STALE_ACTIVITY' in farm_reasons:
             headline += " - registered but no recent usage"
         elif rca_hint == 'STALE_NO_RECENT_USE':
@@ -78,6 +94,8 @@ def generate_asset_analysis(mismatch_type: str, key: str, farm_reasons: list, rc
         farm_detail = f"Farm expected ZOMBIE because: {farm_reasons_str}"
         if rca_hint == 'KEY_NORMALIZATION_MISMATCH':
             aod_detail = f"AOD has evidence for {key} but did not normalize to domain key"
+        elif rca_hint in ('CMDB_CORRELATION_MISMATCH', 'IDP_CORRELATION_MISMATCH'):
+            aod_detail = f"AOD found different governance correlation for {key}"
         else:
             aod_detail = "AOD did not flag this asset" if not aod_reasons else f"AOD saw: {aod_reasons_str} but didn't classify as zombie"
         
@@ -384,6 +402,10 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         )
         aod_admission = {k: 'admitted' for k in aod_admitted_set}
     
+    # Assets AOD classified as clean/governed (admitted but not shadow/zombie)
+    aod_all_admitted = set(k for k, v in aod_admission.items() if v == 'admitted')
+    aod_clean = aod_all_admitted - aod_shadows - aod_zombies
+    
     aod_shadow_domains = roll_up_to_domains(aod_shadows, aod_reason_codes)
     aod_zombie_domains = roll_up_to_domains(aod_zombies, aod_reason_codes)
     
@@ -504,6 +526,37 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 return aod_admission[aod_key]
         return None
     
+    def detect_correlation_mismatch(key, farm_reasons, aod_data):
+        """Detect if AOD found CMDB/IdP correlation that Farm didn't.
+        
+        Returns (mismatch_type, aod_reasons) where mismatch_type is one of:
+        - 'CMDB_CORRELATION_MISMATCH': AOD found CMDB, Farm expected NO_CMDB
+        - 'IDP_CORRELATION_MISMATCH': AOD found IdP, Farm expected NO_IDP
+        - None: No correlation mismatch detected
+        """
+        farm_expects_no_cmdb = 'NO_CMDB' in farm_reasons
+        farm_expects_no_idp = 'NO_IDP' in farm_reasons
+        
+        aod_reasons_for_key = aod_data.get(key, [])
+        if not aod_reasons_for_key:
+            for aod_key, reasons in aod_data.items():
+                if norm(aod_key) == norm(key):
+                    aod_reasons_for_key = reasons
+                    break
+        
+        aod_has_cmdb = 'HAS_CMDB' in aod_reasons_for_key
+        aod_has_idp = 'HAS_IDP' in aod_reasons_for_key
+        
+        if farm_expects_no_cmdb and aod_has_cmdb:
+            return 'CMDB_CORRELATION_MISMATCH', aod_reasons_for_key
+        if farm_expects_no_idp and aod_has_idp:
+            return 'IDP_CORRELATION_MISMATCH', aod_reasons_for_key
+        return None, aod_reasons_for_key
+    
+    aod_clean_reasons = {}
+    for clean_key in aod_clean:
+        aod_clean_reasons[clean_key] = get_aod_reasons(clean_key)
+    
     for key in farm_shadows:
         reasons = expected_reasons.get(key, [])
         rca = expected_rca.get(key)
@@ -528,22 +581,34 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             })
         else:
             is_key_drift = check_key_in_aod_evidence(key, aod_evidence_domains)
-            effective_rca = 'KEY_NORMALIZATION_MISMATCH' if is_key_drift else rca
-            asset_analysis = generate_asset_analysis('shadow_missed', key, reasons, effective_rca, [])
+            corr_mismatch, aod_clean_codes = detect_correlation_mismatch(key, reasons, aod_clean_reasons)
+            
+            if corr_mismatch:
+                effective_rca = corr_mismatch
+                is_correlation_diff = True
+            elif is_key_drift:
+                effective_rca = 'KEY_NORMALIZATION_MISMATCH'
+                is_correlation_diff = False
+            else:
+                effective_rca = rca
+                is_correlation_diff = False
+            
+            asset_analysis = generate_asset_analysis('shadow_missed', key, reasons, effective_rca, aod_clean_codes if corr_mismatch else [])
             analysis['missed_shadows'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
-                'aod_reason_codes': [],
-                'aod_admission': None,
+                'aod_reason_codes': aod_clean_codes if corr_mismatch else [],
+                'aod_admission': get_aod_admission(key) if corr_mismatch else None,
                 'rca_hint': effective_rca,
                 'is_key_drift': is_key_drift,
+                'is_correlation_mismatch': is_correlation_diff,
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('shadow_missed', key, reasons, effective_rca),
             })
             increment_mismatch_counter('missed_shadow')
-            trace_log("analysis", "missed_shadow", {"key": key, "rca_hint": effective_rca, "is_key_drift": is_key_drift})
+            trace_log("analysis", "missed_shadow", {"key": key, "rca_hint": effective_rca, "is_key_drift": is_key_drift, "is_correlation_mismatch": is_correlation_diff})
     
     for key in farm_zombies:
         reasons = expected_reasons.get(key, [])
@@ -569,22 +634,34 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             })
         else:
             is_key_drift = check_key_in_aod_evidence(key, aod_evidence_domains)
-            effective_rca = 'KEY_NORMALIZATION_MISMATCH' if is_key_drift else rca
-            asset_analysis = generate_asset_analysis('zombie_missed', key, reasons, effective_rca, [])
+            corr_mismatch, aod_clean_codes = detect_correlation_mismatch(key, reasons, aod_clean_reasons)
+            
+            if corr_mismatch:
+                effective_rca = corr_mismatch
+                is_correlation_diff = True
+            elif is_key_drift:
+                effective_rca = 'KEY_NORMALIZATION_MISMATCH'
+                is_correlation_diff = False
+            else:
+                effective_rca = rca
+                is_correlation_diff = False
+            
+            asset_analysis = generate_asset_analysis('zombie_missed', key, reasons, effective_rca, aod_clean_codes if corr_mismatch else [])
             analysis['missed_zombies'].append({
                 'asset_key': key,
                 'farm_reason_codes': reasons,
-                'aod_reason_codes': [],
-                'aod_admission': None,
+                'aod_reason_codes': aod_clean_codes if corr_mismatch else [],
+                'aod_admission': get_aod_admission(key) if corr_mismatch else None,
                 'rca_hint': effective_rca,
                 'is_key_drift': is_key_drift,
+                'is_correlation_mismatch': is_correlation_diff,
                 'headline': asset_analysis['headline'],
                 'farm_detail': asset_analysis['farm_detail'],
                 'aod_detail': asset_analysis['aod_detail'],
                 'explanation': get_explanation('zombie_missed', key, reasons, effective_rca),
             })
             increment_mismatch_counter('missed_zombie')
-            trace_log("analysis", "missed_zombie", {"key": key, "rca_hint": effective_rca, "is_key_drift": is_key_drift})
+            trace_log("analysis", "missed_zombie", {"key": key, "rca_hint": effective_rca, "is_key_drift": is_key_drift, "is_correlation_mismatch": is_correlation_diff})
     
     farm_shadow_domain_keys = {to_domain_key(k) for k in farm_shadows}
     farm_zombie_domain_keys = {to_domain_key(k) for k in farm_zombies}
@@ -827,6 +904,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     # These are NOT defects - they are expected false negatives relative to each other
     policy_diff_governance_only = []
     policy_diff_key_normalization = []
+    policy_diff_cmdb_correlation = []
+    policy_diff_idp_correlation = []
     
     for entry in cataloged_missed_details:
         is_governed = entry.get('idp_present', False) or entry.get('cmdb_present', False)
@@ -845,14 +924,23 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'reason': 'GOVERNANCE_ONLY_ADMISSION',
             })
     
-    # Pattern 2: Key normalization differences (domain canonicalization mismatch)
+    # Categorize missed assets by mismatch type
     for entry in analysis['missed_shadows'] + analysis['missed_zombies']:
-        if entry.get('is_key_drift', False) or entry.get('rca_hint') == 'KEY_NORMALIZATION_MISMATCH':
-            policy_diff_key_normalization.append({
-                'asset_key': entry.get('asset_key'),
-                'farm_reason_codes': entry.get('farm_reason_codes', []),
-                'reason': 'KEY_NORMALIZATION_MISMATCH',
-            })
+        rca_hint = entry.get('rca_hint', '')
+        asset_data = {
+            'asset_key': entry.get('asset_key'),
+            'farm_reason_codes': entry.get('farm_reason_codes', []),
+            'aod_reason_codes': entry.get('aod_reason_codes', []),
+            'reason': rca_hint,
+        }
+        
+        if rca_hint == 'CMDB_CORRELATION_MISMATCH':
+            policy_diff_cmdb_correlation.append(asset_data)
+        elif rca_hint == 'IDP_CORRELATION_MISMATCH':
+            policy_diff_idp_correlation.append(asset_data)
+        elif entry.get('is_key_drift', False) or rca_hint == 'KEY_NORMALIZATION_MISMATCH':
+            asset_data['reason'] = 'KEY_NORMALIZATION_MISMATCH'
+            policy_diff_key_normalization.append(asset_data)
     
     analysis['policy_differences'] = {
         'governance_only_admission': {
@@ -865,16 +953,40 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 "negatives relative to each other and are not defects."
             ),
         },
+        'cmdb_correlation_mismatch': {
+            'count': len(policy_diff_cmdb_correlation),
+            'assets': policy_diff_cmdb_correlation,
+            'explanation': (
+                "AOD correlated these domains to CMDB CIs that Farm did not correlate. "
+                "AOD uses fuzzy matching, vendor inference, or other correlation logic that "
+                "Farm does not implement. This is a CMDB correlation algorithm difference, "
+                "NOT a key normalization issue."
+            ),
+        },
+        'idp_correlation_mismatch': {
+            'count': len(policy_diff_idp_correlation),
+            'assets': policy_diff_idp_correlation,
+            'explanation': (
+                "AOD correlated these domains to IdP objects that Farm did not correlate. "
+                "AOD uses matching logic that Farm does not implement. This is an IdP "
+                "correlation algorithm difference, NOT a key normalization issue."
+            ),
+        },
         'key_normalization': {
             'count': len(policy_diff_key_normalization),
             'assets': policy_diff_key_normalization,
             'explanation': (
-                "Domain key normalization differences between Farm and AOD. Farm uses one "
-                "canonicalization approach, AOD uses another. These may result in missed "
-                "matches even when both systems processed the same underlying evidence."
+                "Domain key normalization differences between Farm and AOD. The domain exists "
+                "in AOD's ingested evidence but was not normalized to a domain-keyed asset. "
+                "This is a domain canonicalization issue where AOD did not use domain as the key."
             ),
         },
-        'total_policy_diff_count': len(policy_diff_governance_only) + len(policy_diff_key_normalization),
+        'total_policy_diff_count': (
+            len(policy_diff_governance_only) + 
+            len(policy_diff_cmdb_correlation) + 
+            len(policy_diff_idp_correlation) + 
+            len(policy_diff_key_normalization)
+        ),
     }
     
     classification_materiality = max(2, int(total_expected * 0.1))
@@ -1139,6 +1251,42 @@ def generate_assessment_markdown(
                 lines.append(f"| ... and {governance_only.get('count', 0) - 20} more | | | | |")
             lines.append("")
         
+        cmdb_corr = policy_diffs.get('cmdb_correlation_mismatch', {})
+        if cmdb_corr.get('count', 0) > 0:
+            lines.append("### CMDB Correlation Mismatch")
+            lines.append("")
+            lines.append(f"**{cmdb_corr.get('count', 0)} assets** where AOD found CMDB correlation that Farm didn't.")
+            lines.append("")
+            lines.append(f"> {cmdb_corr.get('explanation', '')}")
+            lines.append("")
+            lines.append("| Asset | Farm Reason Codes | AOD Reason Codes |")
+            lines.append("|-------|-------------------|------------------|")
+            for asset in cmdb_corr.get('assets', [])[:20]:
+                farm_codes = ', '.join(asset.get('farm_reason_codes', [])[:3]) or '-'
+                aod_codes = ', '.join(asset.get('aod_reason_codes', [])[:3]) or '-'
+                lines.append(f"| {asset.get('asset_key', 'N/A')} | {farm_codes} | {aod_codes} |")
+            if cmdb_corr.get('count', 0) > 20:
+                lines.append(f"| ... and {cmdb_corr.get('count', 0) - 20} more | | |")
+            lines.append("")
+        
+        idp_corr = policy_diffs.get('idp_correlation_mismatch', {})
+        if idp_corr.get('count', 0) > 0:
+            lines.append("### IdP Correlation Mismatch")
+            lines.append("")
+            lines.append(f"**{idp_corr.get('count', 0)} assets** where AOD found IdP correlation that Farm didn't.")
+            lines.append("")
+            lines.append(f"> {idp_corr.get('explanation', '')}")
+            lines.append("")
+            lines.append("| Asset | Farm Reason Codes | AOD Reason Codes |")
+            lines.append("|-------|-------------------|------------------|")
+            for asset in idp_corr.get('assets', [])[:20]:
+                farm_codes = ', '.join(asset.get('farm_reason_codes', [])[:3]) or '-'
+                aod_codes = ', '.join(asset.get('aod_reason_codes', [])[:3]) or '-'
+                lines.append(f"| {asset.get('asset_key', 'N/A')} | {farm_codes} | {aod_codes} |")
+            if idp_corr.get('count', 0) > 20:
+                lines.append(f"| ... and {idp_corr.get('count', 0) - 20} more | | |")
+            lines.append("")
+        
         key_norm = policy_diffs.get('key_normalization', {})
         if key_norm.get('count', 0) > 0:
             lines.append("### Key Normalization Mismatch")
@@ -1189,7 +1337,12 @@ def generate_assessment_markdown(
             lines.append(f"- **Farm Detail:** {item.get('farm_detail', 'N/A')}")
             lines.append(f"- **AOD Detail:** {item.get('aod_detail', 'N/A')}")
             lines.append(f"- **RCA Hint:** `{item.get('rca_hint', 'N/A')}`")
-            if item.get('is_key_drift'):
+            if item.get('is_correlation_mismatch'):
+                aod_codes = item.get('aod_reason_codes', [])
+                lines.append(f"- **Correlation Mismatch:** Yes - AOD found governance correlation that Farm didn't")
+                if aod_codes:
+                    lines.append(f"- **AOD Reason Codes:** `{', '.join(aod_codes)}`")
+            elif item.get('is_key_drift'):
                 lines.append(f"- **Key Drift:** Yes - domain exists in AOD evidence but not used as canonical key")
             lines.append(f"- **Farm Reason Codes:** `{', '.join(item.get('farm_reason_codes', []))}`")
             lines.append("")
@@ -1260,7 +1413,12 @@ def generate_assessment_markdown(
             lines.append(f"- **Farm Detail:** {item.get('farm_detail', 'N/A')}")
             lines.append(f"- **AOD Detail:** {item.get('aod_detail', 'N/A')}")
             lines.append(f"- **RCA Hint:** `{item.get('rca_hint', 'N/A')}`")
-            if item.get('is_key_drift'):
+            if item.get('is_correlation_mismatch'):
+                aod_codes = item.get('aod_reason_codes', [])
+                lines.append(f"- **Correlation Mismatch:** Yes - AOD found governance correlation that Farm didn't")
+                if aod_codes:
+                    lines.append(f"- **AOD Reason Codes:** `{', '.join(aod_codes)}`")
+            elif item.get('is_key_drift'):
                 lines.append(f"- **Key Drift:** Yes - domain exists in AOD evidence but not used as canonical key")
             lines.append(f"- **Farm Reason Codes:** `{', '.join(item.get('farm_reason_codes', []))}`")
             lines.append("")

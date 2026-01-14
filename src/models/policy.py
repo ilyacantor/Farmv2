@@ -191,11 +191,18 @@ class PolicyConfig(BaseModel):
                 minimum_spend=int(minimum_spend),
                 noise_floor=int(noise_floor),
                 zombie_window_days=int(zombie_window),
+                stale_window_days=int(stale_window),
+                min_discovery_sources_for_shadow=int(min_discovery_for_shadow),
+                require_corroboration=bool(require_corroboration),
+                allow_finance_only_admission=bool(allow_finance_only),
+                finance_requires_discovery=bool(finance_requires_disc),
+                enable_vendor_propagation=bool(enable_vendor_prop),
             ),
             scope=ScopeConfig(
                 include_infra=scope_data.get("include_infra", False),
                 treat_directory_as_idp=scope_data.get("treat_directory_as_idp", False),
                 use_policy_engine=scope_data.get("use_policy_engine", False),
+                late_binding_domain_merge=scope_data.get("late_binding_domain_merge", False),
             ),
             secondary_gates=SecondaryGatesConfig(
                 require_sso_for_idp=require_sso,
