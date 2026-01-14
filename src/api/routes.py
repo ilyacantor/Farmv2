@@ -541,6 +541,7 @@ async def get_policy_config(refresh: bool = False):
         "exclusions": policy.exclusions,
         "infrastructure_seeds": policy.infrastructure_seeds,
         "corporate_root_domains": policy.corporate_root_domains,
+        "banned_domains": policy.banned_domains,
         "source": "aod" if os.environ.get("AOD_BASE_URL") or os.environ.get("AOD_URL") else "mock",
     }
 
