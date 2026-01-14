@@ -59,8 +59,14 @@ def is_stale(ts: Optional[str], window_days: int, reference: datetime) -> bool:
     return (reference - dt).days > window_days
 
 
-def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
-    """Build candidate flags from snapshot planes. Returns {key: {flags...}}."""
+def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyConfig = None) -> dict:
+    """Build candidate flags from snapshot planes. Returns {key: {flags...}}.
+    
+    When policy is provided, secondary gates are applied:
+    - require_sso_for_idp: IdP objects without SSO are treated as NO_IDP
+    - require_valid_ci_type: CMDB CIs with invalid types are treated as NO_CMDB
+    - require_valid_lifecycle: CMDB CIs with invalid lifecycles are treated as NO_CMDB
+    """
     meta = snapshot.get('meta', {})
     planes = snapshot.get('planes', {})
     reference = parse_timestamp(meta.get('created_at')) or datetime.utcnow()
@@ -144,13 +150,20 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             domain_to_keys[domain].add(key)
 
     # Process IdP objects with O(N) complexity using precomputed indexes
-    # POLICY: If asset is in IdP, admit it - create candidate if not exists
+    # POLICY: If asset is in IdP AND passes secondary gates, admit it
     idp_objects = planes.get('idp', {}).get('objects', [])
     for obj in idp_objects:
         name = normalize_name(obj.get('name', ''))
         raw_domain = extract_domain(obj.get('external_ref', ''))
         idp_registered = extract_registered_domain(raw_domain) if raw_domain else None
+        has_sso = obj.get('has_sso', False)
         matched_keys = set()
+        
+        # Check secondary gates: require_sso_for_idp
+        # If gate is enabled and has_sso is False, treat as NO_IDP
+        idp_passes_gate = True
+        if policy and not policy.idp_passes_gates(has_sso):
+            idp_passes_gate = False
         
         # O(1) lookups instead of O(N) scans
         if name:
@@ -168,7 +181,8 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             matched_keys.update(domain_to_keys.get(raw_domain, set()))
         
         # POLICY: Create candidate for IdP-only assets (no discovery required)
-        if not matched_keys and idp_registered:
+        # Only create if IdP passes the gate
+        if not matched_keys and idp_registered and idp_passes_gate:
             key = idp_registered
             candidates[key]['key'] = key
             candidates[key]['names'].add(obj.get('name', ''))
@@ -177,9 +191,10 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
                 candidates[key]['domains'].add(key)
             matched_keys.add(key)
         
-        # Mark matched candidates
+        # Mark matched candidates - only if IdP passes the gate
         for key in matched_keys:
-            candidates[key]['idp_present'] = True
+            if idp_passes_gate:
+                candidates[key]['idp_present'] = True
         
         ts = obj.get('last_login_at')
         if ts and matched_keys:
@@ -197,13 +212,21 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
                     cand['stale_timestamps'].append(ts)
 
     # Process CMDB CIs with O(N) complexity instead of O(N*M)
-    # POLICY: If asset is in CMDB, admit it - create candidate if not exists
+    # POLICY: If asset is in CMDB AND passes secondary gates, admit it
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])
     for ci in cmdb_cis:
         name = normalize_name(ci.get('name', ''))
         raw_domain = extract_domain(ci.get('external_ref', ''))
         cmdb_registered = extract_registered_domain(raw_domain) if raw_domain else None
         ci_vendor = normalize_name(ci.get('vendor', '') or '')
+        ci_type = ci.get('ci_type')
+        lifecycle = ci.get('lifecycle')
+
+        # Check secondary gates: require_valid_ci_type, require_valid_lifecycle
+        # If gates are enabled and CI fails them, treat as NO_CMDB
+        cmdb_passes_gate = True
+        if policy and not policy.cmdb_passes_gates(ci_type, lifecycle):
+            cmdb_passes_gate = False
 
         matched_keys = set()
         matched_by_vendor = set()
@@ -225,7 +248,8 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             matched_by_vendor.update(vendor_keys - matched_keys)
 
         # POLICY: Create candidate for CMDB-only assets (no discovery required)
-        if cmdb_registered and cmdb_registered not in candidates:
+        # Only create if CMDB passes the gate
+        if cmdb_registered and cmdb_registered not in candidates and cmdb_passes_gate:
             key = cmdb_registered
             candidates[key]['key'] = key
             candidates[key]['names'].add(ci.get('name', ''))
@@ -235,27 +259,31 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90) -> dict:
             if ci_vendor:
                 candidates[key]['vendors'].add(ci_vendor)
 
-        # Update candidates with matches
+        # Update candidates with matches - only if CMDB passes the gate
         for key in matched_keys:
-            candidates[key]['cmdb_present'] = True
+            if cmdb_passes_gate:
+                candidates[key]['cmdb_present'] = True
             candidates[key]['cmdb_matches'].append({
                 'ci_id': ci.get('ci_id'),
                 'name': ci.get('name'),
-                'lifecycle': ci.get('lifecycle'),
+                'lifecycle': lifecycle,
                 'vendor': ci.get('vendor'),
-                'ci_type': ci.get('ci_type'),
+                'ci_type': ci_type,
                 'matched_via_vendor': False,
+                'passes_gate': cmdb_passes_gate,
             })
 
         for key in matched_by_vendor:
-            candidates[key]['cmdb_present'] = True
+            if cmdb_passes_gate:
+                candidates[key]['cmdb_present'] = True
             candidates[key]['cmdb_matches'].append({
                 'ci_id': ci.get('ci_id'),
                 'name': ci.get('name'),
-                'lifecycle': ci.get('lifecycle'),
+                'lifecycle': lifecycle,
                 'vendor': ci.get('vendor'),
-                'ci_type': ci.get('ci_type'),
+                'ci_type': ci_type,
                 'matched_via_vendor': True,
+                'passes_gate': cmdb_passes_gate,
             })
     
     # Process cloud resources with O(N) complexity
@@ -567,7 +595,7 @@ def compute_expected_block(
     
     noise_floor = policy.admission.noise_floor
     
-    candidates = build_candidate_flags(snapshot, window_days)
+    candidates = build_candidate_flags(snapshot, window_days, policy)
     
     vendor_governance = propagate_vendor_governance(candidates)
     
@@ -778,7 +806,7 @@ def analyze_snapshot_for_expectations(
     
     noise_floor = policy.admission.noise_floor
     
-    candidates = build_candidate_flags(snapshot, window_days)
+    candidates = build_candidate_flags(snapshot, window_days, policy)
     vendor_governance = propagate_vendor_governance(candidates)
     
     shadow_keys = []

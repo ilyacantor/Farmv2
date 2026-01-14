@@ -357,7 +357,7 @@ def audit_finance_traceability(
     if target_keys is None:
         target_keys = ['zapier.com', 'airtable.com', 'hubspot.com', 'figma.com', 'canva.com']
     
-    candidates = build_candidate_flags(snapshot)
+    candidates = build_candidate_flags(snapshot, policy=policy)
     expected = compute_expected_block(snapshot, policy=policy)
     decision_traces = expected.get('decision_traces', {})
     
@@ -524,7 +524,7 @@ def audit_activity_invariants(
                 'created_at': created_at_str,
             })
     
-    candidates = build_candidate_flags(snapshot, activity_window_days)
+    candidates = build_candidate_flags(snapshot, activity_window_days, policy=policy)
     expected = compute_expected_block(snapshot, policy=policy)
     decision_traces = expected.get('decision_traces', {})
     
