@@ -11,6 +11,12 @@ class AdmissionConfig(BaseModel):
     minimum_spend: int = 200
     noise_floor: int = 1
     zombie_window_days: int = 90
+    stale_window_days: int = 30
+    min_discovery_sources_for_shadow: int = 1
+    require_corroboration: bool = False
+    allow_finance_only_admission: bool = True
+    finance_requires_discovery: bool = False
+    enable_vendor_propagation: bool = True
 
 
 class ScopeConfig(BaseModel):
@@ -18,6 +24,7 @@ class ScopeConfig(BaseModel):
     include_infra: bool = False
     treat_directory_as_idp: bool = False
     use_policy_engine: bool = False
+    late_binding_domain_merge: bool = False
 
 
 class SecondaryGatesConfig(BaseModel):
@@ -147,6 +154,14 @@ class PolicyConfig(BaseModel):
         minimum_spend = admission_data.get("minimum_spend") or data.get("finance_thresholds", {}).get("minimum_spend", 200)
         noise_floor = admission_data.get("noise_floor") or admission_gates.get("noise_floor", 1)
         zombie_window = admission_data.get("zombie_window_days") or activity_windows.get("zombie_window_days", 90)
+        stale_window = admission_gates.get("stale_window_days") or activity_windows.get("stale_window_days", 30)
+        
+        # New admission gate settings from AOD
+        min_discovery_for_shadow = admission_gates.get("min_discovery_sources_for_shadow", 1)
+        require_corroboration = admission_gates.get("require_corroboration", False)
+        allow_finance_only = admission_gates.get("allow_finance_only_admission", True)
+        finance_requires_disc = admission_gates.get("finance_requires_discovery", False)
+        enable_vendor_prop = admission_gates.get("enable_vendor_propagation", True)
         
         # Secondary gates can come from admission_gates, admission, or secondary_gates
         require_sso = (
