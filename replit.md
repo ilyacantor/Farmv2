@@ -121,6 +121,7 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - **Policy Differences Tracking:** Reconciliation analysis identifies and explains expected discrepancies due to intentional design choices between Farm and AOD:
   - *Governance-Only Admission:* Farm admits assets based on governance presence alone (IdP/CMDB = system-of-record truth), while AOD requires discovery evidence (live observable surface area). These produce expected false negatives and are NOT defects.
   - *Key Normalization:* Domain canonicalization differences between Farm and AOD may result in missed matches even when both systems processed the same evidence.
+- **Canonical Domain Correlation Fix (2026-01-14):** Added `canonical_domain` field to IdP and CMDB records. The generator always populates this field with the original domain, and correlation logic uses it first before falling back to name matching. This ensures reliable CMDB/IdP correlation despite name drift and optional `external_ref` fields. **Note:** This fix only applies to NEW snapshots - older snapshots without `canonical_domain` will still show correlation mismatches.
 - **Analysis Versioning:** Prevents stale cached analyses from resurfacing as logic evolves:
   - `CURRENT_ANALYSIS_VERSION` in `src/services/constants.py` is **automatically computed** from source file hashes (analysis.py + reconciliation.py)
   - **No manual version bumping required** - any code change to analysis logic automatically invalidates all cached analyses

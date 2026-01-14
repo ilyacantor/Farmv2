@@ -822,6 +822,7 @@ class EnterpriseGenerator:
                     has_scim=self.rng.random() > 0.6,
                     vendor=app["vendor"] if self.rng.random() > 0.1 else None,
                     last_login_at=self._random_activity_date() if self.rng.random() > 0.2 else None,
+                    canonical_domain=app["domain"],
                 )
                 objects.append(idp_obj)
         
@@ -834,6 +835,7 @@ class EnterpriseGenerator:
                     has_sso=False,
                     has_scim=False,
                     last_login_at=self._random_activity_date() if self.rng.random() > 0.4 else None,
+                    canonical_domain=svc.get("domain"),
                 )
                 objects.append(idp_obj)
         
@@ -848,6 +850,7 @@ class EnterpriseGenerator:
                     has_scim=False,
                     vendor=zombie_app["vendor"],
                     last_login_at=self._random_stale_date(),
+                    canonical_domain=zombie_app["domain"],
                 )
                 objects.append(idp_obj)
         
@@ -860,6 +863,7 @@ class EnterpriseGenerator:
                     has_sso=False,
                     has_scim=False,
                     last_login_at=self._random_stale_date(),
+                    canonical_domain=zombie_svc.get("domain"),
                 )
                 objects.append(idp_obj)
         
@@ -882,6 +886,7 @@ class EnterpriseGenerator:
                     owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
                     vendor=app["vendor"] if self.rng.random() > 0.15 else None,
                     external_ref=f"https://{app['domain']}/support" if self.rng.random() > 0.4 else None,
+                    canonical_domain=app["domain"],
                 )
                 cis.append(ci)
         
@@ -895,6 +900,7 @@ class EnterpriseGenerator:
                     lifecycle=self.rng.choice([LifecycleEnum.prod, LifecycleEnum.staging]),
                     owner=f"{owner['first']} {owner['last']}" if owner else None,
                     owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
+                    canonical_domain=svc.get("domain"),
                 )
                 cis.append(ci)
         
@@ -906,6 +912,7 @@ class EnterpriseGenerator:
                     ci_type=CITypeEnum.database,
                     lifecycle=LifecycleEnum.prod,
                     vendor=ds["vendor"] if self.rng.random() > 0.2 else None,
+                    canonical_domain=ds.get("domain"),
                 )
                 cis.append(ci)
         
@@ -918,6 +925,7 @@ class EnterpriseGenerator:
                     lifecycle=LifecycleEnum.prod,
                     vendor=zombie_app["vendor"],
                     external_ref=f"https://{zombie_app['domain']}",
+                    canonical_domain=zombie_app["domain"],
                 )
                 cis.append(ci)
         
@@ -928,6 +936,7 @@ class EnterpriseGenerator:
                     name=self._apply_name_drift(zombie_svc["name"]),
                     ci_type=CITypeEnum.service,
                     lifecycle=LifecycleEnum.prod,
+                    canonical_domain=zombie_svc.get("domain"),
                 )
                 cis.append(ci)
         

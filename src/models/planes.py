@@ -183,6 +183,7 @@ class IdPObject(BaseModel):
     has_scim: bool = False
     vendor: Optional[str] = None
     last_login_at: Optional[str] = None
+    canonical_domain: Optional[str] = None
 
 
 class CMDBConfigItem(BaseModel):
@@ -194,6 +195,7 @@ class CMDBConfigItem(BaseModel):
     owner_email: Optional[str] = None
     vendor: Optional[str] = None
     external_ref: Optional[str] = None
+    canonical_domain: Optional[str] = None
 
 
 class CloudResource(BaseModel):
