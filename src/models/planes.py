@@ -344,6 +344,15 @@ class SnapshotMeta(BaseModel):
     realism_profile: RealismProfileEnum
     created_at: str
     counts: dict[str, int] = Field(default_factory=dict)
+    
+    @property
+    def snapshot_as_of(self) -> str:
+        return self.created_at
+    
+    def model_dump(self, **kwargs) -> dict:
+        data = super().model_dump(**kwargs)
+        data['snapshot_as_of'] = self.created_at
+        return data
 
 
 class SnapshotRequest(BaseModel):

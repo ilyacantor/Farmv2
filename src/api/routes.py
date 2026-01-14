@@ -537,6 +537,13 @@ async def get_policy_config(refresh: bool = False):
     }
 
 
+def _inject_snapshot_as_of(data: dict) -> dict:
+    """Ensure snapshot_as_of field is present (alias for created_at) for AOD compatibility."""
+    if 'meta' in data and 'snapshot_as_of' not in data['meta']:
+        data['meta']['snapshot_as_of'] = data['meta'].get('created_at')
+    return data
+
+
 @router.get("/api/snapshots/{snapshot_id}")
 async def get_snapshot(snapshot_id: str):
     """Get full snapshot including blob. Prefer /api/snapshots/{id}/summary for hot path."""
@@ -544,14 +551,16 @@ async def get_snapshot(snapshot_id: str):
     async with db_connection() as conn:
         row = await conn.fetchrow("SELECT blob FROM snapshots_blob WHERE snapshot_id = $1", snapshot_id)
         if row:
-            return JSONResponse(content=json.loads(row["blob"]), media_type="application/json")
+            data = _inject_snapshot_as_of(json.loads(row["blob"]))
+            return JSONResponse(content=data, media_type="application/json")
         
         # Fallback to legacy table for unbackfilled data
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
         
-        return JSONResponse(content=json.loads(row["snapshot_json"]), media_type="application/json")
+        data = _inject_snapshot_as_of(json.loads(row["snapshot_json"]))
+        return JSONResponse(content=data, media_type="application/json")
 
 
 @router.get("/api/snapshots/{snapshot_id}/blob")
@@ -561,14 +570,16 @@ async def get_snapshot_blob(snapshot_id: str):
     async with db_connection() as conn:
         row = await conn.fetchrow("SELECT blob FROM snapshots_blob WHERE snapshot_id = $1", snapshot_id)
         if row:
-            return JSONResponse(content=json.loads(row["blob"]), media_type="application/json")
+            data = _inject_snapshot_as_of(json.loads(row["blob"]))
+            return JSONResponse(content=data, media_type="application/json")
         
         # Fallback to legacy table
         row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
         
-        return JSONResponse(content=json.loads(row["snapshot_json"]), media_type="application/json")
+        data = _inject_snapshot_as_of(json.loads(row["snapshot_json"]))
+        return JSONResponse(content=data, media_type="application/json")
 
 
 @router.get("/api/snapshots/{snapshot_id}/summary")
@@ -594,6 +605,7 @@ async def get_snapshot_summary(snapshot_id: str):
                     "enterprise_profile": meta_row["enterprise_profile"],
                     "realism_profile": meta_row["realism_profile"],
                     "created_at": meta_row["created_at"],
+                    "snapshot_as_of": meta_row["created_at"],
                     "schema_version": meta_row["schema_version"],
                 },
                 "plane_counts": plane_counts,
