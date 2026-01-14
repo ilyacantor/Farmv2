@@ -109,7 +109,7 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 
 **Core Principles & Features:**
 - **Deterministic Data Generation:** Generates reproducible synthetic data based on seed, scale, and enterprise/realism profiles, yielding 7 independent data planes designed to correlate only via realistic keys.
-- **Governance Framework:** Classifies assets based on governance status (IdP OR CMDB = governed). Shadow = ungoverned + active. Zombie = governed + stale + ongoing finance. Parked = ungoverned + stale.
+- **Governance Framework:** Classifies assets based on governance status. See Governance Contract below for authoritative rules.
 - **Snapshot Management:** Provides APIs for generating, retrieving, listing, and deleting data snapshots, each with an `__expected__` block for grading metadata.
 - **Reconciliation System:** Compares AOD results against Farm's expectations, indicating gradeability via `contract_status`.
 - **Validation Suite:** Comprehensive validation checks on every snapshot and reconciliation, including expected block consistency, clock invariants, finance consistency, join hygiene, and gradeability gates.
@@ -131,6 +131,47 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - **CMDB Resolution:** Handles multiple CMDB matches with specific `cmdb_resolution_reason` codes.
 - **Admission Rules:** If an asset is in CMDB or IdP, it is admitted regardless of discovery evidence. Assets without CMDB/IdP presence require 1+ discovery sources, cloud evidence, or sufficient finance spend to be admitted.
 - **Ground Truth Classification:** Admitted assets are classified based on evidence flags and governance propagation logic.
+
+## Governance Contract
+
+**INVARIANT:** CMDB and IdP assert truth. Heuristics suggest context. Classification is deterministic.
+
+### Authoritative Truth Sources
+Farm treats CMDB and IdP as the only authoritative sources of governance. No other signals may assert governance.
+
+### Governance Rules (Hard Requirements)
+An asset is **governed** if and only if there exists at least one authoritative record (CMDB or IdP) that **explicitly passes all governance gates**.
+
+**CMDB Governance:**
+- CI must exist
+- CI type must be valid (per `policy.secondary_gates.valid_ci_types`)
+- CI lifecycle must be valid (per `policy.secondary_gates.invalid_lifecycle_states`)
+- If record exists but fails any gate → Explicitly NOT governed (NO_CMDB)
+- If no record exists → NOT governed
+
+**IdP Governance:**
+- Explicit IdP linkage must exist
+- Required SSO gate must pass (if `policy.secondary_gates.require_sso_for_idp`)
+- If record exists but fails any gate → Explicitly NOT governed (NO_IDP)
+- If no record exists → NOT governed
+
+### Classification Logic
+```
+governed = cmdb_present OR idp_present
+```
+Where `cmdb_present` and `idp_present` are True only if records pass all gates.
+
+**Classifications:**
+- **Shadow:** Ungoverned + Recent activity = Shadow IT
+- **Zombie:** Governed + Stale activity + Ongoing finance = Deprovision candidate
+- **Parked:** Ungoverned + Stale activity = Inactive, no action needed
+- **Clean:** Governed + Recent activity = Healthy asset
+
+### Heuristics (Non-Authoritative)
+Heuristics may enrich context but **must never** assert governance, override gate outcomes, or flip classification states. Examples: fuzzy name matching, vendor inference, cross-TLD similarity.
+
+### Determinism Guarantee
+Given identical inputs (evidence + policy), Farm always produces the same classification. If Farm and AOD disagree under same evidence and policy, one contains a bug.
 
 ## External Dependencies
 - **Database:** Supabase PostgreSQL (managed Postgres with session pooling), configured via `SUPABASE_DB_URL` or `DATABASE_URL`.

@@ -1,3 +1,96 @@
+"""
+Reconciliation service for computing expected classifications and comparing with AOD.
+
+================================================================================
+FARM GOVERNANCE & CORRELATION CONTRACT
+================================================================================
+
+AUTHORITATIVE TRUTH SOURCES
+---------------------------
+Farm treats the following as authoritative sources of truth:
+  - CMDB
+  - IdP
+
+No other signals may assert governance.
+
+GOVERNANCE RULES (HARD REQUIREMENTS)
+------------------------------------
+An asset is GOVERNED if and only if there exists at least one authoritative
+record (CMDB or IdP) that EXPLICITLY PASSES ALL GOVERNANCE GATES.
+
+CMDB Governance:
+  A CMDB record grants governance ONLY IF:
+    - CI exists
+    - CI type is valid (per policy.secondary_gates.valid_ci_types)
+    - CI lifecycle is valid (per policy.secondary_gates.invalid_lifecycle_states)
+  
+  If a CMDB record exists BUT FAILS ANY GATE:
+    -> Explicitly NOT governed (NO_CMDB)
+  
+  If no CMDB record exists:
+    -> NOT governed
+
+IdP Governance:
+  An IdP record grants governance ONLY IF:
+    - Explicit IdP linkage exists
+    - Required SSO gate passes (if policy.secondary_gates.require_sso_for_idp)
+  
+  If an IdP record exists BUT FAILS ANY GATE:
+    -> Explicitly NOT governed (NO_IDP)
+  
+  If no IdP record exists:
+    -> NOT governed
+
+CLASSIFICATION LOGIC
+--------------------
+  governed = cmdb_present OR idp_present
+
+Where:
+  - cmdb_present = True only if a CMDB record passes all gates
+  - idp_present = True only if an IdP record passes all gates
+
+Otherwise:
+  - governed = False
+
+HEURISTICS (STRICTLY NON-AUTHORITATIVE)
+---------------------------------------
+Heuristics may be used ONLY to:
+  - Suggest possible relationships
+  - Enrich context
+  - Generate hypotheses
+  - Drive follow-up discovery
+
+Heuristics MUST NEVER:
+  - Assert governance
+  - Override CMDB or IdP gate outcomes
+  - Flip classification states
+  - Set cmdb_present or idp_present
+
+Examples of non-authoritative heuristics:
+  - Fuzzy name matching
+  - Vendor inference
+  - Token or contains matching
+  - Cross-TLD similarity
+
+These may exist as annotations but CANNOT affect classification.
+
+DETERMINISM GUARANTEE
+---------------------
+Given identical inputs (evidence + policy):
+  - Farm must always produce the same classification
+  - No probabilistic or confidence-based logic may alter outcomes
+
+FAILURE MODE DEFINITION
+-----------------------
+If Farm and AOD disagree on classification under the same evidence and policy:
+  - One of them contains a bug
+  - There is no "policy difference" or "interpretation" explanation
+
+INVARIANT: CMDB and IdP assert truth. Heuristics suggest context.
+           Classification is deterministic.
+================================================================================
+"""
+
 from datetime import datetime
 from typing import Optional
 from collections import defaultdict

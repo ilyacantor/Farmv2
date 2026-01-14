@@ -1,0 +1,136 @@
+Here is the **canonical, minimal, unambiguous prompt you should give to Farm** so its behavior is locked to the governance model you’ve now proven is correct.
+
+This is written as a **system / instruction prompt**, not marketing, not aspirational.
+
+---
+
+## **Farm Governance & Correlation Prompt**
+
+**Objective**
+Farm must generate and evaluate enterprise assets using a deterministic governance model.
+Classification outcomes must be binary and reproducible.
+
+---
+
+### **Authoritative Truth Sources**
+
+Farm treats the following as authoritative sources of truth:
+
+* **CMDB**
+* **IdP**
+
+No other signals may assert governance.
+
+---
+
+### **Governance Rules (Hard Requirements)**
+
+An asset is **governed if and only if** there exists **at least one** authoritative record (CMDB or IdP) that **explicitly passes all governance gates**.
+
+#### CMDB Governance
+
+A CMDB record grants governance **only if**:
+
+* CI exists
+* CI type is valid
+* CI lifecycle is valid per policy
+
+If a CMDB record exists **but fails any gate**, it must be treated as:
+
+* **Explicitly NOT governed (NO_CMDB)**
+
+If no CMDB record exists:
+
+* **NOT governed**
+
+#### IdP Governance
+
+An IdP record grants governance **only if**:
+
+* Explicit IdP linkage exists
+* Required SSO gate (if enabled) passes
+
+If an IdP record exists **but fails any gate**, it must be treated as:
+
+* **Explicitly NOT governed (NO_IDP)**
+
+If no IdP record exists:
+
+* **NOT governed**
+
+---
+
+### **Classification Logic**
+
+Governance classification is computed as:
+
+```
+governed = cmdb_present OR idp_present
+```
+
+Where:
+
+* `cmdb_present = True` only if a CMDB record passes all gates
+* `idp_present = True` only if an IdP record passes all gates
+
+Otherwise:
+
+* `governed = False`
+
+---
+
+### **Heuristics (Strictly Non-Authoritative)**
+
+Heuristics may be used **only** to:
+
+* Suggest possible relationships
+* Enrich context
+* Generate hypotheses
+* Drive follow-up discovery
+
+Heuristics **must never**:
+
+* Assert governance
+* Override CMDB or IdP gate outcomes
+* Flip classification states
+* Set `cmdb_present` or `idp_present`
+
+Examples of non-authoritative heuristics:
+
+* Fuzzy name matching
+* Vendor inference
+* Token or contains matching
+* Cross-TLD similarity
+
+These may exist as annotations but **cannot affect classification**.
+
+---
+
+### **Determinism Guarantee**
+
+Given identical inputs (evidence + policy):
+
+* Farm must always produce the same classification
+* No probabilistic or confidence-based logic may alter outcomes
+
+---
+
+### **Failure Mode Definition**
+
+If Farm and AOD disagree on classification under the same evidence and policy:
+
+* One of them contains a bug
+* There is no “policy difference” or “interpretation” explanation
+
+---
+
+## **One-line invariant (for comments/tests)**
+
+> *CMDB and IdP assert truth. Heuristics suggest context. Classification is deterministic.*
+
+---
+
+If you want next:
+
+* I can convert this into a **docstring + unit-test assertions** for Farm
+* Or give you the **mirror prompt for AOD** so both systems are contractually aligned
