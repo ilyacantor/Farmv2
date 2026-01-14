@@ -288,9 +288,6 @@ async def fetch_policy_config(force_refresh: bool = False) -> PolicyConfig:
                 
                 raw_admission = data.get("admission", {})
                 raw_noise_floor = raw_admission.get("noise_floor")
-                print(f"[POLICY_DEBUG] raw_noise_floor={raw_noise_floor} type={type(raw_noise_floor).__name__}")
-                print(f"[POLICY_DEBUG] raw_admission_keys={list(raw_admission.keys()) if raw_admission else []}")
-                print(f"[POLICY_DEBUG] top_level_keys={list(data.keys())}")
                 trace_log("aod_client", "policy_raw_debug", {
                     "raw_noise_floor_value": raw_noise_floor,
                     "raw_noise_floor_type": type(raw_noise_floor).__name__,
@@ -304,7 +301,6 @@ async def fetch_policy_config(force_refresh: bool = False) -> PolicyConfig:
                 _policy_cache = policy
                 _policy_cache_time = time.time()
                 
-                print(f"[POLICY_DEBUG] parsed_noise_floor={policy.admission.noise_floor} type={type(policy.admission.noise_floor).__name__}")
                 trace_log("aod_client", "policy_fetch_success", {
                     "noise_floor": policy.admission.noise_floor,
                     "noise_floor_type": type(policy.admission.noise_floor).__name__,
