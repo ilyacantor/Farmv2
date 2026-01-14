@@ -329,14 +329,14 @@ class DatabaseManager:
                         status TEXT NOT NULL,
                         analysis_json TEXT,
                         assessment_md TEXT,
-                        analysis_version INTEGER,
+                        analysis_version TEXT,
                         analysis_computed_at TEXT
                     )
                 """)
                 
                 # Migration: Add analysis_version and analysis_computed_at columns if missing
                 try:
-                    await conn.execute("ALTER TABLE reconciliations ADD COLUMN IF NOT EXISTS analysis_version INTEGER")
+                    await conn.execute("ALTER TABLE reconciliations ADD COLUMN IF NOT EXISTS analysis_version TEXT")
                     await conn.execute("ALTER TABLE reconciliations ADD COLUMN IF NOT EXISTS analysis_computed_at TEXT")
                     self._log("Added analysis_version and analysis_computed_at columns")
                 except Exception as e:

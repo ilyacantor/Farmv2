@@ -1,6 +1,30 @@
-# Analysis versioning - bump when categorization logic changes
-# This triggers auto-recompute of stale cached analyses
-CURRENT_ANALYSIS_VERSION = 1
+import hashlib
+import os
+
+def _compute_analysis_version() -> str:
+    """Compute a hash-based version from analysis source files.
+    
+    Automatically detects when categorization logic changes by hashing
+    the source files. No manual version bumping required.
+    """
+    files_to_hash = [
+        'src/services/analysis.py',
+        'src/services/reconciliation.py',
+    ]
+    
+    hasher = hashlib.md5()
+    for filepath in sorted(files_to_hash):
+        try:
+            with open(filepath, 'rb') as f:
+                hasher.update(f.read())
+        except FileNotFoundError:
+            hasher.update(filepath.encode())
+    
+    return hasher.hexdigest()[:12]
+
+# Analysis versioning - auto-computed from source file hashes
+# Changes to analysis.py or reconciliation.py automatically invalidate cached analyses
+CURRENT_ANALYSIS_VERSION = _compute_analysis_version()
 
 INFRASTRUCTURE_DOMAINS = {
     'postgresql.org',

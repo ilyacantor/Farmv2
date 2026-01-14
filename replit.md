@@ -122,7 +122,8 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
   - *Governance-Only Admission:* Farm admits assets based on governance presence alone (IdP/CMDB = system-of-record truth), while AOD requires discovery evidence (live observable surface area). These produce expected false negatives and are NOT defects.
   - *Key Normalization:* Domain canonicalization differences between Farm and AOD may result in missed matches even when both systems processed the same evidence.
 - **Analysis Versioning:** Prevents stale cached analyses from resurfacing as logic evolves:
-  - `CURRENT_ANALYSIS_VERSION` constant in `src/services/constants.py` - bump when categorization logic changes
+  - `CURRENT_ANALYSIS_VERSION` in `src/services/constants.py` is **automatically computed** from source file hashes (analysis.py + reconciliation.py)
+  - **No manual version bumping required** - any code change to analysis logic automatically invalidates all cached analyses
   - `analysis_version` and `analysis_computed_at` columns track when each analysis was computed
   - Auto-recompute on version mismatch: if cached version != CURRENT_ANALYSIS_VERSION, recompute automatically
   - Migration endpoint `/api/admin/migrate-stale-analyses` clears all stale cached analyses

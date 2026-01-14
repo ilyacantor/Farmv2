@@ -1103,7 +1103,7 @@ def generate_assessment_markdown(
     analysis: dict,
     farm_expectations: dict,
     aod_payload: dict,
-    analysis_version: int | None = None,
+    analysis_version: str | None = None,
     analysis_computed_at: str | None = None
 ) -> str | None:
     """Generate detailed assessment markdown for a reconciliation.
