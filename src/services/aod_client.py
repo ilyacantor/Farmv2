@@ -261,17 +261,17 @@ async def fetch_policy_config(force_refresh: bool = False) -> PolicyConfig:
     
     if use_stub:
         trace_log("aod_client", "policy_stub", {"reason": "USE_AOD_EXPLAIN_STUB=true"})
-        return PolicyConfig.default_fallback()
+        return PolicyConfig.from_policy_master()
     
     if not aod_url:
         trace_log("aod_client", "policy_fallback", {"reason": "no_aod_url"})
-        return PolicyConfig.default_fallback()
+        return PolicyConfig.from_policy_master()
     
     if _is_circuit_open():
         trace_log("aod_client", "policy_circuit_open", {"reason": "circuit_breaker"})
         if _policy_cache is not None:
             return _policy_cache
-        return PolicyConfig.default_fallback()
+        return PolicyConfig.from_policy_master()
     
     try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
@@ -317,7 +317,7 @@ async def fetch_policy_config(force_refresh: bool = False) -> PolicyConfig:
                 _record_failure()
                 if _policy_cache is not None:
                     return _policy_cache
-                return PolicyConfig.default_fallback()
+                return PolicyConfig.from_policy_master()
                 
     except Exception as e:
         trace_log("aod_client", "policy_fetch_error", {
@@ -326,7 +326,7 @@ async def fetch_policy_config(force_refresh: bool = False) -> PolicyConfig:
         _record_failure()
         if _policy_cache is not None:
             return _policy_cache
-        return PolicyConfig.default_fallback()
+        return PolicyConfig.from_policy_master()
 
 
 def clear_policy_cache():

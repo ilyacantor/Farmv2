@@ -241,12 +241,12 @@ MARKETPLACE_RESELLERS = [
 
 
 def load_mock_policy_config() -> PolicyConfig:
-    """Load mock policy config from fixture file for local development."""
-    fixture_path = Path(__file__).parent.parent / "fixtures" / "mock_policy_config.json"
-    if fixture_path.exists():
-        with open(fixture_path) as f:
-            return PolicyConfig.from_aod_response(json.load(f))
-    return PolicyConfig.default_fallback()
+    """Load policy config from policy_master.json - single source of truth.
+    
+    This function name is kept for backward compatibility, but now loads
+    from policy_master.json to ensure Farm uses the same gates as AOD.
+    """
+    return PolicyConfig.from_policy_master()
 
 
 SCALE_MULTIPLIERS = {
