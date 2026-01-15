@@ -399,16 +399,22 @@ class EnterpriseGenerator:
         instance (same snapshot).
         """
         prefixes = ["Cloud", "Smart", "Easy", "Pro", "Fast", "Open", "Net", "Data", "Team", "Work",
-                    "Hub", "Flow", "Sync", "Core", "Link", "Flex", "Rapid", "Prime", "Max", "Ultra"]
+                    "Hub", "Flow", "Sync", "Core", "Link", "Flex", "Rapid", "Prime", "Max", "Ultra",
+                    "Next", "New", "One", "All", "Go", "My", "Get", "Try", "Top", "Big"]
         suffixes = ["ly", "ify", "io", "fy", "hub", "base", "desk", "suite", "space", "labs",
-                    "works", "force", "point", "cloud", "soft", "tech", "app", "sync", "flow", "box"]
+                    "works", "force", "point", "cloud", "soft", "tech", "app", "sync", "flow", "box",
+                    "zone", "way", "pad", "spot", "nest", "wire", "grid", "mind", "view", "stack"]
         tlds = ["com", "io", "co", "app", "dev", "net", "org", "cloud", "ai", "tech"]
+        
+        # Overflow distinguishers - use words not numbers to avoid version-like collisions
+        # e.g., OpenAppNeo not OpenApp2 (which looks like version 2 of OpenApp)
+        overflow_markers = ["Neo", "Alt", "Xtra", "Omni", "Zeta", "Nova", "Apex", "Vibe"]
         
         # Initialize used base names tracker if not exists (per generator instance)
         if not hasattr(self, '_used_base_names'):
             self._used_base_names = set()
         
-        # Precompute all possible base names (400 = 20 prefixes × 20 suffixes)
+        # Precompute all possible base names (900 = 30 prefixes × 30 suffixes)
         all_base_names = [f"{p}{s}" for p in prefixes for s in suffixes]
         
         # Filter out already used base names
@@ -423,11 +429,12 @@ class EnterpriseGenerator:
                 # Use available base name
                 name = available_base_names[i]
             else:
-                # Guardrail: extend base name space with suffix when count > available
-                overflow_idx = i - len(available_base_names) + 1
+                # Guardrail: extend base name space with word marker (not number) when count > available
+                # This creates names like OpenAppNeo, OpenAppAlt instead of OpenApp2, OpenApp3
+                overflow_idx = i - len(available_base_names)
                 base_idx = overflow_idx % len(all_base_names)
-                generation = (overflow_idx // len(all_base_names)) + 2
-                name = f"{all_base_names[base_idx]}{generation}"
+                marker_idx = (overflow_idx // len(all_base_names)) % len(overflow_markers)
+                name = f"{all_base_names[base_idx]}{overflow_markers[marker_idx]}"
             
             # Track this base name as used
             self._used_base_names.add(name.lower())
