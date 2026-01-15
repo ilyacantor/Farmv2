@@ -121,6 +121,11 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - **All Discrepancies Are Bugs:** Farm and AOD share policy via the policy center. Any disagreement between Farm and AOD is a BUG requiring investigation and fixing - there are no "expected policy differences" or "intentional discrepancies."
 - **Canonical Domain Correlation Fix (2026-01-14):** Added `canonical_domain` field to IdP and CMDB records. The generator always populates this field with the original domain, and correlation logic uses it first before falling back to name matching. This ensures reliable CMDB/IdP correlation despite name drift and optional `external_ref` fields. **Note:** This fix only applies to NEW snapshots - older snapshots without `canonical_domain` will still show correlation mismatches.
 - **Banned Domains Exclusion Fix (2026-01-15):** Fixed expected block computation to exclude banned domains (e.g., `gstatic.com`, `microsoft.com`, `office.com`) from shadow/zombie classifications. Uses `policy.is_banned()` check alongside `policy.is_excluded()` to filter infrastructure domains at reconciliation time. This ensures Farm and AOD agree on which domains should not be classified as SaaS applications.
+- **Policy Gate Handling (2026-01-15):** When AOD's policy has secondary gates enabled (e.g., `require_valid_ci_type=True`) but doesn't define the validation lists (e.g., `valid_ci_types=[]`), Farm:
+  1. Logs a `POLICY_INCONSISTENCY` warning once per session with `upstream_fix_needed` message
+  2. Accepts all values (matching AOD's actual behavior) since AOD is authoritative
+  3. Does NOT invent defaults that would cause Farm/AOD disagreement
+  This is transparent (logged, not hidden) and matches the "fail loudly" principle by surfacing the upstream policy gap rather than silently inventing behavior.
 - **Analysis Versioning:** Prevents stale cached analyses from resurfacing as logic evolves:
   - `CURRENT_ANALYSIS_VERSION` in `src/services/constants.py` is **automatically computed** from source file hashes (analysis.py + reconciliation.py)
   - **No manual version bumping required** - any code change to analysis logic automatically invalidates all cached analyses

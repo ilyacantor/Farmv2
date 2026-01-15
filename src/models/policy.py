@@ -5,6 +5,9 @@ import os
 from pydantic import BaseModel
 from typing import Optional
 
+# Module-level set to track policy inconsistency warnings (log once per session)
+_gate_inconsistency_logged: set = set()
+
 
 class AdmissionConfig(BaseModel):
     """Thresholds for admission gates."""
@@ -71,18 +74,49 @@ class PolicyConfig(BaseModel):
         
         When require_valid_ci_type/require_valid_lifecycle are true,
         CIs with invalid types/lifecycles are treated as NO_CMDB.
+        
+        POLICY CONTRACT: If require_valid_ci_type=True but valid_ci_types is empty,
+        that's a malformed policy from AOD. We log this inconsistency ONCE and match
+        AOD's actual behavior (accept all) since AOD is authoritative.
         """
+        from src.services.logging import trace_log
+        
         if self.secondary_gates.require_valid_ci_type and ci_type:
-            ci_type_lower = ci_type.lower()
-            valid_types = [t.lower() for t in self.secondary_gates.valid_ci_types]
-            if ci_type_lower not in valid_types:
-                return False
+            valid_types = self.secondary_gates.valid_ci_types
+            if not valid_types:
+                # POLICY_INCONSISTENCY: Gate enabled but no valid types defined
+                # Log once per session, then match AOD's actual behavior
+                if "ci_type" not in _gate_inconsistency_logged:
+                    _gate_inconsistency_logged.add("ci_type")
+                    trace_log("policy", "POLICY_INCONSISTENCY", {
+                        "gate": "require_valid_ci_type",
+                        "issue": "Gate enabled but valid_ci_types list is empty",
+                        "resolution": "Accepting all types to match AOD behavior",
+                        "upstream_fix_needed": "AOD should either disable gate or provide valid_ci_types list"
+                    })
+            else:
+                ci_type_lower = ci_type.lower()
+                valid_types_lower = [t.lower() for t in valid_types]
+                if ci_type_lower not in valid_types_lower:
+                    return False
         
         if self.secondary_gates.require_valid_lifecycle and lifecycle:
-            lifecycle_lower = lifecycle.lower()
-            invalid_states = [s.lower() for s in self.secondary_gates.invalid_lifecycle_states]
-            if lifecycle_lower in invalid_states:
-                return False
+            invalid_states = self.secondary_gates.invalid_lifecycle_states
+            if not invalid_states:
+                # POLICY_INCONSISTENCY: Gate enabled but no invalid states defined
+                if "lifecycle" not in _gate_inconsistency_logged:
+                    _gate_inconsistency_logged.add("lifecycle")
+                    trace_log("policy", "POLICY_INCONSISTENCY", {
+                        "gate": "require_valid_lifecycle",
+                        "issue": "Gate enabled but invalid_lifecycle_states list is empty",
+                        "resolution": "Accepting all lifecycles to match AOD behavior",
+                        "upstream_fix_needed": "AOD should either disable gate or provide invalid_lifecycle_states list"
+                    })
+            else:
+                lifecycle_lower = lifecycle.lower()
+                invalid_states_lower = [s.lower() for s in invalid_states]
+                if lifecycle_lower in invalid_states_lower:
+                    return False
         
         return True
 
@@ -208,9 +242,10 @@ class PolicyConfig(BaseModel):
                 require_sso_for_idp=require_sso,
                 require_valid_ci_type=require_valid_ci,
                 require_valid_lifecycle=require_valid_lifecycle,
-                valid_ci_types=secondary_gates_data.get("valid_ci_types", ["application", "service", "database", "server", "network_device", "storage"]),
-                valid_lifecycle_states=secondary_gates_data.get("valid_lifecycle_states", ["active", "development", "staging", "production", "maintenance"]),
-                invalid_lifecycle_states=secondary_gates_data.get("invalid_lifecycle_states", ["retired", "decommissioned", "deprecated", "archived"]),
+                # If AOD doesn't provide lists, use empty = accept all types (don't enforce unknown gates)
+                valid_ci_types=secondary_gates_data.get("valid_ci_types") or [],
+                valid_lifecycle_states=secondary_gates_data.get("valid_lifecycle_states") or [],
+                invalid_lifecycle_states=secondary_gates_data.get("invalid_lifecycle_states") or [],
             ),
             exclusions=exclusions,
             infrastructure_seeds=infrastructure_seeds,

@@ -577,37 +577,41 @@ def determine_cmdb_resolution_reason(cmdb_matches: list, candidate_vendors: set)
     return 'NONE'
 
 
-def derive_reason_codes(cand: dict, idp_present: bool = None, cmdb_present: bool = None, security_attested: bool = None) -> list[str]:
+def derive_reason_codes(cand: dict, idp_present_direct: bool = None, cmdb_present_direct: bool = None, security_attested: bool = None, vendor_governed: bool = False) -> list[str]:
     """Derive canonical reason codes from candidate flags.
     
-    If idp_present/cmdb_present/security_attested are provided, use those (for governance propagation).
-    Otherwise, use the raw candidate values.
+    SEMANTIC INVARIANT:
+    - HAS_IDP/HAS_CMDB = Direct authoritative record match only
+    - VENDOR_GOVERNED = Governance inherited from vendor family (separate signal)
+    - is_governed includes vendor_governed for classification purposes
     
-    Governance = IdP OR CMDB (always OR, never AND).
-    Security attestation is tracked separately for audit purposes.
+    This ensures reason codes clearly distinguish direct vs propagated governance,
+    matching AOD's semantics for accurate reconciliation.
     """
     codes = []
     if cand.get('discovery_present'):
         codes.append('HAS_DISCOVERY')
     
-    effective_idp = idp_present if idp_present is not None else cand.get('idp_present')
-    effective_cmdb = cmdb_present if cmdb_present is not None else cand.get('cmdb_present')
+    effective_idp_direct = idp_present_direct if idp_present_direct is not None else cand.get('idp_present')
+    effective_cmdb_direct = cmdb_present_direct if cmdb_present_direct is not None else cand.get('cmdb_present')
     effective_security = security_attested if security_attested is not None else cand.get('security_attested')
     
-    if effective_idp:
+    if effective_idp_direct:
         codes.append('HAS_IDP')
     else:
         codes.append('NO_IDP')
-    if effective_cmdb:
+    if effective_cmdb_direct:
         codes.append('HAS_CMDB')
     else:
         codes.append('NO_CMDB')
+    if vendor_governed:
+        codes.append('VENDOR_GOVERNED')
     if effective_security:
         codes.append('HAS_SECURITY_ATTESTATION')
     else:
         codes.append('NO_SECURITY_ATTESTATION')
     
-    is_governed = effective_idp or effective_cmdb
+    is_governed = effective_idp_direct or effective_cmdb_direct or vendor_governed
     
     if is_governed:
         codes.append('GOVERNED')
@@ -741,27 +745,26 @@ def compute_expected_block(
         
         idp_present_direct = cand['idp_present']
         cmdb_present_direct = cand['cmdb_present']
-        security_attested_direct = cand.get('security_attested', False)
-        idp_present = idp_present_direct
-        cmdb_present = cmdb_present_direct
-        security_attested = security_attested_direct
+        security_attested = cand.get('security_attested', False)
         vendor_name = None
-        governed_via_vendor = False
         
         key_lower = key.lower()
+        vendor_governed = False
         if key_lower in vendor_governance:
             vendor_has_idp, vendor_has_cmdb, vendor_name = vendor_governance[key_lower]
-            if vendor_has_idp and not idp_present_direct:
-                idp_present = True
-                governed_via_vendor = True
-            if vendor_has_cmdb and not cmdb_present_direct:
-                cmdb_present = True
-                governed_via_vendor = True
+            if (vendor_has_idp or vendor_has_cmdb) and not idp_present_direct and not cmdb_present_direct:
+                vendor_governed = True
         
-        reasons = derive_reason_codes(cand, idp_present=idp_present, cmdb_present=cmdb_present, security_attested=security_attested)
-        if governed_via_vendor:
-            reasons.append('GOVERNED_VIA_VENDOR')
+        reasons = derive_reason_codes(
+            cand, 
+            idp_present_direct=idp_present_direct, 
+            cmdb_present_direct=cmdb_present_direct, 
+            security_attested=security_attested,
+            vendor_governed=vendor_governed
+        )
         expected_reasons[key] = reasons
+        
+        is_governed = idp_present_direct or cmdb_present_direct or vendor_governed
         
         cmdb_resolution = cand.get('cmdb_resolution_reason', 'NONE')
         if cmdb_resolution != 'NONE':
@@ -780,16 +783,17 @@ def compute_expected_block(
         activity_status = cand.get('activity_status', ActivityStatus.NONE)
         anchored = cand.get('anchored', False)
         
-        has_visibility = cmdb_present
+        has_visibility = cmdb_present_direct
         has_validation = security_attested
-        has_control = idp_present
-        is_governed = idp_present or cmdb_present
+        has_control = idp_present_direct
         
         missing_governance = []
-        if not idp_present:
+        if not idp_present_direct:
             missing_governance.append('NO_IDP')
-        if not cmdb_present:
+        if not cmdb_present_direct:
             missing_governance.append('NO_CMDB')
+        if vendor_governed:
+            missing_governance.append('VENDOR_GOVERNED')
         
         if is_excluded:
             rejection_reason = 'EXCLUDED_BY_POLICY'
@@ -799,8 +803,8 @@ def compute_expected_block(
             is_admitted, rejection_reason = policy.is_admitted(
                 discovery_sources_count=discovery_sources_count,
                 cloud_present=cand['cloud_present'],
-                idp_present=idp_present,
-                cmdb_present=cmdb_present,
+                idp_present=idp_present_direct or vendor_governed,
+                cmdb_present=cmdb_present_direct or vendor_governed,
                 finance_spend=finance_spend,
             )
             
@@ -826,20 +830,18 @@ def compute_expected_block(
             'activity_window_days': window_days,
             'activity_source': cand.get('activity_source', 'none'),
             'latest_activity_at': cand.get('latest_activity_at'),
-            'all_activity_timestamps': all_activity_ts[:10],  # All timestamps with sources
-            'stale_timestamps': stale_ts[:5],  # Timestamps classified as stale
-            'idp_present': idp_present,
+            'all_activity_timestamps': all_activity_ts[:10],
+            'stale_timestamps': stale_ts[:5],
             'idp_present_direct': idp_present_direct,
-            'cmdb_present': cmdb_present,
             'cmdb_present_direct': cmdb_present_direct,
+            'vendor_governed': vendor_governed,
             'security_attested': security_attested,
-            'security_attested_direct': security_attested_direct,
             'has_visibility': has_visibility,
             'has_validation': has_validation,
             'has_control': has_control,
             'is_governed': is_governed,
             'missing_governance': missing_governance,
-            'vendor_governance': vendor_name,
+            'vendor_name': vendor_name,
             'policy_excluded': is_excluded,
             'admitted': is_admitted,
             'discovery_sources_count': discovery_sources_count,
