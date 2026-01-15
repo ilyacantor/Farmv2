@@ -1152,6 +1152,46 @@ class EnterpriseGenerator:
                     memo=f"Shadow IT expense" if self.rng.random() > 0.7 else None,
                 ))
         
+        # Zombie apps: governed + stale activity + ONGOING FINANCE
+        # This is what makes them zombies - we're still paying for unused assets
+        # CRITICAL: Use canonical vendor/product names (no drift) for reliable finance matching
+        for zombie_app in self._zombie_apps:
+            # Use canonical vendor name for reliable correlation
+            # Finance matching uses normalized names, so avoid drift here
+            vendor_name = zombie_app["vendor"]  # Canonical, no drift
+            product_name = zombie_app["name"]   # Canonical, no drift
+            
+            vendors.append(FinanceVendor(
+                vendor_id=f"VND-{self._generate_uuid()[:8].upper()}",
+                vendor_name=vendor_name,
+            ))
+            
+            # Zombies MUST have ongoing finance - that's what defines them
+            owner = self.rng.choice(self._employees) if self._employees else None
+            contracts.append(FinanceContract(
+                contract_id=f"CTR-{self._generate_uuid()[:8].upper()}",
+                vendor_name=vendor_name,
+                product=product_name,  # Always set product for reliable matching
+                start_date=self._random_date(730),
+                end_date=self._random_future_date(365) if self.rng.random() > 0.3 else None,
+                owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
+            ))
+            
+            # Zombies get priority for transactions - don't skip due to cap
+            # Create recurring transactions to establish ongoing finance
+            num_txns = self.rng.randint(2, 4)
+            for _ in range(num_txns):
+                transactions.append(FinanceTransaction(
+                    txn_id=f"TXN-{self._generate_uuid()[:8].upper()}",
+                    vendor_name=vendor_name,
+                    amount=round(self.rng.uniform(100, 10000), 2),
+                    currency="USD",
+                    date=self._random_date(365),
+                    payment_type=self.rng.choice(list(PaymentTypeEnum)),
+                    is_recurring=True,  # CRITICAL: Must be recurring for ongoing finance
+                    memo=f"Zombie app license - candidate for deprovisioning" if self.rng.random() > 0.7 else None,
+                ))
+        
         return FinancePlane(vendors=vendors, contracts=contracts, transactions=transactions)
 
     def generate_security_plane(self) -> SecurityPlane:
@@ -1328,6 +1368,30 @@ class EnterpriseGenerator:
                 environment_hint=EnvironmentHintEnum.prod,
                 raw={"stress_test": "zombie_asset", "scenario": "Stale activity >90 days = deprovision candidate"},
             ))
+        
+        # CRITICAL: Zombie requires ongoing finance to be classified as zombie
+        finance.vendors.append(FinanceVendor(
+            vendor_id=f"VND-STRESS-ZOMBIE",
+            vendor_name=zombie["vendor"],
+        ))
+        finance.contracts.append(FinanceContract(
+            contract_id=f"CTR-STRESS-ZOMBIE",
+            vendor_name=zombie["vendor"],
+            product=zombie["name"],
+            start_date=self._random_date(730),
+            end_date=self._random_future_date(365),
+            owner_email=emp["email"] if emp else "stress@test.com",
+        ))
+        finance.transactions.append(FinanceTransaction(
+            txn_id=f"TXN-STRESS-ZOMBIE",
+            vendor_name=zombie["vendor"],
+            amount=2500.00,
+            currency="USD",
+            date=self._random_date(90),
+            payment_type=PaymentTypeEnum.invoice,
+            is_recurring=True,  # CRITICAL: Must be recurring for ongoing finance
+            memo="Stress test: Zombie asset - stale activity but ongoing payment",
+        ))
 
     def generate(self) -> SnapshotResponse:
         self._init_enterprise()
