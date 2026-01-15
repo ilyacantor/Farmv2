@@ -247,9 +247,8 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
     idp_objects = planes.get('idp', {}).get('objects', [])
     for obj in idp_objects:
         name = normalize_name(obj.get('name', ''))
-        canonical_domain = obj.get('canonical_domain')
         raw_domain = extract_domain(obj.get('external_ref', ''))
-        idp_registered = canonical_domain or (extract_registered_domain(raw_domain) if raw_domain else None)
+        idp_registered = extract_registered_domain(raw_domain) if raw_domain else None
         has_sso = obj.get('has_sso', False)
         matched_keys = set()
         
@@ -259,21 +258,18 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         if policy and not policy.idp_passes_gates(has_sso):
             idp_passes_gate = False
         
-        # PRIORITY: Use canonical_domain first for reliable correlation
+        # CORRELATION: Match AOD's behavior - use external_ref domain or name matching
+        # NOTE: canonical_domain is NOT used for correlation to match AOD's current contract.
         if idp_registered:
-            # Direct key match using canonical domain
             if idp_registered in candidates:
                 matched_keys.add(idp_registered)
-            # Also try registered domain extraction for normalized matching
             registered = extract_registered_domain(idp_registered)
             if registered and registered in candidates:
                 matched_keys.add(registered)
         
         # Fallback: O(1) lookups by name if no domain match
         if not matched_keys and name:
-            # Match by normalized key
             matched_keys.update(normalized_to_keys.get(name, set()))
-            # Match by normalized names in candidates
             matched_keys.update(name_to_keys.get(name, set()))
         
         # Fallback: domain lookup from external_ref
@@ -316,9 +312,8 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])
     for ci in cmdb_cis:
         name = normalize_name(ci.get('name', ''))
-        canonical_domain = ci.get('canonical_domain')
         raw_domain = extract_domain(ci.get('external_ref', ''))
-        cmdb_registered = canonical_domain or (extract_registered_domain(raw_domain) if raw_domain else None)
+        cmdb_registered = extract_registered_domain(raw_domain) if raw_domain else None
         ci_vendor = normalize_name(ci.get('vendor', '') or '')
         ci_type = ci.get('ci_type')
         lifecycle = ci.get('lifecycle')
@@ -332,12 +327,15 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         matched_keys = set()
         matched_by_vendor = set()
 
-        # PRIORITY: Use canonical_domain first for reliable correlation
+        # CORRELATION: Match AOD's behavior - use external_ref domain or name matching
+        # NOTE: canonical_domain is NOT used for correlation to match AOD's current contract.
+        # AOD doesn't use canonical_domain, so Farm must not either to avoid FP discrepancies.
+        # The canonical_domain field is kept in generator for future AOD alignment.
+
+        # Primary: domain lookup from external_ref
         if cmdb_registered:
-            # Direct key match using canonical domain
             if cmdb_registered in candidates:
                 matched_keys.add(cmdb_registered)
-            # Also try registered domain extraction for normalized matching
             registered = extract_registered_domain(cmdb_registered)
             if registered and registered in candidates:
                 matched_keys.add(registered)
@@ -348,7 +346,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
                 matched_keys.update(k for k, norm_k in key_to_normalized.items() if norm_k == name)
             matched_keys.update(name_to_keys.get(name, set()))
 
-        # Fallback: domain lookup from external_ref
+        # Fallback: domain lookup from raw external_ref
         if not matched_keys and raw_domain:
             matched_keys.update(domain_to_keys.get(raw_domain, set()))
 
