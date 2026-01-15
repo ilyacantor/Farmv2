@@ -110,6 +110,7 @@
     "slack-imgs.com": "slack.com",
     "zoom.us": "zoom.com",
     "zoomgov.com": "zoom.com",
+    "zoom-legacy.com": "zoom.com",
     "dropboxusercontent.com": "dropbox.com",
     "dropboxapi.com": "dropbox.com",
     "atlassian.net": "atlassian.com",
@@ -128,6 +129,10 @@
     "loom.com": "loom.com",
     "useloom.com": "loom.com",
     "miro.com": "miro.com",
-    "realtimeboard.com": "miro.com"
+    "realtimeboard.com": "miro.com",
+    "force.com": "salesforce.com",
+    "salesforceliveagent.com": "salesforce.com",
+    "adobelogin.com": "adobe.com",
+    "yammer.com": "microsoft.com"
   }
 }
