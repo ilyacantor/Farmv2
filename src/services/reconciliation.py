@@ -790,7 +790,14 @@ def compute_expected_block(
     
     candidates = build_candidate_flags(snapshot, window_days, policy)
     
-    vendor_governance = propagate_vendor_governance(candidates)
+    # POLICY: Only propagate vendor governance if enabled in policy
+    if policy.admission.enable_vendor_propagation:
+        vendor_governance = propagate_vendor_governance(candidates)
+    else:
+        vendor_governance = {}
+        trace_log("reconciliation", "vendor_propagation_disabled", {
+            "reason": "policy.admission.enable_vendor_propagation=false"
+        })
     
     shadow_expected = []
     zombie_expected = []
@@ -1011,7 +1018,12 @@ def analyze_snapshot_for_expectations(
     noise_floor = policy.admission.noise_floor
     
     candidates = build_candidate_flags(snapshot, window_days, policy)
-    vendor_governance = propagate_vendor_governance(candidates)
+    
+    # POLICY: Only propagate vendor governance if enabled in policy
+    if policy.admission.enable_vendor_propagation:
+        vendor_governance = propagate_vendor_governance(candidates)
+    else:
+        vendor_governance = {}
     
     shadow_keys = []
     zombie_keys = []
