@@ -333,14 +333,10 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         # CONTRACT: Do NOT use external_ref domain for matching
         # (removed: domain lookup from external_ref)
         
-        # POLICY: Create candidate for IdP-only assets (no discovery required)
-        # CONTRACT: Only use canonical_domain for new candidates, NOT external_ref
-        if not matched_keys and idp_registered and idp_passes_gate:
-            key = idp_registered
-            candidates[key]['key'] = key
-            candidates[key]['names'].add(obj.get('name', ''))
-            candidates[key]['domains'].add(key)
-            matched_keys.add(key)
+        # CONTRACT: Do NOT create IdP-only candidates
+        # AOD requires discovery evidence for admission - IdP is enrichment only, not admission gate
+        # If there's no discovery candidate for this domain, skip IdP correlation
+        # (This prevents Farm from admitting assets that AOD would reject)
         
         # Mark matched candidates - only if IdP passes the gate
         for key in matched_keys:
@@ -416,15 +412,10 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
             vendor_keys = vendor_to_keys.get(ci_vendor, set())
             matched_by_vendor.update(vendor_keys - matched_keys)
 
-        # POLICY: Create candidate for CMDB-only assets (no discovery required)
-        # CONTRACT: Only use canonical_domain for new candidates, NOT external_ref
-        if cmdb_registered and cmdb_registered not in candidates and cmdb_passes_gate:
-            key = cmdb_registered
-            candidates[key]['key'] = key
-            candidates[key]['names'].add(ci.get('name', ''))
-            candidates[key]['domains'].add(key)
-            if ci_vendor:
-                candidates[key]['vendors'].add(ci_vendor)
+        # CONTRACT: Do NOT create CMDB-only candidates
+        # AOD requires discovery evidence for admission - CMDB is enrichment only, not admission gate
+        # If there's no discovery candidate for this domain, skip CMDB correlation
+        # (This prevents Farm from admitting assets that AOD would reject)
 
         # Update candidates with matches - only if CMDB passes the gate
         for key in matched_keys:
