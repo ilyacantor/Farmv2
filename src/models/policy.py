@@ -9,6 +9,19 @@ from typing import Optional
 _gate_inconsistency_logged: set = set()
 
 
+class MissingPolicyError(Exception):
+    """Raised when expected classification is attempted without a policy.
+    
+    Farm must not compute expected outcomes using implicit defaults when
+    the policy blob is missing/empty. Without policy, "expected" is undefined.
+    
+    To proceed:
+    - Fetch policy from AOD via fetch_policy_config()
+    - OR set FARM_ALLOW_DEFAULT_POLICY=true for local testing
+    """
+    pass
+
+
 class AdmissionConfig(BaseModel):
     """Thresholds for admission gates."""
     minimum_spend: int = 200
@@ -35,8 +48,11 @@ class SecondaryGatesConfig(BaseModel):
     
     When enabled, these gates cause IdP/CMDB records that don't meet criteria
     to be treated as if they don't exist (NO_IDP/NO_CMDB).
+    
+    NOTE: require_sso_for_idp defaults to False to match AOD's effective behavior.
+    When policy is explicitly provided from AOD, this may be overridden.
     """
-    require_sso_for_idp: bool = True
+    require_sso_for_idp: bool = False  # Changed from True to match AOD behavior
     require_valid_ci_type: bool = True
     require_valid_lifecycle: bool = True
     valid_ci_types: list[str] = ["app", "application", "service", "database", "server", "network_device", "storage", "infra"]
@@ -203,21 +219,19 @@ class PolicyConfig(BaseModel):
         enable_vendor_prop = admission_gates.get("enable_vendor_propagation", True)
         
         # Secondary gates can come from admission_gates, admission, or secondary_gates
-        require_sso = (
-            secondary_gates_data.get("require_sso_for_idp") or
-            admission_gates.get("require_sso_for_idp") or
-            admission_data.get("require_sso_for_idp", True)
-        )
-        require_valid_ci = (
-            secondary_gates_data.get("require_valid_ci_type") or
-            admission_gates.get("require_valid_ci_type") or
-            admission_data.get("require_valid_ci_type", True)
-        )
-        require_valid_lifecycle = (
-            secondary_gates_data.get("require_valid_lifecycle") or
-            admission_gates.get("require_valid_lifecycle") or
-            admission_data.get("require_valid_lifecycle", True)
-        )
+        # IMPORTANT: Use 'is not None' checks because False is a valid explicit value!
+        # Using 'or' would treat False as falsy and fall through to True defaults.
+        def get_bool_with_fallback(key: str, default: bool) -> bool:
+            """Get boolean config, preferring explicit values over defaults."""
+            for source in [secondary_gates_data, admission_gates, admission_data]:
+                val = source.get(key)
+                if val is not None:
+                    return bool(val)
+            return default
+        
+        require_sso = get_bool_with_fallback("require_sso_for_idp", False)  # Default matches AOD
+        require_valid_ci = get_bool_with_fallback("require_valid_ci_type", True)
+        require_valid_lifecycle = get_bool_with_fallback("require_valid_lifecycle", True)
         
         # Exclusion lists - check nested structure first, then flat
         exclusions = exclusion_lists.get("custom_exclusions") or data.get("exclusions", [])

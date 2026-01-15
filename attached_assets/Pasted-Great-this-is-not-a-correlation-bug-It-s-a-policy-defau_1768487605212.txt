@@ -1,0 +1,74 @@
+Great — this is **not** a correlation bug. It’s a **policy-default divergence + missing-policy handling bug** in Farm.
+
+### Decision (CTO)
+
+**Implement Option C + a small compatibility fallback.**
+
+* **Farm must not compute “expected” using implicit defaults** when the policy blob is missing/empty.
+* That guarantees we don’t keep “debugging” phantom mismatches that are really just “Farm guessed a stricter policy than AOD.”
+
+## What to implement
+
+### 1) Hard fail when policy is missing (primary fix)
+
+In Farm’s expected-classification path (where it builds candidate flags / expected outcomes):
+
+* If `policy` is missing / empty `{}` / null → **raise** with a clear error:
+
+  * `MissingPolicyError: expected classification requires policy snapshot from AOD`
+
+This is the correct behavior for a test harness. Without policy, “expected” is undefined.
+
+### 2) Compatibility fallback only if you *must* keep runs going (secondary)
+
+If you absolutely need Farm to run without policy (CI convenience), then:
+
+* Default Farm’s **secondary gate defaults** to match AOD’s effective defaults **explicitly**.
+* In this specific case: `require_sso_for_idp = False`
+
+But this must be **opt-in** (env var or flag), so we don’t silently mask missing-policy again.
+
+Example:
+
+* `FARM_ALLOW_DEFAULT_POLICY=true` → uses AOD-aligned defaults
+* otherwise → hard fail
+
+### 3) Unit tests (required)
+
+Add tests for three cases:
+
+1. **Missing policy hard-fails**
+
+* policy = None or {}
+* expected classifier raises MissingPolicyError
+
+2. **Fallback policy behaves like AOD**
+
+* FARM_ALLOW_DEFAULT_POLICY=true
+* policy missing
+* idp record `has_sso=False` should still yield `HAS_IDP` (or whatever “idp present” means in Farm’s model)
+
+3. **Explicit policy enforces gate**
+
+* policy says `require_sso_for_idp=True`
+* `has_sso=False` → `NO_IDP` (or “IDP fails gate”)
+
+## Why this is the smallest safe fix
+
+* It fixes the root cause (Farm applying strict defaults because policy is empty).
+* It prevents future “mismatch storms” whenever policy transmission breaks.
+* It keeps the harness honest: expected outcomes must be computed under the same policy AOD used.
+
+## Answer: “Want me to implement the fix?”
+
+**Yes. Implement Option C + optional fallback flag.**
+Do **not** just flip the default globally without the missing-policy guard — that would hide real regressions in policy plumbing.
+
+## One more thing (important)
+
+After you implement this, rerun the reconciliation. I expect:
+
+* those 5 “IdP correlation” mismatches should drop significantly **if** policy was missing/empty in the run.
+* if they don’t, then we look at the remaining ones and they’ll likely be true correlation issues.
+
+If you paste how Farm receives the policy blob today (where `{}` is coming from), I’ll tell you whether the real bug is “policy not fetched from AOD” vs “serialized but empty.”

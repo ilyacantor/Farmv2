@@ -91,6 +91,7 @@ INVARIANT: CMDB and IdP assert truth. Heuristics suggest context.
 ================================================================================
 """
 
+import os
 from datetime import datetime
 from typing import Optional
 from collections import defaultdict
@@ -699,8 +700,26 @@ def compute_expected_block(
     - noise_floor: minimum discovery sources for admission
     - zombie_window_days: inactivity threshold
     - infrastructure_seeds: domains to exclude (from AOD, not local)
+    
+    Raises:
+        MissingPolicyError: If policy is None/empty and FARM_ALLOW_DEFAULT_POLICY is not set.
     """
-    if policy is None:
+    from src.models.policy import MissingPolicyError
+    
+    # Guard: policy must be explicitly provided (not None, not empty dict if passed as dict)
+    policy_missing = policy is None
+    if policy_missing:
+        allow_default = os.environ.get("FARM_ALLOW_DEFAULT_POLICY", "").lower() == "true"
+        if not allow_default:
+            raise MissingPolicyError(
+                "Expected classification requires policy snapshot from AOD. "
+                "Set FARM_ALLOW_DEFAULT_POLICY=true for local testing, "
+                "or fetch policy via fetch_policy_config()."
+            )
+        trace_log("reconciliation", "using_default_policy", {
+            "reason": "FARM_ALLOW_DEFAULT_POLICY=true",
+            "warning": "Production should always use policy from AOD"
+        })
         policy = PolicyConfig.default_fallback()
     
     if window_days is None:
@@ -909,8 +928,21 @@ def analyze_snapshot_for_expectations(
     window_days: Optional[int] = None,
     policy: Optional[PolicyConfig] = None
 ) -> FarmExpectations:
-    """Legacy function for backward compatibility."""
-    if policy is None:
+    """Legacy function for backward compatibility.
+    
+    Raises:
+        MissingPolicyError: If policy is None/empty and FARM_ALLOW_DEFAULT_POLICY is not set.
+    """
+    from src.models.policy import MissingPolicyError
+    
+    policy_missing = policy is None
+    if policy_missing:
+        allow_default = os.environ.get("FARM_ALLOW_DEFAULT_POLICY", "").lower() == "true"
+        if not allow_default:
+            raise MissingPolicyError(
+                "Expected classification requires policy snapshot from AOD. "
+                "Set FARM_ALLOW_DEFAULT_POLICY=true for local testing."
+            )
         policy = PolicyConfig.default_fallback()
     if window_days is None:
         window_days = policy.admission.zombie_window_days

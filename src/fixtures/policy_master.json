@@ -15,7 +15,7 @@
   },
   
   "secondary_gates": {
-    "require_sso_for_idp": true,
+    "require_sso_for_idp": false,
     "require_valid_ci_type": true,
     "require_valid_lifecycle": true,
     "valid_ci_types": ["app", "application", "service", "database", "server", "network_device", "storage", "infra"],
