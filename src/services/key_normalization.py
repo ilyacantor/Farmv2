@@ -20,13 +20,29 @@ def normalize_name(name: str) -> str:
 
 
 def extract_domain(text: str) -> Optional[str]:
+    """Extract the registered domain (eTLD+1) from a URL or domain string.
+    
+    Uses tldextract to properly identify the registered domain, avoiding
+    the creation of phantom domains like 'cdn.com' from 'static.cdn.cloudflare.com'.
+    
+    Examples:
+        https://app.slack.com/path -> slack.com
+        static.cdn.cloudflare.com -> cloudflare.com
+        api.example.co.uk -> example.co.uk
+        calendly.com -> calendly.com
+    """
     if not text:
         return None
-    text = text.lower()
+    text = text.lower().strip()
     text = re.sub(r'^https?://', '', text)
     text = re.sub(r'/.*$', '', text)
-    text = re.sub(r'^[^.]+\.', '', text) if text.count('.') > 1 else text
-    return text if '.' in text else None
+    text = text.split(':')[0]  # Remove port if present
+    
+    if '.' not in text:
+        return None
+    
+    # Use tldextract for proper eTLD+1 extraction
+    return extract_registered_domain(text)
 
 
 @lru_cache(maxsize=1024)
