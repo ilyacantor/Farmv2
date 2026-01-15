@@ -390,20 +390,52 @@ class EnterpriseGenerator:
         return email
 
     def _generate_synthetic_saas(self, count: int, category: str = "saas") -> list[dict]:
-        """Generate synthetic SaaS apps with realistic domains when static lists are exhausted."""
+        """Generate synthetic SaaS apps with unique base names per snapshot.
+        
+        Guarantees no duplicate base names (e.g., won't generate both synccloud.org 
+        and synccloud.com) unless TLD variants mode is explicitly enabled.
+        
+        Base name uniqueness is enforced across all calls within the same generator
+        instance (same snapshot).
+        """
         prefixes = ["Cloud", "Smart", "Easy", "Pro", "Fast", "Open", "Net", "Data", "Team", "Work",
                     "Hub", "Flow", "Sync", "Core", "Link", "Flex", "Rapid", "Prime", "Max", "Ultra"]
         suffixes = ["ly", "ify", "io", "fy", "hub", "base", "desk", "suite", "space", "labs",
                     "works", "force", "point", "cloud", "soft", "tech", "app", "sync", "flow", "box"]
         tlds = ["com", "io", "co", "app", "dev", "net", "org", "cloud", "ai", "tech"]
         
+        # Initialize used base names tracker if not exists (per generator instance)
+        if not hasattr(self, '_used_base_names'):
+            self._used_base_names = set()
+        
+        # Precompute all possible base names (400 = 20 prefixes × 20 suffixes)
+        all_base_names = [f"{p}{s}" for p in prefixes for s in suffixes]
+        
+        # Filter out already used base names
+        available_base_names = [n for n in all_base_names if n.lower() not in self._used_base_names]
+        
+        # Shuffle available names deterministically
+        self.rng.shuffle(available_base_names)
+        
         synthetic = []
         for i in range(count):
-            prefix = self.rng.choice(prefixes)
-            suffix = self.rng.choice(suffixes)
+            if i < len(available_base_names):
+                # Use available base name
+                name = available_base_names[i]
+            else:
+                # Guardrail: extend base name space with suffix when count > available
+                overflow_idx = i - len(available_base_names) + 1
+                base_idx = overflow_idx % len(all_base_names)
+                generation = (overflow_idx // len(all_base_names)) + 2
+                name = f"{all_base_names[base_idx]}{generation}"
+            
+            # Track this base name as used
+            self._used_base_names.add(name.lower())
+            
+            # Assign random TLD (fine since base names are unique)
             tld = self.rng.choice(tlds)
-            name = f"{prefix}{suffix}"
             domain = f"{name.lower()}.{tld}"
+            
             synthetic.append({
                 "name": name,
                 "vendor": f"{name} Inc",
