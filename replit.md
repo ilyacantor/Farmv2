@@ -130,6 +130,26 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - **Ground Truth Classification:** Admitted assets are classified based on evidence flags and governance propagation logic.
 - **Policy Invariant:** AOD owns policy. Farm consumes it for grading. Farm never overrides. Policies are configuration that control deterministic logic. Farm fails explicitly with `POLICY_UNAVAILABLE` if policy cannot be fetched from AOD in production.
 
+## Recent AOD Alignment Fixes (Jan 2026)
+
+**Infrastructure Domain Preservation:**
+- Infrastructure domains (googleapis.com, gstatic.com, office.com, cloudfront.net, etc.) are preserved as standalone keys, NOT collapsed to parent domains
+- This matches AOD Stage 4 behavior where infrastructure domains remain separate catalog entries
+- Defined in `INFRASTRUCTURE_DOMAINS` frozenset in key_normalization.py
+
+**Lifecycle Gates:**
+- CMDB entries with lifecycle states `pending`, `draft`, `retired`, `decommissioned`, `deprecated`, `archived` fail governance gates
+- Only `active`, `development`, `staging`, `production`, `maintenance` states grant governance
+
+**Zombie Detection:**
+- Activity = discovery + IdP timestamps ONLY (NOT finance)
+- Zombie = governed + stale activity + ongoing finance (all three required)
+- Ungoverned stale assets are PARKED, not zombies
+
+**Key Normalization:**
+- Uses tldextract for proper eTLD+1 extraction
+- Junk domain suffixes (cdn.com, edge.com, global.com, etc.) excluded via policy
+
 ## External Dependencies
 - **Database:** Supabase PostgreSQL (managed Postgres with session pooling), configured via `SUPABASE_DB_URL` or `DATABASE_URL`.
 - **AOD Module (AutonomOS Discover):** Interacts via defined API contracts, requiring `AOD_URL` and optionally `AOD_SHARED_SECRET`. A local stub can be enabled with `USE_AOD_EXPLAIN_STUB=true`.
