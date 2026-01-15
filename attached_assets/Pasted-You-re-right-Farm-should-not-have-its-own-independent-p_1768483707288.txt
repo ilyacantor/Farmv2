@@ -1,0 +1,51 @@
+You’re right: **Farm should not have its own independent `policy_master.json`** in the sense of “Farm decides policy.”
+
+What Farm *should* have is the ability to **consume AOD’s policy** for one purpose only: **generate and grade consistently**.
+
+### Clean mental model
+
+* **AOD owns policy** (switchboard = source of truth).
+* **Farm is a harness**:
+
+  * generates scenarios under a given policy
+  * computes expected outcomes under that same policy
+  * grades AOD against those expectations
+* Farm never “overrides.” It either **loads** AOD policy or it **fails** with “missing policy”.
+
+So the statement you gave Farm agent is directionally correct:
+
+* ✅ AOD sets policy
+* ✅ Farm aligns for grading only
+* ✅ Farm cannot override
+
+Two small wording fixes to keep it technically precise:
+
+1. **“Policies are not logic”** — they *aren’t* code, but they *do* control logic.
+   Better:
+
+   > “Policies are configuration that control deterministic logic; they are not negotiated or inferred by Farm.”
+
+2. TikTok ban is exactly the right example:
+
+   * TikTok is a business SaaS / marketing platform → **should not be banned by default**
+   * If a customer wants it excluded, that’s an explicit policy choice (rare).
+
+### What this implies operationally (important)
+
+Farm should not store its own “policy master,” but it does need **a policy snapshot per run** so grading is reproducible.
+
+**Correct implementation pattern**
+
+* When AOD runs a pipeline, it writes into the run artifact:
+
+  * `policy_snapshot` (the effective policy JSON used)
+  * or `policy_hash` + a pointer to the exact policy blob stored in AOD DB
+* Farm reads that policy snapshot/hash when grading that run.
+
+This avoids the “Farm and AOD aren’t aligned” class of bugs permanently.
+
+### Bottom line
+
+* **No**, Farm shouldn’t have independent policy authority.
+* **Yes**, Farm must consume the exact AOD policy used for that run, as a snapshot, to generate/grade deterministically.
+* And yes: **TikTok should not be banned**; it’s a business application domain, not shared infra.

@@ -120,7 +120,7 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - **Discrepancy-Based Assessment Triggers:** Automatic generation of detailed markdown assessment reports for non-perfect reconciliations, triggered by any classification or admission mismatch.
 - **All Discrepancies Are Bugs:** Farm and AOD share policy via the policy center. Any disagreement between Farm and AOD is a BUG requiring investigation and fixing - there are no "expected policy differences" or "intentional discrepancies."
 - **Canonical Domain Correlation (2026-01-14):** Added `canonical_domain` field to IdP and CMDB records. The generator populates this field with the original domain, and correlation logic uses it first before falling back to name matching. This improves CMDB/IdP correlation reliability despite name drift and optional `external_ref` fields.
-- **Banned Domains Exclusion Fix (2026-01-15):** Fixed expected block computation to exclude banned domains (e.g., `gstatic.com`, `microsoft.com`, `office.com`) from shadow/zombie classifications. Uses `policy.is_banned()` check alongside `policy.is_excluded()` to filter infrastructure domains at reconciliation time. This ensures Farm and AOD agree on which domains should not be classified as SaaS applications.
+- **Policy Alignment Fix (2026-01-15):** Fixed `is_excluded()` to NOT treat `corporate_root_domains` as exclusions. Major SaaS vendors (salesforce.com, slack.com, etc.) are legitimate applications that should be admitted and classified. Only explicit `exclusions` list and `infrastructure_seeds` (when `include_infra=false`) determine exclusions. Removed hardcoded banned_domains - these are now controlled entirely by AOD policy.
 - **Policy Gate Handling (2026-01-15):** When AOD's policy has secondary gates enabled (e.g., `require_valid_ci_type=True`) but doesn't define the validation lists (e.g., `valid_ci_types=[]`), Farm:
   1. Logs a `POLICY_INCONSISTENCY` warning once per session with `upstream_fix_needed` message
   2. Accepts all values (matching AOD's actual behavior) since AOD is authoritative
@@ -186,6 +186,47 @@ Heuristics may enrich context but **must never** assert governance, override gat
 
 ### Determinism Guarantee
 Given identical inputs (evidence + policy), Farm always produces the same classification. If Farm and AOD disagree under same evidence and policy, one contains a bug.
+
+## Policy Architecture
+
+**INVARIANT:** AOD owns policy. Farm consumes it for grading. Farm never overrides.
+
+### Policy Ownership
+- **AOD Policy Switchboard** is the single source of truth for all policy configuration
+- **Farm is a test harness** that generates scenarios and grades AOD against expectations
+- **Policies are configuration** that control deterministic logic - they are not negotiated or inferred by Farm
+
+### Policy Flow
+```
+AOD Policy Switchboard → webhook notification → Farm clears cache
+                      → fetch_policy_config() → Farm uses for grading
+```
+
+When Farm grades a reconciliation:
+1. Farm fetches the current policy from AOD (or uses policy snapshot from AOD run)
+2. Farm computes expected classifications using that exact policy
+3. Farm compares AOD's actual results against expectations
+4. Any discrepancy is a BUG (not an "expected difference")
+
+### Policy Snapshot Per Run (Ideal Implementation)
+For reproducible grading, each AOD run artifact should include:
+- `policy_snapshot`: The exact policy JSON used for that run
+- Or `policy_hash` + pointer to the exact policy blob in AOD DB
+
+Farm reads that policy snapshot when grading, ensuring Farm and AOD used identical policy.
+
+### What Farm Does NOT Do
+- Farm does NOT maintain independent policy authority
+- Farm does NOT override or modify AOD policies
+- Farm does NOT have a separate `policy_master.json` for production (only fallback for local testing)
+- Farm does NOT infer or negotiate policy values
+
+### Fallback Behavior
+`src/fixtures/policy_master.json` exists ONLY as a fallback when:
+- `USE_AOD_EXPLAIN_STUB=true` (local testing mode)
+- AOD is unreachable (should fail explicitly in production)
+
+In production, if policy cannot be fetched from AOD, Farm should fail with `POLICY_UNAVAILABLE` rather than silently using defaults.
 
 ## External Dependencies
 - **Database:** Supabase PostgreSQL (managed Postgres with session pooling), configured via `SUPABASE_DB_URL` or `DATABASE_URL`.
