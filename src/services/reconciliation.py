@@ -311,6 +311,9 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
             idp_passes_gate = False
         
         # CORRELATION: Use canonical_domain for matching to existing candidates
+        # CONTRACT: Only match to candidates keyed by the IdP canonical_domain
+        # Do NOT use domain_to_keys index - that's too aggressive and causes 
+        # correlation drift with AOD (Farm finds matches AOD doesn't)
         if idp_registered:
             # Direct key match using canonical domain
             if idp_registered in candidates:
@@ -319,11 +322,6 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
             registered = extract_registered_domain(idp_registered)
             if registered and registered in candidates:
                 matched_keys.add(registered)
-            # Use domain_to_keys index to find candidates that observed this domain
-            # CONTRACT: Only use canonical_domain, NOT external_ref domains
-            matched_keys.update(domain_to_keys.get(idp_registered, set()))
-            if registered:
-                matched_keys.update(domain_to_keys.get(registered, set()))
         
         # Fallback: O(1) lookups by name if no domain match
         if not matched_keys and name:
@@ -393,6 +391,9 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         matched_by_vendor = set()
 
         # CORRELATION: Use canonical_domain for matching to existing candidates
+        # CONTRACT: Only match to candidates keyed by the CMDB canonical_domain
+        # Do NOT use domain_to_keys index - that's too aggressive and causes 
+        # correlation drift with AOD (Farm finds matches AOD doesn't)
         if cmdb_registered:
             # Direct key match using canonical domain
             if cmdb_registered in candidates:
@@ -401,11 +402,6 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
             registered = extract_registered_domain(cmdb_registered)
             if registered and registered in candidates:
                 matched_keys.add(registered)
-            # Use domain_to_keys index to find candidates that observed this domain
-            # CONTRACT: Only use canonical_domain, NOT external_ref domains
-            matched_keys.update(domain_to_keys.get(cmdb_registered, set()))
-            if registered:
-                matched_keys.update(domain_to_keys.get(registered, set()))
             
         # Fallback: Direct lookups by name if no domain match
         if not matched_keys and name:
