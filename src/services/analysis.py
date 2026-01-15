@@ -329,23 +329,26 @@ def check_key_in_aod_evidence(key: str, aod_evidence_domains: set) -> bool:
 def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> tuple:
     """Build detailed reconciliation analysis comparing Farm expectations vs AOD results.
     
-    Uses stored __expected__ block from snapshot if available (fast path).
-    Only recomputes if __expected__ is missing (legacy snapshots).
+    Uses passed farm_exp (recomputed with current policy) if provided.
+    Falls back to snapshot's __expected__ block only for legacy calls.
     
     Returns: (analysis_dict, recomputed_expected_block_or_none)
-        - If cached block was valid: returns (analysis, None)
+        - If farm_exp was used: returns (analysis, None)
         - If recomputed: returns (analysis, new_expected_block) so caller can persist
     """
     reset_mismatch_counters()
     
     recomputed_block = None
-    cached_block = snapshot.get('__expected__')
     
-    if cached_block and cached_block.get('shadow_expected') is not None:
-        expected_block = cached_block
+    if farm_exp and farm_exp.get('shadow_expected') is not None:
+        expected_block = farm_exp
     else:
-        expected_block = compute_expected_block(snapshot, mode="all")
-        recomputed_block = expected_block
+        cached_block = snapshot.get('__expected__')
+        if cached_block and cached_block.get('shadow_expected') is not None:
+            expected_block = cached_block
+        else:
+            expected_block = compute_expected_block(snapshot, mode="all")
+            recomputed_block = expected_block
     
     farm_shadows = {a['asset_key'] for a in expected_block.get('shadow_expected', [])}
     farm_zombies = {a['asset_key'] for a in expected_block.get('zombie_expected', [])}

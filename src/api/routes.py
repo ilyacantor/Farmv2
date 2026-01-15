@@ -1126,7 +1126,6 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
         else:
             # Recompute analysis (cache miss, version stale, or forced)
             aod_payload = json.loads(rec_row["aod_payload_json"])
-            farm_exp = json.loads(rec_row["farm_expectations_json"])
             
             increment_blob_fetch()
             snap_row = await conn.fetchrow("SELECT blob FROM snapshots_blob WHERE snapshot_id = $1", rec_row["snapshot_id"])
@@ -1137,9 +1136,13 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
                 if snap_row:
                     snapshot = json.loads(snap_row["snapshot_json"])
                 else:
-                    snapshot = {'__expected__': farm_exp}
+                    raise HTTPException(status_code=404, detail="Snapshot not found for recompute")
             
-            analysis, recomputed_block = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
+            # Recompute expected block with current policy (fixes stale policy issues)
+            policy = await fetch_policy_config()
+            expected_block = compute_expected_block(snapshot, mode="sprawl", policy=policy)
+            
+            analysis, recomputed_block = build_reconciliation_analysis(snapshot, aod_payload, expected_block)
             analysis_computed_at = datetime.utcnow().isoformat() + "Z"
             
             # Persist with version and timestamp
@@ -1319,15 +1322,18 @@ async def download_reconciliation_diff(
             raise HTTPException(status_code=404, detail="Reconciliation not found")
         
         aod_payload = json.loads(rec_row["aod_payload_json"])
-        farm_exp = json.loads(rec_row["farm_expectations_json"])
         
         snap_row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", rec_row["snapshot_id"])
         if snap_row:
             snapshot = json.loads(snap_row["snapshot_json"])
         else:
-            snapshot = {'__expected__': farm_exp}
+            raise HTTPException(status_code=404, detail="Snapshot not found")
         
-        analysis, _ = build_reconciliation_analysis(snapshot, aod_payload, farm_exp)
+        # Recompute expected block with current policy
+        policy = await fetch_policy_config()
+        expected_block = compute_expected_block(snapshot, mode="sprawl", policy=policy)
+        
+        analysis, _ = build_reconciliation_analysis(snapshot, aod_payload, expected_block)
     
     admission_rows = []
     classification_rows = []
