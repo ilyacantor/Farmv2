@@ -121,12 +121,17 @@ class PolicyConfig(BaseModel):
         return True
 
     def is_excluded(self, domain: str) -> bool:
-        """Check if domain should be excluded from classification."""
+        """Check if domain should be excluded from classification.
+        
+        Note: corporate_root_domains are NOT exclusions - they are major SaaS vendors
+        (salesforce.com, slack.com, etc.) that should be admitted and classified.
+        Only the explicit exclusions list and infrastructure_seeds (when include_infra=False)
+        are used to determine exclusions.
+        """
         domain_lower = domain.lower()
         if domain_lower in self.exclusions:
             return True
-        if domain_lower in self.corporate_root_domains:
-            return True
+        # corporate_root_domains intentionally NOT checked - these are valid SaaS vendors
         if not self.scope.include_infra and domain_lower in self.infrastructure_seeds:
             return True
         return False
