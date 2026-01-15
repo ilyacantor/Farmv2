@@ -189,38 +189,82 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         'security_attested': False,
     })
     
+    # TWO-PASS KEY SELECTION CONTRACT:
+    # Pass 1: Collect all observations grouped by eTLD+1 domain
+    # Pass 2: Apply alias collapse and select canonical key via lexicographic sort
+    #
+    # NOT ALLOWED: "first observation wins", list position, CMDB domains for keying
+    
+    from src.services.key_normalization import select_canonical_key
+    
+    # Get policy parameters for key selection
+    banned_domains_set = set(policy.banned_domains) if policy else set()
+    alias_collapse = policy.alias_domains_to_collapse if policy else {}
+    
+    # PASS 1: Group observations by initial eTLD+1 key
     observations = planes.get('discovery', {}).get('observations', [])
+    proto_candidates = defaultdict(lambda: {
+        'names': set(),
+        'domains': set(),
+        'vendors': set(),
+        'observations': [],
+    })
+    
     for obs in observations:
         raw_domain = obs.get('domain') or extract_domain(obs.get('observed_uri') or obs.get('hostname') or '')
         name = obs.get('observed_name', '')
-        key = extract_registered_domain(raw_domain) if raw_domain else normalize_name(name)
-        if not key:
+        initial_key = extract_registered_domain(raw_domain) if raw_domain else normalize_name(name)
+        if not initial_key:
             continue
         
-        candidates[key]['key'] = key
-        candidates[key]['names'].add(name)
-        candidates[key]['discovery_present'] = True
+        proto_candidates[initial_key]['names'].add(name)
         if raw_domain:
-            candidates[key]['domains'].add(raw_domain)
-            candidates[key]['domains'].add(key)
+            proto_candidates[initial_key]['domains'].add(raw_domain)
+            proto_candidates[initial_key]['domains'].add(initial_key)
         vendor_hint = obs.get('vendor_hint')
         if vendor_hint:
-            candidates[key]['vendors'].add(vendor_hint)
+            proto_candidates[initial_key]['vendors'].add(vendor_hint)
+        proto_candidates[initial_key]['observations'].append(obs)
+    
+    # PASS 2: Select canonical key and create final candidates
+    # Apply alias collapse to merge related domains, then lexicographic sort for tie-breaker
+    for initial_key, proto in proto_candidates.items():
+        # Select canonical key from all observed domains
+        canonical_key, rejection_reason = select_canonical_key(
+            proto['domains'] if proto['domains'] else {initial_key},
+            banned_domains=banned_domains_set,
+            alias_collapse=alias_collapse,
+        )
         
-        ts = obs.get('observed_at')
-        source = obs.get('source', 'unknown')
-        if ts:
-            candidates[key]['activity_timestamps'].append({'ts': ts, 'source': source})
-            if is_within_window(ts, window_days, reference):
-                candidates[key]['activity_present'] = True
-                candidates[key]['discovery_sources'].add(source)
-                ts_dt = parse_timestamp(ts)
-                latest = parse_timestamp(candidates[key]['latest_activity_at'])
-                if ts_dt and (not latest or ts_dt > latest):
-                    candidates[key]['latest_activity_at'] = ts
-                    candidates[key]['activity_source'] = source
-            elif is_stale(ts, window_days, reference):
-                candidates[key]['stale_timestamps'].append(ts)
+        if not canonical_key:
+            # Banned or no valid domains - skip this candidate
+            continue
+        
+        key = canonical_key
+        
+        # Create/update candidate with canonical key
+        candidates[key]['key'] = key
+        candidates[key]['names'].update(proto['names'])
+        candidates[key]['domains'].update(proto['domains'])
+        candidates[key]['vendors'].update(proto['vendors'])
+        candidates[key]['discovery_present'] = True
+        
+        # Process observation timestamps
+        for obs in proto['observations']:
+            ts = obs.get('observed_at')
+            source = obs.get('source', 'unknown')
+            if ts:
+                candidates[key]['activity_timestamps'].append({'ts': ts, 'source': source})
+                if is_within_window(ts, window_days, reference):
+                    candidates[key]['activity_present'] = True
+                    candidates[key]['discovery_sources'].add(source)
+                    ts_dt = parse_timestamp(ts)
+                    latest = parse_timestamp(candidates[key]['latest_activity_at'])
+                    if ts_dt and (not latest or ts_dt > latest):
+                        candidates[key]['latest_activity_at'] = ts
+                        candidates[key]['activity_source'] = source
+                elif is_stale(ts, window_days, reference):
+                    candidates[key]['stale_timestamps'].append(ts)
     
     # PERFORMANCE: Build reverse indexes BEFORE processing governance planes
     # This enables O(1) lookups instead of O(N) scans for IdP, CMDB, and Finance matching

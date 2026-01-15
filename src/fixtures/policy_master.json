@@ -110,5 +110,32 @@
     "cloudflare.com"
   ],
   
-  "banned_domains": []
+  "banned_domains": [],
+  
+  "alias_domains_to_collapse": {
+    "slack-files.com": "slack.com",
+    "slackb.com": "slack.com",
+    "slack-edge.com": "slack.com",
+    "slack-imgs.com": "slack.com",
+    "zoom.us": "zoom.com",
+    "zoomgov.com": "zoom.com",
+    "dropboxusercontent.com": "dropbox.com",
+    "dropboxapi.com": "dropbox.com",
+    "atlassian.net": "atlassian.com",
+    "trello.com": "atlassian.com",
+    "bitbucket.org": "atlassian.com",
+    "jira.com": "atlassian.com",
+    "1password.com": "1password.com",
+    "1password.eu": "1password.com",
+    "1password.ca": "1password.com",
+    "notion.so": "notion.so",
+    "notion.site": "notion.so",
+    "figma.com": "figma.com",
+    "figmausercontent.com": "figma.com",
+    "linear.app": "linear.app",
+    "loom.com": "loom.com",
+    "useloom.com": "loom.com",
+    "miro.com": "miro.com",
+    "realtimeboard.com": "miro.com"
+  }
 }

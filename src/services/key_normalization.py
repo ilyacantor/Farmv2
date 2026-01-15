@@ -186,3 +186,65 @@ def is_valid_fqdn(key: str) -> bool:
     
     ext = tldextract.extract(key)
     return bool(ext.suffix)
+
+
+def select_canonical_key(
+    observed_domains: set,
+    banned_domains: set = None,
+    alias_collapse: dict = None,
+) -> tuple[Optional[str], Optional[str]]:
+    """Select canonical key from observed domains using deterministic contract.
+    
+    CONTRACT (must match AOD implementation):
+    1. Build observed_registered_domains = {eTLD+1(domain) for domain in observations}
+    2. Remove banned domains → if empty after removal, return (None, "REJECTED_BANNED")
+    3. Apply alias collapse for domains in alias_collapse mapping
+    4. If multiple remain: choose by lexicographic sort (deterministic)
+    
+    NOT ALLOWED:
+    - Do not use list position (domains[0])
+    - Do not use "first observation wins"
+    - Do not roll up to vendor roots unless in alias_collapse
+    
+    Args:
+        observed_domains: Set of domains from discovery observations
+        banned_domains: Set of domains to exclude (from policy)
+        alias_collapse: Dict mapping domain aliases to canonical form
+        
+    Returns:
+        (canonical_key, rejection_reason) - rejection_reason is None if key selected
+    """
+    if not observed_domains:
+        return None, "NO_DOMAINS"
+    
+    banned_domains = banned_domains or set()
+    alias_collapse = alias_collapse or {}
+    
+    # 1. Get eTLD+1 for all observed domains
+    registered = set()
+    for domain in observed_domains:
+        if not domain:
+            continue
+        reg = extract_registered_domain(domain)
+        if reg:
+            registered.add(reg.lower())
+    
+    if not registered:
+        return None, "NO_VALID_DOMAINS"
+    
+    # 2. Remove banned domains
+    banned_lower = {d.lower() for d in banned_domains}
+    after_ban = registered - banned_lower
+    
+    if not after_ban:
+        return None, "REJECTED_BANNED"
+    
+    # 3. Apply alias collapse (only for domains in the mapping)
+    collapsed = set()
+    for domain in after_ban:
+        canonical = alias_collapse.get(domain, domain)
+        collapsed.add(canonical.lower())
+    
+    # 4. Lexicographic sort, pick first (deterministic tie-breaker)
+    sorted_domains = sorted(collapsed)
+    return sorted_domains[0], None
