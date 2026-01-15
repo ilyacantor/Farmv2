@@ -1226,6 +1226,35 @@ def generate_assessment_markdown(
     
     lines.append("")
     
+    if stub_mode and (shadow_fp > 0 or zombie_fp > 0):
+        fp_authoritative = 0
+        fp_weak = 0
+        fp_none = 0
+        for fp in false_positive_shadows + false_positive_zombies:
+            aod_codes = fp.get('aod_reason_codes', [])
+            has_auth = any(c in aod_codes for c in ['HAS_CMDB', 'HAS_IDP'])
+            has_weak = any(c in aod_codes for c in ['HAS_CMDB_WEAK', 'HAS_IDP_WEAK'])
+            if has_auth:
+                fp_authoritative += 1
+            elif has_weak:
+                fp_weak += 1
+            else:
+                fp_none += 1
+        
+        lines.append("### Stub Correlation Breakdown")
+        lines.append("")
+        lines.append("FPs by stub correlation status (governance match quality):")
+        lines.append("")
+        lines.append("| Correlation Status | FP Count | Description |")
+        lines.append("|-------------------|----------|-------------|")
+        lines.append(f"| AUTHORITATIVE | {fp_authoritative} | Domain match - stub found governance |")
+        lines.append(f"| WEAK | {fp_weak} | Name/vendor match - likely real mismatch |")
+        lines.append(f"| NONE | {fp_none} | No correlation - stub limitation |")
+        lines.append("")
+        if fp_none > 0:
+            lines.append(f"> **{fp_none} FPs** are due to stub correlation limitations (NONE status). These may resolve when running against real AOD.")
+            lines.append("")
+    
     lines.append("### Lifecycle Funnel")
     lines.append("")
     funnel = analysis.get('lifecycle_funnel', {})

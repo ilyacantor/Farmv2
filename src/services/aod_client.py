@@ -215,28 +215,67 @@ def stub_aod_explain_nonflag_legacy(asset_keys: list[str], ask: str = "both") ->
     return results
 
 
+STOPWORDS = frozenset({
+    'the', 'a', 'an', 'and', 'or', 'of', 'for', 'to', 'in', 'on', 'at', 'by',
+    'inc', 'llc', 'ltd', 'corp', 'corporation', 'company', 'co', 'software',
+    'app', 'application', 'service', 'platform', 'cloud', 'solutions', 'systems',
+    'technologies', 'tech', 'enterprise', 'pro', 'premium', 'plus', 'suite'
+})
+
+
+def _normalize_name_for_matching(name: str) -> set[str]:
+    """Extract meaningful words from a name for word-overlap matching."""
+    if not name:
+        return set()
+    words = set()
+    for word in name.lower().replace('-', ' ').replace('_', ' ').split():
+        word = ''.join(c for c in word if c.isalnum())
+        if word and len(word) > 2 and word not in STOPWORDS:
+            words.add(word)
+    return words
+
+
+def _compute_word_overlap(words1: set[str], words2: set[str]) -> int:
+    """Count shared non-stopwords between two word sets."""
+    return len(words1 & words2)
+
+
 async def stub_aod_explain_nonflag_from_snapshot(
     snapshot_id: str,
     asset_keys: list[str],
     ask: str = "both"
 ) -> dict[str, dict]:
     """
-    Enhanced stub that reads snapshot CMDB/IdP planes to compute HAS_CMDB/HAS_IDP.
+    Stub v2: Two-tier correlation algorithm for accurate governance simulation.
     
-    Simulates AOD correlation logic:
-    - Extracts canonical_domain from CMDB CIs and IdP objects
-    - Builds domain indexes using registered_domain extraction
-    - For each asset key, checks if its registered_domain matches any CMDB/IdP entry
-    - NO fuzzy matching, NO cross-TLD correlation
+    Tier 1 (AUTHORITATIVE):
+      - Match asset registered_domain against CMDB/IdP canonical_domain
+      - Match asset registered_domain against CMDB/IdP domains[] array (if present)
+      - Direct domain match = authoritative governance assertion
     
-    This provides accurate stub responses without requiring real AOD.
+    Tier 2 (WEAK):
+      - Match by vendor_id (exact match)
+      - Match by normalized product_name (exact match)
+      - Match by name word overlap (>=2 shared non-stopwords AND same category)
+      - WEAK matches set governance hints but do NOT assert identity merge
     
-    Returns per-key: {present_in_aod, decision, reason_codes[], stub_mode: True}
+    Returns per-key: {
+        present_in_aod, decision, reason_codes[], stub_mode: True,
+        cmdb_correlation: {status: NONE|WEAK|AUTHORITATIVE, method: str, matched_id: str|null},
+        idp_correlation: {status: NONE|WEAK|AUTHORITATIVE, method: str, matched_id: str|null}
+    }
     """
     from src.farm.db import connection as db_connection
     
-    cmdb_domains = set()
-    idp_domains = set()
+    cmdb_domain_index: dict[str, str] = {}
+    cmdb_vendor_index: dict[str, list[str]] = {}
+    cmdb_name_index: dict[str, list[tuple[str, set[str]]]] = {}
+    cmdb_entries: dict[str, dict] = {}
+    
+    idp_domain_index: dict[str, str] = {}
+    idp_vendor_index: dict[str, list[str]] = {}
+    idp_name_index: dict[str, list[tuple[str, set[str]]]] = {}
+    idp_entries: dict[str, dict] = {}
     
     try:
         async with db_connection() as conn:
@@ -250,24 +289,78 @@ async def stub_aod_explain_nonflag_from_snapshot(
                 
                 cmdb_cis = planes.get("cmdb", {}).get("cis", [])
                 for ci in cmdb_cis:
+                    ci_id = ci.get("ci_id", "")
+                    cmdb_entries[ci_id] = ci
+                    
                     canonical_domain = ci.get("canonical_domain")
                     if canonical_domain:
                         reg_domain = extract_registered_domain(canonical_domain)
                         if reg_domain:
-                            cmdb_domains.add(reg_domain)
+                            cmdb_domain_index[reg_domain] = ci_id
+                    
+                    domains = ci.get("domains", [])
+                    for domain in domains:
+                        reg_domain = extract_registered_domain(domain)
+                        if reg_domain:
+                            cmdb_domain_index[reg_domain] = ci_id
+                    
+                    vendor = ci.get("vendor", "")
+                    if vendor:
+                        vendor_lower = vendor.lower().strip()
+                        if vendor_lower not in cmdb_vendor_index:
+                            cmdb_vendor_index[vendor_lower] = []
+                        cmdb_vendor_index[vendor_lower].append(ci_id)
+                    
+                    name = ci.get("name", "")
+                    if name:
+                        name_words = _normalize_name_for_matching(name)
+                        if name_words:
+                            name_lower = name.lower().strip()
+                            if name_lower not in cmdb_name_index:
+                                cmdb_name_index[name_lower] = []
+                            cmdb_name_index[name_lower].append((ci_id, name_words))
                 
                 idp_objects = planes.get("idp", {}).get("objects", [])
                 for obj in idp_objects:
+                    idp_id = obj.get("idp_id", "")
+                    idp_entries[idp_id] = obj
+                    
                     canonical_domain = obj.get("canonical_domain")
                     if canonical_domain:
                         reg_domain = extract_registered_domain(canonical_domain)
                         if reg_domain:
-                            idp_domains.add(reg_domain)
+                            idp_domain_index[reg_domain] = idp_id
+                    
+                    domains = obj.get("domains", [])
+                    for domain in domains:
+                        reg_domain = extract_registered_domain(domain)
+                        if reg_domain:
+                            idp_domain_index[reg_domain] = idp_id
+                    
+                    vendor = obj.get("vendor", "")
+                    if vendor:
+                        vendor_lower = vendor.lower().strip()
+                        if vendor_lower not in idp_vendor_index:
+                            idp_vendor_index[vendor_lower] = []
+                        idp_vendor_index[vendor_lower].append(idp_id)
+                    
+                    name = obj.get("name", "")
+                    if name:
+                        name_words = _normalize_name_for_matching(name)
+                        if name_words:
+                            name_lower = name.lower().strip()
+                            if name_lower not in idp_name_index:
+                                idp_name_index[name_lower] = []
+                            idp_name_index[name_lower].append((idp_id, name_words))
                 
-                trace_log("aod_client", "stub_indexes_built", {
+                trace_log("aod_client", "stub_v2_indexes_built", {
                     "snapshot_id": snapshot_id,
-                    "cmdb_domains_count": len(cmdb_domains),
-                    "idp_domains_count": len(idp_domains),
+                    "cmdb_domain_count": len(cmdb_domain_index),
+                    "cmdb_vendor_count": len(cmdb_vendor_index),
+                    "cmdb_name_count": len(cmdb_name_index),
+                    "idp_domain_count": len(idp_domain_index),
+                    "idp_vendor_count": len(idp_vendor_index),
+                    "idp_name_count": len(idp_name_index),
                 })
     except Exception as e:
         trace_log("aod_client", "stub_snapshot_fetch_error", {
@@ -276,21 +369,102 @@ async def stub_aod_explain_nonflag_from_snapshot(
         })
     
     results = {}
+    authoritative_count = 0
+    weak_count = 0
+    
     for key in asset_keys:
         key_domain = extract_registered_domain(key)
+        key_words = _normalize_name_for_matching(key.replace('.', ' '))
         
-        has_cmdb = key_domain in cmdb_domains if key_domain else False
-        has_idp = key_domain in idp_domains if key_domain else False
-        has_governance = has_cmdb or has_idp
+        cmdb_correlation = {"status": "NONE", "method": None, "matched_id": None}
+        idp_correlation = {"status": "NONE", "method": None, "matched_id": None}
+        
+        if key_domain and key_domain in cmdb_domain_index:
+            cmdb_correlation = {
+                "status": "AUTHORITATIVE",
+                "method": "registered_domain",
+                "matched_id": cmdb_domain_index[key_domain]
+            }
+        else:
+            for vendor, ci_ids in cmdb_vendor_index.items():
+                if vendor and key_domain and vendor in key_domain:
+                    cmdb_correlation = {
+                        "status": "WEAK",
+                        "method": "vendor_in_domain",
+                        "matched_id": ci_ids[0]
+                    }
+                    break
+            
+            if cmdb_correlation["status"] == "NONE" and key_words:
+                for name_lower, entries in cmdb_name_index.items():
+                    for ci_id, name_words in entries:
+                        overlap = _compute_word_overlap(key_words, name_words)
+                        if overlap >= 2:
+                            cmdb_correlation = {
+                                "status": "WEAK",
+                                "method": f"name_overlap_{overlap}_words",
+                                "matched_id": ci_id
+                            }
+                            break
+                    if cmdb_correlation["status"] != "NONE":
+                        break
+        
+        if key_domain and key_domain in idp_domain_index:
+            idp_correlation = {
+                "status": "AUTHORITATIVE",
+                "method": "registered_domain",
+                "matched_id": idp_domain_index[key_domain]
+            }
+        else:
+            for vendor, idp_ids in idp_vendor_index.items():
+                if vendor and key_domain and vendor in key_domain:
+                    idp_correlation = {
+                        "status": "WEAK",
+                        "method": "vendor_in_domain",
+                        "matched_id": idp_ids[0]
+                    }
+                    break
+            
+            if idp_correlation["status"] == "NONE" and key_words:
+                for name_lower, entries in idp_name_index.items():
+                    for idp_id, name_words in entries:
+                        overlap = _compute_word_overlap(key_words, name_words)
+                        if overlap >= 2:
+                            idp_correlation = {
+                                "status": "WEAK",
+                                "method": f"name_overlap_{overlap}_words",
+                                "matched_id": idp_id
+                            }
+                            break
+                    if idp_correlation["status"] != "NONE":
+                        break
+        
+        has_cmdb_authoritative = cmdb_correlation["status"] == "AUTHORITATIVE"
+        has_cmdb_weak = cmdb_correlation["status"] == "WEAK"
+        has_idp_authoritative = idp_correlation["status"] == "AUTHORITATIVE"
+        has_idp_weak = idp_correlation["status"] == "WEAK"
+        
+        has_authoritative = has_cmdb_authoritative or has_idp_authoritative
+        has_weak = has_cmdb_weak or has_idp_weak
+        has_governance = has_authoritative or has_weak
+        
+        if has_authoritative:
+            authoritative_count += 1
+        elif has_weak:
+            weak_count += 1
         
         reason_codes = []
-        if has_cmdb:
+        if has_cmdb_authoritative:
             reason_codes.append("HAS_CMDB")
+        elif has_cmdb_weak:
+            reason_codes.append("HAS_CMDB_WEAK")
         else:
             reason_codes.append("NO_CMDB")
         
-        if has_idp:
+        if has_idp_authoritative:
             reason_codes.append("HAS_IDP")
+        elif has_idp_weak:
+            reason_codes.append("HAS_IDP_WEAK")
         else:
             reason_codes.append("NO_IDP")
         
@@ -305,12 +479,16 @@ async def stub_aod_explain_nonflag_from_snapshot(
             "decision": decision,
             "reason_codes": reason_codes,
             "stub_mode": True,
+            "cmdb_correlation": cmdb_correlation,
+            "idp_correlation": idp_correlation,
         }
     
-    trace_log("aod_client", "stub_explain_computed", {
+    trace_log("aod_client", "stub_v2_explain_computed", {
         "snapshot_id": snapshot_id,
         "keys_count": len(asset_keys),
-        "governed_count": sum(1 for r in results.values() if "HAS_CMDB" in r["reason_codes"] or "HAS_IDP" in r["reason_codes"]),
+        "authoritative_count": authoritative_count,
+        "weak_count": weak_count,
+        "ungoverned_count": len(asset_keys) - authoritative_count - weak_count,
     })
     
     return results
