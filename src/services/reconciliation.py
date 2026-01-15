@@ -721,7 +721,7 @@ def compute_expected_block(
     
     for key, cand in candidates.items():
         is_external = is_external_domain(key)
-        is_excluded = policy.is_excluded(key)
+        is_excluded = policy.is_excluded(key) or policy.is_banned(key)
         is_fqdn = is_valid_fqdn(key)
         
         if mode == "sprawl" and not is_external:
@@ -922,7 +922,7 @@ def analyze_snapshot_for_expectations(
     zombie_keys = []
     
     for key, cand in candidates.items():
-        is_excluded = policy.is_excluded(key)
+        is_excluded = policy.is_excluded(key) or policy.is_banned(key)
         is_external = is_external_domain(key)
         is_fqdn = is_valid_fqdn(key)
         
