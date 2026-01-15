@@ -289,12 +289,18 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
 
     # Process IdP objects with O(N) complexity using precomputed indexes
     # POLICY: If asset is in IdP AND passes secondary gates, admit it
+    #
+    # KEY SELECTION CONTRACT: IdP domains are ENRICHMENT ONLY, not for key selection
+    # - Use canonical_domain for correlation (matching to existing candidates)
+    # - Do NOT use external_ref extracted domains for keying
     idp_objects = planes.get('idp', {}).get('objects', [])
     for obj in idp_objects:
         name = normalize_name(obj.get('name', ''))
         canonical_domain = obj.get('canonical_domain')
-        raw_domain = extract_domain(obj.get('external_ref', ''))
-        idp_registered = canonical_domain or (extract_registered_domain(raw_domain) if raw_domain else None)
+        # CONTRACT: external_ref is stored for reference but NOT used for key selection
+        external_ref = obj.get('external_ref', '')
+        # Only use canonical_domain for matching - NOT extracted from external_ref
+        idp_registered = canonical_domain
         has_sso = obj.get('has_sso', False)
         matched_keys = set()
         
@@ -304,7 +310,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         if policy and not policy.idp_passes_gates(has_sso):
             idp_passes_gate = False
         
-        # PRIORITY: Use canonical_domain first for reliable correlation
+        # CORRELATION: Use canonical_domain for matching to existing candidates
         if idp_registered:
             # Direct key match using canonical domain
             if idp_registered in candidates:
@@ -321,19 +327,16 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
             # Match by normalized names in candidates
             matched_keys.update(name_to_keys.get(name, set()))
         
-        # Fallback: domain lookup from external_ref
-        if not matched_keys and raw_domain:
-            matched_keys.update(domain_to_keys.get(raw_domain, set()))
+        # CONTRACT: Do NOT use external_ref domain for matching
+        # (removed: domain lookup from external_ref)
         
         # POLICY: Create candidate for IdP-only assets (no discovery required)
-        # Only create if IdP passes the gate
+        # CONTRACT: Only use canonical_domain for new candidates, NOT external_ref
         if not matched_keys and idp_registered and idp_passes_gate:
             key = idp_registered
             candidates[key]['key'] = key
             candidates[key]['names'].add(obj.get('name', ''))
-            if raw_domain:
-                candidates[key]['domains'].add(raw_domain)
-                candidates[key]['domains'].add(key)
+            candidates[key]['domains'].add(key)
             matched_keys.add(key)
         
         # Mark matched candidates - only if IdP passes the gate
@@ -358,12 +361,19 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
 
     # Process CMDB CIs with O(N) complexity instead of O(N*M)
     # POLICY: If asset is in CMDB AND passes secondary gates, admit it
+    #
+    # KEY SELECTION CONTRACT: CMDB domains are ENRICHMENT ONLY, not for key selection
+    # - Use canonical_domain for correlation (matching to existing candidates)
+    # - Do NOT use external_ref extracted domains for keying
+    # - Do NOT create new candidates from external_ref domains
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])
     for ci in cmdb_cis:
         name = normalize_name(ci.get('name', ''))
         canonical_domain = ci.get('canonical_domain')
-        raw_domain = extract_domain(ci.get('external_ref', ''))
-        cmdb_registered = canonical_domain or (extract_registered_domain(raw_domain) if raw_domain else None)
+        # CONTRACT: external_ref is stored for reference but NOT used for key selection
+        external_ref = ci.get('external_ref', '')
+        # Only use canonical_domain for matching - NOT extracted from external_ref
+        cmdb_registered = canonical_domain
         ci_vendor = normalize_name(ci.get('vendor', '') or '')
         ci_type = ci.get('ci_type')
         lifecycle = ci.get('lifecycle')
@@ -377,7 +387,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         matched_keys = set()
         matched_by_vendor = set()
 
-        # PRIORITY: Use canonical_domain first for reliable correlation
+        # CORRELATION: Use canonical_domain for matching to existing candidates
         if cmdb_registered:
             # Direct key match using canonical domain
             if cmdb_registered in candidates:
@@ -393,23 +403,20 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
                 matched_keys.update(k for k, norm_k in key_to_normalized.items() if norm_k == name)
             matched_keys.update(name_to_keys.get(name, set()))
 
-        # Fallback: domain lookup from external_ref
-        if not matched_keys and raw_domain:
-            matched_keys.update(domain_to_keys.get(raw_domain, set()))
+        # CONTRACT: Do NOT use external_ref domain for matching
+        # (removed: domain lookup from external_ref)
 
         if ci_vendor:
             vendor_keys = vendor_to_keys.get(ci_vendor, set())
             matched_by_vendor.update(vendor_keys - matched_keys)
 
         # POLICY: Create candidate for CMDB-only assets (no discovery required)
-        # Only create if CMDB passes the gate
+        # CONTRACT: Only use canonical_domain for new candidates, NOT external_ref
         if cmdb_registered and cmdb_registered not in candidates and cmdb_passes_gate:
             key = cmdb_registered
             candidates[key]['key'] = key
             candidates[key]['names'].add(ci.get('name', ''))
-            if raw_domain:
-                candidates[key]['domains'].add(raw_domain)
-                candidates[key]['domains'].add(key)
+            candidates[key]['domains'].add(key)
             if ci_vendor:
                 candidates[key]['vendors'].add(ci_vendor)
 
