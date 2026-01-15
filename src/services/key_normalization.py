@@ -7,6 +7,34 @@ import tldextract
 
 from src.services.constants import EXTERNAL_DOMAIN_TLDS
 
+# Infrastructure domains that should NOT be collapsed to parent
+# Per AOD Stage 4 fix (Jan 2026): these are preserved as standalone keys
+# NOTE: google.com is NOT included - it's a regular SaaS domain, not infrastructure
+INFRASTRUCTURE_DOMAINS = frozenset({
+    # Microsoft infrastructure (NOT microsoft.com - that's regular SaaS)
+    'outlook.com',
+    'office.com',
+    'office365.com',
+    'sharepoint.com',
+    'microsoftonline.com',
+    'live.com',
+    'hotmail.com',
+    # Google infrastructure (NOT google.com - that's regular SaaS)
+    'googleapis.com',
+    'gstatic.com',
+    'googleusercontent.com',
+    'googlevideo.com',
+    # AWS infrastructure  
+    'cloudfront.net',
+    'awsstatic.com',
+    'amazonaws.com',
+    # Other CDN/infrastructure
+    'akamaihd.net',
+    'akamai.net',
+    'fastly.net',
+    'cloudflare.com',
+})
+
 
 @lru_cache(maxsize=2048)
 def normalize_name(name: str) -> str:
@@ -25,11 +53,17 @@ def extract_domain(text: str) -> Optional[str]:
     Uses tldextract to properly identify the registered domain, avoiding
     the creation of phantom domains like 'cdn.com' from 'static.cdn.cloudflare.com'.
     
+    IMPORTANT: Infrastructure domains (googleapis.com, gstatic.com, office.com, etc.)
+    are preserved as standalone keys and NOT collapsed to their parent domain.
+    This matches AOD Stage 4 behavior (Jan 2026).
+    
     Examples:
         https://app.slack.com/path -> slack.com
         static.cdn.cloudflare.com -> cloudflare.com
         api.example.co.uk -> example.co.uk
         calendly.com -> calendly.com
+        api.googleapis.com -> googleapis.com (preserved, not google.com)
+        login.microsoftonline.com -> microsoftonline.com (preserved)
     """
     if not text:
         return None
@@ -40,6 +74,12 @@ def extract_domain(text: str) -> Optional[str]:
     
     if '.' not in text:
         return None
+    
+    # Check if this is an infrastructure domain that should be preserved
+    # Infrastructure domains are NOT collapsed to parent (e.g., googleapis.com stays as-is)
+    for infra_domain in INFRASTRUCTURE_DOMAINS:
+        if text == infra_domain or text.endswith('.' + infra_domain):
+            return infra_domain
     
     # Use tldextract for proper eTLD+1 extraction
     return extract_registered_domain(text)

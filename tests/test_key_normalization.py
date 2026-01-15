@@ -140,3 +140,55 @@ class TestNormalizeName:
     def test_empty(self):
         assert normalize_name("") == ""
         assert normalize_name(None) == ""
+
+
+class TestInfrastructureDomainPreservation:
+    """Test infrastructure domain preservation per AOD Stage 4 fix.
+    
+    Infrastructure domains (googleapis.com, gstatic.com, office.com, etc.)
+    should be preserved as standalone keys and NOT collapsed to their parent domain.
+    """
+
+    def test_google_infrastructure_preserved(self):
+        """Google infrastructure domains should NOT collapse to google.com.
+        
+        Note: google.com itself is NOT an infrastructure domain - it's a regular
+        SaaS domain. So mail.google.com correctly collapses to google.com.
+        """
+        assert extract_domain("api.googleapis.com") == "googleapis.com"
+        assert extract_domain("www.gstatic.com") == "gstatic.com"
+        assert extract_domain("storage.googleusercontent.com") == "googleusercontent.com"
+        assert extract_domain("video.googlevideo.com") == "googlevideo.com"
+        
+        # google.com is NOT infrastructure - regular subdomains collapse normally
+        assert extract_domain("mail.google.com") == "google.com"
+        assert extract_domain("www.google.com") == "google.com"
+        assert extract_domain("drive.google.com") == "google.com"
+
+    def test_microsoft_infrastructure_preserved(self):
+        """Microsoft infrastructure domains should NOT collapse to microsoft.com."""
+        assert extract_domain("login.microsoftonline.com") == "microsoftonline.com"
+        assert extract_domain("outlook.office.com") == "office.com"
+        assert extract_domain("teams.office365.com") == "office365.com"
+        assert extract_domain("portal.sharepoint.com") == "sharepoint.com"
+        assert extract_domain("mail.outlook.com") == "outlook.com"
+        
+        # Regular microsoft.com subdomains still collapse
+        assert extract_domain("www.microsoft.com") == "microsoft.com"
+
+    def test_aws_infrastructure_preserved(self):
+        """AWS infrastructure domains should be preserved."""
+        assert extract_domain("d1234.cloudfront.net") == "cloudfront.net"
+        assert extract_domain("static.awsstatic.com") == "awsstatic.com"
+        assert extract_domain("s3.amazonaws.com") == "amazonaws.com"
+
+    def test_cdn_infrastructure_preserved(self):
+        """CDN infrastructure domains should be preserved."""
+        assert extract_domain("edge.akamaihd.net") == "akamaihd.net"
+        assert extract_domain("cdn.cloudflare.com") == "cloudflare.com"
+
+    def test_regular_domains_still_collapse(self):
+        """Regular (non-infrastructure) domains should still collapse normally."""
+        assert extract_domain("app.slack.com") == "slack.com"
+        assert extract_domain("api.calendly.com") == "calendly.com"
+        assert extract_domain("www.dropbox.com") == "dropbox.com"

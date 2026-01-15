@@ -20,7 +20,7 @@
     "require_valid_lifecycle": true,
     "valid_ci_types": ["app", "application", "service", "database", "server", "network_device", "storage", "infra"],
     "valid_lifecycle_states": ["active", "development", "staging", "production", "maintenance"],
-    "invalid_lifecycle_states": ["retired", "decommissioned", "deprecated", "archived"]
+    "invalid_lifecycle_states": ["pending", "draft", "retired", "decommissioned", "deprecated", "archived"]
   },
   
   "exclusions": [
@@ -87,6 +87,27 @@
     "dropbox.com",
     "slack.com",
     "zoom.com"
+  ],
+  
+  "infrastructure_domains": [
+    "outlook.com",
+    "office.com",
+    "office365.com",
+    "sharepoint.com",
+    "microsoftonline.com",
+    "live.com",
+    "hotmail.com",
+    "googleapis.com",
+    "gstatic.com",
+    "googleusercontent.com",
+    "googlevideo.com",
+    "cloudfront.net",
+    "awsstatic.com",
+    "amazonaws.com",
+    "akamaihd.net",
+    "akamai.net",
+    "fastly.net",
+    "cloudflare.com"
   ],
   
   "banned_domains": []
