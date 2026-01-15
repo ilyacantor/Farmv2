@@ -898,22 +898,21 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         }
     }
     
-    # Policy Differences: Identify expected discrepancies due to intentional design choices
-    # Farm admits assets based on governance presence alone (IdP/CMDB = system-of-record truth)
-    # AOD requires discovery evidence (live observable surface area)
-    # These are NOT defects - they are expected false negatives relative to each other
-    policy_diff_governance_only = []
-    policy_diff_key_normalization = []
-    policy_diff_cmdb_correlation = []
-    policy_diff_idp_correlation = []
+    # Correlation Bugs: Track discrepancies that indicate bugs in Farm or AOD
+    # All discrepancies are bugs to be fixed - there are no "expected policy differences"
+    # Farm and AOD share policy via the policy center, so disagreements = bugs
+    correlation_bugs_governance = []
+    correlation_bugs_key_normalization = []
+    correlation_bugs_cmdb = []
+    correlation_bugs_idp = []
     
     for entry in cataloged_missed_details:
         is_governed = entry.get('idp_present', False) or entry.get('cmdb_present', False)
         discovery_count = entry.get('discovery_count', 0)
         
-        # Pattern 1: Governance-based admission (Farm trusts IdP/CMDB, AOD requires discovery)
+        # Pattern 1: Governance correlation bug - Farm found governance but AOD didn't correlate
         if is_governed and discovery_count < 2:
-            policy_diff_governance_only.append({
+            correlation_bugs_governance.append({
                 'asset_key': entry.get('asset_key'),
                 'idp_present': entry.get('idp_present', False),
                 'cmdb_present': entry.get('cmdb_present', False),
@@ -921,7 +920,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
                 'discovery_count': discovery_count,
                 'discovery_sources': entry.get('discovery_sources', []),
                 'farm_classification': entry.get('farm_classification', 'admitted'),
-                'reason': 'GOVERNANCE_ONLY_ADMISSION',
+                'reason': 'GOVERNANCE_CORRELATION_BUG',
             })
     
     # Categorize missed assets by mismatch type
@@ -935,57 +934,54 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         }
         
         if rca_hint == 'CMDB_CORRELATION_MISMATCH':
-            policy_diff_cmdb_correlation.append(asset_data)
+            correlation_bugs_cmdb.append(asset_data)
         elif rca_hint == 'IDP_CORRELATION_MISMATCH':
-            policy_diff_idp_correlation.append(asset_data)
+            correlation_bugs_idp.append(asset_data)
         elif entry.get('is_key_drift', False) or rca_hint == 'KEY_NORMALIZATION_MISMATCH':
             asset_data['reason'] = 'KEY_NORMALIZATION_MISMATCH'
-            policy_diff_key_normalization.append(asset_data)
+            correlation_bugs_key_normalization.append(asset_data)
     
-    analysis['policy_differences'] = {
-        'governance_only_admission': {
-            'count': len(policy_diff_governance_only),
-            'assets': policy_diff_governance_only,
+    analysis['correlation_bugs'] = {
+        'governance_correlation': {
+            'count': len(correlation_bugs_governance),
+            'assets': correlation_bugs_governance,
             'explanation': (
-                "Farm intentionally admits assets based on governance presence alone (IdP/CMDB), "
-                "modeling enterprise system-of-record truth. AOD intentionally requires discovery "
-                "evidence, modeling live observable surface area. These produce expected false "
-                "negatives relative to each other and are not defects."
+                "BUG: Farm found governance (IdP/CMDB) for these assets but AOD did not correlate them. "
+                "Since Farm and AOD share policy, this indicates a correlation bug in either system. "
+                "These discrepancies require investigation and fixing."
             ),
         },
-        'cmdb_correlation_mismatch': {
-            'count': len(policy_diff_cmdb_correlation),
-            'assets': policy_diff_cmdb_correlation,
+        'cmdb_correlation': {
+            'count': len(correlation_bugs_cmdb),
+            'assets': correlation_bugs_cmdb,
             'explanation': (
-                "AOD correlated these domains to CMDB CIs that Farm did not correlate. "
-                "AOD uses fuzzy matching, vendor inference, or other correlation logic that "
-                "Farm does not implement. This is a CMDB correlation algorithm difference, "
-                "NOT a key normalization issue."
+                "BUG: CMDB correlation mismatch between Farm and AOD. Farm and AOD should use "
+                "identical correlation logic via shared policy. This discrepancy indicates a bug "
+                "in correlation that needs to be fixed."
             ),
         },
-        'idp_correlation_mismatch': {
-            'count': len(policy_diff_idp_correlation),
-            'assets': policy_diff_idp_correlation,
+        'idp_correlation': {
+            'count': len(correlation_bugs_idp),
+            'assets': correlation_bugs_idp,
             'explanation': (
-                "AOD correlated these domains to IdP objects that Farm did not correlate. "
-                "AOD uses matching logic that Farm does not implement. This is an IdP "
-                "correlation algorithm difference, NOT a key normalization issue."
+                "BUG: IdP correlation mismatch between Farm and AOD. Farm and AOD should use "
+                "identical correlation logic via shared policy. This discrepancy indicates a bug "
+                "in correlation that needs to be fixed."
             ),
         },
         'key_normalization': {
-            'count': len(policy_diff_key_normalization),
-            'assets': policy_diff_key_normalization,
+            'count': len(correlation_bugs_key_normalization),
+            'assets': correlation_bugs_key_normalization,
             'explanation': (
-                "Domain key normalization differences between Farm and AOD. The domain exists "
-                "in AOD's ingested evidence but was not normalized to a domain-keyed asset. "
-                "This is a domain canonicalization issue where AOD did not use domain as the key."
+                "BUG: Domain key normalization difference between Farm and AOD. The domain exists "
+                "in both systems but was normalized differently. This is a bug that needs fixing."
             ),
         },
-        'total_policy_diff_count': (
-            len(policy_diff_governance_only) + 
-            len(policy_diff_cmdb_correlation) + 
-            len(policy_diff_idp_correlation) + 
-            len(policy_diff_key_normalization)
+        'total_bug_count': (
+            len(correlation_bugs_governance) + 
+            len(correlation_bugs_cmdb) + 
+            len(correlation_bugs_idp) + 
+            len(correlation_bugs_key_normalization)
         ),
     }
     
@@ -1228,79 +1224,79 @@ def generate_assessment_markdown(
     lines.append(f"- **Cataloged (final):** {funnel.get('final_cataloged', 0)}")
     lines.append("")
     
-    # Policy Differences Section
-    policy_diffs = analysis.get('policy_differences', {})
-    total_policy_diff = policy_diffs.get('total_policy_diff_count', 0)
+    # Correlation Bugs Section
+    corr_bugs = analysis.get('correlation_bugs', {})
+    total_bugs = corr_bugs.get('total_bug_count', 0)
     
-    if total_policy_diff > 0:
+    if total_bugs > 0:
         lines.append("---")
         lines.append("")
-        lines.append("## Policy Differences (Expected Discrepancies)")
+        lines.append("## Correlation Bugs (Discrepancies Requiring Fix)")
         lines.append("")
-        lines.append("> **Note:** The following discrepancies are expected due to intentional design differences between Farm and AOD. They are NOT defects.")
+        lines.append("> **IMPORTANT:** The following discrepancies are BUGS, not expected differences. Farm and AOD share policy via the policy center, so any disagreement indicates a bug that must be fixed.")
         lines.append("")
         
-        governance_only = policy_diffs.get('governance_only_admission', {})
-        if governance_only.get('count', 0) > 0:
-            lines.append("### Governance-Only Admission")
+        governance_bugs = corr_bugs.get('governance_correlation', {})
+        if governance_bugs.get('count', 0) > 0:
+            lines.append("### Governance Correlation Bug")
             lines.append("")
-            lines.append(f"**{governance_only.get('count', 0)} assets** admitted by Farm based on governance presence alone.")
+            lines.append(f"**{governance_bugs.get('count', 0)} assets** - Farm found governance but AOD didn't correlate.")
             lines.append("")
-            lines.append(f"> {governance_only.get('explanation', '')}")
+            lines.append(f"> {governance_bugs.get('explanation', '')}")
             lines.append("")
             lines.append("| Asset | IdP | CMDB | Vendor | Discovery Count |")
             lines.append("|-------|-----|------|--------|-----------------|")
-            for asset in governance_only.get('assets', [])[:20]:
+            for asset in governance_bugs.get('assets', [])[:20]:
                 idp = 'Yes' if asset.get('idp_present') else 'No'
                 cmdb = 'Yes' if asset.get('cmdb_present') else 'No'
                 vendor = asset.get('vendor_governance') or '-'
                 disc = asset.get('discovery_count', 0)
                 lines.append(f"| {asset.get('asset_key', 'N/A')} | {idp} | {cmdb} | {vendor} | {disc} |")
-            if governance_only.get('count', 0) > 20:
-                lines.append(f"| ... and {governance_only.get('count', 0) - 20} more | | | | |")
+            if governance_bugs.get('count', 0) > 20:
+                lines.append(f"| ... and {governance_bugs.get('count', 0) - 20} more | | | | |")
             lines.append("")
         
-        cmdb_corr = policy_diffs.get('cmdb_correlation_mismatch', {})
-        if cmdb_corr.get('count', 0) > 0:
-            lines.append("### CMDB Correlation Mismatch")
+        cmdb_bugs = corr_bugs.get('cmdb_correlation', {})
+        if cmdb_bugs.get('count', 0) > 0:
+            lines.append("### CMDB Correlation Bug")
             lines.append("")
-            lines.append(f"**{cmdb_corr.get('count', 0)} assets** where AOD found CMDB correlation that Farm didn't.")
+            lines.append(f"**{cmdb_bugs.get('count', 0)} assets** - CMDB correlation mismatch between Farm and AOD.")
             lines.append("")
-            lines.append(f"> {cmdb_corr.get('explanation', '')}")
+            lines.append(f"> {cmdb_bugs.get('explanation', '')}")
             lines.append("")
             lines.append("| Asset | Farm Reason Codes | AOD Reason Codes |")
             lines.append("|-------|-------------------|------------------|")
-            for asset in cmdb_corr.get('assets', [])[:20]:
+            for asset in cmdb_bugs.get('assets', [])[:20]:
                 farm_codes = ', '.join(asset.get('farm_reason_codes', [])[:3]) or '-'
                 aod_codes = ', '.join(asset.get('aod_reason_codes', [])[:3]) or '-'
                 lines.append(f"| {asset.get('asset_key', 'N/A')} | {farm_codes} | {aod_codes} |")
-            if cmdb_corr.get('count', 0) > 20:
-                lines.append(f"| ... and {cmdb_corr.get('count', 0) - 20} more | | |")
+            if cmdb_bugs.get('count', 0) > 20:
+                lines.append(f"| ... and {cmdb_bugs.get('count', 0) - 20} more | | |")
             lines.append("")
         
-        idp_corr = policy_diffs.get('idp_correlation_mismatch', {})
-        if idp_corr.get('count', 0) > 0:
-            lines.append("### IdP Correlation Mismatch")
+        idp_bugs = corr_bugs.get('idp_correlation', {})
+        if idp_bugs.get('count', 0) > 0:
+            lines.append("### IdP Correlation Bug")
             lines.append("")
-            lines.append(f"**{idp_corr.get('count', 0)} assets** where AOD found IdP correlation that Farm didn't.")
+            lines.append(f"**{idp_bugs.get('count', 0)} assets** - IdP correlation mismatch between Farm and AOD.")
             lines.append("")
-            lines.append(f"> {idp_corr.get('explanation', '')}")
+            lines.append(f"> {idp_bugs.get('explanation', '')}")
             lines.append("")
             lines.append("| Asset | Farm Reason Codes | AOD Reason Codes |")
             lines.append("|-------|-------------------|------------------|")
-            for asset in idp_corr.get('assets', [])[:20]:
+            for asset in idp_bugs.get('assets', [])[:20]:
                 farm_codes = ', '.join(asset.get('farm_reason_codes', [])[:3]) or '-'
                 aod_codes = ', '.join(asset.get('aod_reason_codes', [])[:3]) or '-'
                 lines.append(f"| {asset.get('asset_key', 'N/A')} | {farm_codes} | {aod_codes} |")
-            if idp_corr.get('count', 0) > 20:
-                lines.append(f"| ... and {idp_corr.get('count', 0) - 20} more | | |")
+            if idp_bugs.get('count', 0) > 20:
+                lines.append(f"| ... and {idp_bugs.get('count', 0) - 20} more | | |")
             lines.append("")
         
-        key_norm = policy_diffs.get('key_normalization', {})
+        key_norm = corr_bugs.get('key_normalization', {})
         if key_norm.get('count', 0) > 0:
-            lines.append("### Key Normalization Mismatch")
+            lines.append("### Key Normalization Bug")
             lines.append("")
-            lines.append(f"**{key_norm.get('count', 0)} assets** with domain canonicalization differences.")
+            lines.append(f"**{key_norm.get('count', 0)} assets** - Domain canonicalization bug.")
             lines.append("")
             lines.append(f"> {key_norm.get('explanation', '')}")
             lines.append("")
