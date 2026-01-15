@@ -662,6 +662,32 @@
             }
         };
 
+        function formatPST(dateInput) {
+            const date = new Date(dateInput);
+            return date.toLocaleString('en-US', {
+                timeZone: 'America/Los_Angeles',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true
+            }) + ' PST';
+        }
+
+        function formatPSTShort(dateInput) {
+            const date = new Date(dateInput);
+            return date.toLocaleString('en-US', {
+                timeZone: 'America/Los_Angeles',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+        }
+
         class APIError extends Error {
             constructor(message, status, requestId, path, rawText) {
                 super(message);
@@ -824,7 +850,7 @@
             const select = document.getElementById('testSnapshotSelect');
             select.innerHTML = '<option value="">Select a snapshot...</option>';
             FarmState.snapshots.forEach(snap => {
-                const date = new Date(snap.created_at).toLocaleDateString();
+                const date = formatPSTShort(snap.created_at);
                 select.innerHTML += `<option value="${snap.snapshot_id}">${snap.tenant_id} - ${date}</option>`;
             });
         }
@@ -2820,7 +2846,7 @@
                                 ${renderPill('tenant: ' + rec.tenant_id)}
                                 ${renderPill('run: ' + (rec.aod_run_id || 'N/A'))}
                                 ${renderPill('snapshot: ' + rec.snapshot_id.slice(0, 8))}
-                                ${renderPill(new Date(rec.created_at).toLocaleString())}
+                                ${renderPill(formatPST(rec.created_at))}
                             </div>
                         </div>
                         
@@ -2927,7 +2953,7 @@
             if (hours < 24) return `${hours}h ago`;
             const days = Math.floor(hours / 24);
             if (days < 7) return `${days}d ago`;
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/Los_Angeles' });
         }
 
         function renderConfigSnapshotsList() {
@@ -3217,7 +3243,7 @@
                             <span class="text-slate-400">Snapshot ID:</span>
                             <code class="text-cyan-400 bg-slate-900 px-2 py-1 rounded">${snapshotId}</code>
                             <span class="text-slate-400">Created:</span>
-                            <span class="text-white">${new Date(meta.created_at).toLocaleString()}</span>
+                            <span class="text-white">${formatPST(meta.created_at)}</span>
                         </div>
                         
                         <div>
@@ -3240,7 +3266,7 @@
                                     <div class="bg-slate-900/60 rounded-lg p-4 border border-slate-700">
                                         <div class="flex items-center justify-between mb-2">
                                             ${getStatusBadge(r.status, 'large')}
-                                            <span class="text-xs text-slate-500">${new Date(r.created_at).toLocaleString()}</span>
+                                            <span class="text-xs text-slate-500">${formatPST(r.created_at)}</span>
                                         </div>
                                         <div class="text-sm text-slate-300 mb-2">AOD Run: <span class="text-purple-400">${r.aod_run_id}</span></div>
                                         <div class="text-xs text-slate-400 whitespace-pre-line bg-slate-800/60 p-3 rounded">${r.report_text || 'No report'}</div>
@@ -3273,14 +3299,16 @@
             try {
                 const response = await fetch(`/api/snapshots/${snapshotId}`);
                 const snapshot = await response.json();
+                const tenantId = snapshot.tenant_id || snapshot.meta?.tenant_id || 'unknown';
+                const safetenantId = tenantId.replace(/[^a-zA-Z0-9_-]/g, '_');
                 const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `snapshot-${snapshotId}.json`;
+                a.download = `${safetenantId}_snapshot_${snapshotId.substring(0, 8)}.json`;
                 a.click();
                 URL.revokeObjectURL(url);
-                addLogEntry(`Downloaded ${snapshotId.substring(0, 8)}...`, 'success');
+                addLogEntry(`Downloaded ${safetenantId}_${snapshotId.substring(0, 8)}`, 'success');
             } catch (e) {
                 console.error('Failed to download:', e);
                 addLogEntry(`Download failed: ${e.message}`, 'error');

@@ -1495,7 +1495,7 @@ async def download_reconciliation_diff(
         return Response(
             content=json.dumps(report, indent=2, default=str),
             media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename=reconcile_{reconciliation_id}.json"}
+            headers={"Content-Disposition": f"attachment; filename={rec_row['tenant_id']}_reconcile_{reconciliation_id[:8]}.json"}
         )
     
     headers = ['category', 'asset_key', 'farm_expected', 'aod_decision',
@@ -1518,7 +1518,7 @@ async def download_reconciliation_diff(
     return Response(
         content=csv_content,
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename=reconcile_{reconciliation_id}.csv"}
+        headers={"Content-Disposition": f"attachment; filename={rec_row['tenant_id']}_reconcile_{reconciliation_id[:8]}.csv"}
     )
 
 
@@ -1531,7 +1531,7 @@ async def download_assessment_markdown(reconciliation_id: str):
     """
     async with db_connection() as conn:
         row = await conn.fetchrow(
-            "SELECT reconciliation_id, aod_run_id, snapshot_id, status, assessment_md, analysis_json FROM reconciliations WHERE reconciliation_id = $1",
+            "SELECT reconciliation_id, aod_run_id, snapshot_id, tenant_id, status, assessment_md, analysis_json FROM reconciliations WHERE reconciliation_id = $1",
             reconciliation_id
         )
         if not row:
@@ -1583,7 +1583,8 @@ async def download_assessment_markdown(reconciliation_id: str):
                 )
         
         aod_run_id = row["aod_run_id"] or "unknown"
-        filename = f"assessment_{aod_run_id}.md"
+        tenant_id = row["tenant_id"] or "unknown"
+        filename = f"{tenant_id}_assessment_{aod_run_id}.md"
         
         return Response(
             content=assessment_md,
