@@ -73,20 +73,11 @@
     "prometheus.io"
   ],
   
-  "corporate_root_domains": [
+  "excluded_vendor_roots": [
     "google.com",
     "microsoft.com",
     "amazon.com",
-    "apple.com",
-    "hubspot.com",
-    "salesforce.com",
-    "servicenow.com",
-    "oracle.com",
-    "adobe.com",
-    "atlassian.com",
-    "dropbox.com",
-    "slack.com",
-    "zoom.com"
+    "apple.com"
   ],
   
   "infrastructure_domains": [

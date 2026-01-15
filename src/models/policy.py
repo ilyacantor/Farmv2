@@ -72,7 +72,7 @@ class PolicyConfig(BaseModel):
     secondary_gates: SecondaryGatesConfig = SecondaryGatesConfig()
     exclusions: list[str] = []
     infrastructure_seeds: list[str] = []
-    corporate_root_domains: list[str] = []
+    excluded_vendor_roots: list[str] = []
     banned_domains: list[str] = []
     alias_domains_to_collapse: dict[str, str] = {}
 
@@ -140,15 +140,16 @@ class PolicyConfig(BaseModel):
     def is_excluded(self, domain: str) -> bool:
         """Check if domain should be excluded from classification.
         
-        Note: corporate_root_domains are NOT exclusions - they are major SaaS vendors
-        (salesforce.com, slack.com, etc.) that should be admitted and classified.
-        Only the explicit exclusions list and infrastructure_seeds (when include_infra=False)
-        are used to determine exclusions.
+        Exclusion sources:
+        - exclusions: explicit junk domain suffixes (cdn.com, edge.com, etc.)
+        - excluded_vendor_roots: umbrella vendor domains too broad to catalog (google.com, microsoft.com, etc.)
+        - infrastructure_seeds: infrastructure/tooling domains (when include_infra=False)
         """
         domain_lower = domain.lower()
         if domain_lower in self.exclusions:
             return True
-        # corporate_root_domains intentionally NOT checked - these are valid SaaS vendors
+        if domain_lower in [d.lower() for d in self.excluded_vendor_roots]:
+            return True
         if not self.scope.include_infra and domain_lower in self.infrastructure_seeds:
             return True
         return False
@@ -242,7 +243,7 @@ class PolicyConfig(BaseModel):
             data.get("infrastructure_domains", []) or 
             data.get("infrastructure_seeds", [])
         )
-        corporate_root_domains = exclusion_lists.get("corporate_root_domains") or data.get("corporate_root_domains", [])
+        excluded_vendor_roots = exclusion_lists.get("excluded_vendor_roots") or data.get("excluded_vendor_roots", [])
         banned_domains = exclusion_lists.get("banned_domains") or data.get("banned_domains", [])
         alias_domains_to_collapse = data.get("alias_domains_to_collapse", {})
         
@@ -275,7 +276,7 @@ class PolicyConfig(BaseModel):
             ),
             exclusions=exclusions,
             infrastructure_seeds=infrastructure_seeds,
-            corporate_root_domains=corporate_root_domains,
+            excluded_vendor_roots=excluded_vendor_roots,
             banned_domains=banned_domains,
             alias_domains_to_collapse=alias_domains_to_collapse,
         )
@@ -330,9 +331,8 @@ class PolicyConfig(BaseModel):
                 "linux.org", "gnu.org", "python.org", "nodejs.org",
                 "golang.org", "rust-lang.org", "ruby-lang.org",
             ],
-            corporate_root_domains=[
+            excluded_vendor_roots=[
                 "google.com", "microsoft.com", "amazon.com", "apple.com",
-                "hubspot.com", "salesforce.com", "servicenow.com", "oracle.com",
             ],
             banned_domains=[],
         )
