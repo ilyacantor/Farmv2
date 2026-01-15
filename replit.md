@@ -109,131 +109,26 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 
 **Core Principles & Features:**
 - **Deterministic Data Generation:** Generates reproducible synthetic data based on seed, scale, and enterprise/realism profiles, yielding 7 independent data planes designed to correlate only via realistic keys.
-- **Governance Framework:** Classifies assets based on governance status. See Governance Contract below for authoritative rules.
+- **Governance Framework:** Classifies assets based on governance status. Farm treats CMDB and IdP as the only authoritative sources of governance, enforcing strict rules for what constitutes a "governed" asset.
 - **Snapshot Management:** Provides APIs for generating, retrieving, listing, and deleting data snapshots, each with an `__expected__` block for grading metadata.
-- **Reconciliation System:** Compares AOD results against Farm's expectations, indicating gradeability via `contract_status`.
+- **Reconciliation System:** Compares AOD results against Farm's expectations, indicating gradeability via `contract_status`. Automatically generates detailed markdown assessment reports for non-perfect reconciliations.
 - **Validation Suite:** Comprehensive validation checks on every snapshot and reconciliation, including expected block consistency, clock invariants, finance consistency, join hygiene, and gradeability gates.
 - **Hot/Cold Storage Split:** Optimizes performance by separating snapshot metadata (hot path) from full snapshot blobs (cold storage).
-- **Database Resilience:** Implements connection pooling, circuit breaker, exponential backoff, and a concurrency semaphore for robust database interactions.
-- **Background Job System:** Mega/Enterprise scale snapshots use a background job pattern (202 + job_id) to avoid holding database pooler sessions. Jobs have progress tracking and are polled by the UI.
-- **Supabase Pooler Optimized:** Uses transaction pooling with statement timeouts (30s), max 2 concurrent DB operations, and batch inserts with commit-per-batch to prevent pooler saturation.
-- **Discrepancy-Based Assessment Triggers:** Automatic generation of detailed markdown assessment reports for non-perfect reconciliations, triggered by any classification or admission mismatch.
-- **All Discrepancies Are Bugs:** Farm and AOD share policy via the policy center. Any disagreement between Farm and AOD is a BUG requiring investigation and fixing - there are no "expected policy differences" or "intentional discrepancies."
-- **Canonical Domain Correlation (2026-01-14):** Added `canonical_domain` field to IdP and CMDB records. The generator populates this field with the original domain, and correlation logic uses it first before falling back to name matching. This improves CMDB/IdP correlation reliability despite name drift and optional `external_ref` fields.
-- **Policy Alignment Fix (2026-01-15):** Fixed `is_excluded()` to NOT treat `corporate_root_domains` as exclusions. Major SaaS vendors (salesforce.com, slack.com, etc.) are legitimate applications that should be admitted and classified. Only explicit `exclusions` list and `infrastructure_seeds` (when `include_infra=false`) determine exclusions. Removed hardcoded banned_domains - these are now controlled entirely by AOD policy.
-- **Policy Gate Handling (2026-01-15):** When AOD's policy has secondary gates enabled (e.g., `require_valid_ci_type=True`) but doesn't define the validation lists (e.g., `valid_ci_types=[]`), Farm:
-  1. Logs a `POLICY_INCONSISTENCY` warning once per session with `upstream_fix_needed` message
-  2. Accepts all values (matching AOD's actual behavior) since AOD is authoritative
-  3. Does NOT invent defaults that would cause Farm/AOD disagreement
-  This is transparent (logged, not hidden) and matches the "fail loudly" principle by surfacing the upstream policy gap rather than silently inventing behavior.
-- **CI Type Vocabulary Alignment (2026-01-15):** Fixed CMDB gate failures caused by vocabulary mismatch between Farm's `CITypeEnum` (app, service, database, infra) and the policy's `valid_ci_types` (application, service, database, etc.). Updated policy defaults and `policy_master.json` to include both short forms (app, infra) and long forms (application) to ensure CMDB records pass the `require_valid_ci_type` gate. This fix increased CMDB matches from ~139 to ~314 and reduced false positive shadows significantly.
-- **Missing Policy Hard-Fail Guard (2026-01-15):** Added `MissingPolicyError` exception to prevent Farm from computing expected classifications without explicit policy from AOD. Key changes:
-  1. `compute_expected_block()` and `analyze_snapshot_for_expectations()` now raise `MissingPolicyError` when policy is None
-  2. Set `FARM_ALLOW_DEFAULT_POLICY=true` to enable local testing fallback
-  3. Fixed `SecondaryGatesConfig.require_sso_for_idp` default from `True` to `False` to match AOD's effective behavior
-  4. Fixed boolean parsing bug in `from_aod_response()` - the `or` chaining treated `False` as falsy
-  5. Fixed policy serialization in routes.py to include `secondary_gates` block for background jobs
-  6. Unit tests: 14 new tests in `tests/test_missing_policy.py` covering all three cases
-- **Analysis Versioning:** Prevents stale cached analyses from resurfacing as logic evolves:
-  - `CURRENT_ANALYSIS_VERSION` in `src/services/constants.py` is **automatically computed** from source file hashes (analysis.py + reconciliation.py)
-  - **No manual version bumping required** - any code change to analysis logic automatically invalidates all cached analyses
-  - `analysis_version` and `analysis_computed_at` columns track when each analysis was computed
-  - Auto-recompute on version mismatch: if cached version != CURRENT_ANALYSIS_VERSION, recompute automatically
-  - Migration endpoint `/api/admin/migrate-stale-analyses` clears all stale cached analyses
-  - Stats endpoint `/api/admin/analysis-version-stats` shows version distribution across reconciliations
-  - Assessment reports show "Analysis vN computed at <time>" in header for transparency
+- **Database Resilience:** Implements connection pooling, circuit breaker, exponential backoff, and a concurrency semaphore for robust database interactions. Optimized for Supabase Pooler with transaction pooling and batch inserts.
+- **Background Job System:** Mega/Enterprise scale snapshots use a background job pattern for generation, with progress tracking and UI polling.
+- **Policy Alignment:** Farm consumes policy from AOD for grading and does not maintain independent policy authority. Discrepancies between Farm's expected classifications and AOD's actual results, given identical policy, indicate a bug. When AOD policy gates are enabled but lists are undefined, Farm logs `POLICY_INCONSISTENCY` and accepts all values, matching AOD's actual behavior without inventing defaults.
+- **Analysis Versioning:** Prevents stale cached analyses by automatically computing `CURRENT_ANALYSIS_VERSION` from source file hashes. Cached analyses are recomputed if the version is mismatched.
 - **Error Handling:** Emphasizes explicit error statuses (`UPSTREAM_ERROR`, `INVALID_INPUT_CONTRACT`) and guarantees JSON responses for API errors.
 
 **Design Choices:**
-- **Ownership Boundaries:** Farm owns the reconciliation UI, while AOD owns structured actual output, with AOD never consuming Farm's expected data.
+- **Ownership Boundaries:** Farm owns the reconciliation UI, AOD owns structured actual output. AOD never consumes Farm's expected data.
 - **Configuration:** Supports various `Scale`, `Enterprise Profile`, and `Realism Profile` settings.
 - **Data Presets:** Includes `clean_baseline`, `enterprise_mess`, and `adversarial` challenge levels.
 - **Canonical Key Rules:** Defines clear rules for asset identification.
 - **CMDB Resolution:** Handles multiple CMDB matches with specific `cmdb_resolution_reason` codes.
-- **Admission Rules:** If an asset is in CMDB or IdP, it is admitted regardless of discovery evidence. Assets without CMDB/IdP presence require 1+ discovery sources, cloud evidence, or sufficient finance spend to be admitted.
+- **Admission Rules:** Assets in CMDB or IdP are admitted regardless of discovery evidence. Otherwise, they require 1+ discovery sources, cloud evidence, or sufficient finance spend.
 - **Ground Truth Classification:** Admitted assets are classified based on evidence flags and governance propagation logic.
-
-## Governance Contract
-
-**INVARIANT:** CMDB and IdP assert truth. Heuristics suggest context. Classification is deterministic.
-
-### Authoritative Truth Sources
-Farm treats CMDB and IdP as the only authoritative sources of governance. No other signals may assert governance.
-
-### Governance Rules (Hard Requirements)
-An asset is **governed** if and only if there exists at least one authoritative record (CMDB or IdP) that **explicitly passes all governance gates**.
-
-**CMDB Governance:**
-- CI must exist
-- CI type must be valid (per `policy.secondary_gates.valid_ci_types`)
-- CI lifecycle must be valid (per `policy.secondary_gates.invalid_lifecycle_states`)
-- If record exists but fails any gate → Explicitly NOT governed (NO_CMDB)
-- If no record exists → NOT governed
-
-**IdP Governance:**
-- Explicit IdP linkage must exist
-- Required SSO gate must pass (if `policy.secondary_gates.require_sso_for_idp`)
-- If record exists but fails any gate → Explicitly NOT governed (NO_IDP)
-- If no record exists → NOT governed
-
-### Classification Logic
-```
-governed = cmdb_present OR idp_present
-```
-Where `cmdb_present` and `idp_present` are True only if records pass all gates.
-
-**Classifications:**
-- **Shadow:** Ungoverned + Recent activity = Shadow IT
-- **Zombie:** Governed + Stale activity + Ongoing finance = Deprovision candidate
-- **Parked:** Ungoverned + Stale activity = Inactive, no action needed
-- **Clean:** Governed + Recent activity = Healthy asset
-
-### Heuristics (Non-Authoritative)
-Heuristics may enrich context but **must never** assert governance, override gate outcomes, or flip classification states. Examples: fuzzy name matching, vendor inference, cross-TLD similarity.
-
-### Determinism Guarantee
-Given identical inputs (evidence + policy), Farm always produces the same classification. If Farm and AOD disagree under same evidence and policy, one contains a bug.
-
-## Policy Architecture
-
-**INVARIANT:** AOD owns policy. Farm consumes it for grading. Farm never overrides.
-
-### Policy Ownership
-- **AOD Policy Switchboard** is the single source of truth for all policy configuration
-- **Farm is a test harness** that generates scenarios and grades AOD against expectations
-- **Policies are configuration** that control deterministic logic - they are not negotiated or inferred by Farm
-
-### Policy Flow
-```
-AOD Policy Switchboard → webhook notification → Farm clears cache
-                      → fetch_policy_config() → Farm uses for grading
-```
-
-When Farm grades a reconciliation:
-1. Farm fetches the current policy from AOD (or uses policy snapshot from AOD run)
-2. Farm computes expected classifications using that exact policy
-3. Farm compares AOD's actual results against expectations
-4. Any discrepancy is a BUG (not an "expected difference")
-
-### Policy Snapshot Per Run (Ideal Implementation)
-For reproducible grading, each AOD run artifact should include:
-- `policy_snapshot`: The exact policy JSON used for that run
-- Or `policy_hash` + pointer to the exact policy blob in AOD DB
-
-Farm reads that policy snapshot when grading, ensuring Farm and AOD used identical policy.
-
-### What Farm Does NOT Do
-- Farm does NOT maintain independent policy authority
-- Farm does NOT override or modify AOD policies
-- Farm does NOT have a separate `policy_master.json` for production (only fallback for local testing)
-- Farm does NOT infer or negotiate policy values
-
-### Fallback Behavior
-`src/fixtures/policy_master.json` exists ONLY as a fallback when:
-- `USE_AOD_EXPLAIN_STUB=true` (local testing mode)
-- AOD is unreachable (should fail explicitly in production)
-
-In production, if policy cannot be fetched from AOD, Farm should fail with `POLICY_UNAVAILABLE` rather than silently using defaults.
+- **Policy Invariant:** AOD owns policy. Farm consumes it for grading. Farm never overrides. Policies are configuration that control deterministic logic. Farm fails explicitly with `POLICY_UNAVAILABLE` if policy cannot be fetched from AOD in production.
 
 ## External Dependencies
 - **Database:** Supabase PostgreSQL (managed Postgres with session pooling), configured via `SUPABASE_DB_URL` or `DATABASE_URL`.
