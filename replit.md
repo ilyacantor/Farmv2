@@ -160,6 +160,14 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - Domains like googleapis.com, gstatic.com, office.com, cloudfront.net are excluded from expected block when include_infra=false
 - Corporate root domains (google.com, microsoft.com, amazon.com) remain as valid SaaS vendors per policy intent
 
+**Enhanced AOD Stub Mode (Jan 2026):**
+- Stub mode enabled with `USE_AOD_EXPLAIN_STUB=true` now reads snapshot CMDB/IdP planes to compute HAS_CMDB/HAS_IDP deterministically
+- Uses registered_domain matching against canonical_domain fields - NO fuzzy matching or cross-TLD correlation
+- Reports include "MODE: STUB" banner when stub is active
+- Correlation discrepancies labeled as "STUB_ARTIFACT" (not bugs) when in stub mode
+- Stub responses include `stub_mode: True` flag for downstream identification
+- Tests: 9 unit tests covering CMDB correlation, IdP correlation, cross-TLD negative, and edge cases
+
 **Known Alignment Gaps:**
 - CMDB correlation mismatch: Farm and AOD may use different correlation logic for linking CMDB entries to discovery domains
 - Key normalization for synthetic domains: Some Farm-generated domains show as KEY_NORMALIZATION_MISMATCH due to different canonical key selection
