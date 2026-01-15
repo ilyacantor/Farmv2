@@ -235,7 +235,12 @@ class PolicyConfig(BaseModel):
         
         # Exclusion lists - check nested structure first, then flat
         exclusions = exclusion_lists.get("custom_exclusions") or data.get("exclusions", [])
-        infrastructure_seeds = exclusion_lists.get("infrastructure_domains") or data.get("infrastructure_seeds", [])
+        # infrastructure_domains in AOD format OR policy_master.json; fall back to infrastructure_seeds
+        infrastructure_seeds = (
+            exclusion_lists.get("infrastructure_domains") or 
+            data.get("infrastructure_domains", []) or 
+            data.get("infrastructure_seeds", [])
+        )
         corporate_root_domains = exclusion_lists.get("corporate_root_domains") or data.get("corporate_root_domains", [])
         banned_domains = exclusion_lists.get("banned_domains") or data.get("banned_domains", [])
         
