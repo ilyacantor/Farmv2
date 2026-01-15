@@ -150,6 +150,20 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - Uses tldextract for proper eTLD+1 extraction
 - Junk domain suffixes (cdn.com, edge.com, global.com, etc.) excluded via policy
 
+**Zombie Finance Generation:**
+- Zombie apps now use canonical vendor/product names (no drift) for reliable finance correlation
+- Stress-test zombie scenario includes vendor, contract, and recurring transaction entries
+- All three conditions verified: governed + stale activity + ongoing finance
+
+**Infrastructure Domain Exclusion:**
+- PolicyConfig.from_aod_response now correctly loads `infrastructure_domains` from policy_master.json
+- Domains like googleapis.com, gstatic.com, office.com, cloudfront.net are excluded from expected block when include_infra=false
+- Corporate root domains (google.com, microsoft.com, amazon.com) remain as valid SaaS vendors per policy intent
+
+**Known Alignment Gaps:**
+- CMDB correlation mismatch: Farm and AOD may use different correlation logic for linking CMDB entries to discovery domains
+- Key normalization for synthetic domains: Some Farm-generated domains show as KEY_NORMALIZATION_MISMATCH due to different canonical key selection
+
 ## External Dependencies
 - **Database:** Supabase PostgreSQL (managed Postgres with session pooling), configured via `SUPABASE_DB_URL` or `DATABASE_URL`.
 - **AOD Module (AutonomOS Discover):** Interacts via defined API contracts, requiring `AOD_URL` and optionally `AOD_SHARED_SECRET`. A local stub can be enabled with `USE_AOD_EXPLAIN_STUB=true`.
