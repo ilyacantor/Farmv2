@@ -36,9 +36,12 @@ class IdPTypeEnum(str, Enum):
 
 
 class CITypeEnum(str, Enum):
-    app = "app"
+    app = "application"
     service = "service"
     database = "database"
+    server = "server"
+    network_device = "network_device"
+    storage = "storage"
     infra = "infra"
 
 
