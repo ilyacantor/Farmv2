@@ -23,7 +23,28 @@
     "invalid_lifecycle_states": ["retired", "decommissioned", "deprecated", "archived"]
   },
   
-  "exclusions": [],
+  "exclusions": [
+    "cdn.com",
+    "cloud.net",
+    "services.io",
+    "api.co",
+    "platform.io",
+    "tech.net",
+    "app.co",
+    "data.io",
+    "sys.net",
+    "hub.io",
+    "edge.com",
+    "fast.io",
+    "quick.net",
+    "global.com",
+    "world.net",
+    "smart.io",
+    "pro.co",
+    "plus.net",
+    "max.io",
+    "awsstatic.com"
+  ],
   
   "infrastructure_seeds": [
     "postgresql.org",
