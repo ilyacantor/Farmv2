@@ -74,7 +74,7 @@ from src.services.analysis import (
     build_reconciliation_analysis,
     generate_assessment_markdown,
 )
-from src.services.aod_client import call_aod_explain_nonflag, stub_aod_explain_nonflag, clear_policy_cache
+from src.services.aod_client import call_aod_explain_nonflag, stub_aod_explain_nonflag_legacy, clear_policy_cache
 from src.services.logging import trace_log
 from src.services.expected_validation import validate_expected_block, validate_snapshot_expected, validate_gradeability, ValidationResult
 import re
@@ -933,6 +933,8 @@ async def _create_reconciliation_internal(parsed_request: ReconcileRequest, raw_
     
     analysis_computed_at = created_at
     
+    use_stub = os.environ.get("USE_AOD_EXPLAIN_STUB", "").lower() == "true"
+    
     try:
         assessment_md = generate_assessment_markdown(
             reconciliation_id=reconciliation_id,
@@ -944,7 +946,8 @@ async def _create_reconciliation_internal(parsed_request: ReconcileRequest, raw_
             farm_expectations=farm_expectations.model_dump(),
             aod_payload=aod_payload,
             analysis_version=CURRENT_ANALYSIS_VERSION,
-            analysis_computed_at=analysis_computed_at
+            analysis_computed_at=analysis_computed_at,
+            stub_mode=use_stub
         )
     except Exception as e:
         trace_log("routes", "assessment_generation_failed", {

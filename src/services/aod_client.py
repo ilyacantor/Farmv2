@@ -10,6 +10,7 @@ Features:
 - Per-run cache: Cache results by (snapshot_id, frozenset(asset_keys))
 - Circuit breaker: After 3 consecutive failures, skip real calls for 60 seconds
 - Better error logging
+- Enhanced stub mode: Reads snapshot CMDB/IdP for accurate correlation simulation
 
 ## Policy Snapshot Contract (AOD → Farm)
 
@@ -64,15 +65,28 @@ With policy snapshot per run:
 - Farm grades against the EXACT policy AOD used
 - Grading is 100% reproducible
 - Any discrepancy is definitively a bug
+
+## Stub Mode (USE_AOD_EXPLAIN_STUB=true)
+
+Enhanced stub mode reads snapshot CMDB/IdP planes to compute HAS_CMDB/HAS_IDP
+deterministically using registered_domain matching against canonical_domain fields.
+
+This allows testing without real AOD while maintaining accurate correlation logic:
+- No fuzzy matching or cross-TLD correlation
+- Only exact registered_domain matches grant governance
+- Reports should include "MODE: STUB" banner
+- Discrepancies marked as STUB_ARTIFACT, not bugs
 """
 
 import copy
+import json
 import os
 import time
 from typing import Optional
 import httpx
 from src.services.logging import trace_log
 from src.models.policy import PolicyConfig
+from src.services.key_normalization import extract_registered_domain
 
 # Cache: {(snapshot_id, frozenset(keys)): result_dict}
 _explain_cache: dict[tuple, dict] = {}
@@ -161,10 +175,12 @@ def reset_circuit_breaker():
     trace_log("aod_client", "circuit_reset", {"action": "manual_reset"})
 
 
-def stub_aod_explain_nonflag(asset_keys: list[str], ask: str = "both") -> dict[str, dict]:
+def stub_aod_explain_nonflag_legacy(asset_keys: list[str], ask: str = "both") -> dict[str, dict]:
     """
-    Deterministic stub for testing explain-nonflag without real AOD.
+    LEGACY: Deterministic stub for testing explain-nonflag without real AOD.
     Returns each decision bucket at least once based on key patterns.
+    
+    DEPRECATED: Use stub_aod_explain_nonflag_from_snapshot for accurate CMDB/IdP correlation.
     """
     results = {}
     for i, key in enumerate(asset_keys):
@@ -199,6 +215,107 @@ def stub_aod_explain_nonflag(asset_keys: list[str], ask: str = "both") -> dict[s
     return results
 
 
+async def stub_aod_explain_nonflag_from_snapshot(
+    snapshot_id: str,
+    asset_keys: list[str],
+    ask: str = "both"
+) -> dict[str, dict]:
+    """
+    Enhanced stub that reads snapshot CMDB/IdP planes to compute HAS_CMDB/HAS_IDP.
+    
+    Simulates AOD correlation logic:
+    - Extracts canonical_domain from CMDB CIs and IdP objects
+    - Builds domain indexes using registered_domain extraction
+    - For each asset key, checks if its registered_domain matches any CMDB/IdP entry
+    - NO fuzzy matching, NO cross-TLD correlation
+    
+    This provides accurate stub responses without requiring real AOD.
+    
+    Returns per-key: {present_in_aod, decision, reason_codes[], stub_mode: True}
+    """
+    from src.farm.db import connection as db_connection
+    
+    cmdb_domains = set()
+    idp_domains = set()
+    
+    try:
+        async with db_connection() as conn:
+            row = await conn.fetchrow(
+                "SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1",
+                snapshot_id
+            )
+            if row and row["snapshot_json"]:
+                snapshot = json.loads(row["snapshot_json"])
+                planes = snapshot.get("__planes__", snapshot)
+                
+                cmdb_cis = planes.get("cmdb", {}).get("cis", [])
+                for ci in cmdb_cis:
+                    canonical_domain = ci.get("canonical_domain")
+                    if canonical_domain:
+                        reg_domain = extract_registered_domain(canonical_domain)
+                        if reg_domain:
+                            cmdb_domains.add(reg_domain)
+                
+                idp_objects = planes.get("idp", {}).get("objects", [])
+                for obj in idp_objects:
+                    canonical_domain = obj.get("canonical_domain")
+                    if canonical_domain:
+                        reg_domain = extract_registered_domain(canonical_domain)
+                        if reg_domain:
+                            idp_domains.add(reg_domain)
+                
+                trace_log("aod_client", "stub_indexes_built", {
+                    "snapshot_id": snapshot_id,
+                    "cmdb_domains_count": len(cmdb_domains),
+                    "idp_domains_count": len(idp_domains),
+                })
+    except Exception as e:
+        trace_log("aod_client", "stub_snapshot_fetch_error", {
+            "snapshot_id": snapshot_id,
+            "error": str(e),
+        })
+    
+    results = {}
+    for key in asset_keys:
+        key_domain = extract_registered_domain(key)
+        
+        has_cmdb = key_domain in cmdb_domains if key_domain else False
+        has_idp = key_domain in idp_domains if key_domain else False
+        has_governance = has_cmdb or has_idp
+        
+        reason_codes = []
+        if has_cmdb:
+            reason_codes.append("HAS_CMDB")
+        else:
+            reason_codes.append("NO_CMDB")
+        
+        if has_idp:
+            reason_codes.append("HAS_IDP")
+        else:
+            reason_codes.append("NO_IDP")
+        
+        if has_governance:
+            decision = "ADMITTED_NOT_SHADOW" if ask in ["shadow", "both"] else "ADMITTED_NOT_ZOMBIE"
+            reason_codes.extend(["RECENT_ACTIVITY", "HAS_ACTIVE_USERS"])
+        else:
+            decision = "SHADOW_CANDIDATE" if ask in ["shadow", "both"] else "ZOMBIE_CANDIDATE"
+        
+        results[key] = {
+            "present_in_aod": True,
+            "decision": decision,
+            "reason_codes": reason_codes,
+            "stub_mode": True,
+        }
+    
+    trace_log("aod_client", "stub_explain_computed", {
+        "snapshot_id": snapshot_id,
+        "keys_count": len(asset_keys),
+        "governed_count": sum(1 for r in results.values() if "HAS_CMDB" in r["reason_codes"] or "HAS_IDP" in r["reason_codes"]),
+    })
+    
+    return results
+
+
 async def call_aod_explain_nonflag(
     snapshot_id: str,
     asset_keys: list[str],
@@ -218,7 +335,11 @@ async def call_aod_explain_nonflag(
     use_stub = os.environ.get("USE_AOD_EXPLAIN_STUB", "").lower() == "true"
     
     if use_stub:
-        return stub_aod_explain_nonflag(asset_keys, ask)
+        trace_log("aod_client", "using_enhanced_stub", {
+            "snapshot_id": snapshot_id,
+            "keys_count": len(asset_keys),
+        })
+        return await stub_aod_explain_nonflag_from_snapshot(snapshot_id, asset_keys, ask)
     
     if not aod_url:
         return _get_fallback_response(asset_keys)

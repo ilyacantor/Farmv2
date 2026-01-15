@@ -1103,7 +1103,8 @@ def generate_assessment_markdown(
     farm_expectations: dict,
     aod_payload: dict,
     analysis_version: str | None = None,
-    analysis_computed_at: str | None = None
+    analysis_computed_at: str | None = None,
+    stub_mode: bool = False
 ) -> str | None:
     """Generate detailed assessment markdown for a reconciliation.
     
@@ -1111,6 +1112,10 @@ def generate_assessment_markdown(
     - The reconciliation is 100% perfect match
     - Analysis data is missing or invalid
     - No issues to report
+    
+    Args:
+        stub_mode: If True, adds STUB MODE banner and labels discrepancies as STUB_ARTIFACT
+                   instead of "bugs". This is used when running without real AOD.
     
     This function is defensive and will not raise on missing data.
     """
@@ -1144,6 +1149,10 @@ def generate_assessment_markdown(
         return None
     
     lines = []
+    
+    if stub_mode:
+        lines.append("> **MODE: STUB** - This report was generated without real AOD. Discrepancies are STUB_ARTIFACT (simulation differences), not production bugs. Run against real AOD to verify actual behavior.")
+        lines.append("")
     
     lines.append(f"# Reconciliation Assessment Report")
     lines.append("")
@@ -1234,14 +1243,20 @@ def generate_assessment_markdown(
     if total_bugs > 0:
         lines.append("---")
         lines.append("")
-        lines.append("## Correlation Bugs (Discrepancies Requiring Fix)")
-        lines.append("")
-        lines.append("> **IMPORTANT:** The following discrepancies are BUGS, not expected differences. Farm and AOD share policy via the policy center, so any disagreement indicates a bug that must be fixed.")
+        if stub_mode:
+            lines.append("## Correlation Discrepancies (STUB_ARTIFACT)")
+            lines.append("")
+            lines.append("> **NOTE:** These are STUB_ARTIFACT discrepancies from simulated AOD. They may not reflect real AOD behavior. Run against real AOD to identify actual bugs.")
+        else:
+            lines.append("## Correlation Bugs (Discrepancies Requiring Fix)")
+            lines.append("")
+            lines.append("> **IMPORTANT:** The following discrepancies are BUGS, not expected differences. Farm and AOD share policy via the policy center, so any disagreement indicates a bug that must be fixed.")
         lines.append("")
         
         governance_bugs = corr_bugs.get('governance_correlation', {})
         if governance_bugs.get('count', 0) > 0:
-            lines.append("### Governance Correlation Bug")
+            section_label = "Artifact" if stub_mode else "Bug"
+            lines.append(f"### Governance Correlation {section_label}")
             lines.append("")
             lines.append(f"**{governance_bugs.get('count', 0)} assets** - Farm found governance but AOD didn't correlate.")
             lines.append("")
@@ -1261,7 +1276,8 @@ def generate_assessment_markdown(
         
         cmdb_bugs = corr_bugs.get('cmdb_correlation', {})
         if cmdb_bugs.get('count', 0) > 0:
-            lines.append("### CMDB Correlation Bug")
+            section_label = "Artifact" if stub_mode else "Bug"
+            lines.append(f"### CMDB Correlation {section_label}")
             lines.append("")
             lines.append(f"**{cmdb_bugs.get('count', 0)} assets** - CMDB correlation mismatch between Farm and AOD.")
             lines.append("")
@@ -1279,7 +1295,8 @@ def generate_assessment_markdown(
         
         idp_bugs = corr_bugs.get('idp_correlation', {})
         if idp_bugs.get('count', 0) > 0:
-            lines.append("### IdP Correlation Bug")
+            section_label = "Artifact" if stub_mode else "Bug"
+            lines.append(f"### IdP Correlation {section_label}")
             lines.append("")
             lines.append(f"**{idp_bugs.get('count', 0)} assets** - IdP correlation mismatch between Farm and AOD.")
             lines.append("")
@@ -1297,9 +1314,10 @@ def generate_assessment_markdown(
         
         key_norm = corr_bugs.get('key_normalization', {})
         if key_norm.get('count', 0) > 0:
-            lines.append("### Key Normalization Bug")
+            section_label = "Artifact" if stub_mode else "Bug"
+            lines.append(f"### Key Normalization {section_label}")
             lines.append("")
-            lines.append(f"**{key_norm.get('count', 0)} assets** - Domain canonicalization bug.")
+            lines.append(f"**{key_norm.get('count', 0)} assets** - Domain canonicalization {'difference' if stub_mode else 'bug'}.")
             lines.append("")
             lines.append(f"> {key_norm.get('explanation', '')}")
             lines.append("")
