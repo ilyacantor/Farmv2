@@ -160,13 +160,15 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - Domains like googleapis.com, gstatic.com, office.com, cloudfront.net are excluded from expected block when include_infra=false
 - Corporate root domains (google.com, microsoft.com, amazon.com) remain as valid SaaS vendors per policy intent
 
-**Enhanced AOD Stub Mode (Jan 2026):**
-- Stub mode enabled with `USE_AOD_EXPLAIN_STUB=true` now reads snapshot CMDB/IdP planes to compute HAS_CMDB/HAS_IDP deterministically
-- Uses registered_domain matching against canonical_domain fields - NO fuzzy matching or cross-TLD correlation
-- Reports include "MODE: STUB" banner when stub is active
-- Correlation discrepancies labeled as "STUB_ARTIFACT" (not bugs) when in stub mode
-- Stub responses include `stub_mode: True` flag for downstream identification
-- Tests: 9 unit tests covering CMDB correlation, IdP correlation, cross-TLD negative, and edge cases
+**Enhanced AOD Stub Mode v2 (Jan 2026):**
+- Stub mode enabled with `USE_AOD_EXPLAIN_STUB=true` reads snapshot CMDB/IdP planes to compute governance flags
+- **Two-tier correlation algorithm:**
+  - **Tier 1 AUTHORITATIVE:** registered_domain matching against canonical_domain and domains[] arrays -> returns HAS_CMDB/HAS_IDP
+  - **Tier 2 WEAK:** Vendor name matching or name word overlap (>=2 non-stopwords) -> returns HAS_CMDB_WEAK/HAS_IDP_WEAK (does NOT trigger governance merge)
+- Structured correlation output: Each response includes `cmdb_correlation` and `idp_correlation` with `status` (AUTHORITATIVE/WEAK/NONE), `method`, and `matched_id`
+- Reports include "MODE: STUB" banner and stub correlation breakdown table showing FP counts by correlation status
+- WEAK correlation does NOT assert governance - prevents false positives from loose name matching
+- Tests: 21 unit tests covering Tier 1 matching, Tier 2 matching, negative cases, and structured output validation
 
 **Known Alignment Gaps:**
 - CMDB correlation mismatch: Farm and AOD may use different correlation logic for linking CMDB entries to discovery domains
