@@ -3,12 +3,67 @@ AOD Client Service with caching and circuit breaker pattern.
 
 Provides:
 - fetch_policy_config: Get active PolicyConfig from AOD
+- fetch_run_policy_snapshot: Get exact PolicyConfig used for a specific AOD run
 - call_aod_explain_nonflag: Get decision traces for missed assets
 
 Features:
 - Per-run cache: Cache results by (snapshot_id, frozenset(asset_keys))
 - Circuit breaker: After 3 consecutive failures, skip real calls for 60 seconds
 - Better error logging
+
+## Policy Snapshot Contract (AOD → Farm)
+
+Farm requires the exact policy that AOD used for each run to ensure reproducible grading.
+AOD must implement this endpoint:
+
+### GET /api/runs/{run_id}/policy
+
+Request:
+    GET /api/runs/{run_id}/policy
+    Headers:
+        X-Shared-Secret: <shared_secret>  (if configured)
+
+Response (200 OK):
+    {
+        "run_id": "abc123",
+        "policy_hash": "sha256:...",
+        "captured_at": "2026-01-15T12:00:00Z",
+        "policy": {
+            "exclusions": [...],
+            "infrastructure_seeds": [...],
+            "corporate_root_domains": [...],
+            "admission": {
+                "noise_floor": 2,
+                "minimum_spend": 100,
+                "zombie_window_days": 90,
+                ...
+            },
+            "secondary_gates": {
+                "require_valid_ci_type": true,
+                "valid_ci_types": ["app", "application", "service", ...],
+                ...
+            },
+            ...
+        }
+    }
+
+Response (404 Not Found):
+    {"error": "Run not found", "run_id": "abc123"}
+
+Response (410 Gone):
+    {"error": "Policy snapshot expired", "run_id": "abc123", "expired_at": "..."}
+
+### Why This Matters
+
+Without a policy snapshot per run:
+- Policy may change between AOD run and Farm grading
+- Grading becomes non-reproducible
+- "Farm and AOD disagree" becomes ambiguous (policy drift vs real bug)
+
+With policy snapshot per run:
+- Farm grades against the EXACT policy AOD used
+- Grading is 100% reproducible
+- Any discrepancy is definitively a bug
 """
 
 import copy
@@ -335,3 +390,139 @@ def clear_policy_cache():
     _policy_cache = None
     _policy_cache_time = 0.0
     trace_log("aod_client", "policy_cache_cleared", {})
+
+
+async def fetch_run_policy_snapshot(run_id: str) -> tuple[Optional[PolicyConfig], Optional[str]]:
+    """
+    Fetch the exact PolicyConfig that AOD used for a specific run.
+    
+    This is the preferred method for grading - it ensures Farm uses the
+    EXACT same policy that AOD used, eliminating policy drift bugs.
+    
+    Args:
+        run_id: The AOD run ID to fetch policy for
+        
+    Returns:
+        Tuple of (PolicyConfig, policy_hash) if successful
+        Tuple of (None, error_reason) if failed
+        
+    Error reasons:
+        - "RUN_NOT_FOUND": Run ID doesn't exist
+        - "POLICY_EXPIRED": Policy snapshot was garbage collected
+        - "AOD_UNAVAILABLE": Can't reach AOD
+        - "STUB_MODE": Using local stub (no run-specific policy available)
+    """
+    aod_url = (os.environ.get("AOD_BASE_URL", "") or os.environ.get("AOD_URL", "")).rstrip("/")
+    use_stub = os.environ.get("USE_AOD_EXPLAIN_STUB", "").lower() == "true"
+    
+    if use_stub:
+        trace_log("aod_client", "run_policy_stub", {
+            "run_id": run_id,
+            "reason": "USE_AOD_EXPLAIN_STUB=true"
+        })
+        return None, "STUB_MODE"
+    
+    if not aod_url:
+        trace_log("aod_client", "run_policy_no_url", {
+            "run_id": run_id,
+            "reason": "no_aod_url"
+        })
+        return None, "AOD_UNAVAILABLE"
+    
+    if _is_circuit_open():
+        trace_log("aod_client", "run_policy_circuit_open", {
+            "run_id": run_id,
+            "reason": "circuit_breaker"
+        })
+        return None, "AOD_UNAVAILABLE"
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            shared_secret = os.environ.get("AOD_SHARED_SECRET", "")
+            headers = {"X-Shared-Secret": shared_secret} if shared_secret else {}
+            
+            resp = await client.get(
+                f"{aod_url}/api/runs/{run_id}/policy",
+                headers=headers
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                policy_data = data.get("policy", {})
+                policy_hash = data.get("policy_hash")
+                
+                policy = PolicyConfig.from_aod_response(policy_data)
+                _record_success()
+                
+                trace_log("aod_client", "run_policy_fetch_success", {
+                    "run_id": run_id,
+                    "policy_hash": policy_hash,
+                    "captured_at": data.get("captured_at")
+                })
+                return policy, policy_hash
+                
+            elif resp.status_code == 404:
+                trace_log("aod_client", "run_policy_not_found", {
+                    "run_id": run_id
+                })
+                return None, "RUN_NOT_FOUND"
+                
+            elif resp.status_code == 410:
+                trace_log("aod_client", "run_policy_expired", {
+                    "run_id": run_id
+                })
+                return None, "POLICY_EXPIRED"
+                
+            else:
+                trace_log("aod_client", "run_policy_fetch_failed", {
+                    "run_id": run_id,
+                    "status_code": resp.status_code
+                })
+                _record_failure()
+                return None, "AOD_UNAVAILABLE"
+                
+    except Exception as e:
+        trace_log("aod_client", "run_policy_fetch_error", {
+            "run_id": run_id,
+            "error": str(e)
+        })
+        _record_failure()
+        return None, "AOD_UNAVAILABLE"
+
+
+async def fetch_policy_for_grading(run_id: Optional[str] = None) -> PolicyConfig:
+    """
+    Fetch the appropriate policy for grading a reconciliation.
+    
+    This is the main entry point for getting policy when grading:
+    1. If run_id provided → Try to get run-specific policy snapshot
+    2. If run_id not provided or snapshot unavailable → Fall back to current policy
+    
+    Args:
+        run_id: Optional AOD run ID. If provided, attempts to fetch
+                the exact policy snapshot from that run.
+                
+    Returns:
+        PolicyConfig to use for grading
+        
+    Note:
+        When run_id is provided but snapshot is unavailable, this logs
+        a warning and falls back to current policy. The grading result
+        should note this fallback for transparency.
+    """
+    if run_id:
+        policy, error = await fetch_run_policy_snapshot(run_id)
+        if policy:
+            trace_log("aod_client", "grading_policy_from_run", {
+                "run_id": run_id,
+                "source": "run_snapshot"
+            })
+            return policy
+        else:
+            trace_log("aod_client", "grading_policy_fallback", {
+                "run_id": run_id,
+                "fallback_reason": error,
+                "source": "current_policy"
+            })
+    
+    return await fetch_policy_config()
