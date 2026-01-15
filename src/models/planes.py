@@ -196,8 +196,6 @@ class CMDBConfigItem(BaseModel):
     vendor: Optional[str] = None
     external_ref: Optional[str] = None
     canonical_domain: Optional[str] = None
-    domains: list[str] = Field(default_factory=list)
-    product_name: Optional[str] = None
 
 
 class CloudResource(BaseModel):

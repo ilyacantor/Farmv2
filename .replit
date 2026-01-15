@@ -45,4 +45,4 @@ AOD_BASE_URL = "https://76e34f41-bf5c-472f-b3ef-fba343165178-00-8ykfyky4oicj.wor
 FARM_URL = "https://63971109-a901-48bc-a71f-89583b2e11d4-00-1do0vncksilxt.janeway.replit.dev/"
 
 [userenv.development]
-USE_AOD_EXPLAIN_STUB = "false"
+USE_AOD_EXPLAIN_STUB = "true"

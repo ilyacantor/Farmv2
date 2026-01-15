@@ -386,20 +386,16 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         matched_keys = set()
         matched_by_vendor = set()
 
-        # CORRELATION: Use canonical_domain AND domains[] array for matching to existing candidates
-        # CONTRACT: Match via registered_domain against canonical_domain and domains[] arrays
-        # This matches AOD's Stage 4 correlation logic
-        ci_domains = ci.get('domains', []) or []
-        all_cmdb_domains = [cmdb_registered] + ci_domains if cmdb_registered else ci_domains
-        
-        for cmdb_domain in all_cmdb_domains:
-            if not cmdb_domain:
-                continue
-            # Direct key match using CMDB domain
-            if cmdb_domain in candidates:
-                matched_keys.add(cmdb_domain)
+        # CORRELATION: Use canonical_domain for matching to existing candidates
+        # CONTRACT: Only match to candidates keyed by the CMDB canonical_domain
+        # Do NOT use domain_to_keys index - that's too aggressive and causes 
+        # correlation drift with AOD (Farm finds matches AOD doesn't)
+        if cmdb_registered:
+            # Direct key match using canonical domain
+            if cmdb_registered in candidates:
+                matched_keys.add(cmdb_registered)
             # Also try registered domain extraction for normalized matching
-            registered = extract_registered_domain(cmdb_domain)
+            registered = extract_registered_domain(cmdb_registered)
             if registered and registered in candidates:
                 matched_keys.add(registered)
             

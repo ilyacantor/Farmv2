@@ -916,8 +916,6 @@ class EnterpriseGenerator:
         for app in self._saas_selection:
             if self.rng.random() < coverage:
                 owner = self.rng.choice(self._employees) if self._employees else None
-                domain = app["domain"]
-                domains_list = [domain] if domain else []
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
                     name=self._apply_name_drift(app["name"]),
@@ -926,18 +924,14 @@ class EnterpriseGenerator:
                     owner=f"{owner['first']} {owner['last']}" if owner else None,
                     owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
                     vendor=app["vendor"] if self.rng.random() > 0.15 else None,
-                    external_ref=f"https://{domain}/support" if domain and self.rng.random() > 0.4 else None,
-                    canonical_domain=domain,
-                    domains=domains_list,
-                    product_name=app["name"],
+                    external_ref=f"https://{app['domain']}/support" if self.rng.random() > 0.4 else None,
+                    canonical_domain=app["domain"],
                 )
                 cis.append(ci)
         
         for svc in self._internal_services:
             if self.rng.random() < coverage:
                 owner = self.rng.choice(self._employees) if self._employees else None
-                domain = svc.get("domain")
-                domains_list = [domain] if domain else []
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
                     name=self._apply_name_drift(svc["name"]),
@@ -945,57 +939,43 @@ class EnterpriseGenerator:
                     lifecycle=self.rng.choice([LifecycleEnum.prod, LifecycleEnum.staging]),
                     owner=f"{owner['first']} {owner['last']}" if owner else None,
                     owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
-                    canonical_domain=domain,
-                    domains=domains_list,
-                    product_name=svc["name"],
+                    canonical_domain=svc.get("domain"),
                 )
                 cis.append(ci)
         
         for ds in self._datastores:
             if self.rng.random() < coverage:
-                domain = ds.get("domain")
-                domains_list = [domain] if domain else []
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
                     name=self._apply_name_drift(ds["name"]),
                     ci_type=CITypeEnum.database,
                     lifecycle=LifecycleEnum.prod,
                     vendor=ds["vendor"] if self.rng.random() > 0.2 else None,
-                    canonical_domain=domain,
-                    domains=domains_list,
-                    product_name=ds["name"],
+                    canonical_domain=ds.get("domain"),
                 )
                 cis.append(ci)
         
         for zombie_app in self._zombie_apps:
             if self.rng.random() < coverage:
-                domain = zombie_app["domain"]
-                domains_list = [domain] if domain else []
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
                     name=self._apply_name_drift(zombie_app["name"]),
                     ci_type=CITypeEnum.app,
                     lifecycle=LifecycleEnum.prod,
                     vendor=zombie_app["vendor"],
-                    external_ref=f"https://{domain}",
-                    canonical_domain=domain,
-                    domains=domains_list,
-                    product_name=zombie_app["name"],
+                    external_ref=f"https://{zombie_app['domain']}",
+                    canonical_domain=zombie_app["domain"],
                 )
                 cis.append(ci)
         
         for zombie_svc in self._zombie_services:
             if self.rng.random() < coverage:
-                domain = zombie_svc.get("domain")
-                domains_list = [domain] if domain else []
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
                     name=self._apply_name_drift(zombie_svc["name"]),
                     ci_type=CITypeEnum.service,
                     lifecycle=LifecycleEnum.prod,
-                    canonical_domain=domain,
-                    domains=domains_list,
-                    product_name=zombie_svc["name"],
+                    canonical_domain=zombie_svc.get("domain"),
                 )
                 cis.append(ci)
         
