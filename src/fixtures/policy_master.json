@@ -68,10 +68,5 @@
     "zoom.com"
   ],
   
-  "banned_domains": [
-    "tiktok.com",
-    "bytedance.com",
-    "wechat.com",
-    "weixin.qq.com"
-  ]
+  "banned_domains": []
 }

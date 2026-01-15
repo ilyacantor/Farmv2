@@ -312,7 +312,5 @@ class PolicyConfig(BaseModel):
                 "google.com", "microsoft.com", "amazon.com", "apple.com",
                 "hubspot.com", "salesforce.com", "servicenow.com", "oracle.com",
             ],
-            banned_domains=[
-                "tiktok.com", "bytedance.com", "wechat.com", "weixin.qq.com",
-            ],
+            banned_domains=[],
         )
