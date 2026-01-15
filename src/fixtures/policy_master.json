@@ -18,7 +18,7 @@
     "require_sso_for_idp": true,
     "require_valid_ci_type": true,
     "require_valid_lifecycle": true,
-    "valid_ci_types": ["application", "service", "database", "server", "network_device", "storage"],
+    "valid_ci_types": ["app", "application", "service", "database", "server", "network_device", "storage", "infra"],
     "valid_lifecycle_states": ["active", "development", "staging", "production", "maintenance"],
     "invalid_lifecycle_states": ["retired", "decommissioned", "deprecated", "archived"]
   },

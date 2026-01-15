@@ -341,7 +341,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
             registered = extract_registered_domain(cmdb_registered)
             if registered and registered in candidates:
                 matched_keys.add(registered)
-
+            
         # Fallback: Direct lookups by name if no domain match
         if not matched_keys and name:
             if name in key_to_normalized.values():

@@ -126,6 +126,7 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
   2. Accepts all values (matching AOD's actual behavior) since AOD is authoritative
   3. Does NOT invent defaults that would cause Farm/AOD disagreement
   This is transparent (logged, not hidden) and matches the "fail loudly" principle by surfacing the upstream policy gap rather than silently inventing behavior.
+- **CI Type Vocabulary Alignment (2026-01-15):** Fixed CMDB gate failures caused by vocabulary mismatch between Farm's `CITypeEnum` (app, service, database, infra) and the policy's `valid_ci_types` (application, service, database, etc.). Updated policy defaults and `policy_master.json` to include both short forms (app, infra) and long forms (application) to ensure CMDB records pass the `require_valid_ci_type` gate. This fix increased CMDB matches from ~139 to ~314 and reduced false positive shadows significantly.
 - **Analysis Versioning:** Prevents stale cached analyses from resurfacing as logic evolves:
   - `CURRENT_ANALYSIS_VERSION` in `src/services/constants.py` is **automatically computed** from source file hashes (analysis.py + reconciliation.py)
   - **No manual version bumping required** - any code change to analysis logic automatically invalidates all cached analyses

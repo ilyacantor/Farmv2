@@ -39,7 +39,7 @@ class SecondaryGatesConfig(BaseModel):
     require_sso_for_idp: bool = True
     require_valid_ci_type: bool = True
     require_valid_lifecycle: bool = True
-    valid_ci_types: list[str] = ["application", "service", "database", "server", "network_device", "storage"]
+    valid_ci_types: list[str] = ["app", "application", "service", "database", "server", "network_device", "storage", "infra"]
     valid_lifecycle_states: list[str] = ["active", "development", "staging", "production", "maintenance"]
     invalid_lifecycle_states: list[str] = ["retired", "decommissioned", "deprecated", "archived"]
 
