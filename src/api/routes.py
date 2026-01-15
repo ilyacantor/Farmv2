@@ -74,7 +74,7 @@ from src.services.analysis import (
     build_reconciliation_analysis,
     generate_assessment_markdown,
 )
-from src.services.aod_client import call_aod_explain_nonflag, stub_aod_explain_nonflag
+from src.services.aod_client import call_aod_explain_nonflag, stub_aod_explain_nonflag, clear_policy_cache
 from src.services.logging import trace_log
 from src.services.expected_validation import validate_expected_block, validate_snapshot_expected, validate_gradeability, ValidationResult
 import re
@@ -544,6 +544,38 @@ async def get_policy_config(refresh: bool = False):
         "corporate_root_domains": policy.corporate_root_domains,
         "banned_domains": policy.banned_domains,
         "source": "aod" if os.environ.get("AOD_BASE_URL") or os.environ.get("AOD_URL") else "mock",
+    }
+
+
+class PolicyWebhookPayload(BaseModel):
+    """Payload from AOD policy switchboard webhook notification."""
+    policy: Optional[dict] = None
+    event: str = "policy_updated"
+    timestamp: Optional[str] = None
+
+
+@router.post("/api/policy/webhook")
+async def policy_webhook(payload: PolicyWebhookPayload):
+    """Receive policy update notifications from AOD.
+    
+    When AOD's policy switchboard saves changes with auto_notify enabled,
+    it POSTs here to notify Farm. Farm clears its policy cache so the next
+    fetch gets the fresh policy.
+    
+    Webhook URL to configure in AOD: https://<farm-host>/api/policy/webhook
+    """
+    clear_policy_cache()
+    
+    trace_log("routes", "policy_webhook", {
+        "event": payload.event,
+        "timestamp": payload.timestamp or datetime.utcnow().isoformat(),
+        "policy_received": payload.policy is not None,
+    })
+    
+    return {
+        "status": "ok",
+        "message": "Policy cache cleared, will fetch fresh on next request",
+        "received_at": datetime.utcnow().isoformat() + "Z",
     }
 
 
