@@ -4099,17 +4099,20 @@
                     );
                 } else if (step === 3) {
                     const returnUrl = state?.returnUrl;
-                    if (returnUrl) {
-                        const backUrl = returnUrl.split('?')[0] + '?guided=1&tour_phase=8';
+                    const aodUrl = FarmState.aodBaseUrl || returnUrl;
+                    if (aodUrl) {
+                        const backUrl = returnUrl 
+                            ? returnUrl.split('?')[0] + '?guided=1&tour_phase=8'
+                            : aodUrl;
                         this.showOverlay(
                             `<strong>Tour Complete</strong><br><br>You've seen the full cycle: <strong>Generate Chaos → Discover Order → Audit Accuracy</strong>.<br><br>Return to AOD to explore the Catalog, drill into asset details, or run new simulations.<br><br>
-                            <a href="${backUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Finish & Explore →</a>`,
+                            <a href="${backUrl}" class="inline-block mt-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm rounded-lg font-medium">Return to AOD →</a>`,
                             { hideNext: true }
                         );
                     } else {
                         this.showOverlay(
-                            "<strong>Tour Complete</strong><br><br>You've seen the cycle: <strong>Generate Chaos → Discover Order → Audit Accuracy</strong>.<br><br>You are now free to explore the Catalog, run new simulations, or drill into specific asset details.",
-                            { buttonText: 'Finish & Explore' }
+                            "<strong>Tour Complete</strong><br><br>You've seen the cycle: <strong>Generate Chaos → Discover Order → Audit Accuracy</strong>.<br><br>You are now free to explore Farm, run new simulations, or drill into specific asset details.",
+                            { buttonText: 'Finish Tour' }
                         );
                     }
                 } else if (step === 4) {
