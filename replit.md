@@ -172,9 +172,15 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - WEAK correlation does NOT assert governance - prevents false positives from loose name matching
 - Tests: 21 unit tests covering Tier 1 matching, Tier 2 matching, negative cases, and structured output validation
 
+**Stress Test Data Quality Fix (Jan 2026):**
+- Added `canonical_domain` to stress test CMDB entries (CI-STRESS-TOXIC, CI-STRESS-ZOMBIE)
+- Added `canonical_domain` to stress test IdP entry (IDP-STRESS-ZOMBIE)
+- These entries previously only set `external_ref`, causing CMDB/IdP correlation failures
+- Fix is pure data completeness - no governance semantics changed
+
 **Known Alignment Gaps:**
 - CMDB correlation mismatch: Farm and AOD may use different correlation logic for linking CMDB entries to discovery domains
-- Key normalization for synthetic domains: Some Farm-generated domains show as KEY_NORMALIZATION_MISMATCH due to different canonical key selection
+- Key normalization for legacy domains: hipchat.com, yammer.com show as KEY_NORMALIZATION_MISMATCH because Farm keeps them as standalone keys while AOD collapses to vendor domains. This is intentional - Farm preserves truthful domain keys. Fix should be on AOD side to stop collapsing legacy products.
 
 ## External Dependencies
 - **Database:** Supabase PostgreSQL (managed Postgres with session pooling), configured via `SUPABASE_DB_URL` or `DATABASE_URL`.
