@@ -46,10 +46,10 @@
             cursor: default;
             transition: left 0.3s ease, top 0.3s ease, bottom 0.3s ease;
         }
-        .tour-overlay.bottom-left {
+        .tour-overlay.top-left {
             left: 24px;
-            top: auto;
-            bottom: 24px;
+            top: 80px;
+            bottom: auto;
         }
         .tour-overlay::before {
             content: '';
@@ -3753,9 +3753,9 @@
                     }
                 }
                 
-                overlay.classList.remove('bottom-left');
-                if (options.position === 'bottom-left') {
-                    overlay.classList.add('bottom-left');
+                overlay.classList.remove('top-left');
+                if (options.position === 'top-left') {
+                    overlay.classList.add('top-left');
                 }
                 
                 overlay.classList.remove('hidden');
@@ -3777,6 +3777,9 @@
                     offsetX = e.clientX - rect.left;
                     offsetY = e.clientY - rect.top;
                     overlay.style.transition = 'none';
+                    overlay.style.bottom = 'auto';
+                    overlay.style.top = `${rect.top}px`;
+                    overlay.style.left = `${rect.left}px`;
                 });
                 
                 document.addEventListener('mousemove', (e) => {
@@ -3865,8 +3868,8 @@
                 if (step === 0) {
                     switchMainTab('overview');
                     this.showOverlay(
-                        "<strong>Simulation & Proof</strong><br><br><strong>The Farm</strong> generates complex, conflicted datasets—not \"happy path\" demo data.",
-                        { buttonText: 'Next', position: 'bottom-left' }
+                        "<strong>Simulation & Proof</strong><br><br>The first step in the simulation is synthetic generation of a complete IT environment.<br><br>We use <strong>The Farm</strong> to generate complex, conflicted datasets—not \"happy path\" demo data.",
+                        { buttonText: 'Next', position: 'top-left' }
                     );
                 } else if (step === 1) {
                     switchMainTab('generator');
