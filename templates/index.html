@@ -295,6 +295,15 @@
                             <p id="scenarioSummary" class="text-xs text-cyan-400/70 mt-2 hidden"></p>
                         </div>
                         
+                        <div class="flex items-center gap-2 mt-3">
+                            <input type="checkbox" id="regenerateProfile" 
+                                class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0">
+                            <label for="regenerateProfile" class="text-xs text-slate-400 cursor-pointer">
+                                Regenerate if same profile exists
+                            </label>
+                        </div>
+                        <p class="text-xs text-slate-500 mt-1 mb-3">Deletes existing snapshot with same fingerprint and creates fresh one</p>
+                        
                         <button type="submit" id="generateBtn"
                             class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 cyan-glow">
                             Generate Snapshot
@@ -3479,7 +3488,9 @@
         }
         
         async function generateSnapshot(tenantId, seed, scale, enterpriseProfile, realismProfile, dataPreset) {
-            addLogEntry(`Generating ${tenantId} seed:${seed}${dataPreset ? ` [${dataPreset}]` : ''}...`, 'info');
+            const regenerate = document.getElementById('regenerateProfile')?.checked || false;
+            const actionWord = regenerate ? 'Regenerating' : 'Generating';
+            addLogEntry(`${actionWord} ${tenantId} seed:${seed}${dataPreset ? ` [${dataPreset}]` : ''}...`, 'info');
             TimerController.setState('running');
             
             const btn = document.getElementById('generateBtn');
@@ -3496,7 +3507,8 @@
                     body.data_preset = dataPreset;
                 }
                 
-                const response = await fetch('/api/snapshots', {
+                const endpoint = regenerate ? '/api/snapshots/regenerate' : '/api/snapshots';
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
@@ -3568,8 +3580,11 @@
                 
                 if (!hadError && result) {
                     const elapsedTime = TimerController.stopAndShowElapsed();
+                    const isRegenerated = result.regenerated === true;
+                    const deletedCount = result.deleted_old_count || 0;
                     const dupStr = result.duplicate_of_snapshot_id ? ' (cached)' : '';
-                    addLogEntry(`Created ${result.snapshot_id?.substring(0, 8) || 'snapshot'} in ${elapsedTime}s${dupStr}`, 'success');
+                    const regenStr = isRegenerated ? ` (replaced ${deletedCount})` : '';
+                    addLogEntry(`Created ${result.snapshot_id?.substring(0, 8) || 'snapshot'} in ${elapsedTime}s${dupStr}${regenStr}`, 'success');
                     
                     FarmState.lastGenerationTime = elapsedTime;
                     FarmState.generationTimeCache[result.snapshot_id] = elapsedTime;
@@ -3577,6 +3592,8 @@
                     if (result.duplicate_of_snapshot_id) {
                         document.getElementById('genTimeValue').textContent = 'cache';
                         showToast('Snapshot loaded from cache', 'info');
+                    } else if (isRegenerated) {
+                        showToast(`Snapshot regenerated in <strong>${elapsedTime}s</strong> (deleted ${deletedCount} old)`, 'success');
                     } else {
                         showToast(`Snapshot generated in <strong>${elapsedTime}s</strong>`, 'success');
                     }
