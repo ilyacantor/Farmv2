@@ -296,11 +296,13 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
     idp_objects = planes.get('idp', {}).get('objects', [])
     for obj in idp_objects:
         name = normalize_name(obj.get('name', ''))
+        domain = obj.get('domain')
         canonical_domain = obj.get('canonical_domain')
+        effective_domain = domain or canonical_domain
         # CONTRACT: external_ref is stored for reference but NOT used for key selection
         external_ref = obj.get('external_ref', '')
-        # Only use canonical_domain for matching - NOT extracted from external_ref
-        idp_registered = canonical_domain
+        # Use effective_domain (domain OR canonical_domain) for matching
+        idp_registered = effective_domain
         has_sso = obj.get('has_sso', False)
         matched_keys = set()
         
@@ -963,6 +965,14 @@ def compute_expected_block(
         "excluded_by_mode": len(excluded_by_mode),
     })
     
+    planes = snapshot.get('planes', {})
+    idp_objects = planes.get('idp', {}).get('objects', [])
+    idp_record_count_total = len(idp_objects)
+    idp_record_count_by_domain = sum(
+        1 for obj in idp_objects 
+        if obj.get('domain') or obj.get('canonical_domain')
+    )
+    
     return {
         'shadow_expected': shadow_expected,
         'zombie_expected': zombie_expected,
@@ -975,6 +985,8 @@ def compute_expected_block(
         'excluded_by_mode': excluded_by_mode,
         'decision_traces': decision_traces,
         'reconciliation_mode': mode,
+        'idp_record_count_total': idp_record_count_total,
+        'idp_record_count_by_domain': idp_record_count_by_domain,
     }
 
 

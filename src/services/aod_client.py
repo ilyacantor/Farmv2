@@ -325,9 +325,11 @@ async def stub_aod_explain_nonflag_from_snapshot(
                     idp_id = obj.get("idp_id", "")
                     idp_entries[idp_id] = obj
                     
+                    domain = obj.get("domain")
                     canonical_domain = obj.get("canonical_domain")
-                    if canonical_domain:
-                        reg_domain = extract_registered_domain(canonical_domain)
+                    effective_domain = domain or canonical_domain
+                    if effective_domain:
+                        reg_domain = extract_registered_domain(effective_domain)
                         if reg_domain:
                             idp_domain_index[reg_domain] = idp_id
                     

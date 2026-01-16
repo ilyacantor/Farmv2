@@ -183,6 +183,7 @@ class IdPObject(BaseModel):
     has_scim: bool = False
     vendor: Optional[str] = None
     last_login_at: Optional[str] = None
+    domain: Optional[str] = None
     canonical_domain: Optional[str] = None
 
 

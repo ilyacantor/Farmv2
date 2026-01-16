@@ -178,6 +178,15 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - These entries previously only set `external_ref`, causing CMDB/IdP correlation failures
 - Fix is pure data completeness - no governance semantics changed
 
+**IdP Correlation Parity Fix (Jan 2026):**
+- Farm now uses `effective_domain = domain OR canonical_domain` for all IdP→asset correlation
+- Previously only checked `canonical_domain`, missing IdP records that only had `domain` field
+- Added `domain` field to IdPObject model (planes.py) for parity with AOD
+- Updated reconciliation.py and aod_client.py stub mode to use effective_domain
+- Added snapshot metadata: `idp_record_count_total` and `idp_record_count_by_domain`
+- Fixes false "NO_IDP" emissions for domains like easyforce.io, linkdesk.dev, primehub.com, etc.
+- No governance semantics changed - pure correlation parity improvement
+
 **Known Alignment Gaps:**
 - CMDB correlation mismatch: Farm and AOD may use different correlation logic for linking CMDB entries to discovery domains
 - Key normalization for legacy domains: hipchat.com, yammer.com show as KEY_NORMALIZATION_MISMATCH because Farm keeps them as standalone keys while AOD collapses to vendor domains. This is intentional - Farm preserves truthful domain keys. Fix should be on AOD side to stop collapsing legacy products.
