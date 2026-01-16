@@ -3711,7 +3711,7 @@
                 else if (phase === 7) this.runPhase7();
             },
             
-            totalSteps: { 1: 5, 2: 2, 7: 4 },
+            totalSteps: { 1: 6, 2: 2, 7: 4 },
             
             showOverlay(message, options = {}) {
                 const overlay = document.getElementById('tourOverlay');
@@ -3852,15 +3852,22 @@
                 this.clearHighlights();
                 
                 if (step === 0) {
+                    switchMainTab('overview');
+                    this.showOverlay(
+                        "<strong>Simulation & Proof</strong><br><br>The first step in the simulation is synthetic generation of a complete IT environment.<br><br>We use <strong>The Farm</strong> to generate complex, conflicted datasets—not \"happy path\" demo data.",
+                        { buttonText: 'Next' }
+                    );
+                } else if (step === 1) {
+                    switchMainTab('generator');
                     const el = document.getElementById('scale');
                     this.highlight('scale');
                     el.focus();
                     this.showOverlay(
-                        "<strong>Simulating Reality</strong><br><br>The first step in the simulation is synthetic generation of a complete IT environment.<br><br>We use <strong>The Farm</strong> to generate complex, conflicted datasets—not \"happy path\" demo data.<br><br>Select any configuration to simulate the scale of enterprise complexity, or accept the defaults by pressing <strong>Generate Snapshot</strong>.",
+                        "<strong>Enterprise Generator</strong><br><br>Select any configuration to simulate the scale of enterprise complexity, or accept the defaults by pressing <strong>Generate Snapshot</strong>.",
                         { hideNext: true }
                     );
                     this.waitForSelection('scale');
-                } else if (step === 1) {
+                } else if (step === 2) {
                     this.closeAllDropdowns();
                     const el = document.getElementById('enterpriseProfile');
                     this.highlight('enterpriseProfile');
@@ -3870,7 +3877,7 @@
                         { hideNext: true }
                     );
                     this.waitForSelection('enterpriseProfile');
-                } else if (step === 2) {
+                } else if (step === 3) {
                     this.closeAllDropdowns();
                     const el = document.getElementById('realismProfile');
                     this.highlight('realismProfile');
@@ -3880,7 +3887,7 @@
                         { hideNext: true }
                     );
                     this.waitForSelection('realismProfile');
-                } else if (step === 3) {
+                } else if (step === 4) {
                     this.closeAllDropdowns();
                     const el = document.getElementById('dataPreset');
                     this.highlight('dataPreset');
@@ -3890,7 +3897,7 @@
                         { hideNext: true }
                     );
                     this.waitForSelection('dataPreset');
-                } else if (step === 4) {
+                } else if (step === 5) {
                     this.closeAllDropdowns();
                     this.highlight('generateBtn');
                     this.showOverlay(
@@ -3935,7 +3942,7 @@
                     e.preventDefault();
                     e.stopPropagation();
                     this.clearPendingListeners();
-                    this.currentStep = 4;
+                    this.currentStep = 5;
                     this.setupGenerateCapture();
                     generateBtn.click();
                 };
