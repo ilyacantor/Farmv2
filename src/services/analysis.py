@@ -326,11 +326,17 @@ def check_key_in_aod_evidence(key: str, aod_evidence_domains: set) -> bool:
     return False
 
 
-def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict) -> tuple:
+def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: dict, policy=None) -> tuple:
     """Build detailed reconciliation analysis comparing Farm expectations vs AOD results.
     
     Uses passed farm_exp (recomputed with current policy) if provided.
     Falls back to snapshot's __expected__ block only for legacy calls.
+    
+    Args:
+        snapshot: The Farm snapshot data
+        aod_payload: The AOD response payload
+        farm_exp: Pre-computed expected block (recommended - should be computed with proper policy)
+        policy: PolicyConfig to use if fallback recomputation is needed
     
     Returns: (analysis_dict, recomputed_expected_block_or_none)
         - If farm_exp was used: returns (analysis, None)
@@ -347,7 +353,7 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         if cached_block and cached_block.get('shadow_expected') is not None:
             expected_block = cached_block
         else:
-            expected_block = compute_expected_block(snapshot, mode="all")
+            expected_block = compute_expected_block(snapshot, mode="all", policy=policy)
             recomputed_block = expected_block
     
     farm_shadows = {a['asset_key'] for a in expected_block.get('shadow_expected', [])}

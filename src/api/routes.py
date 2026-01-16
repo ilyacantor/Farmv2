@@ -918,7 +918,7 @@ async def _create_reconciliation_internal(parsed_request: ReconcileRequest, raw_
         "aod_lists": raw_aod_lists,
     }
     
-    analysis, recomputed_block = build_reconciliation_analysis(snapshot, aod_payload, expected_block)
+    analysis, recomputed_block = build_reconciliation_analysis(snapshot, aod_payload, expected_block, policy=policy)
     
     overall_status = analysis.get('overall_status', 'PASS')
     if overall_status == 'PASS':
@@ -1185,7 +1185,7 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
             policy = await fetch_policy_config()
             expected_block = compute_expected_block(snapshot, mode="sprawl", policy=policy)
             
-            analysis, recomputed_block = build_reconciliation_analysis(snapshot, aod_payload, expected_block)
+            analysis, recomputed_block = build_reconciliation_analysis(snapshot, aod_payload, expected_block, policy=policy)
             analysis_computed_at = datetime.utcnow().isoformat() + "Z"
             
             # Persist with version and timestamp
@@ -1376,7 +1376,7 @@ async def download_reconciliation_diff(
         policy = await fetch_policy_config()
         expected_block = compute_expected_block(snapshot, mode="sprawl", policy=policy)
         
-        analysis, _ = build_reconciliation_analysis(snapshot, aod_payload, expected_block)
+        analysis, _ = build_reconciliation_analysis(snapshot, aod_payload, expected_block, policy=policy)
     
     admission_rows = []
     classification_rows = []
