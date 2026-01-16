@@ -34,6 +34,13 @@ IdP Governance:
   An IdP record grants governance ONLY IF:
     - Explicit IdP linkage exists
     - Required SSO gate passes (if policy.secondary_gates.require_sso_for_idp)
+    - App name is CANONICAL (not legacy, deprecated, or environment-specific)
+  
+  Non-canonical tokens that FAIL the gate:
+    "(legacy)", "legacy", "(deprecated)", "deprecated",
+    "-prod", " prod", "production", "-production",
+    "-dev", " dev", "-development", "-staging", " staging",
+    "-test", " test", "-qa"
   
   If an IdP record exists BUT FAILS ANY GATE:
     -> Explicitly NOT governed (NO_IDP)
@@ -122,6 +129,36 @@ from src.services.key_normalization import (
     is_valid_fqdn,
 )
 from src.services.logging import trace_log
+
+
+# Non-canonical IdP name tokens that indicate the app is not the production/canonical version
+# Apps with these tokens in their name should NOT assert governance
+NON_CANONICAL_IDP_TOKENS = [
+    "(legacy)", "legacy",
+    "(deprecated)", "deprecated",
+    "-prod", " prod", "production", "-production",
+    "-dev", " dev", "-development",
+    "-staging", " staging",
+    "-test", " test", "-qa",
+]
+
+
+def is_canonical_idp(idp_name: str) -> bool:
+    """Check if an IdP app name represents the canonical (production) version.
+    
+    Non-canonical apps (legacy, deprecated, environment-specific) should NOT assert
+    governance because they represent duplicates or non-production instances.
+    
+    Examples:
+        is_canonical_idp("Slack") -> True
+        is_canonical_idp("Slack (legacy)") -> False
+        is_canonical_idp("GitHub-prod") -> False
+        is_canonical_idp("Jira-staging") -> False
+    """
+    if not idp_name:
+        return False
+    normalized = idp_name.strip().lower()
+    return not any(tok in normalized for tok in NON_CANONICAL_IDP_TOKENS)
 
 
 def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
@@ -295,7 +332,8 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
     # - Do NOT use external_ref extracted domains for keying
     idp_objects = planes.get('idp', {}).get('objects', [])
     for obj in idp_objects:
-        name = normalize_name(obj.get('name', ''))
+        raw_name = obj.get('name', '')
+        name = normalize_name(raw_name)
         domain = obj.get('domain')
         canonical_domain = obj.get('canonical_domain')
         effective_domain = domain or canonical_domain
@@ -306,10 +344,17 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         has_sso = obj.get('has_sso', False)
         matched_keys = set()
         
-        # Check secondary gates: require_sso_for_idp
-        # If gate is enabled and has_sso is False, treat as NO_IDP
+        # Check all IdP gates:
+        # 1. SSO gate (if policy.secondary_gates.require_sso_for_idp)
+        # 2. Canonical name gate (non-legacy, non-environment-specific)
         idp_passes_gate = True
+        
+        # Gate 1: SSO requirement
         if policy and not policy.idp_passes_gates(has_sso):
+            idp_passes_gate = False
+        
+        # Gate 2: Canonical name check - non-canonical apps don't assert governance
+        if not is_canonical_idp(raw_name):
             idp_passes_gate = False
         
         # CORRELATION: Use canonical_domain for matching to existing candidates
