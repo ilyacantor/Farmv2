@@ -208,7 +208,7 @@
                     <div class="h-6 w-px bg-slate-600"></div>
                     <span class="text-white font-medium text-lg">AOS Farm</span>
                     <nav class="flex items-center gap-1 ml-4">
-                        <button id="tabOverview" onclick="switchMainTab('overview')" class="px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors">Overview</button>
+                        <button id="tabOverview" onclick="switchMainTab('overview')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Overview</button>
                         <button id="tabConsole" onclick="switchMainTab('console')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Console</button>
                         <button id="tabTest" onclick="switchMainTab('test')" class="hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Test Lab</button>
                     </nav>
@@ -231,7 +231,7 @@
             </div>
         </header>
 
-        <div id="overviewTab" class="w-full" style="height: calc(100vh - 120px);">
+        <div id="overviewTab" class="hidden w-full" style="height: calc(100vh - 120px);">
             <iframe 
                 src="https://overview.autonomos.software/farm/embed" 
                 class="w-full h-full rounded-xl border border-slate-700"
