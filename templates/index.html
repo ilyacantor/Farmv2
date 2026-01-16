@@ -4116,10 +4116,9 @@
                     if (recEl) {
                         recEl.classList.add('tour-highlight');
                         recEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        this.waitForReconciliationClick(recEl);
+                        recEl.click();
                         this.showOverlay(
-                            "<strong>The Scorecard</strong><br><br>Click to view the reconciliation report. This compares what <em>actually</em> existed (Farm) vs. what AOD <em>found</em>.<br><br>If AOD missed a Shadow asset or misclassified a Zombie, it shows up here.",
-                            { hideNext: true }
+                            "<strong>The Scorecard</strong><br><br>This compares what <em>actually</em> existed (Farm) vs. what AOD <em>found</em>.<br><br>If AOD missed a Shadow asset or misclassified a Zombie, it shows up here."
                         );
                     } else {
                         this.showOverlay(
