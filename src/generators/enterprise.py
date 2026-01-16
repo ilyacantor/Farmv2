@@ -1332,6 +1332,7 @@ class EnterpriseGenerator:
             owner_email=emp["email"] if emp else "stress@test.com",
             vendor=toxic["vendor"],
             external_ref=toxic["domain"],
+            canonical_domain=toxic["domain"],
         ))
         for i in range(3):
             discovery.observations.append(DiscoveryObservation(
@@ -1382,12 +1383,14 @@ class EnterpriseGenerator:
             owner_email=emp["email"] if emp else "stress@test.com",
             vendor=zombie["vendor"],
             external_ref=zombie["domain"],
+            canonical_domain=zombie["domain"],
         ))
         idp.objects.append(IdPObject(
             idp_id=f"IDP-STRESS-ZOMBIE",
             name=zombie["name"],
             idp_type=IdPTypeEnum.application,
             external_ref=zombie["domain"],
+            canonical_domain=zombie["domain"],
             has_sso=True,
             has_scim=False,
             vendor=zombie["vendor"],
