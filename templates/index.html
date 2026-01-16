@@ -44,6 +44,12 @@
             left: calc(50% - 200px);
             top: calc(50% - 150px);
             cursor: default;
+            transition: left 0.3s ease, top 0.3s ease, bottom 0.3s ease;
+        }
+        .tour-overlay.bottom-left {
+            left: 24px;
+            top: auto;
+            bottom: 24px;
         }
         .tour-overlay::before {
             content: '';
@@ -3747,6 +3753,11 @@
                     }
                 }
                 
+                overlay.classList.remove('bottom-left');
+                if (options.position === 'bottom-left') {
+                    overlay.classList.add('bottom-left');
+                }
+                
                 overlay.classList.remove('hidden');
                 this.initDrag();
             },
@@ -3854,19 +3865,24 @@
                 if (step === 0) {
                     switchMainTab('overview');
                     this.showOverlay(
-                        "<strong>Simulation & Proof</strong><br><br>The first step in the simulation is synthetic generation of a complete IT environment.<br><br>We use <strong>The Farm</strong> to generate complex, conflicted datasets—not \"happy path\" demo data.",
-                        { buttonText: 'Next' }
+                        "<strong>Simulation & Proof</strong><br><br><strong>The Farm</strong> generates complex, conflicted datasets—not \"happy path\" demo data.",
+                        { buttonText: 'Next', position: 'bottom-left' }
                     );
                 } else if (step === 1) {
                     switchMainTab('generator');
-                    const el = document.getElementById('scale');
-                    this.highlight('scale');
-                    el.focus();
-                    this.showOverlay(
-                        "<strong>Enterprise Generator</strong><br><br>Select any configuration to simulate the scale of enterprise complexity, or accept the defaults by pressing <strong>Generate Snapshot</strong>.",
-                        { hideNext: true }
-                    );
-                    this.waitForSelection('scale');
+                    setTimeout(() => {
+                        const el = document.getElementById('scale');
+                        if (el) {
+                            this.highlight('scale');
+                            el.focus();
+                            this.showOverlay(
+                                "<strong>Enterprise Generator</strong><br><br>Select any configuration to simulate the scale of enterprise complexity, or accept the defaults by pressing <strong>Generate Snapshot</strong>.",
+                                { hideNext: true }
+                            );
+                            this.waitForSelection('scale');
+                        }
+                    }, 100);
+                    return;
                 } else if (step === 2) {
                     this.closeAllDropdowns();
                     const el = document.getElementById('enterpriseProfile');
