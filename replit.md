@@ -107,11 +107,6 @@ Evidence-only derivations over labels
 ## System Architecture
 AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase PostgreSQL database. The frontend is a Vanilla JavaScript single-page application with Tailwind CSS and Jinja2 templating.
 
-**UI Tabs:**
-- **Overview:** Default landing page for fresh/external loads. Embeds https://overview.autonomos.software/farm/embed showing the Farm→AOD→Outputs pipeline visualization.
-- **Console:** Generator and validation lab for creating snapshots and viewing reconciliations. AOD routing (guided, snapshot_id, reconciliation_id params) automatically navigates here.
-- **Test Lab:** Decision trace comparison tool (hidden by default).
-
 **Core Principles & Features:**
 - **Deterministic Data Generation:** Generates reproducible synthetic data based on seed, scale, and enterprise/realism profiles, yielding 7 independent data planes designed to correlate only via realistic keys.
 - **Governance Framework:** Classifies assets based on governance status. Farm treats CMDB and IdP as the only authoritative sources of governance, enforcing strict rules for what constitutes a "governed" asset.

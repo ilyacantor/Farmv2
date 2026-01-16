@@ -208,8 +208,7 @@
                     <div class="h-6 w-px bg-slate-600"></div>
                     <span class="text-white font-medium text-lg">AOS Farm</span>
                     <nav class="flex items-center gap-1 ml-4">
-                        <button id="tabOverview" onclick="switchMainTab('overview')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Overview</button>
-                        <button id="tabConsole" onclick="switchMainTab('console')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Console</button>
+                        <button id="tabConsole" onclick="switchMainTab('console')" class="hidden px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors">Console</button>
                         <button id="tabTest" onclick="switchMainTab('test')" class="hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Test Lab</button>
                     </nav>
                 </div>
@@ -231,17 +230,8 @@
             </div>
         </header>
 
-        <div id="overviewTab" class="hidden w-full" style="height: calc(100vh - 120px);">
-            <iframe 
-                src="https://overview.autonomos.software/farm/embed" 
-                class="w-full h-full rounded-xl border border-slate-700"
-                style="background: #1e293b;"
-                allow="fullscreen"
-                loading="lazy">
-            </iframe>
-        </div>
 
-        <div id="consoleTab" class="hidden grid grid-cols-2 gap-4" style="min-width: 0;">
+        <div id="consoleTab" class="grid grid-cols-2 gap-4" style="min-width: 0;">
             <div class="space-y-6 min-w-0">
                 <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
                     <h2 class="text-lg font-semibold text-cyan-400 mb-4">Enterprise Generator</h2>
@@ -828,40 +818,23 @@
             document.getElementById('explanationModal').classList.remove('hidden');
         }
 
-        function switchMainTab(tab, persist = true) {
-            const overviewTab = document.getElementById('overviewTab');
+        function switchMainTab(tab) {
             const consoleTab = document.getElementById('consoleTab');
             const testTab = document.getElementById('testTab');
-            const tabOverview = document.getElementById('tabOverview');
             const tabConsole = document.getElementById('tabConsole');
             const tabTest = document.getElementById('tabTest');
             
-            const activeClass = 'px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors';
-            const inactiveClass = 'px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors';
-            const hiddenInactiveClass = 'hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors';
-            
-            overviewTab.classList.add('hidden');
-            consoleTab.classList.add('hidden');
-            testTab.classList.add('hidden');
-            tabOverview.className = inactiveClass;
-            tabConsole.className = inactiveClass;
-            tabTest.className = hiddenInactiveClass;
-            
-            if (tab === 'overview') {
-                overviewTab.classList.remove('hidden');
-                tabOverview.className = activeClass;
-            } else if (tab === 'console') {
+            if (tab === 'console') {
                 consoleTab.classList.remove('hidden');
-                tabConsole.className = activeClass;
-            } else if (tab === 'test') {
+                testTab.classList.add('hidden');
+                tabConsole.className = 'hidden px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors';
+                tabTest.className = 'hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors';
+            } else {
                 consoleTab.classList.add('hidden');
                 testTab.classList.remove('hidden');
-                tabTest.className = activeClass.replace('hidden ', '');
+                tabConsole.className = 'hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors';
+                tabTest.className = 'hidden px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors';
                 populateTestSnapshotSelect();
-            }
-            
-            if (persist) {
-                sessionStorage.setItem('farm_current_tab', tab);
             }
         }
 
@@ -3657,25 +3630,6 @@
             if (container && container.textContent.includes('Loading')) {
                 console.log('[init] Reconciliations still loading, force render');
                 renderReconciliationsList();
-            }
-            
-            // Determine initial tab: 
-            // 1. AOD routing params -> Console
-            // 2. Saved tab from sessionStorage (refresh behavior) -> restore saved tab
-            // 3. Fresh external load -> Overview
-            const params = new URLSearchParams(window.location.search);
-            const isAodRouting = params.get('guided') === '1' || 
-                                 params.get('snapshot_id') || 
-                                 params.get('reconciliation_id') ||
-                                 params.get('tour_phase');
-            const savedTab = sessionStorage.getItem('farm_current_tab');
-            
-            if (isAodRouting) {
-                switchMainTab('console');
-            } else if (savedTab && ['overview', 'console', 'test'].includes(savedTab)) {
-                switchMainTab(savedTab, false);
-            } else {
-                switchMainTab('overview');
             }
         }
         
