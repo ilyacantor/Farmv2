@@ -155,8 +155,10 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - Stress-test zombie scenario includes vendor, contract, and recurring transaction entries
 - All three conditions verified: governed + stale activity + ongoing finance
 
-**Infrastructure Domain Exclusion:**
-- PolicyConfig.from_aod_response now correctly loads `infrastructure_domains` from policy_master.json
+**Infrastructure Domain Exclusion (Fixed Jan 2026):**
+- PolicyConfig.from_aod_response now uses `all_excluded_domains` from AOD's policy response as the authoritative combined exclusion list (56 domains)
+- Previous bug: OR logic between `infrastructure_domains` and `infrastructure_seeds` caused cloud CDN domains (googleapis.com, gstatic.com, cloudfront.net) to be lost when AOD returned empty `infrastructure_domains`
+- Fix: Uses AOD's pre-merged `all_excluded_domains` when available, falls back to merging `infrastructure_domains` + `infrastructure_seeds` for policy_master.json
 - Domains like googleapis.com, gstatic.com, office.com, cloudfront.net are excluded from expected block when include_infra=false
 - Corporate root domains (google.com, microsoft.com, amazon.com) remain as valid SaaS vendors per policy intent
 

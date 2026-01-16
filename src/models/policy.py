@@ -237,12 +237,21 @@ class PolicyConfig(BaseModel):
         
         # Exclusion lists - check nested structure first, then flat
         exclusions = exclusion_lists.get("custom_exclusions") or data.get("exclusions", [])
-        # infrastructure_domains in AOD format OR policy_master.json; fall back to infrastructure_seeds
-        infrastructure_seeds = (
-            exclusion_lists.get("infrastructure_domains") or 
-            data.get("infrastructure_domains", []) or 
-            data.get("infrastructure_seeds", [])
-        )
+        
+        # Infrastructure domains: AOD provides all_excluded_domains as the combined authoritative list
+        # Otherwise, merge infrastructure_domains + infrastructure_seeds from various locations
+        all_excluded = data.get("all_excluded_domains", [])
+        if all_excluded:
+            # AOD provides the complete merged list
+            infrastructure_seeds = list(all_excluded)
+        else:
+            # Fallback: merge infrastructure_domains (cloud) + infrastructure_seeds (devops)
+            infra_domains = set(
+                exclusion_lists.get("infrastructure_domains") or 
+                data.get("infrastructure_domains", [])
+            )
+            infra_seeds = set(data.get("infrastructure_seeds", []))
+            infrastructure_seeds = list(infra_domains | infra_seeds)
         excluded_vendor_roots = exclusion_lists.get("excluded_vendor_roots") or data.get("excluded_vendor_roots", [])
         banned_domains = exclusion_lists.get("banned_domains") or data.get("banned_domains", [])
         alias_domains_to_collapse = data.get("alias_domains_to_collapse", {})
