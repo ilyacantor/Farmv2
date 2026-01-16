@@ -208,8 +208,8 @@
                     <div class="h-6 w-px bg-slate-600"></div>
                     <span class="text-white font-medium text-lg">AOS Farm</span>
                     <nav class="flex items-center gap-1 ml-4">
-                        <button id="tabOverview" onclick="switchMainTab('overview')" class="px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors">Overview</button>
-                        <button id="tabConsole" onclick="switchMainTab('console')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Console</button>
+                        <button id="tabOverview" onclick="switchMainTab('overview')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Overview</button>
+                        <button id="tabConsole" onclick="switchMainTab('console')" class="px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors">Console</button>
                         <button id="tabTest" onclick="switchMainTab('test')" class="hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Test Lab</button>
                     </nav>
                 </div>
@@ -232,7 +232,7 @@
         </header>
 
 
-        <div id="overviewTab" class="w-full" style="min-width: 0;">
+        <div id="overviewTab" class="hidden w-full" style="min-width: 0;">
             <iframe 
                 src="https://overview.autonomos.software/farm/embed" 
                 class="w-full rounded-xl border border-slate-700 bg-slate-800/60"
@@ -242,7 +242,7 @@
             </iframe>
         </div>
 
-        <div id="consoleTab" class="hidden grid grid-cols-2 gap-4" style="min-width: 0;">
+        <div id="consoleTab" class="grid grid-cols-2 gap-4" style="min-width: 0;">
             <div class="space-y-6 min-w-0">
                 <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
                     <h2 class="text-lg font-semibold text-cyan-400 mb-4">Enterprise Generator</h2>
