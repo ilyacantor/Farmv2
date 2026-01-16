@@ -828,7 +828,7 @@
             document.getElementById('explanationModal').classList.remove('hidden');
         }
 
-        function switchMainTab(tab) {
+        function switchMainTab(tab, persist = true) {
             const overviewTab = document.getElementById('overviewTab');
             const consoleTab = document.getElementById('consoleTab');
             const testTab = document.getElementById('testTab');
@@ -858,6 +858,10 @@
                 testTab.classList.remove('hidden');
                 tabTest.className = activeClass.replace('hidden ', '');
                 populateTestSnapshotSelect();
+            }
+            
+            if (persist) {
+                sessionStorage.setItem('farm_current_tab', tab);
             }
         }
 
@@ -3655,15 +3659,21 @@
                 renderReconciliationsList();
             }
             
-            // Determine initial tab: AOD routing goes to Console, fresh loads go to Overview
+            // Determine initial tab: 
+            // 1. AOD routing params -> Console
+            // 2. Saved tab from sessionStorage (refresh behavior) -> restore saved tab
+            // 3. Fresh external load -> Overview
             const params = new URLSearchParams(window.location.search);
             const isAodRouting = params.get('guided') === '1' || 
                                  params.get('snapshot_id') || 
                                  params.get('reconciliation_id') ||
                                  params.get('tour_phase');
+            const savedTab = sessionStorage.getItem('farm_current_tab');
             
             if (isAodRouting) {
                 switchMainTab('console');
+            } else if (savedTab && ['overview', 'console', 'test'].includes(savedTab)) {
+                switchMainTab(savedTab, false);
             } else {
                 switchMainTab('overview');
             }
