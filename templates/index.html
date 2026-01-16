@@ -102,14 +102,6 @@
             position: relative;
             z-index: 10;
         }
-        .tour-step-counter {
-            margin-bottom: 4px;
-            font-size: 12px;
-            font-weight: 600;
-            color: #22d3ee;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
         .tour-overlay-text {
             font-size: 14px;
             color: #cbd5e1;
@@ -3727,7 +3719,6 @@
                 
                 const total = this.totalSteps[this.currentPhase] || 5;
                 const current = this.currentStep + 1;
-                document.getElementById('tourStepCounter').textContent = `Step ${current} of ${total}`;
                 
                 const progress = (current / total) * 100;
                 document.getElementById('tourProgressBar').style.width = `${progress}%`;
@@ -4154,7 +4145,6 @@
             </button>
         </div>
         <div class="tour-content">
-            <div id="tourStepCounter" class="tour-step-counter">Step 1 of 5</div>
             <div id="tourOverlayText" class="tour-overlay-text"></div>
         </div>
         <div class="tour-footer">
