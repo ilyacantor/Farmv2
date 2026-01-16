@@ -299,10 +299,10 @@
                             <input type="checkbox" id="regenerateProfile" 
                                 class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0">
                             <label for="regenerateProfile" class="text-xs text-slate-400 cursor-pointer">
-                                Regenerate if same profile exists
+                                Version from most recent snapshot
                             </label>
                         </div>
-                        <p class="text-xs text-slate-500 mt-1 mb-3">Deletes existing snapshot with same fingerprint and creates fresh one</p>
+                        <p class="text-xs text-slate-500 mt-1 mb-3">Creates -v2, -v3, etc. of the latest snapshot for side-by-side comparison</p>
                         
                         <button type="submit" id="generateBtn"
                             class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 cyan-glow">
@@ -3557,16 +3557,41 @@
             }
         }
         
+        function getMostRecentTenantId() {
+            if (!FarmState.snapshots || FarmState.snapshots.length === 0) return null;
+            const sorted = [...FarmState.snapshots].sort((a, b) => 
+                new Date(b.created_at) - new Date(a.created_at)
+            );
+            const tenantId = sorted[0]?.tenant_id;
+            if (!tenantId) return null;
+            // Strip version suffix if present (e.g., "NovaCorp-v2" -> "NovaCorp")
+            return tenantId.replace(/-v\d+$/, '');
+        }
+        
         document.getElementById('snapshotForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('generateBtn');
             setButtonLoading(btn, true);
             
+            const regenerate = document.getElementById('regenerateProfile')?.checked || false;
+            let tenantId;
+            
+            if (regenerate) {
+                tenantId = getMostRecentTenantId();
+                if (!tenantId) {
+                    showToast('No existing snapshot to regenerate from', 'error');
+                    setButtonLoading(btn, false);
+                    return;
+                }
+            } else {
+                tenantId = generateTenantId();
+            }
+            
             let result = null;
             let hadError = false;
             try {
                 result = await generateSnapshot(
-                    generateTenantId(),
+                    tenantId,
                     generateSeed(),
                     document.getElementById('scale').value,
                     document.getElementById('enterpriseProfile').value,
