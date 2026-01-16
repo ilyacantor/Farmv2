@@ -893,39 +893,45 @@ async def delete_snapshot(snapshot_id: str):
 
 @router.post("/api/snapshots/regenerate")
 async def regenerate_snapshot(request: SnapshotRequest):
-    """Delete existing snapshot with same fingerprint and create new one.
+    """Create versioned snapshot based on same profile.
     
     This is the clean testing workflow:
-    1. Computes fingerprint from request params
-    2. Deletes any existing snapshot with that fingerprint
+    1. Finds existing snapshots with same base tenant_id pattern
+    2. Appends version number (v2, v3, etc.) to tenant_id
     3. Creates fresh snapshot with current code and policy
+    4. Both old and new snapshots exist side-by-side for comparison
     """
-    fingerprint = compute_fingerprint(
-        request.tenant_id,
-        request.seed,
-        request.scale.value,
-        request.enterprise_profile.value,
-        request.realism_profile.value,
-        request.data_preset.value if request.data_preset else "",
-    )
+    import re
     
-    deleted_count = 0
+    base_tenant_id = request.tenant_id
+    # Strip existing version suffix if present (e.g., "NovaCorp-v2" -> "NovaCorp")
+    base_match = re.match(r'^(.+?)-v(\d+)$', base_tenant_id)
+    if base_match:
+        base_tenant_id = base_match.group(1)
+    
+    # Find highest existing version for this base tenant_id
     async with db_connection() as conn:
-        # Find and delete existing snapshots with same fingerprint
         existing = await conn.fetch(
-            "SELECT snapshot_id FROM snapshots WHERE snapshot_fingerprint = $1",
-            fingerprint
+            "SELECT tenant_id FROM snapshots WHERE tenant_id LIKE $1 OR tenant_id = $2 ORDER BY created_at DESC",
+            f"{base_tenant_id}-v%", base_tenant_id
         )
-        
-        for row in existing:
-            old_id = row["snapshot_id"]
-            await conn.execute("DELETE FROM reconciliations WHERE snapshot_id = $1", old_id)
-            await conn.execute("DELETE FROM snapshots_blob WHERE snapshot_id = $1", old_id)
-            await conn.execute("DELETE FROM snapshots_meta WHERE snapshot_id = $1", old_id)
-            await conn.execute("DELETE FROM snapshots WHERE snapshot_id = $1", old_id)
-            deleted_count += 1
     
-    # Force create new snapshot
+    # Determine next version number
+    max_version = 0
+    for row in existing:
+        tid = row["tenant_id"]
+        if tid == base_tenant_id:
+            max_version = max(max_version, 1)
+        else:
+            match = re.match(r'^.+-v(\d+)$', tid)
+            if match:
+                max_version = max(max_version, int(match.group(1)))
+    
+    next_version = max_version + 1
+    versioned_tenant_id = f"{base_tenant_id}-v{next_version}"
+    
+    # Create new snapshot with versioned tenant_id
+    request.tenant_id = versioned_tenant_id
     request.force = True
     result = await create_snapshot(request)
     
@@ -933,13 +939,15 @@ async def regenerate_snapshot(request: SnapshotRequest):
     if isinstance(result, JSONResponse):
         content = json.loads(result.body)
         content["regenerated"] = True
-        content["deleted_old_count"] = deleted_count
+        content["base_tenant_id"] = base_tenant_id
+        content["version"] = next_version
         return JSONResponse(status_code=result.status_code, content=content)
     else:
         return {
             **result.model_dump(),
             "regenerated": True,
-            "deleted_old_count": deleted_count
+            "base_tenant_id": base_tenant_id,
+            "version": next_version
         }
 
 

@@ -3581,10 +3581,10 @@
                 if (!hadError && result) {
                     const elapsedTime = TimerController.stopAndShowElapsed();
                     const isRegenerated = result.regenerated === true;
-                    const deletedCount = result.deleted_old_count || 0;
+                    const version = result.version || 0;
                     const dupStr = result.duplicate_of_snapshot_id ? ' (cached)' : '';
-                    const regenStr = isRegenerated ? ` (replaced ${deletedCount})` : '';
-                    addLogEntry(`Created ${result.snapshot_id?.substring(0, 8) || 'snapshot'} in ${elapsedTime}s${dupStr}${regenStr}`, 'success');
+                    const regenStr = isRegenerated ? ` (v${version})` : '';
+                    addLogEntry(`Created ${result.tenant_id || result.snapshot_id?.substring(0, 8) || 'snapshot'} in ${elapsedTime}s${dupStr}${regenStr}`, 'success');
                     
                     FarmState.lastGenerationTime = elapsedTime;
                     FarmState.generationTimeCache[result.snapshot_id] = elapsedTime;
@@ -3593,7 +3593,7 @@
                         document.getElementById('genTimeValue').textContent = 'cache';
                         showToast('Snapshot loaded from cache', 'info');
                     } else if (isRegenerated) {
-                        showToast(`Snapshot regenerated in <strong>${elapsedTime}s</strong> (deleted ${deletedCount} old)`, 'success');
+                        showToast(`Snapshot <strong>${result.tenant_id}</strong> generated in ${elapsedTime}s`, 'success');
                     } else {
                         showToast(`Snapshot generated in <strong>${elapsedTime}s</strong>`, 'success');
                     }
