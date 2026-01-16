@@ -841,6 +841,108 @@ class CleanupResponse(BaseModel):
     remaining_count: int
 
 
+class DeleteSnapshotResponse(BaseModel):
+    snapshot_id: str
+    deleted: bool
+    message: str
+
+
+@router.delete("/api/snapshots/{snapshot_id}")
+async def delete_snapshot(snapshot_id: str):
+    """Delete a specific snapshot by ID. Also cleans up related reconciliations."""
+    async with db_connection() as conn:
+        # Check if snapshot exists
+        existing = await conn.fetchrow(
+            "SELECT snapshot_id, tenant_id FROM snapshots WHERE snapshot_id = $1",
+            snapshot_id
+        )
+        
+        if not existing:
+            raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_id} not found")
+        
+        # Delete related reconciliations first (cascade)
+        await conn.execute(
+            "DELETE FROM reconciliations WHERE snapshot_id = $1",
+            snapshot_id
+        )
+        
+        # Delete from cold storage
+        await conn.execute(
+            "DELETE FROM snapshots_blob WHERE snapshot_id = $1",
+            snapshot_id
+        )
+        
+        # Delete from hot storage
+        await conn.execute(
+            "DELETE FROM snapshots_meta WHERE snapshot_id = $1",
+            snapshot_id
+        )
+        
+        # Delete from main table
+        await conn.execute(
+            "DELETE FROM snapshots WHERE snapshot_id = $1",
+            snapshot_id
+        )
+        
+        return DeleteSnapshotResponse(
+            snapshot_id=snapshot_id,
+            deleted=True,
+            message=f"Snapshot {snapshot_id} and related data deleted successfully"
+        )
+
+
+@router.post("/api/snapshots/regenerate")
+async def regenerate_snapshot(request: SnapshotRequest):
+    """Delete existing snapshot with same fingerprint and create new one.
+    
+    This is the clean testing workflow:
+    1. Computes fingerprint from request params
+    2. Deletes any existing snapshot with that fingerprint
+    3. Creates fresh snapshot with current code and policy
+    """
+    fingerprint = compute_fingerprint(
+        request.tenant_id,
+        request.seed,
+        request.scale.value,
+        request.enterprise_profile.value,
+        request.realism_profile.value,
+        request.data_preset.value if request.data_preset else "",
+    )
+    
+    deleted_count = 0
+    async with db_connection() as conn:
+        # Find and delete existing snapshots with same fingerprint
+        existing = await conn.fetch(
+            "SELECT snapshot_id FROM snapshots WHERE snapshot_fingerprint = $1",
+            fingerprint
+        )
+        
+        for row in existing:
+            old_id = row["snapshot_id"]
+            await conn.execute("DELETE FROM reconciliations WHERE snapshot_id = $1", old_id)
+            await conn.execute("DELETE FROM snapshots_blob WHERE snapshot_id = $1", old_id)
+            await conn.execute("DELETE FROM snapshots_meta WHERE snapshot_id = $1", old_id)
+            await conn.execute("DELETE FROM snapshots WHERE snapshot_id = $1", old_id)
+            deleted_count += 1
+    
+    # Force create new snapshot
+    request.force = True
+    result = await create_snapshot(request)
+    
+    # Add regeneration info to response
+    if isinstance(result, JSONResponse):
+        content = json.loads(result.body)
+        content["regenerated"] = True
+        content["deleted_old_count"] = deleted_count
+        return JSONResponse(status_code=result.status_code, content=content)
+    else:
+        return {
+            **result.model_dump(),
+            "regenerated": True,
+            "deleted_old_count": deleted_count
+        }
+
+
 @router.delete("/api/snapshots/cleanup")
 async def cleanup_old_snapshots(keep: int = Query(3, ge=0, le=100, description="Number of recent snapshots to keep (0 = delete all)")):
     async with db_connection() as conn:
