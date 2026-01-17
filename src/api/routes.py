@@ -894,15 +894,37 @@ async def delete_snapshot(snapshot_id: str):
 @router.delete("/api/snapshots/cleanup")
 async def cleanup_old_snapshots(keep: int = Query(3, ge=0, le=100, description="Number of recent snapshots to keep (0 = delete all)")):
     async with db_connection() as conn:
-        result = await conn.execute("""
-            DELETE FROM snapshots 
-            WHERE snapshot_id NOT IN (
-                SELECT snapshot_id FROM snapshots ORDER BY created_at DESC LIMIT $1
-            )
-        """, keep)
-        deleted_count = int(result.split()[-1]) if result else 0
+        deleted_count = 0
         
-        remaining = await conn.fetchval("SELECT COUNT(*) FROM snapshots")
+        if keep == 0:
+            result1 = await conn.execute("DELETE FROM snapshots_blob")
+            result2 = await conn.execute("DELETE FROM snapshots_meta")
+            result3 = await conn.execute("DELETE FROM snapshots")
+            deleted_count = sum(int(r.split()[-1]) if r else 0 for r in [result1, result2, result3])
+        else:
+            ids_to_keep = await conn.fetch(
+                "SELECT snapshot_id FROM snapshots_meta ORDER BY created_at DESC LIMIT $1", keep
+            )
+            keep_ids = [row['snapshot_id'] for row in ids_to_keep]
+            
+            if keep_ids:
+                result1 = await conn.execute(
+                    "DELETE FROM snapshots_blob WHERE snapshot_id != ALL($1::text[])", keep_ids
+                )
+                result2 = await conn.execute(
+                    "DELETE FROM snapshots_meta WHERE snapshot_id != ALL($1::text[])", keep_ids
+                )
+                result3 = await conn.execute(
+                    "DELETE FROM snapshots WHERE snapshot_id != ALL($1::text[])", keep_ids
+                )
+                deleted_count = sum(int(r.split()[-1]) if r else 0 for r in [result1, result2, result3])
+            else:
+                result1 = await conn.execute("DELETE FROM snapshots_blob")
+                result2 = await conn.execute("DELETE FROM snapshots_meta")
+                result3 = await conn.execute("DELETE FROM snapshots")
+                deleted_count = sum(int(r.split()[-1]) if r else 0 for r in [result1, result2, result3])
+        
+        remaining = await conn.fetchval("SELECT COUNT(*) FROM snapshots_meta")
         
         return CleanupResponse(deleted_count=deleted_count, remaining_count=remaining)
 
