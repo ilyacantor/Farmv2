@@ -192,7 +192,6 @@ def select_canonical_key(
     observed_domains: set,
     banned_domains: set = None,
     alias_collapse: dict = None,
-    standalone_domains: set = None,
 ) -> tuple[Optional[str], Optional[str]]:
     """Select canonical key from observed domains using deterministic contract.
     
@@ -200,7 +199,6 @@ def select_canonical_key(
     1. Build observed_registered_domains = {eTLD+1(domain) for domain in observations}
     2. Remove banned domains → if empty after removal, return (None, "REJECTED_BANNED")
     3. Apply alias collapse for domains in alias_collapse mapping
-       - EXCEPT for standalone_domains which are preserved as-is
     4. If multiple remain: choose by lexicographic sort (deterministic)
     
     NOT ALLOWED:
@@ -212,7 +210,6 @@ def select_canonical_key(
         observed_domains: Set of domains from discovery observations
         banned_domains: Set of domains to exclude (from policy)
         alias_collapse: Dict mapping domain aliases to canonical form
-        standalone_domains: Set of domains that should NOT be collapsed (distinct products)
         
     Returns:
         (canonical_key, rejection_reason) - rejection_reason is None if key selected
@@ -222,8 +219,6 @@ def select_canonical_key(
     
     banned_domains = banned_domains or set()
     alias_collapse = alias_collapse or {}
-    standalone_domains = standalone_domains or set()
-    standalone_lower = {d.lower() for d in standalone_domains}
     
     # 1. Get eTLD+1 for all observed domains
     registered = set()
@@ -245,16 +240,10 @@ def select_canonical_key(
         return None, "REJECTED_BANNED"
     
     # 3. Apply alias collapse (only for domains in the mapping)
-    # Standalone domains are NEVER collapsed - they represent distinct products
     collapsed = set()
     for domain in after_ban:
-        if domain in standalone_lower:
-            # Standalone domain - preserve as-is (e.g., trello.com, bitbucket.org)
-            collapsed.add(domain)
-        else:
-            # Apply alias collapse if mapping exists
-            canonical = alias_collapse.get(domain, domain)
-            collapsed.add(canonical.lower())
+        canonical = alias_collapse.get(domain, domain)
+        collapsed.add(canonical.lower())
     
     # 4. Lexicographic sort, pick first (deterministic tie-breaker)
     sorted_domains = sorted(collapsed)
