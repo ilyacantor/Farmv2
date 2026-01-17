@@ -75,8 +75,10 @@
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             background: rgba(255, 255, 255, 0.05);
             cursor: grab;
+            user-select: none;
         }
-        .tour-header:active { cursor: grabbing; }
+        .tour-header:hover { background: rgba(255, 255, 255, 0.08); }
+        .tour-header:active { cursor: grabbing; background: rgba(255, 255, 255, 0.1); }
         .tour-header-left {
             display: flex;
             align-items: center;
@@ -4160,8 +4162,13 @@
 
     <div id="tourDimmer" class="tour-dimmer hidden"></div>
     <div id="tourOverlay" class="tour-overlay hidden">
-        <div class="tour-header" id="tourDragHandle">
+        <div class="tour-header" id="tourDragHandle" title="Drag to move">
             <div class="tour-header-left">
+                <svg class="w-4 h-4 opacity-40 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                    <circle cx="9" cy="5" r="1.5"/><circle cx="15" cy="5" r="1.5"/>
+                    <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+                    <circle cx="9" cy="19" r="1.5"/><circle cx="15" cy="19" r="1.5"/>
+                </svg>
                 <div class="tour-pulse-dot"></div>
                 <span class="tour-header-title">Simulation & Proof</span>
             </div>
