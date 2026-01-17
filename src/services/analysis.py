@@ -1001,8 +1001,19 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
     admission_fp = len(cataloged_fp) + len(rejected_fp)
     admission_materiality = max(5, int(admission_total * 0.15))
     
-    classification_score = 'GREAT' if total_missed <= classification_materiality else ('SOME_ISSUES' if total_missed <= classification_materiality * 2 else 'NEEDS_WORK')
-    admission_score = 'GREAT' if admission_missed <= admission_materiality else ('SOME_ISSUES' if admission_missed <= admission_materiality * 2 else 'NEEDS_WORK')
+    SMALL_SAMPLE_THRESHOLD = 7
+    classification_total_mismatches = total_missed + total_fp
+    admission_total_mismatches = admission_missed + admission_fp
+    
+    if classification_total_mismatches < SMALL_SAMPLE_THRESHOLD:
+        classification_score = 'GREAT'
+    else:
+        classification_score = 'GREAT' if total_missed <= classification_materiality else ('SOME_ISSUES' if total_missed <= classification_materiality * 2 else 'NEEDS_WORK')
+    
+    if admission_total_mismatches < SMALL_SAMPLE_THRESHOLD:
+        admission_score = 'GREAT'
+    else:
+        admission_score = 'GREAT' if admission_missed <= admission_materiality else ('SOME_ISSUES' if admission_missed <= admission_materiality * 2 else 'NEEDS_WORK')
     
     classification_accuracy = round(total_matched / (total_expected + total_fp) * 100, 1) if (total_expected + total_fp) > 0 else 100.0
     admission_accuracy = round(admission_matched / admission_total * 100, 1) if admission_total > 0 else 100.0
