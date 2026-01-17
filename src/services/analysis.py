@@ -878,6 +878,12 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
         for k in rejected_fp
     ]
     
+    SMALL_SAMPLE_THRESHOLD = 7
+    cataloged_mismatches = len(cataloged_missed) + len(cataloged_fp)
+    rejected_mismatches = len(rejected_missed) + len(rejected_fp)
+    shadow_mismatches = len(analysis['missed_shadows']) + len(analysis['false_positive_shadows'])
+    zombie_mismatches = len(analysis['missed_zombies']) + len(analysis['false_positive_zombies'])
+    
     analysis['admission_reconciliation'] = {
         'cataloged': {
             'farm_expected': len(farm_admitted_keys),
@@ -891,6 +897,8 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'accuracy': admission_cataloged_accuracy,
             'missed_details': cataloged_missed_details,
             'fp_details': cataloged_fp_details,
+            'small_sample_pass': cataloged_mismatches < SMALL_SAMPLE_THRESHOLD,
+            'total_mismatches': cataloged_mismatches,
         },
         'rejected': {
             'farm_expected': len(farm_rejected_keys),
@@ -904,6 +912,27 @@ def build_reconciliation_analysis(snapshot: dict, aod_payload: dict, farm_exp: d
             'accuracy': admission_rejected_accuracy,
             'missed_details': rejected_missed_details,
             'fp_details': rejected_fp_details,
+            'small_sample_pass': rejected_mismatches < SMALL_SAMPLE_THRESHOLD,
+            'total_mismatches': rejected_mismatches,
+        }
+    }
+    
+    analysis['classification_category_metrics'] = {
+        'shadows': {
+            'expected': len(farm_shadows),
+            'matched': len(analysis['matched_shadows']),
+            'missed': len(analysis['missed_shadows']),
+            'false_positives': len(analysis['false_positive_shadows']),
+            'small_sample_pass': shadow_mismatches < SMALL_SAMPLE_THRESHOLD,
+            'total_mismatches': shadow_mismatches,
+        },
+        'zombies': {
+            'expected': len(farm_zombies),
+            'matched': len(analysis['matched_zombies']),
+            'missed': len(analysis['missed_zombies']),
+            'false_positives': len(analysis['false_positive_zombies']),
+            'small_sample_pass': zombie_mismatches < SMALL_SAMPLE_THRESHOLD,
+            'total_mismatches': zombie_mismatches,
         }
     }
     

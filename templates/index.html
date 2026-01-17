@@ -1761,6 +1761,7 @@
             const catalogedMissed = catalogedRec.missed || 0;
             const catalogedDenom = catalogedExpected + catalogedFP;
             const catalogedAccuracy = catalogedDenom > 0 ? Math.round(catalogedCorrect / catalogedDenom * 100) : 100;
+            const catalogedSmallSamplePass = catalogedRec.small_sample_pass || false;
             
             const rejectedExpected = rejectedRec.farm_expected || rejectedCount;
             const rejectedFound = rejectedRec.aod_found || 0;
@@ -1769,6 +1770,13 @@
             const rejectedMissed = rejectedRec.missed || 0;
             const rejectedDenom = rejectedExpected + rejectedFP;
             const rejectedAccuracy = rejectedDenom > 0 ? Math.round(rejectedCorrect / rejectedDenom * 100) : 100;
+            const rejectedSmallSamplePass = rejectedRec.small_sample_pass || false;
+            
+            const classCatMetrics = analysis.classification_category_metrics || {};
+            const shadowMetrics = classCatMetrics.shadows || {};
+            const zombieMetrics = classCatMetrics.zombies || {};
+            const shadowSmallSamplePass = shadowMetrics.small_sample_pass || false;
+            const zombieSmallSamplePass = zombieMetrics.small_sample_pass || false;
             
             const funnelSteps = [
                 { label: 'Observations', key: 'observations', value: grossObs, color: 'cyan' },
@@ -1886,7 +1894,7 @@
                                             <div class="text-[10px] text-slate-500">Missed</div>
                                         </div>
                                         <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-slate-400" onclick="showAdmissionAssets('cataloged', 'all')">
-                                            <div class="text-lg font-bold ${catalogedAccuracy >= 91 ? 'text-emerald-400' : catalogedAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${catalogedAccuracy}%</div>
+                                            <div class="text-lg font-bold ${catalogedSmallSamplePass || catalogedAccuracy >= 91 ? 'text-emerald-400' : catalogedAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${catalogedAccuracy}%</div>
                                             <div class="text-[10px] text-slate-500">Accuracy</div>
                                         </div>
                                     </div>
@@ -1917,7 +1925,7 @@
                                             <div class="text-[10px] text-slate-500">Missed</div>
                                         </div>
                                         <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-slate-400" onclick="showAdmissionAssets('rejected', 'all')">
-                                            <div class="text-lg font-bold ${rejectedAccuracy >= 91 ? 'text-emerald-400' : rejectedAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${rejectedAccuracy}%</div>
+                                            <div class="text-lg font-bold ${rejectedSmallSamplePass || rejectedAccuracy >= 91 ? 'text-emerald-400' : rejectedAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${rejectedAccuracy}%</div>
                                             <div class="text-[10px] text-slate-500">Accuracy</div>
                                         </div>
                                     </div>
@@ -1948,7 +1956,7 @@
                                             <div class="text-[10px] text-slate-500">Missed</div>
                                         </div>
                                         <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-slate-400" onclick="showLifecycleAssets('shadow', 'all')">
-                                            <div class="text-lg font-bold ${shadowAccuracy >= 91 ? 'text-emerald-400' : shadowAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${shadowAccuracy}%</div>
+                                            <div class="text-lg font-bold ${shadowSmallSamplePass || shadowAccuracy >= 91 ? 'text-emerald-400' : shadowAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${shadowAccuracy}%</div>
                                             <div class="text-[10px] text-slate-500">Accuracy</div>
                                         </div>
                                     </div>
@@ -1979,7 +1987,7 @@
                                             <div class="text-[10px] text-slate-500">Missed</div>
                                         </div>
                                         <div class="rounded-lg bg-slate-800/50 p-2 cursor-pointer hover:ring-1 hover:ring-slate-400" onclick="showLifecycleAssets('zombie', 'all')">
-                                            <div class="text-lg font-bold ${zombieAccuracy >= 91 ? 'text-emerald-400' : zombieAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${zombieAccuracy}%</div>
+                                            <div class="text-lg font-bold ${zombieSmallSamplePass || zombieAccuracy >= 91 ? 'text-emerald-400' : zombieAccuracy >= 81 ? 'text-amber-400' : 'text-red-400'}">${zombieAccuracy}%</div>
                                             <div class="text-[10px] text-slate-500">Accuracy</div>
                                         </div>
                                     </div>
