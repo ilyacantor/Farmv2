@@ -295,15 +295,6 @@
                             <p id="scenarioSummary" class="text-xs text-cyan-400/70 mt-2 hidden"></p>
                         </div>
                         
-                        <div class="flex items-center gap-2 mt-3">
-                            <input type="checkbox" id="regenerateProfile" 
-                                class="w-4 h-4 rounded border-slate-600 bg-slate-900 text-cyan-500 focus:ring-cyan-500 focus:ring-offset-0">
-                            <label for="regenerateProfile" class="text-xs text-slate-400 cursor-pointer">
-                                Version from most recent snapshot
-                            </label>
-                        </div>
-                        <p class="text-xs text-slate-500 mt-1 mb-3">Creates -v2, -v3, etc. of the latest snapshot for side-by-side comparison</p>
-                        
                         <button type="submit" id="generateBtn"
                             class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 cyan-glow">
                             Generate Snapshot
@@ -3488,9 +3479,7 @@
         }
         
         async function generateSnapshot(tenantId, seed, scale, enterpriseProfile, realismProfile, dataPreset) {
-            const regenerate = document.getElementById('regenerateProfile')?.checked || false;
-            const actionWord = regenerate ? 'Regenerating' : 'Generating';
-            addLogEntry(`${actionWord} ${tenantId} seed:${seed}${dataPreset ? ` [${dataPreset}]` : ''}...`, 'info');
+            addLogEntry(`Generating ${tenantId} seed:${seed}${dataPreset ? ` [${dataPreset}]` : ''}...`, 'info');
             TimerController.setState('running');
             
             const btn = document.getElementById('generateBtn');
@@ -3507,8 +3496,7 @@
                     body.data_preset = dataPreset;
                 }
                 
-                const endpoint = regenerate ? '/api/snapshots/regenerate' : '/api/snapshots';
-                const response = await fetch(endpoint, {
+                const response = await fetch('/api/snapshots', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body)
@@ -3557,35 +3545,12 @@
             }
         }
         
-        function getMostRecentTenantId() {
-            if (!FarmState.snapshots || FarmState.snapshots.length === 0) return null;
-            const sorted = [...FarmState.snapshots].sort((a, b) => 
-                new Date(b.created_at) - new Date(a.created_at)
-            );
-            const tenantId = sorted[0]?.tenant_id;
-            if (!tenantId) return null;
-            // Strip version suffix if present (e.g., "NovaCorp-v2" -> "NovaCorp")
-            return tenantId.replace(/-v\d+$/, '');
-        }
-        
         document.getElementById('snapshotForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = document.getElementById('generateBtn');
             setButtonLoading(btn, true);
             
-            const regenerate = document.getElementById('regenerateProfile')?.checked || false;
-            let tenantId;
-            
-            if (regenerate) {
-                tenantId = getMostRecentTenantId();
-                if (!tenantId) {
-                    showToast('No existing snapshot to regenerate from', 'error');
-                    setButtonLoading(btn, false);
-                    return;
-                }
-            } else {
-                tenantId = generateTenantId();
-            }
+            const tenantId = generateTenantId();
             
             let result = null;
             let hadError = false;
@@ -3605,11 +3570,8 @@
                 
                 if (!hadError && result) {
                     const elapsedTime = TimerController.stopAndShowElapsed();
-                    const isRegenerated = result.regenerated === true;
-                    const version = result.version || 0;
                     const dupStr = result.duplicate_of_snapshot_id ? ' (cached)' : '';
-                    const regenStr = isRegenerated ? ` (v${version})` : '';
-                    addLogEntry(`Created ${result.tenant_id || result.snapshot_id?.substring(0, 8) || 'snapshot'} in ${elapsedTime}s${dupStr}${regenStr}`, 'success');
+                    addLogEntry(`Created ${result.tenant_id || result.snapshot_id?.substring(0, 8) || 'snapshot'} in ${elapsedTime}s${dupStr}`, 'success');
                     
                     FarmState.lastGenerationTime = elapsedTime;
                     FarmState.generationTimeCache[result.snapshot_id] = elapsedTime;
@@ -3617,8 +3579,6 @@
                     if (result.duplicate_of_snapshot_id) {
                         document.getElementById('genTimeValue').textContent = 'cache';
                         showToast('Snapshot loaded from cache', 'info');
-                    } else if (isRegenerated) {
-                        showToast(`Snapshot <strong>${result.tenant_id}</strong> generated in ${elapsedTime}s`, 'success');
                     } else {
                         showToast(`Snapshot generated in <strong>${elapsedTime}s</strong>`, 'success');
                     }
