@@ -137,9 +137,16 @@ AOS Farm is built with a FastAPI backend, Uvicorn ASGI server, and a Supabase Po
 - This matches AOD Stage 4 behavior where infrastructure domains remain separate catalog entries
 - Defined in `INFRASTRUCTURE_DOMAINS` frozenset in key_normalization.py
 
-**Lifecycle Gates:**
-- CMDB entries with lifecycle states `pending`, `draft`, `retired`, `decommissioned`, `deprecated`, `archived` fail governance gates
-- Only `active`, `development`, `staging`, `production`, `maintenance` states grant governance
+**CMDB Lifecycle Gate (Jan 2026 Update):**
+- CMDB entries only grant governance if lifecycle is in VALID_CMDB_LIFECYCLES: `prod`, `production`, `staging`, `stage`, `live`, `active`
+- All other lifecycle states (dev, development, retired, decommissioned, pending, draft, test, etc.) FAIL the gate
+- CMDB entries that fail the lifecycle gate are treated as NO_CMDB (record exists but doesn't assert governance)
+- Note: Vendor propagation may still grant governance if another CI for the same vendor passes the gate
+
+**IdP Canonical Name Gate (Jan 2026 Update):**
+- IdP apps only grant governance if their name is CANONICAL (production version)
+- Non-canonical tokens that FAIL the gate: `(legacy)`, `legacy`, `(deprecated)`, `deprecated`, `-prod`, ` prod`, `production`, `-production`, `-dev`, ` dev`, `-development`, `-staging`, ` staging`, `-test`, ` test`, `-qa`
+- IdP entries with non-canonical names are treated as NO_IDP (record exists but doesn't assert governance)
 
 **Zombie Detection:**
 - Activity = discovery + IdP timestamps ONLY (NOT finance)

@@ -22,7 +22,13 @@ CMDB Governance:
   A CMDB record grants governance ONLY IF:
     - CI exists
     - CI type is valid (per policy.secondary_gates.valid_ci_types)
-    - CI lifecycle is valid (per policy.secondary_gates.invalid_lifecycle_states)
+    - CI lifecycle is VALID (only production-like states grant governance)
+  
+  Valid lifecycle states that PASS the gate:
+    "prod", "production", "staging", "stage", "live", "active"
+  
+  Invalid lifecycle states that FAIL the gate:
+    "dev", "development", "retired", "decommissioned", "pending", "draft", etc.
   
   If a CMDB record exists BUT FAILS ANY GATE:
     -> Explicitly NOT governed (NO_CMDB)
@@ -159,6 +165,35 @@ def is_canonical_idp(idp_name: str) -> bool:
         return False
     normalized = idp_name.strip().lower()
     return not any(tok in normalized for tok in NON_CANONICAL_IDP_TOKENS)
+
+
+# Valid CMDB lifecycle states that grant governance
+# Records with other lifecycle states (dev, retired, decommissioned, etc.) do NOT assert governance
+VALID_CMDB_LIFECYCLES = {"prod", "production", "staging", "stage", "live", "active"}
+
+
+def cmdb_passes_lifecycle_gate(lifecycle: Optional[str]) -> bool:
+    """Check if a CMDB lifecycle state grants governance.
+    
+    Only production-like lifecycle states grant governance. Development,
+    retired, or decommissioned records should NOT assert governance.
+    
+    Args:
+        lifecycle: The lifecycle state string from the CMDB record
+        
+    Returns:
+        True if lifecycle grants governance, False otherwise
+        
+    Examples:
+        cmdb_passes_lifecycle_gate("prod") -> True
+        cmdb_passes_lifecycle_gate("production") -> True
+        cmdb_passes_lifecycle_gate("dev") -> False
+        cmdb_passes_lifecycle_gate("retired") -> False
+        cmdb_passes_lifecycle_gate(None) -> False
+    """
+    if not lifecycle:
+        return False
+    return lifecycle.strip().lower() in VALID_CMDB_LIFECYCLES
 
 
 def parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
@@ -424,10 +459,17 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         ci_type = ci.get('ci_type')
         lifecycle = ci.get('lifecycle')
 
-        # Check secondary gates: require_valid_ci_type, require_valid_lifecycle
-        # If gates are enabled and CI fails them, treat as NO_CMDB
+        # Check all CMDB gates:
+        # 1. Policy gates (CI type, lifecycle blacklist from AOD policy)
+        # 2. Lifecycle whitelist gate (only prod-like states grant governance)
         cmdb_passes_gate = True
+        
+        # Gate 1: Policy-based gates (CI type, lifecycle blacklist)
         if policy and not policy.cmdb_passes_gates(ci_type, lifecycle):
+            cmdb_passes_gate = False
+        
+        # Gate 2: Lifecycle whitelist - only production-like states grant governance
+        if not cmdb_passes_lifecycle_gate(lifecycle):
             cmdb_passes_gate = False
 
         matched_keys = set()
