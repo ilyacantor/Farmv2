@@ -75,6 +75,7 @@ class PolicyConfig(BaseModel):
     excluded_vendor_roots: list[str] = []
     banned_domains: list[str] = []
     alias_domains_to_collapse: dict[str, str] = {}
+    standalone_domains: list[str] = []
 
     def idp_passes_gates(self, has_sso: bool) -> bool:
         """Check if an IdP object passes secondary gates.
@@ -255,6 +256,7 @@ class PolicyConfig(BaseModel):
         excluded_vendor_roots = exclusion_lists.get("excluded_vendor_roots") or data.get("excluded_vendor_roots", [])
         banned_domains = exclusion_lists.get("banned_domains") or data.get("banned_domains", [])
         alias_domains_to_collapse = data.get("alias_domains_to_collapse", {})
+        standalone_domains = data.get("standalone_domains", [])
         
         return cls(
             admission=AdmissionConfig(
@@ -288,6 +290,7 @@ class PolicyConfig(BaseModel):
             excluded_vendor_roots=excluded_vendor_roots,
             banned_domains=banned_domains,
             alias_domains_to_collapse=alias_domains_to_collapse,
+            standalone_domains=standalone_domains,
         )
 
     @classmethod

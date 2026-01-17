@@ -111,11 +111,11 @@
     "zoom.us": "zoom.com",
     "zoomgov.com": "zoom.com",
     "zoom-legacy.com": "zoom.com",
+    "zoomapp.io": "zoom.com",
+    "zoom-meetings.net": "zoom.com",
     "dropboxusercontent.com": "dropbox.com",
     "dropboxapi.com": "dropbox.com",
     "atlassian.net": "atlassian.com",
-    "trello.com": "atlassian.com",
-    "bitbucket.org": "atlassian.com",
     "jira.com": "atlassian.com",
     "hipchat.com": "atlassian.com",
     "1password.com": "1password.com",
@@ -134,5 +134,10 @@
     "salesforceliveagent.com": "salesforce.com",
     "adobelogin.com": "adobe.com",
     "yammer.com": "microsoft.com"
-  }
+  },
+  
+  "standalone_domains": [
+    "trello.com",
+    "bitbucket.org"
+  ]
 }

@@ -272,6 +272,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
     # Get policy parameters for key selection
     banned_domains_set = set(policy.banned_domains) if policy else set()
     alias_collapse = policy.alias_domains_to_collapse if policy else {}
+    standalone_domains_set = set(policy.standalone_domains) if policy else set()
     
     # PASS 1: Group observations by initial eTLD+1 key
     observations = planes.get('discovery', {}).get('observations', [])
@@ -306,6 +307,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
             proto['domains'] if proto['domains'] else {initial_key},
             banned_domains=banned_domains_set,
             alias_collapse=alias_collapse,
+            standalone_domains=standalone_domains_set,
         )
         
         if not canonical_key:

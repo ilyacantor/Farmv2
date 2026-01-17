@@ -34,9 +34,22 @@ AOS Farm has reached production-ready status with **98.7% combined accuracy** ag
 3. **IdP SSO Gate** - Configurable SSO requirement via policy
 4. **CMDB CI Type Gate** - Configurable valid CI types via policy
 
-### Known Remaining Gaps (7 total)
+### Known Remaining Gaps (5 total)
 - 5 IdP correlation edge cases (Farm vs AOD correlation logic)
-- 2 key normalization differences (zoom-meetings.net, zoomapp.io)
+
+### Alias Collapsing Policy (Jan 2026)
+Farm now aligns with AOD's domain alias collapsing policy:
+
+**Infrastructure/TLD Variants → Collapse to Parent:**
+- `zoom.us`, `zoomapp.io`, `zoom-meetings.net` → `zoom.com`
+- `adobelogin.com` → `adobe.com`
+- `hipchat.com`, `atlassian.net` → `atlassian.com`
+
+**Distinct Product Lines → Standalone (No Collapse):**
+- `trello.com` - Distinct product, different attack surface
+- `bitbucket.org` - Distinct product, different codebase
+
+Policy rationale: Infrastructure variants share policy/SOC/risk with parent. Acquired products retain distinct infrastructure and vulnerability profiles.
 
 ---
 
