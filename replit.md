@@ -229,6 +229,27 @@ IdP entries with non-canonical names are treated as NO_IDP (record exists but do
 | `/api/reconciliations` | POST | Run reconciliation |
 | `/api/reconciliations` | GET | List reconciliations |
 | `/api/policy` | GET | Get current policy |
+| `/api/stream/synthetic/mulesoft` | GET | Stream synthetic MuleSoft invoice data (NDJSON) |
+| `/api/stream/synthetic/mulesoft/sample` | GET | Get single sample invoice record |
+
+### Streaming Endpoint (Phase 1: Resilient Ingest)
+
+The streaming endpoint simulates a "toxic" MuleSoft enterprise data pipeline for testing DCL's Ingest Sidecar resilience.
+
+**Usage:**
+```bash
+curl -N "http://localhost:5000/api/stream/synthetic/mulesoft"
+curl -N "http://localhost:5000/api/stream/synthetic/mulesoft?speed=fast&chaos=true"
+```
+
+**Parameters:**
+- `speed`: `fast` (100/sec), `normal` (10/sec), `slow` (1/sec)
+- `chaos`: `true` enables ~10% anomaly injection
+
+**Chaos Mode Anomalies:**
+- Malformed JSON (half-written objects to break parsers)
+- Latency spikes (5-second delays to test timeouts)
+- Bad types (`"amount": "THREE"` instead of numbers)
 
 ### Environment Variables
 
