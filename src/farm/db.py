@@ -24,12 +24,26 @@ Environment variables (all optional with sensible defaults):
 
 import os
 import asyncio
+import logging
 import time
 from typing import Optional, TypeVar, Callable, Any
 from contextlib import asynccontextmanager
 from functools import wraps
 
 import asyncpg
+
+# Configure module-level logger
+logger = logging.getLogger("farm.db")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
 
 T = TypeVar('T')
 
@@ -66,7 +80,7 @@ class CircuitBreaker:
         self._lock = asyncio.Lock()
     
     def _log(self, msg: str):
-        print(f"[DB:CircuitBreaker] {msg}")
+        logger.debug(f"[CircuitBreaker] {msg}")
     
     async def record_failure(self):
         async with self._lock:
@@ -125,7 +139,7 @@ class DatabaseManager:
         self._schema_lock = asyncio.Lock()
     
     def _log(self, msg: str):
-        print(f"[DB] {msg}")
+        logger.info(msg)
     
     def _get_db_url(self) -> str:
         if self._db_url is not None:
@@ -489,7 +503,7 @@ async def execute_with_retry(
             last_error = e
             if attempt < max_retries:
                 delay = _jitter(DB_BACKOFF_BASE * (2 ** attempt))
-                print(f"[DB:Retry] Attempt {attempt + 1}/{max_retries + 1} failed, retrying in {delay:.1f}s: {e.message}")
+                logger.warning(f"[Retry] Attempt {attempt + 1}/{max_retries + 1} failed, retrying in {delay:.1f}s: {e.message}")
                 await asyncio.sleep(delay)
             else:
                 raise
@@ -497,7 +511,7 @@ async def execute_with_retry(
             last_error = e
             delay = _jitter(DB_BACKOFF_BASE * (2 ** attempt))
             if attempt < max_retries:
-                print(f"[DB:Retry] Timeout on attempt {attempt + 1}/{max_retries + 1}, retrying in {delay:.1f}s")
+                logger.warning(f"[Retry] Timeout on attempt {attempt + 1}/{max_retries + 1}, retrying in {delay:.1f}s")
                 await asyncio.sleep(delay)
             else:
                 raise DBUnavailable(f"Query timeout after {max_retries + 1} attempts", retry_after=delay)
@@ -549,17 +563,17 @@ async def batch_insert(
                 last_error = e
                 if attempt < DB_MAX_RETRIES:
                     delay = _jitter(DB_BACKOFF_BASE * (2 ** attempt))
-                    print(f"[DB:BatchInsert] Batch {batch_num + 1}/{num_batches} attempt {attempt + 1} failed, retrying in {delay:.1f}s")
+                    logger.warning(f"[BatchInsert] Batch {batch_num + 1}/{num_batches} attempt {attempt + 1} failed, retrying in {delay:.1f}s")
                     await asyncio.sleep(delay)
                 else:
-                    print(f"[DB:BatchInsert] Batch {batch_num + 1}/{num_batches} failed after {DB_MAX_RETRIES + 1} attempts")
+                    logger.error(f"[BatchInsert] Batch {batch_num + 1}/{num_batches} failed after {DB_MAX_RETRIES + 1} attempts")
                     raise
                     
             except asyncio.TimeoutError:
                 last_error = DBUnavailable("Batch insert timeout")
                 if attempt < DB_MAX_RETRIES:
                     delay = _jitter(DB_BACKOFF_BASE * (2 ** attempt))
-                    print(f"[DB:BatchInsert] Batch {batch_num + 1}/{num_batches} timeout, retrying in {delay:.1f}s")
+                    logger.warning(f"[BatchInsert] Batch {batch_num + 1}/{num_batches} timeout, retrying in {delay:.1f}s")
                     await asyncio.sleep(delay)
                 else:
                     raise DBUnavailable(f"Batch insert timeout after {DB_MAX_RETRIES + 1} attempts")

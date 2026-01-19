@@ -6,6 +6,7 @@ Returns 202 Accepted + job_id immediately, processes in background.
 """
 
 import asyncio
+import logging
 import uuid
 import json
 from datetime import datetime
@@ -14,6 +15,19 @@ from enum import Enum
 from dataclasses import dataclass, field, asdict
 
 from src.farm.db import connection, DBUnavailable
+
+# Configure module-level logger
+logger = logging.getLogger("farm.jobs")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.DEBUG)
 
 
 class JobStatus(str, Enum):
@@ -87,7 +101,7 @@ class JobManager:
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC)")
         except DBUnavailable:
-            print("[Jobs] DB unavailable, skipping table creation")
+            logger.warning("DB unavailable, skipping table creation")
     
     async def create_job(self, job_type: str, input_params: Optional[dict] = None) -> str:
         """Create a new pending job and return job_id."""

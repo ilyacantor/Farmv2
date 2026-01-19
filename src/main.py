@@ -1,9 +1,23 @@
 import json
+import logging
 import uuid as uuid_mod
 import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+
+# Configure startup logger
+logger = logging.getLogger("farm.main")
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S"
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+logger.setLevel(logging.INFO)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -141,13 +155,11 @@ async def lifespan(app: FastAPI):
     try:
         await ensure_schema()
         await seed_initial_snapshots()
-        print("[Startup] DB initialized successfully")
+        logger.info("DB initialized successfully")
     except DBUnavailable as e:
-        print(f"[Startup] DB unavailable, running in degraded mode: {e.message}")
+        logger.warning(f"DB unavailable, running in degraded mode: {e.message}")
     except Exception as e:
-        import traceback
-        print(f"[Startup] DB init failed (non-blocking): {type(e).__name__}: {e}")
-        traceback.print_exc()
+        logger.error(f"DB init failed (non-blocking): {type(e).__name__}: {e}", exc_info=True)
     try:
         yield
     finally:
