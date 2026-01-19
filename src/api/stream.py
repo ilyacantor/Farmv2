@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timedelta
 from typing import AsyncGenerator, Optional
 
-from fastapi import APIRouter, Query, Path, HTTPException
+from fastapi import APIRouter, Query, Path, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 router = APIRouter(tags=["stream"])
@@ -237,7 +237,7 @@ async def generate_stream(
     """Generate a continuous stream of invoice records."""
     
     if speed == "fast":
-        delay = 0.01
+        delay = 0  # Zero delay - blast as fast as possible
     elif speed == "slow":
         delay = 1.0
     else:
@@ -385,4 +385,82 @@ async def get_pristine_invoice(
         "source": "salesforce_master",
         "lookup_timestamp": datetime.now().isoformat(),
         "invoice": pristine_record
+    }
+
+
+@router.post("/api/verify/salesforce/invoice")
+async def verify_invoice(request: Request):
+    """
+    Verification Endpoint - The Quality Gate.
+    
+    Compares a repaired invoice record against the ground truth.
+    Returns verification status and quality score.
+    
+    **Purpose:** After the DCL Ingest Sidecar repairs a drifted record,
+    it calls this endpoint to confirm the repair is correct.
+    This provides "Closed Loop Verification" - Farm confirms the fix.
+    
+    **Usage:**
+    ```bash
+    curl -X POST "http://localhost:5000/api/verify/salesforce/invoice" \\
+         -H "Content-Type: application/json" \\
+         -d '{"invoice_id": "INV-123456", "vendor": {...}, ...}'
+    ```
+    
+    **Returns:**
+    - verified: true if all critical fields match ground truth
+    - quality_score: 0-100 based on field accuracy
+    - mismatches: list of fields that don't match (if any)
+    """
+    try:
+        submitted = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+    
+    invoice_id = submitted.get("invoice_id")
+    if not invoice_id:
+        raise HTTPException(status_code=400, detail="invoice_id is required")
+    
+    ground_truth = generate_pristine_invoice(invoice_id)
+    
+    critical_fields = ["vendor", "billing_address", "total_amount", "invoice_date"]
+    mismatches = []
+    matched_fields = 0
+    total_fields = len(critical_fields)
+    
+    for field in critical_fields:
+        submitted_val = submitted.get(field)
+        truth_val = ground_truth.get(field)
+        
+        if field == "vendor":
+            sub_vendor_id = submitted_val.get("vendor_id") if isinstance(submitted_val, dict) else None
+            truth_vendor_id = truth_val.get("vendor_id") if isinstance(truth_val, dict) else None
+            if sub_vendor_id == truth_vendor_id:
+                matched_fields += 1
+            else:
+                mismatches.append({
+                    "field": "vendor.vendor_id",
+                    "expected": truth_vendor_id,
+                    "received": sub_vendor_id
+                })
+        elif submitted_val == truth_val:
+            matched_fields += 1
+        else:
+            mismatches.append({
+                "field": field,
+                "expected": truth_val,
+                "received": submitted_val
+            })
+    
+    quality_score = round((matched_fields / total_fields) * 100)
+    verified = len(mismatches) == 0
+    
+    return {
+        "verified": verified,
+        "quality_score": quality_score,
+        "invoice_id": invoice_id,
+        "ground_truth_source": "salesforce_master",
+        "verification_timestamp": datetime.now().isoformat(),
+        "mismatches": mismatches if not verified else [],
+        "message": "Record matches ground truth" if verified else f"{len(mismatches)} field(s) do not match"
     }
