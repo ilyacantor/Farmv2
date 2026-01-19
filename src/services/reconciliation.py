@@ -225,19 +225,13 @@ def is_stale(ts: Optional[str], window_days: int, reference: datetime) -> bool:
     return (reference - dt).days > window_days
 
 
-def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyConfig = None) -> dict:
-    """Build candidate flags from snapshot planes. Returns {key: {flags...}}.
-    
-    When policy is provided, secondary gates are applied:
-    - require_sso_for_idp: IdP objects without SSO are treated as NO_IDP
-    - require_valid_ci_type: CMDB CIs with invalid types are treated as NO_CMDB
-    - require_valid_lifecycle: CMDB CIs with invalid lifecycles are treated as NO_CMDB
-    """
-    meta = snapshot.get('meta', {})
-    planes = snapshot.get('planes', {})
-    reference = parse_timestamp(meta.get('created_at')) or datetime.utcnow()
-    
-    candidates = defaultdict(lambda: {
+# =============================================================================
+# HELPER FUNCTIONS FOR build_candidate_flags
+# =============================================================================
+
+def _create_empty_candidate() -> dict:
+    """Create an empty candidate structure with default values."""
+    return {
         'key': '',
         'names': set(),
         'domains': set(),
@@ -259,20 +253,29 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         'activity_status': ActivityStatus.NONE,
         'anchored': False,
         'security_attested': False,
-    })
-    
-    # TWO-PASS KEY SELECTION CONTRACT:
-    # Pass 1: Collect all observations grouped by eTLD+1 domain
-    # Pass 2: Apply alias collapse and select canonical key via lexicographic sort
-    #
-    # NOT ALLOWED: "first observation wins", list position, CMDB domains for keying
-    
+    }
+
+
+def _process_discovery_observations(
+    planes: dict,
+    policy: Optional[PolicyConfig],
+    window_days: int,
+    reference: datetime
+) -> dict:
+    """Process discovery observations with two-pass key selection.
+
+    Pass 1: Collect all observations grouped by eTLD+1 domain
+    Pass 2: Apply alias collapse and select canonical key via lexicographic sort
+
+    Returns dict of candidates keyed by canonical domain.
+    """
     from src.services.key_normalization import select_canonical_key
-    
-    # Get policy parameters for key selection
+
+    candidates = defaultdict(_create_empty_candidate)
+
     banned_domains_set = set(policy.banned_domains) if policy else set()
     alias_collapse = policy.alias_domains_to_collapse if policy else {}
-    
+
     # PASS 1: Group observations by initial eTLD+1 key
     observations = planes.get('discovery', {}).get('observations', [])
     proto_candidates = defaultdict(lambda: {
@@ -281,14 +284,14 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         'vendors': set(),
         'observations': [],
     })
-    
+
     for obs in observations:
         raw_domain = obs.get('domain') or extract_domain(obs.get('observed_uri') or obs.get('hostname') or '')
         name = obs.get('observed_name', '')
         initial_key = extract_registered_domain(raw_domain) if raw_domain else normalize_name(name)
         if not initial_key:
             continue
-        
+
         proto_candidates[initial_key]['names'].add(name)
         if raw_domain:
             proto_candidates[initial_key]['domains'].add(raw_domain)
@@ -297,30 +300,25 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         if vendor_hint:
             proto_candidates[initial_key]['vendors'].add(vendor_hint)
         proto_candidates[initial_key]['observations'].append(obs)
-    
+
     # PASS 2: Select canonical key and create final candidates
-    # Apply alias collapse to merge related domains, then lexicographic sort for tie-breaker
     for initial_key, proto in proto_candidates.items():
-        # Select canonical key from all observed domains
         canonical_key, rejection_reason = select_canonical_key(
             proto['domains'] if proto['domains'] else {initial_key},
             banned_domains=banned_domains_set,
             alias_collapse=alias_collapse,
         )
-        
+
         if not canonical_key:
-            # Banned or no valid domains - skip this candidate
             continue
-        
+
         key = canonical_key
-        
-        # Create/update candidate with canonical key
         candidates[key]['key'] = key
         candidates[key]['names'].update(proto['names'])
         candidates[key]['domains'].update(proto['domains'])
         candidates[key]['vendors'].update(proto['vendors'])
         candidates[key]['discovery_present'] = True
-        
+
         # Process observation timestamps
         for obs in proto['observations']:
             ts = obs.get('observed_at')
@@ -337,9 +335,16 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
                         candidates[key]['activity_source'] = source
                 elif is_stale(ts, window_days, reference):
                     candidates[key]['stale_timestamps'].append(ts)
-    
-    # PERFORMANCE: Build reverse indexes BEFORE processing governance planes
-    # This enables O(1) lookups instead of O(N) scans for IdP, CMDB, and Finance matching
+
+    return candidates
+
+
+def _build_candidate_indexes(candidates: dict) -> tuple[dict, dict, dict, dict, dict]:
+    """Build reverse indexes for O(1) lookups during governance plane processing.
+
+    Returns tuple of (key_to_normalized, normalized_to_keys, vendor_to_keys,
+                      name_to_keys, domain_to_keys)
+    """
     key_to_normalized = {key: normalize_name(key) for key in candidates.keys()}
     normalized_to_keys = defaultdict(set)
     vendor_to_keys = defaultdict(set)
@@ -347,84 +352,69 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
     domain_to_keys = defaultdict(set)
 
     for key, cand in candidates.items():
-        # Index by normalized key
         normalized_to_keys[key_to_normalized[key]].add(key)
-        # Index by normalized vendors
         for vendor in cand['vendors']:
             vendor_to_keys[normalize_name(vendor)].add(key)
-        # Index by normalized names
         for name in cand['names']:
             name_to_keys[normalize_name(name)].add(key)
-        # Index by domains
         for domain in cand['domains']:
             domain_to_keys[domain].add(key)
 
-    # Process IdP objects with O(N) complexity using precomputed indexes
-    # POLICY: If asset is in IdP AND passes secondary gates, admit it
-    #
-    # KEY SELECTION CONTRACT: IdP domains are ENRICHMENT ONLY, not for key selection
-    # - Use canonical_domain for correlation (matching to existing candidates)
-    # - Do NOT use external_ref extracted domains for keying
+    return key_to_normalized, normalized_to_keys, vendor_to_keys, name_to_keys, domain_to_keys
+
+
+def _process_idp_objects(
+    planes: dict,
+    candidates: dict,
+    policy: Optional[PolicyConfig],
+    window_days: int,
+    reference: datetime,
+    normalized_to_keys: dict,
+    name_to_keys: dict
+) -> None:
+    """Process IdP objects and update candidates with IdP governance.
+
+    KEY SELECTION CONTRACT: IdP domains are ENRICHMENT ONLY, not for key selection.
+    Uses canonical_domain for correlation to existing candidates.
+    """
     idp_objects = planes.get('idp', {}).get('objects', [])
+
     for obj in idp_objects:
         raw_name = obj.get('name', '')
         name = normalize_name(raw_name)
         domain = obj.get('domain')
         canonical_domain = obj.get('canonical_domain')
         effective_domain = domain or canonical_domain
-        # CONTRACT: external_ref is stored for reference but NOT used for key selection
-        external_ref = obj.get('external_ref', '')
-        # Use effective_domain (domain OR canonical_domain) for matching
         idp_registered = effective_domain
         has_sso = obj.get('has_sso', False)
         matched_keys = set()
-        
-        # Check all IdP gates:
-        # 1. SSO gate (if policy.secondary_gates.require_sso_for_idp)
-        # 2. Canonical name gate (non-legacy, non-environment-specific)
+
+        # Check IdP gates
         idp_passes_gate = True
-        
-        # Gate 1: SSO requirement
         if policy and not policy.idp_passes_gates(has_sso):
             idp_passes_gate = False
-        
-        # Gate 2: Canonical name check - non-canonical apps don't assert governance
         if not is_canonical_idp(raw_name):
             idp_passes_gate = False
-        
-        # CORRELATION: Use canonical_domain for matching to existing candidates
-        # CONTRACT: Only match to candidates keyed by the IdP canonical_domain
-        # Do NOT use domain_to_keys index - that's too aggressive and causes 
-        # correlation drift with AOD (Farm finds matches AOD doesn't)
+
+        # Match by canonical domain
         if idp_registered:
-            # Direct key match using canonical domain
             if idp_registered in candidates:
                 matched_keys.add(idp_registered)
-            # Also try registered domain extraction for normalized matching
             registered = extract_registered_domain(idp_registered)
             if registered and registered in candidates:
                 matched_keys.add(registered)
-        
-        # Fallback: O(1) lookups by name if no domain match
+
+        # Fallback: match by name
         if not matched_keys and name:
-            # Match by normalized key
             matched_keys.update(normalized_to_keys.get(name, set()))
-            # Match by normalized names in candidates
             matched_keys.update(name_to_keys.get(name, set()))
-        
-        # CONTRACT: Do NOT use external_ref domain for matching
-        # (removed: domain lookup from external_ref)
-        
-        # CONTRACT: Do NOT create IdP-only candidates
-        # AOD requires discovery evidence for admission - IdP is enrichment only, not admission gate
-        # If there's no discovery candidate for this domain, skip IdP correlation
-        # (This prevents Farm from admitting assets that AOD would reject)
-        
-        # Mark matched candidates - only if IdP passes the gate
+
+        # Mark matched candidates
         for key in matched_keys:
             if idp_passes_gate:
                 candidates[key]['idp_present'] = True
-        
+
+        # Process activity timestamps
         ts = obj.get('last_login_at')
         if ts and matched_keys:
             for key in matched_keys:
@@ -440,131 +430,122 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
                 elif is_stale(ts, window_days, reference):
                     cand['stale_timestamps'].append(ts)
 
-    # Process CMDB CIs with O(N) complexity instead of O(N*M)
-    # POLICY: If asset is in CMDB AND passes secondary gates, admit it
-    #
-    # KEY SELECTION CONTRACT: CMDB domains are ENRICHMENT ONLY, not for key selection
-    # - Use canonical_domain for correlation (matching to existing candidates)
-    # - Do NOT use external_ref extracted domains for keying
-    # - Do NOT create new candidates from external_ref domains
+
+def _process_cmdb_cis(
+    planes: dict,
+    candidates: dict,
+    policy: Optional[PolicyConfig],
+    key_to_normalized: dict,
+    name_to_keys: dict,
+    vendor_to_keys: dict
+) -> None:
+    """Process CMDB CIs and update candidates with CMDB governance.
+
+    KEY SELECTION CONTRACT: CMDB domains are ENRICHMENT ONLY, not for key selection.
+    Uses canonical_domain for correlation to existing candidates.
+    """
     cmdb_cis = planes.get('cmdb', {}).get('cis', [])
+
     for ci in cmdb_cis:
         name = normalize_name(ci.get('name', ''))
         canonical_domain = ci.get('canonical_domain')
-        # CONTRACT: external_ref is stored for reference but NOT used for key selection
-        external_ref = ci.get('external_ref', '')
-        # Only use canonical_domain for matching - NOT extracted from external_ref
         cmdb_registered = canonical_domain
         ci_vendor = normalize_name(ci.get('vendor', '') or '')
         ci_type = ci.get('ci_type')
         lifecycle = ci.get('lifecycle')
 
-        # Check all CMDB gates:
-        # 1. Policy gates (CI type, lifecycle blacklist from AOD policy)
-        # 2. Lifecycle whitelist gate (only prod-like states grant governance)
+        # Check CMDB gates
         cmdb_passes_gate = True
-        
-        # Gate 1: Policy-based gates (CI type, lifecycle blacklist)
         if policy and not policy.cmdb_passes_gates(ci_type, lifecycle):
             cmdb_passes_gate = False
-        
-        # Gate 2: Lifecycle whitelist - only production-like states grant governance
         if not cmdb_passes_lifecycle_gate(lifecycle):
             cmdb_passes_gate = False
 
         matched_keys = set()
         matched_by_vendor = set()
 
-        # CORRELATION: Use canonical_domain for matching to existing candidates
-        # CONTRACT: Only match to candidates keyed by the CMDB canonical_domain
-        # Do NOT use domain_to_keys index - that's too aggressive and causes 
-        # correlation drift with AOD (Farm finds matches AOD doesn't)
+        # Match by canonical domain
         if cmdb_registered:
-            # Direct key match using canonical domain
             if cmdb_registered in candidates:
                 matched_keys.add(cmdb_registered)
-            # Also try registered domain extraction for normalized matching
             registered = extract_registered_domain(cmdb_registered)
             if registered and registered in candidates:
                 matched_keys.add(registered)
-            
-        # Fallback: Direct lookups by name if no domain match
+
+        # Fallback: match by name
         if not matched_keys and name:
             if name in key_to_normalized.values():
                 matched_keys.update(k for k, norm_k in key_to_normalized.items() if norm_k == name)
             matched_keys.update(name_to_keys.get(name, set()))
 
-        # CONTRACT: Do NOT use external_ref domain for matching
-        # (removed: domain lookup from external_ref)
-
+        # Match by vendor
         if ci_vendor:
             vendor_keys = vendor_to_keys.get(ci_vendor, set())
             matched_by_vendor.update(vendor_keys - matched_keys)
 
-        # CONTRACT: Do NOT create CMDB-only candidates
-        # AOD requires discovery evidence for admission - CMDB is enrichment only, not admission gate
-        # If there's no discovery candidate for this domain, skip CMDB correlation
-        # (This prevents Farm from admitting assets that AOD would reject)
+        # Update candidates with matches
+        ci_match_data = {
+            'ci_id': ci.get('ci_id'),
+            'name': ci.get('name'),
+            'lifecycle': lifecycle,
+            'vendor': ci.get('vendor'),
+            'ci_type': ci_type,
+            'passes_gate': cmdb_passes_gate,
+        }
 
-        # Update candidates with matches - only if CMDB passes the gate
         for key in matched_keys:
             if cmdb_passes_gate:
                 candidates[key]['cmdb_present'] = True
-            candidates[key]['cmdb_matches'].append({
-                'ci_id': ci.get('ci_id'),
-                'name': ci.get('name'),
-                'lifecycle': lifecycle,
-                'vendor': ci.get('vendor'),
-                'ci_type': ci_type,
-                'matched_via_vendor': False,
-                'passes_gate': cmdb_passes_gate,
-            })
+            candidates[key]['cmdb_matches'].append({**ci_match_data, 'matched_via_vendor': False})
 
         for key in matched_by_vendor:
             if cmdb_passes_gate:
                 candidates[key]['cmdb_present'] = True
-            candidates[key]['cmdb_matches'].append({
-                'ci_id': ci.get('ci_id'),
-                'name': ci.get('name'),
-                'lifecycle': lifecycle,
-                'vendor': ci.get('vendor'),
-                'ci_type': ci_type,
-                'matched_via_vendor': True,
-                'passes_gate': cmdb_passes_gate,
-            })
-    
-    # Process cloud resources with O(N) complexity
+            candidates[key]['cmdb_matches'].append({**ci_match_data, 'matched_via_vendor': True})
+
+
+def _process_cloud_resources(
+    planes: dict,
+    candidates: dict,
+    name_to_keys: dict
+) -> None:
+    """Process cloud resources and update candidates with cloud presence."""
     cloud_resources = planes.get('cloud', {}).get('resources', [])
+
     for res in cloud_resources:
         name = normalize_name(res.get('name', ''))
         if name:
-            # Direct lookup by name
             for key in name_to_keys.get(name, set()):
                 candidates[key]['cloud_present'] = True
-            # Substring matching (kept for compatibility but limited scope)
+            # Substring matching for compatibility
             for key, cand in candidates.items():
                 normalized_names = {normalize_name(n) for n in cand['names']}
                 if any(n in name or name in n for n in normalized_names):
                     cand['cloud_present'] = True
 
-    # Process finance contracts with O(N) complexity
+
+def _process_finance_data(
+    planes: dict,
+    candidates: dict,
+    vendor_to_keys: dict,
+    name_to_keys: dict
+) -> None:
+    """Process finance contracts and transactions, updating candidates."""
     contracts = planes.get('finance', {}).get('contracts', [])
     transactions = planes.get('finance', {}).get('transactions', [])
 
+    # Process contracts
     for contract in contracts:
         vendor = normalize_name(contract.get('vendor_name', ''))
         product = normalize_name(contract.get('product', '') or '')
 
         matched_keys = set()
-        # Direct vendor lookup
         if vendor:
             matched_keys.update(vendor_to_keys.get(vendor, set()))
-            # Substring match on names (limited scope)
             for key in name_to_keys.keys():
                 if vendor in key or key in vendor:
                     matched_keys.update(name_to_keys[key])
 
-        # Product name matching
         if product:
             matched_keys.update(name_to_keys.get(product, set()))
             for key in name_to_keys.keys():
@@ -575,7 +556,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
             candidates[key]['finance_present'] = True
             candidates[key]['has_ongoing_finance'] = True
 
-    # Process transactions with O(N) complexity
+    # Process transactions
     for txn in transactions:
         vendor = normalize_name(txn.get('vendor_name', ''))
         is_recurring = txn.get('is_recurring', False)
@@ -583,7 +564,6 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         matched_keys = set()
         if vendor:
             matched_keys.update(vendor_to_keys.get(vendor, set()))
-            # Substring match
             for key in name_to_keys.keys():
                 if vendor in key or key in vendor:
                     matched_keys.update(name_to_keys[key])
@@ -592,20 +572,25 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
             candidates[key]['finance_present'] = True
             if is_recurring:
                 candidates[key]['has_ongoing_finance'] = True
-    
-    for key, cand in candidates.items():
-        cand['cmdb_resolution_reason'] = determine_cmdb_resolution_reason(cand['cmdb_matches'], cand['vendors'])
-    
+
+
+def _process_security_attestations(
+    planes: dict,
+    candidates: dict
+) -> None:
+    """Process security attestations and update candidates."""
     security_plane = planes.get('security', {})
     attestations = security_plane.get('attestations', []) if security_plane else []
-    
+
+    # Build security indexes
     security_domain_index = defaultdict(set)
     security_name_index = defaultdict(set)
+
     for i, att in enumerate(attestations):
         domain = att.get('domain')
         name = normalize_name(att.get('asset_name', ''))
         vendor = normalize_name(att.get('vendor', '') or '')
-        
+
         if domain:
             reg_domain = extract_registered_domain(domain)
             if reg_domain:
@@ -615,39 +600,99 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
             security_name_index[name].add(i)
         if vendor:
             security_name_index[vendor].add(i)
-    
+
+    # Match attestations to candidates
     for key, cand in candidates.items():
         matched_attestation_indices = set()
-        
+
         for domain in cand.get('domains', set()):
             matched_attestation_indices.update(security_domain_index.get(domain, set()))
-        
+
         matched_attestation_indices.update(security_domain_index.get(key, set()))
-        
+
         for name in cand.get('names', set()):
             matched_attestation_indices.update(security_name_index.get(normalize_name(name), set()))
-        
+
         for vendor in cand.get('vendors', set()):
             matched_attestation_indices.update(security_name_index.get(normalize_name(vendor), set()))
-        
+
         if matched_attestation_indices:
             cand['security_attested'] = True
-    
+
+
+def _finalize_candidates(candidates: dict) -> None:
+    """Finalize candidates with activity status and anchored flag."""
     for key, cand in candidates.items():
+        cand['cmdb_resolution_reason'] = determine_cmdb_resolution_reason(
+            cand['cmdb_matches'], cand['vendors']
+        )
+
         if cand['activity_present']:
             cand['activity_status'] = ActivityStatus.RECENT
         elif len(cand['stale_timestamps']) > 0:
             cand['activity_status'] = ActivityStatus.STALE
         else:
             cand['activity_status'] = ActivityStatus.NONE
-        
+
         cand['anchored'] = (
-            cand['idp_present'] or 
-            cand['cmdb_present'] or 
-            cand['has_ongoing_finance'] or 
+            cand['idp_present'] or
+            cand['cmdb_present'] or
+            cand['has_ongoing_finance'] or
             cand['cloud_present']
         )
-    
+
+
+# =============================================================================
+# MAIN build_candidate_flags FUNCTION
+# =============================================================================
+
+def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyConfig = None) -> dict:
+    """Build candidate flags from snapshot planes. Returns {key: {flags...}}.
+
+    When policy is provided, secondary gates are applied:
+    - require_sso_for_idp: IdP objects without SSO are treated as NO_IDP
+    - require_valid_ci_type: CMDB CIs with invalid types are treated as NO_CMDB
+    - require_valid_lifecycle: CMDB CIs with invalid lifecycles are treated as NO_CMDB
+
+    This function orchestrates the processing of all snapshot planes:
+    1. Discovery observations (two-pass key selection)
+    2. IdP objects (governance enrichment)
+    3. CMDB CIs (governance enrichment)
+    4. Cloud resources
+    5. Finance data (contracts and transactions)
+    6. Security attestations
+    """
+    meta = snapshot.get('meta', {})
+    planes = snapshot.get('planes', {})
+    reference = parse_timestamp(meta.get('created_at')) or datetime.utcnow()
+
+    # Step 1: Process discovery observations (creates candidates)
+    candidates = _process_discovery_observations(planes, policy, window_days, reference)
+
+    # Step 2: Build reverse indexes for O(1) lookups
+    key_to_normalized, normalized_to_keys, vendor_to_keys, name_to_keys, domain_to_keys = \
+        _build_candidate_indexes(candidates)
+
+    # Step 3: Process governance planes (enrichment)
+    _process_idp_objects(
+        planes, candidates, policy, window_days, reference,
+        normalized_to_keys, name_to_keys
+    )
+
+    _process_cmdb_cis(
+        planes, candidates, policy,
+        key_to_normalized, name_to_keys, vendor_to_keys
+    )
+
+    # Step 4: Process auxiliary planes
+    _process_cloud_resources(planes, candidates, name_to_keys)
+    _process_finance_data(planes, candidates, vendor_to_keys, name_to_keys)
+    _process_security_attestations(planes, candidates)
+
+    # Step 5: Finalize candidates
+    _finalize_candidates(candidates)
+
+    # Log summary
     discovery_count = sum(1 for c in candidates.values() if c.get('discovery_present'))
     idp_count = sum(1 for c in candidates.values() if c.get('idp_present'))
     cmdb_count = sum(1 for c in candidates.values() if c.get('cmdb_present'))
@@ -665,7 +710,7 @@ def build_candidate_flags(snapshot: dict, window_days: int = 90, policy: PolicyC
         "activity_recent": recent_count,
         "activity_stale": stale_count,
     })
-    
+
     return dict(candidates)
 
 def determine_cmdb_resolution_reason(cmdb_matches: list, candidate_vendors: set) -> str:
