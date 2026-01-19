@@ -117,29 +117,8 @@ async def _create_snapshot_background(request, fingerprint, run_id, unique_snaps
         'data_preset': request.data_preset.value if request.data_preset else None,
     }
 
-    policy_dict = {
-        'admission': {
-            'noise_floor': policy.admission.noise_floor,
-            'minimum_spend': policy.admission.minimum_spend,
-            'zombie_window_days': policy.admission.zombie_window_days,
-        },
-        'scope': {
-            'include_infra': policy.scope.include_infra,
-            'treat_directory_as_idp': policy.scope.treat_directory_as_idp,
-            'use_policy_engine': policy.scope.use_policy_engine,
-        },
-        'secondary_gates': {
-            'require_sso_for_idp': policy.secondary_gates.require_sso_for_idp,
-            'require_valid_ci_type': policy.secondary_gates.require_valid_ci_type,
-            'require_valid_lifecycle': policy.secondary_gates.require_valid_lifecycle,
-            'valid_ci_types': policy.secondary_gates.valid_ci_types,
-            'valid_lifecycle_states': policy.secondary_gates.valid_lifecycle_states,
-            'invalid_lifecycle_states': policy.secondary_gates.invalid_lifecycle_states,
-        },
-        'exclusions': policy.exclusions,
-        'infrastructure_seeds': policy.infrastructure_seeds,
-        'corporate_root_domains': policy.corporate_root_domains,
-    }
+    # Use Pydantic's model_dump() instead of manual serialization
+    policy_dict = policy.model_dump()
 
     job_id = await job_manager.create_job("snapshot_generation", input_params={
         "request": request_params,

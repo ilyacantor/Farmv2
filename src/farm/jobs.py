@@ -295,13 +295,28 @@ class JobManager:
         try:
             async with connection() as conn:
                 result = await conn.execute("""
-                    DELETE FROM jobs 
+                    DELETE FROM jobs
                     WHERE created_at < NOW() - INTERVAL '%s days'
                     AND status IN ('completed', 'failed')
                 """ % days)
-                return int(result.split()[-1]) if result else 0
+                # asyncpg returns status string like "DELETE 42" - extract count safely
+                return _parse_delete_count(result)
         except DBUnavailable:
             return 0
+
+
+def _parse_delete_count(result: str) -> int:
+    """Parse row count from asyncpg DELETE result string (e.g., 'DELETE 42')."""
+    if not result:
+        return 0
+    try:
+        parts = result.split()
+        if len(parts) >= 2 and parts[0].upper() == "DELETE":
+            return int(parts[1])
+        return 0
+    except (ValueError, IndexError):
+        logger.warning(f"Could not parse DELETE count from: {result}")
+        return 0
 
 
 job_manager = JobManager()

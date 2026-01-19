@@ -992,15 +992,17 @@ async def compare_asset_data(
 # Helper functions
 
 def _parse_delete_count(result: str) -> int:
-    """Parse row count from PostgreSQL DELETE result string."""
+    """Parse row count from PostgreSQL DELETE result string (e.g., 'DELETE 42')."""
+    if not result:
+        return 0
     try:
-        if result:
-            parts = result.split()
-            if len(parts) >= 2:
-                return int(parts[-1])
-    except (ValueError, IndexError):
-        pass
-    return 0
+        parts = result.split()
+        if len(parts) >= 2 and parts[0].upper() == "DELETE":
+            return int(parts[1])
+        return 0
+    except (ValueError, IndexError) as e:
+        logger.debug(f"Could not parse DELETE count from '{result}': {e}")
+        return 0
 
 
 def _extract_has_discrepancy(analysis_json: str | None) -> bool:
@@ -1012,7 +1014,8 @@ def _extract_has_discrepancy(analysis_json: str | None) -> bool:
         if 'has_any_discrepancy' in analysis:
             return analysis['has_any_discrepancy']
         return _compute_has_discrepancy_from_metrics(analysis)
-    except (json.JSONDecodeError, TypeError):
+    except (json.JSONDecodeError, TypeError) as e:
+        logger.debug(f"Could not parse analysis JSON for discrepancy check: {e}")
         return False
 
 

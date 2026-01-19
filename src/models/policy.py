@@ -75,6 +75,7 @@ class PolicyConfig(BaseModel):
     excluded_vendor_roots: list[str] = []
     banned_domains: list[str] = []
     alias_domains_to_collapse: dict[str, str] = {}
+    corporate_root_domains: list[str] = []
 
     def idp_passes_gates(self, has_sso: bool) -> bool:
         """Check if an IdP object passes secondary gates.

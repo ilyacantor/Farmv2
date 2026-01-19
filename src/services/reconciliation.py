@@ -906,9 +906,7 @@ def compute_expected_block(
     
     if window_days is None:
         window_days = policy.admission.zombie_window_days
-    
-    noise_floor = policy.admission.noise_floor
-    
+
     candidates = build_candidate_flags(snapshot, window_days, policy)
     
     # POLICY: Only propagate vendor governance if enabled in policy
@@ -1145,9 +1143,7 @@ def analyze_snapshot_for_expectations(
         policy = PolicyConfig.default_fallback()
     if window_days is None:
         window_days = policy.admission.zombie_window_days
-    
-    noise_floor = policy.admission.noise_floor
-    
+
     candidates = build_candidate_flags(snapshot, window_days, policy)
     
     # POLICY: Only propagate vendor governance if enabled in policy
