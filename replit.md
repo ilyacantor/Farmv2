@@ -250,6 +250,23 @@ curl -N "http://localhost:5000/api/stream/synthetic/mulesoft?speed=fast&chaos=tr
 - Malformed JSON (half-written objects to break parsers)
 - Latency spikes (5-second delays to test timeouts)
 - Bad types (`"amount": "THREE"` instead of numbers)
+- Drifted records (valid JSON with missing fields like `vendor_id`)
+
+### Source of Truth Repair Endpoint (Phase 3: Active Repair Agent)
+
+When the MuleSoft stream produces "drifted" records, DCL's Ingest Sidecar can fetch the pristine record to repair missing fields.
+
+**Endpoint:** `GET /api/source/salesforce/invoice/{invoice_id}`
+
+**Usage:**
+```bash
+curl "http://localhost:5000/api/source/salesforce/invoice/INV-123456"
+```
+
+**Returns:** Complete, deterministic invoice with all fields including:
+- `vendor.vendor_id` (commonly missing in drift)
+- `billing_address` (commonly missing in drift)
+- All other standard invoice fields
 
 ### Environment Variables
 
