@@ -25,6 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.api.routes import router, compute_fingerprint
+from src.api.stream import router as stream_router
 from src.farm.db import DBUnavailable, close_pool, ensure_schema, connection as db_connection, is_healthy
 
 
@@ -265,6 +266,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     return PlainTextResponse(f"Internal Server Error: {type(exc).__name__}", status_code=500)
 
 app.include_router(router)
+app.include_router(stream_router)
 
 @app.get("/api/health")
 async def health_check():
