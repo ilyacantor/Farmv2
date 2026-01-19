@@ -106,7 +106,7 @@ INVARIANT: CMDB and IdP assert truth. Heuristics suggest context.
 
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TypedDict
 from collections import defaultdict
 from enum import Enum
 from dateutil import parser as dateutil_parser
@@ -226,10 +226,73 @@ def is_stale(ts: Optional[str], window_days: int, reference: datetime) -> bool:
 
 
 # =============================================================================
+# TYPE DEFINITIONS
+# =============================================================================
+
+class DecisionTrace(TypedDict, total=False):
+    """Typed structure for asset decision traces - aids debugging reconciliation mismatches."""
+    asset_key_used: str
+    registered_domain: Optional[str]
+    raw_domains_seen: list[str]
+    is_external: bool
+    activity_status: str  # ActivityStatus.value
+    anchored: bool
+    activity_window_days: int
+    activity_source: str
+    latest_activity_at: Optional[str]
+    all_activity_timestamps: list[dict]
+    stale_timestamps: list[str]
+    idp_present_direct: bool
+    cmdb_present_direct: bool
+    vendor_governed: bool
+    security_attested: bool
+    has_visibility: bool
+    has_validation: bool
+    has_control: bool
+    is_governed: bool
+    missing_governance: list[str]
+    vendor_name: Optional[str]
+    policy_excluded: bool
+    admitted: bool
+    discovery_sources_count: int
+    discovery_sources_list: list[str]
+    rejection_reason: Optional[str]
+    is_shadow: bool
+    is_zombie: bool
+    is_parked: bool
+    reason_codes: list[str]
+
+
+class CandidateFlags(TypedDict, total=False):
+    """Typed structure for candidate flags built from snapshot planes."""
+    key: str
+    names: set
+    domains: set
+    vendors: set
+    idp_present: bool
+    cmdb_present: bool
+    cmdb_matches: list[dict]
+    cmdb_resolution_reason: str
+    finance_present: bool
+    has_ongoing_finance: bool
+    cloud_present: bool
+    discovery_present: bool
+    activity_present: bool
+    stale_timestamps: list[str]
+    activity_timestamps: list[dict]
+    latest_activity_at: Optional[str]
+    activity_source: str
+    discovery_sources: set
+    activity_status: ActivityStatus
+    anchored: bool
+    security_attested: bool
+
+
+# =============================================================================
 # HELPER FUNCTIONS FOR build_candidate_flags
 # =============================================================================
 
-def _create_empty_candidate() -> dict:
+def _create_empty_candidate() -> CandidateFlags:
     """Create an empty candidate structure with default values."""
     return {
         'key': '',
@@ -1031,7 +1094,7 @@ def compute_expected_block(
             'registered_domain': extract_registered_domain(key),
             'raw_domains_seen': raw_domains,
             'is_external': is_external,
-            'activity_status': activity_status.value if isinstance(activity_status, ActivityStatus) else activity_status,
+            'activity_status': activity_status.value,  # Always ActivityStatus enum from _finalize_candidates
             'anchored': anchored,
             'activity_window_days': window_days,
             'activity_source': cand.get('activity_source', 'none'),
