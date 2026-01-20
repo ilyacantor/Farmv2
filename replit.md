@@ -69,3 +69,54 @@ AOS Farm is built with FastAPI and Uvicorn for the backend, Supabase PostgreSQL 
 -   **tldextract:** Used for domain parsing and effective Top-Level Domain (eTLD)+1 extraction.
 -   **FastAPI:** The web framework used for building the API.
 -   **Uvicorn:** The ASGI server that runs the FastAPI application.
+
+## Agent Orchestration Stress Testing
+
+Farm generates synthetic agent profiles and workflow graphs for stress testing agentic orchestration platforms.
+
+### Agent Fleet Generation
+
+**Endpoint:** `GET /api/agents/fleet?scale=small|medium|large`
+
+Scale presets:
+- `small`: 10 agents (unit tests)
+- `medium`: 50 agents (integration)
+- `large`: 100 agents (load tests)
+
+Agent distribution: 10% planners, 50% workers, 20% specialists, 15% reviewers, 5% approvers
+
+Agent profiles include:
+- Capabilities (task_decomposition, delegation, tool_invocation, etc.)
+- Tools (email, jira, database_query, code_execute, etc.)
+- Reliability profiles (rock_solid 99.9%, reliable 95%, flaky 80%, unreliable 60%)
+- Cost profiles (free, cheap, standard, premium, enterprise)
+- Policy templates (permissive, standard, restricted, audit_heavy)
+
+### Workflow Generation
+
+**Endpoint:** `GET /api/agents/workflow?workflow_type=dag&chaos_rate=0.2`
+
+Workflow types: `linear`, `dag`, `parallel`, `saga`
+
+Chaos injection types:
+- `tool_timeout` - Tests retry logic
+- `tool_failure` - Tests compensation/saga patterns
+- `agent_conflict` - Tests adjudication
+- `policy_violation` - Tests escalation
+- `checkpoint_crash` - Tests durable execution replay
+- `rate_limit` - Tests backoff strategies
+
+### Complete Stress Scenario
+
+**Endpoint:** `GET /api/agents/stress-scenario?scale=medium&workflow_count=10&chaos_rate=0.2`
+
+Returns:
+- Agent fleet with diverse profiles
+- Batch of workflows with agent assignments
+- `__expected__` blocks for validation
+
+### Streaming Workloads
+
+**Endpoint:** `GET /api/agents/stream?rate=50&chaos_rate=0.1`
+
+Streams continuous workflow payloads (NDJSON) for load testing.
