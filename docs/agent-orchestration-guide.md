@@ -21,6 +21,100 @@ https://<your-farm-instance>/api/agents
 | `/workflow` | GET | Generate single workflow with tasks |
 | `/stress-scenario` | GET | Complete test package (agents + workflows) |
 | `/stream` | GET | Continuous NDJSON workflow stream |
+| `/run-stress-test` | POST | Push stress test to external platform |
+| `/push-fleet` | POST | Push fleet to external platform |
+| `/push-workflow` | POST | Push workflow to external platform |
+
+---
+
+## Push Integration (Farm → Your Platform)
+
+AOS Farm can push test data directly to your orchestration platform's endpoints.
+
+### Run Full Stress Test
+
+```
+POST /api/agents/run-stress-test
+Content-Type: application/json
+
+{
+  "target_url": "https://your-platform.replit.app",
+  "scale": "medium",
+  "workflow_count": 10,
+  "chaos_rate": 0.2,
+  "seed": 12345,
+  "wait_for_completion": true
+}
+```
+
+This will:
+1. Generate a fleet and POST it to `{target_url}/api/v1/stress-test/fleet`
+2. Generate a scenario and POST it to `{target_url}/api/v1/stress-test/scenario`
+3. Poll `{target_url}/api/v1/stress-test/scenario/{id}` for results
+4. Validate results against `__expected__` blocks
+
+### Expected Platform Endpoints
+
+Your orchestration platform must implement:
+
+| Your Endpoint | Method | Purpose |
+|---------------|--------|---------|
+| `/api/v1/stress-test/fleet` | POST | Ingest agent fleet definitions |
+| `/api/v1/stress-test/scenario` | POST | Submit stress test scenario |
+| `/api/v1/stress-test/scenario/{id}` | GET | Return execution results |
+
+### Platform Response Schema
+
+Your `/api/v1/stress-test/scenario/{id}` endpoint should return:
+
+```json
+{
+  "scenario_id": "stress-12345-medium",
+  "status": "completed",
+  "completion_rate": 0.92,
+  "tasks_completed": 45,
+  "chaos_events_recovered": 8,
+  "chaos_recovery_rate": 0.8,
+  "throughput_wf_per_sec": 12.5,
+  "all_workflows_assigned": true,
+  "planner_count": 5,
+  "worker_count": 25,
+  "can_execute_all": true,
+  "validation": {
+    "passed": true,
+    "checks": [...]
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `scenario_id` | string | Echo back the scenario ID |
+| `status` | string | `completed`, `failed`, `running`, `error` |
+| `completion_rate` | float | Fraction of workflows completed (0-1) |
+| `tasks_completed` | int | Number of tasks successfully executed |
+| `chaos_events_recovered` | int | Number of chaos events handled |
+| `chaos_recovery_rate` | float | Fraction of chaos events recovered (0-1) |
+| `all_workflows_assigned` | bool | Whether all workflows were assigned to agents |
+| `planner_count` | int | Number of planner agents used |
+| `worker_count` | int | Number of worker agents used |
+| `can_execute_all` | bool | Whether the platform had capacity to execute all |
+| `validation` | object | Optional: platform's own validation result |
+
+### Farm Status Codes
+
+When calling `/api/agents/run-stress-test`, Farm returns these status codes:
+
+| Status | Description |
+|--------|-------------|
+| `completed` | All validation checks passed |
+| `completed_with_failures` | Execution finished but some validation checks failed |
+| `fleet_ingestion_timeout` | Timed out posting fleet to platform |
+| `fleet_ingestion_failed` | Platform rejected fleet data |
+| `scenario_submission_timeout` | Timed out posting scenario to platform |
+| `scenario_submission_failed` | Platform rejected scenario data |
+| `timeout` | Scenario execution did not complete in time |
+| `execution_error` | Error occurred during execution polling |
 
 ---
 

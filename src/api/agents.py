@@ -24,8 +24,19 @@ from src.generators.workflows import (
     WorkflowType,
     ChaosType,
 )
+from src.services.orchestration_client import OrchestrationClient
+from pydantic import BaseModel
 
 router = APIRouter(tags=["agents"])
+
+
+class StressTestRequest(BaseModel):
+    target_url: str
+    scale: str = "small"
+    workflow_count: int = 5
+    chaos_rate: float = 0.2
+    seed: int = 12345
+    wait_for_completion: bool = True
 
 
 @router.get("/api/agents/profile")
@@ -323,3 +334,197 @@ async def get_chaos_catalog():
         ],
         "total_types": len(CHAOS_SCENARIOS),
     }
+
+
+@router.post("/api/agents/run-stress-test")
+async def run_stress_test(request: StressTestRequest):
+    """
+    Execute a stress test against an external orchestration platform.
+    
+    This endpoint:
+    1. Generates a fleet and scenario
+    2. POSTs the fleet to {target_url}/api/v1/stress-test/fleet
+    3. POSTs the scenario to {target_url}/api/v1/stress-test/scenario
+    4. Optionally polls for results and validates against __expected__
+    
+    Use this to run end-to-end stress tests against your orchestration platform.
+    """
+    if request.scale not in ["small", "medium", "large"]:
+        raise HTTPException(status_code=400, detail="scale must be: small, medium, or large")
+    
+    fleet = generate_agent_fleet(seed=request.seed, scale=request.scale)
+    
+    batch = generate_workflow_batch(
+        seed=request.seed + 1000,
+        count=request.workflow_count,
+        chaos_rate=request.chaos_rate,
+    )
+    
+    agent_ids = [a["agent_id"] for a in fleet["agents"]]
+    planners = [a["agent_id"] for a in fleet["agents"] if a["type"] == "planner"]
+    workers = [a["agent_id"] for a in fleet["agents"] if a["type"] == "worker"]
+    
+    import random
+    rng = random.Random(request.seed)
+    
+    for workflow in batch["workflows"]:
+        for task in workflow["tasks"]:
+            if task["type"] in ["decision", "aggregation"]:
+                task["assigned_agent"] = rng.choice(planners) if planners else rng.choice(agent_ids)
+            else:
+                task["assigned_agent"] = rng.choice(workers) if workers else rng.choice(agent_ids)
+    
+    scenario = {
+        "scenario_id": f"stress-{request.seed}-{request.scale}",
+        "seed": request.seed,
+        "scale": request.scale,
+        "generated_at": datetime.now().isoformat(),
+        "workflows": batch["workflows"],
+        "summary": {
+            "total_agents": fleet["total_agents"],
+            "total_workflows": request.workflow_count,
+            "total_tasks": batch["total_tasks"],
+            "chaos_events_expected": batch["chaos_events_total"],
+            "chaos_rate": request.chaos_rate,
+        },
+        "__expected__": {
+            "total_tasks": batch["total_tasks"],
+            "chaos_events_expected": batch["chaos_events_total"],
+            "expected_completion_rate": 0.85 if request.chaos_rate < 0.5 else 0.7,
+            "all_workflows_assigned": True,
+            "chaos_recovery_possible": request.chaos_rate < 0.5,
+            "planner_count": len(planners),
+            "worker_count": len(workers),
+            "can_execute_all": len(planners) > 0 and len(workers) > 0,
+        },
+    }
+    
+    client = OrchestrationClient(request.target_url)
+    
+    try:
+        result = await client.run_full_stress_test(
+            fleet_data=fleet,
+            scenario_data=scenario,
+            wait_for_completion=request.wait_for_completion,
+        )
+        
+        fleet_status = result.get("fleet_ingestion", {}).get("status")
+        scenario_status = result.get("scenario_submission", {}).get("status")
+        results_status = result.get("scenario_results", {}).get("status")
+        
+        if fleet_status == "timeout":
+            status = "fleet_ingestion_timeout"
+            error_msg = result.get("fleet_ingestion", {}).get("error", "Fleet ingestion timed out")
+        elif fleet_status == "error":
+            status = "fleet_ingestion_failed"
+            error_msg = result.get("fleet_ingestion", {}).get("error", "Unknown error")
+        elif scenario_status == "timeout":
+            status = "scenario_submission_timeout"
+            error_msg = result.get("scenario_submission", {}).get("error", "Scenario submission timed out")
+        elif scenario_status == "error":
+            status = "scenario_submission_failed"
+            error_msg = result.get("scenario_submission", {}).get("error", "Unknown error")
+        elif results_status == "timeout":
+            status = "timeout"
+            error_msg = result.get("scenario_results", {}).get("error", "Scenario did not complete in time")
+        elif results_status == "error":
+            status = "execution_error"
+            error_msg = result.get("scenario_results", {}).get("error", "Unknown error")
+        elif result.get("validation", {}).get("passed"):
+            status = "completed"
+            error_msg = None
+        else:
+            status = "completed_with_failures"
+            error_msg = None
+        
+        return {
+            "status": status,
+            "error": error_msg,
+            "target_url": request.target_url,
+            "scenario_id": scenario["scenario_id"],
+            "fleet_summary": {
+                "total_agents": fleet["total_agents"],
+                "planners": len(planners),
+                "workers": len(workers),
+            },
+            "scenario_summary": scenario["summary"],
+            "execution_result": result,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stress test failed: {str(e)}")
+    finally:
+        await client.close()
+
+
+@router.post("/api/agents/push-fleet")
+async def push_fleet_to_platform(
+    target_url: str = Query(..., description="Base URL of orchestration platform"),
+    scale: str = Query("small", description="Fleet scale"),
+    seed: int = Query(12345, description="Random seed"),
+):
+    """
+    Push a generated fleet directly to an orchestration platform.
+    
+    POSTs to: {target_url}/api/v1/stress-test/fleet
+    """
+    if scale not in ["small", "medium", "large"]:
+        raise HTTPException(status_code=400, detail="scale must be: small, medium, or large")
+    
+    fleet = generate_agent_fleet(seed=seed, scale=scale)
+    client = OrchestrationClient(target_url)
+    
+    try:
+        result = await client.ingest_fleet(fleet)
+        return {
+            "status": "success",
+            "target_url": target_url,
+            "fleet_size": fleet["total_agents"],
+            "platform_response": result,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to push fleet: {str(e)}")
+    finally:
+        await client.close()
+
+
+@router.post("/api/agents/push-workflow")
+async def push_workflow_to_platform(
+    target_url: str = Query(..., description="Base URL of orchestration platform"),
+    workflow_type: str = Query("dag", description="Workflow type"),
+    num_tasks: int = Query(6, description="Number of tasks"),
+    chaos_rate: float = Query(0.2, description="Chaos rate"),
+    seed: int = Query(12345, description="Random seed"),
+):
+    """
+    Push a generated workflow directly to an orchestration platform.
+    
+    POSTs to: {target_url}/api/v1/stress-test/workflow
+    """
+    wf_type = None
+    try:
+        wf_type = WorkflowType(workflow_type)
+    except ValueError:
+        pass
+    
+    workflow = generate_workflow(
+        seed=seed,
+        workflow_type=wf_type,
+        num_tasks=num_tasks,
+        chaos_rate=chaos_rate,
+    )
+    
+    client = OrchestrationClient(target_url)
+    
+    try:
+        result = await client.submit_workflow(workflow)
+        return {
+            "status": "success",
+            "target_url": target_url,
+            "workflow_id": workflow["workflow_id"],
+            "task_count": len(workflow["tasks"]),
+            "platform_response": result,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to push workflow: {str(e)}")
+    finally:
+        await client.close()

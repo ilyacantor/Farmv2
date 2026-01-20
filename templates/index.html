@@ -470,6 +470,40 @@
                             </button>
                         </div>
                     </div>
+
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-rose-700/50">
+                        <h2 class="text-lg font-semibold text-rose-400 mb-4">Run Against Platform</h2>
+                        <p class="text-slate-400 text-sm mb-4">Push stress test to your orchestration platform and get validation results.</p>
+                        
+                        <div class="mb-4">
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Platform URL</label>
+                            <input type="text" id="platformUrl" placeholder="https://your-platform.replit.app" 
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-rose-500 outline-none">
+                        </div>
+                        
+                        <div class="grid grid-cols-3 gap-3 mb-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Scale</label>
+                                <select id="runScale" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-rose-500 outline-none">
+                                    <option value="small">Small</option>
+                                    <option value="medium" selected>Medium</option>
+                                    <option value="large">Large</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Workflows</label>
+                                <input type="number" id="runWorkflows" value="5" min="1" max="50" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-rose-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Chaos %</label>
+                                <input type="number" id="runChaos" value="20" min="0" max="100" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-rose-500 outline-none">
+                            </div>
+                        </div>
+                        
+                        <button id="runStressBtn" onclick="runStressTest()" class="w-full bg-rose-600 hover:bg-rose-500 text-white font-semibold py-2 px-4 rounded-lg transition-all">
+                            Run Stress Test
+                        </button>
+                    </div>
                 </div>
 
                 <div class="space-y-6">
@@ -1160,6 +1194,80 @@
             const chaos = document.getElementById('streamChaos').value / 100;
             const url = `${window.location.origin}/api/agents/stream?rate=${rate}&chaos_rate=${chaos}`;
             navigator.clipboard.writeText(url);
+        }
+
+        async function runStressTest() {
+            const targetUrl = document.getElementById('platformUrl').value.trim();
+            if (!targetUrl) {
+                alert('Please enter the platform URL');
+                return;
+            }
+            
+            const scale = document.getElementById('runScale').value;
+            const workflows = parseInt(document.getElementById('runWorkflows').value);
+            const chaos = parseInt(document.getElementById('runChaos').value) / 100;
+            const resultEl = document.getElementById('agentResultJson');
+            const statsEl = document.getElementById('agentResultStats');
+            const btn = document.getElementById('runStressBtn');
+            
+            btn.disabled = true;
+            btn.textContent = 'Running...';
+            resultEl.textContent = 'Connecting to platform and running stress test...';
+            statsEl.textContent = '';
+            
+            try {
+                const resp = await fetch('/api/agents/run-stress-test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_url: targetUrl,
+                        scale: scale,
+                        workflow_count: workflows,
+                        chaos_rate: chaos,
+                        wait_for_completion: true
+                    })
+                });
+                
+                const data = await resp.json();
+                currentAgentResult = data;
+                
+                if (resp.ok) {
+                    resultEl.textContent = JSON.stringify(data, null, 2);
+                    const status = data.status;
+                    
+                    if (status === 'fleet_ingestion_timeout') {
+                        statsEl.innerHTML = `<span class="text-yellow-400">Fleet Ingestion Timeout</span>`;
+                    } else if (status === 'fleet_ingestion_failed') {
+                        statsEl.innerHTML = `<span class="text-red-400">Fleet Ingestion Failed</span>`;
+                    } else if (status === 'scenario_submission_timeout') {
+                        statsEl.innerHTML = `<span class="text-yellow-400">Scenario Submission Timeout</span>`;
+                    } else if (status === 'scenario_submission_failed') {
+                        statsEl.innerHTML = `<span class="text-red-400">Scenario Submission Failed</span>`;
+                    } else if (status === 'timeout') {
+                        statsEl.innerHTML = `<span class="text-yellow-400">Execution Timeout</span>`;
+                    } else if (status === 'execution_error') {
+                        statsEl.innerHTML = `<span class="text-red-400">Execution Error</span>`;
+                    } else if (status === 'completed') {
+                        const validation = data.execution_result?.validation;
+                        statsEl.innerHTML = `<span class="text-green-400">PASSED</span> | ${validation?.checks?.length || 0} checks`;
+                    } else if (status === 'completed_with_failures') {
+                        const validation = data.execution_result?.validation;
+                        const failedChecks = validation?.checks?.filter(c => !c.passed).length || 0;
+                        statsEl.innerHTML = `<span class="text-red-400">FAILED</span> | ${failedChecks} failed checks`;
+                    } else {
+                        statsEl.textContent = `Status: ${status}`;
+                    }
+                } else {
+                    resultEl.textContent = `Error: ${data.detail || JSON.stringify(data)}`;
+                    statsEl.innerHTML = '<span class="text-red-400">Request Failed</span>';
+                }
+            } catch (e) {
+                resultEl.textContent = `Error: ${e.message}`;
+                statsEl.textContent = 'Error';
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Run Stress Test';
+            }
         }
 
         async function loadTestSnapshot() {
