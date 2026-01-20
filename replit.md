@@ -120,3 +120,7 @@ Returns:
 **Endpoint:** `GET /api/agents/stream?rate=50&chaos_rate=0.1`
 
 Streams continuous workflow payloads (NDJSON) for load testing.
+
+### Full Documentation
+
+See [`docs/agent-orchestration-guide.md`](docs/agent-orchestration-guide.md) for complete protocol specifications, data schemas, and integration patterns.
