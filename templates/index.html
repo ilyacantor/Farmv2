@@ -1441,9 +1441,17 @@
             `;
         }
         
+        function getTestId(data) {
+            if (data.test_id) return data.test_id;
+            const scaleAbbrev = {'small': 'sm', 'medium': 'md', 'large': 'lg'}[data.scale] || (data.scale || 'sm').substring(0,2);
+            const chaosPct = Math.round((data.chaos_rate || 0) * 100);
+            return `${scaleAbbrev}-${data.workflow_count || 0}wf-${chaosPct}ch-s${data.seed || 0}`;
+        }
+        
         function renderStressTestResult(data) {
             const analysis = data.analysis;
             const status = data.status;
+            const testId = getTestId(data);
             
             if (!analysis) {
                 const errorMsg = data.error || `Status: ${status}`;
@@ -1455,7 +1463,7 @@
                             </div>
                             <div>
                                 <h3 class="text-lg font-semibold text-white">Test Failed to Complete</h3>
-                                <p class="text-slate-400 text-sm">Target: ${data.target_url || 'Unknown'}</p>
+                                <p class="text-cyan-400 font-mono text-sm">${testId}</p>
                             </div>
                         </div>
                         <div class="bg-red-900/20 rounded-lg p-3 border border-red-500/50">
@@ -1483,7 +1491,7 @@
                                 <h3 class="text-xl font-bold ${v.text}">${analysis.overall_verdict}</h3>
                                 <span class="text-xs text-slate-400">(${confidence}% confidence)</span>
                             </div>
-                            <p class="text-slate-300 text-sm">Target: ${data.target_url || 'Unknown'}</p>
+                            <p class="text-cyan-400 font-mono text-sm">${testId}</p>
                         </div>
                     </div>
                     
