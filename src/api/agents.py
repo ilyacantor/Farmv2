@@ -30,6 +30,7 @@ from src.generators.workflows import (
     ChaosType,
 )
 from src.services.orchestration_client import OrchestrationClient
+from src.services.stress_analysis import analyze_stress_test_results
 from pydantic import BaseModel
 
 router = APIRouter(tags=["agents"])
@@ -521,6 +522,17 @@ async def run_stress_test(request: StressTestRequest):
             "workers": len(workers),
         }
         
+        result["duration_ms"] = duration_ms
+        
+        analysis = await analyze_stress_test_results(
+            execution_result=result,
+            expected=scenario["__expected__"],
+            fleet_summary=fleet_summary,
+            scenario_summary=scenario["summary"],
+            target_url=target_url,
+            current_run_id=run_id,
+        )
+        
         response_data = {
             "run_id": run_id,
             "status": status,
@@ -531,6 +543,7 @@ async def run_stress_test(request: StressTestRequest):
             "scenario_summary": scenario["summary"],
             "execution_result": result,
             "duration_ms": duration_ms,
+            "analysis": analysis,
         }
         
         try:
@@ -618,6 +631,7 @@ async def list_stress_test_runs(
 async def get_stress_test_run(run_id: str):
     """
     Get details of a specific stress test run including full execution result.
+    Analysis is computed on-the-fly from stored data so updates to analysis logic apply to historical runs.
     """
     try:
         async with db_connection() as conn:
@@ -632,6 +646,18 @@ async def get_stress_test_run(run_id: str):
             if not row:
                 raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
             
+            fleet_summary = row["fleet_summary"] if isinstance(row["fleet_summary"], dict) else json.loads(row["fleet_summary"] or "{}")
+            scenario_summary = row["scenario_summary"] if isinstance(row["scenario_summary"], dict) else json.loads(row["scenario_summary"] or "{}")
+            expected = row["expected"] if isinstance(row["expected"], dict) else json.loads(row["expected"] or "{}")
+            execution_result = row["execution_result"] if isinstance(row["execution_result"], dict) else json.loads(row["execution_result"] or "{}")
+            
+            analysis = await analyze_stress_test_results(
+                execution_result=execution_result,
+                expected=expected,
+                fleet_summary=fleet_summary,
+                scenario_summary=scenario_summary
+            )
+            
             return {
                 "run_id": row["run_id"],
                 "created_at": row["created_at"],
@@ -642,12 +668,13 @@ async def get_stress_test_run(run_id: str):
                 "seed": row["seed"],
                 "status": row["status"],
                 "error_message": row["error_message"],
-                "fleet_summary": row["fleet_summary"] if isinstance(row["fleet_summary"], dict) else json.loads(row["fleet_summary"] or "{}"),
-                "scenario_summary": row["scenario_summary"] if isinstance(row["scenario_summary"], dict) else json.loads(row["scenario_summary"] or "{}"),
-                "expected": row["expected"] if isinstance(row["expected"], dict) else json.loads(row["expected"] or "{}"),
+                "fleet_summary": fleet_summary,
+                "scenario_summary": scenario_summary,
+                "expected": expected,
                 "validation": row["validation"] if isinstance(row["validation"], dict) else json.loads(row["validation"] or "{}"),
-                "execution_result": row["execution_result"] if isinstance(row["execution_result"], dict) else json.loads(row["execution_result"] or "{}"),
+                "execution_result": execution_result,
                 "duration_ms": row["duration_ms"],
+                "analysis": analysis,
             }
     except HTTPException:
         raise

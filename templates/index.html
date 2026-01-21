@@ -1401,88 +1401,98 @@
             `;
         }
 
+        function renderVerdictBadge(verdict) {
+            const colors = {
+                'PASS': 'bg-emerald-600/30 border-emerald-500 text-emerald-400',
+                'FAIL': 'bg-red-600/30 border-red-500 text-red-400',
+                'DEGRADED': 'bg-yellow-600/30 border-yellow-500 text-yellow-400',
+                'NO_BASELINE': 'bg-slate-600/30 border-slate-500 text-slate-400',
+                'NO_DATA': 'bg-slate-600/30 border-slate-500 text-slate-400',
+            };
+            return `<span class="px-2 py-0.5 rounded text-xs font-semibold border ${colors[verdict] || colors['NO_DATA']}">${verdict}</span>`;
+        }
+        
+        function renderAnalysisSection(title, icon, section) {
+            if (!section) return '';
+            const issues = section.issues || [];
+            const recommendations = section.recommendations || [];
+            
+            return `
+                <div class="bg-slate-900/50 rounded-lg p-3 border border-slate-700/50">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg">${icon}</span>
+                            <h4 class="text-sm font-medium text-white">${title}</h4>
+                        </div>
+                        ${renderVerdictBadge(section.verdict)}
+                    </div>
+                    <p class="text-sm text-slate-300 mb-2">${section.summary}</p>
+                    ${issues.length > 0 ? `
+                        <div class="mt-2 space-y-1">
+                            ${issues.map(i => `<div class="text-xs text-red-400 flex items-start gap-1"><span class="mt-0.5">!</span> ${i}</div>`).join('')}
+                        </div>
+                    ` : ''}
+                    ${recommendations.length > 0 ? `
+                        <div class="mt-2 space-y-1">
+                            ${recommendations.map(r => `<div class="text-xs text-blue-400 flex items-start gap-1"><span class="mt-0.5">-></span> ${r}</div>`).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+        
         function renderStressTestResult(data) {
+            const analysis = data.analysis;
             const status = data.status;
-            const validation = data.execution_result?.validation || {};
-            const checks = validation.checks || [];
             
-            const statusColors = {
-                'completed': 'bg-emerald-600/30 border-emerald-500 text-emerald-400',
-                'completed_with_failures': 'bg-red-600/30 border-red-500 text-red-400',
-                'fleet_ingestion_timeout': 'bg-yellow-600/30 border-yellow-500 text-yellow-400',
-                'fleet_ingestion_failed': 'bg-red-600/30 border-red-500 text-red-400',
-                'scenario_submission_timeout': 'bg-yellow-600/30 border-yellow-500 text-yellow-400',
-                'scenario_submission_failed': 'bg-red-600/30 border-red-500 text-red-400',
-                'timeout': 'bg-yellow-600/30 border-yellow-500 text-yellow-400',
-                'execution_error': 'bg-red-600/30 border-red-500 text-red-400',
+            if (!analysis) {
+                const errorMsg = data.error || `Status: ${status}`;
+                return `
+                    <div class="space-y-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-12 h-12 rounded-lg bg-red-600/30 flex items-center justify-center">
+                                <svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </div>
+                            <div>
+                                <h3 class="text-lg font-semibold text-white">Test Failed to Complete</h3>
+                                <p class="text-slate-400 text-sm">Target: ${data.target_url || 'Unknown'}</p>
+                            </div>
+                        </div>
+                        <div class="bg-red-900/20 rounded-lg p-3 border border-red-500/50">
+                            <p class="text-red-300 text-sm">${errorMsg}</p>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            const verdictColors = {
+                'PASS': { bg: 'bg-emerald-600/30', border: 'border-emerald-500', text: 'text-emerald-400', icon: '<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' },
+                'FAIL': { bg: 'bg-red-600/30', border: 'border-red-500', text: 'text-red-400', icon: '<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' },
+                'DEGRADED': { bg: 'bg-yellow-600/30', border: 'border-yellow-500', text: 'text-yellow-400', icon: '<svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>' },
             };
             
-            const statusLabels = {
-                'completed': 'All Checks Passed',
-                'completed_with_failures': 'Some Checks Failed',
-                'fleet_ingestion_timeout': 'Fleet Upload Timed Out',
-                'fleet_ingestion_failed': 'Fleet Upload Failed',
-                'scenario_submission_timeout': 'Scenario Submit Timed Out',
-                'scenario_submission_failed': 'Scenario Submit Failed',
-                'timeout': 'Test Timed Out',
-                'execution_error': 'Execution Error',
-            };
-            
-            const passedChecks = checks.filter(c => c.passed).length;
+            const v = verdictColors[analysis.overall_verdict] || verdictColors['FAIL'];
+            const confidence = Math.round((analysis.confidence_score || 0) * 100);
             
             return `
                 <div class="space-y-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-12 h-12 rounded-lg ${status === 'completed' ? 'bg-emerald-600/30' : 'bg-red-600/30'} flex items-center justify-center">
-                            ${status === 'completed' 
-                                ? '<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
-                                : '<svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
-                            }
-                        </div>
-                        <div>
-                            <h3 class="text-lg font-semibold text-white">Stress Test ${status === 'completed' ? 'Passed' : 'Complete'}</h3>
-                            <p class="text-slate-400 text-sm">Target: ${data.target_url || 'Unknown'}</p>
+                    <div class="flex items-center gap-4 p-4 rounded-lg ${v.bg} border ${v.border}">
+                        <div class="${v.text}">${v.icon}</div>
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <h3 class="text-xl font-bold ${v.text}">${analysis.overall_verdict}</h3>
+                                <span class="text-xs text-slate-400">(${confidence}% confidence)</span>
+                            </div>
+                            <p class="text-slate-300 text-sm">Target: ${data.target_url || 'Unknown'}</p>
                         </div>
                     </div>
                     
-                    <div class="rounded-lg p-3 border ${statusColors[status] || 'bg-slate-900/50 border-slate-700 text-slate-400'}">
-                        <div class="flex items-center justify-between">
-                            <span class="font-medium">${statusLabels[status] || status}</span>
-                            ${checks.length > 0 ? `<span class="text-sm">${passedChecks}/${checks.length} checks passed</span>` : ''}
-                        </div>
-                        ${data.error ? `<p class="text-sm mt-1 opacity-80">${data.error}</p>` : ''}
+                    <div class="grid gap-3">
+                        ${renderAnalysisSection('Reliability', '🔄', analysis.reliability)}
+                        ${renderAnalysisSection('Capacity', '📊', analysis.capacity)}
+                        ${renderAnalysisSection('SLA Compliance', '📋', analysis.sla_compliance)}
+                        ${renderAnalysisSection('Regression Check', '📈', analysis.regression_check)}
                     </div>
-                    
-                    ${checks.length > 0 ? `
-                        <div class="bg-slate-900/50 rounded-lg p-3">
-                            <h4 class="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Validation Checks</h4>
-                            <div class="space-y-1">
-                                ${checks.map(c => `
-                                    <div class="flex items-center justify-between p-2 rounded ${c.passed ? 'bg-emerald-900/20' : 'bg-red-900/20'}">
-                                        <div class="flex items-center gap-2">
-                                            ${c.passed 
-                                                ? '<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
-                                                : '<svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
-                                            }
-                                            <span class="text-sm ${c.passed ? 'text-emerald-300' : 'text-red-300'}">${c.check}</span>
-                                        </div>
-                                        <span class="text-xs text-slate-500">${c.expected !== undefined ? 'expected: ' + c.expected + ', got: ' + c.actual : ''}</span>
-                                    </div>
-                                `).join('')}
-                            </div>
-                        </div>
-                    ` : ''}
-                    
-                    ${data.execution_result?.scenario_results ? `
-                        <div class="bg-slate-900/50 rounded-lg p-3">
-                            <h4 class="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Platform Response</h4>
-                            <div class="grid grid-cols-2 gap-2 text-sm">
-                                ${data.execution_result.scenario_results.completion_rate !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">Completion rate:</span><span class="text-white">${Math.round(data.execution_result.scenario_results.completion_rate * 100)}%</span></div>` : ''}
-                                ${data.execution_result.scenario_results.tasks_completed !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">Tasks completed:</span><span class="text-white">${data.execution_result.scenario_results.tasks_completed}</span></div>` : ''}
-                                ${data.execution_result.scenario_results.chaos_events_recovered !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">Chaos recovered:</span><span class="text-white">${data.execution_result.scenario_results.chaos_events_recovered}</span></div>` : ''}
-                            </div>
-                        </div>
-                    ` : ''}
                 </div>
             `;
         }
@@ -1683,7 +1693,8 @@
                         fleet_summary: fullRun.fleet_summary,
                         scenario_summary: fullRun.scenario_summary,
                         execution_result: fullRun.execution_result || { validation: fullRun.validation },
-                        duration_ms: fullRun.duration_ms
+                        duration_ms: fullRun.duration_ms,
+                        analysis: fullRun.analysis
                     };
                     setAgentResult(resultData, 'stress-test');
                 } else {
