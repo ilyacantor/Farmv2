@@ -297,6 +297,16 @@ def _analyze_sla_compliance(metrics: dict) -> dict:
     error_rate = metrics["error_rate"]
     avg_latency_ms = metrics["avg_latency_ms"]
     p99_latency_ms = metrics["p99_latency_ms"]
+    results_unavailable = metrics.get("results_unavailable", False)
+    
+    if results_unavailable:
+        return {
+            "verdict": "NO_DATA",
+            "summary": "Results unavailable - test timed out or errored before completion",
+            "details": {"results_unavailable": True},
+            "issues": ["Platform did not return results in time"],
+            "recommendations": ["Check platform health and increase timeout if needed"],
+        }
     
     issues = []
     recommendations = []
@@ -305,15 +315,15 @@ def _analyze_sla_compliance(metrics: dict) -> dict:
     total_slas = 0
     
     total_slas += 1
-    completion_met = completion_rate >= THRESHOLDS["completion_rate_pass"]
+    completion_met = (completion_rate or 0) >= THRESHOLDS["completion_rate_pass"]
     if completion_met:
         met_count += 1
     else:
-        issues.append(f"Completion rate {completion_rate:.1%} is below {THRESHOLDS['completion_rate_pass']:.0%} target")
+        issues.append(f"Completion rate {(completion_rate or 0):.1%} is below {THRESHOLDS['completion_rate_pass']:.0%} target")
         recommendations.append("Investigate task failure root causes in scenario results")
     sla_details["completion_rate"] = {
         "target": THRESHOLDS["completion_rate_pass"],
-        "actual": round(completion_rate, 4),
+        "actual": round(completion_rate or 0, 4),
         "met": completion_met,
     }
     
@@ -418,6 +428,16 @@ async def _get_previous_runs(target_url: str, limit: int = 5) -> list:
 def _analyze_regression(metrics: dict, previous_runs: list, current_run_id: Optional[str] = None) -> dict:
     issues = []
     recommendations = []
+    results_unavailable = metrics.get("results_unavailable", False)
+    
+    if results_unavailable:
+        return {
+            "verdict": "NO_DATA",
+            "summary": "Results unavailable - cannot compare to previous runs",
+            "comparison": {"vs_last_run": None, "vs_baseline": None},
+            "issues": ["Platform did not return results in time"],
+            "recommendations": ["Check platform health and increase timeout if needed"],
+        }
     
     other_runs = [r for r in previous_runs if r.get("run_id") != current_run_id]
     
@@ -441,7 +461,8 @@ def _analyze_regression(metrics: dict, previous_runs: list, current_run_id: Opti
     last_latency = last_results.get("avg_latency_ms")
     last_duration = last_run.get("duration_ms", 0)
     
-    completion_delta = metrics["completion_rate"] - last_completion
+    current_completion = metrics["completion_rate"] or 0
+    completion_delta = current_completion - last_completion
     latency_delta = None
     if metrics["avg_latency_ms"] is not None and last_latency is not None:
         latency_delta = metrics["avg_latency_ms"] - last_latency
@@ -478,7 +499,7 @@ def _analyze_regression(metrics: dict, previous_runs: list, current_run_id: Opti
             max(r.get("execution_result", {}).get("scenario_results", {}).get("total_tasks", 1), 1)
             for r in other_runs[:3]
         ) / 3
-        baseline_delta = metrics["completion_rate"] - avg_completion
+        baseline_delta = current_completion - avg_completion
         vs_baseline = {
             "completion_rate_delta": round(baseline_delta, 4),
             "baseline_completion_rate": round(avg_completion, 4),
@@ -520,13 +541,18 @@ def _calculate_overall_verdict(reliability: dict, capacity: dict, sla: dict, reg
         "regression": regression["verdict"],
     }
     
+    # Check for NO_DATA - if reliability or capacity have no data, we can't assess
+    no_data = verdicts["reliability"] == "NO_DATA" or verdicts["capacity"] == "NO_DATA"
+    if no_data:
+        return "NO_DATA", 0.0
+    
     critical_fail = (
         verdicts["reliability"] == "FAIL" or 
         verdicts["capacity"] == "FAIL"
     )
     
     any_fail = any(v == "FAIL" for v in verdicts.values())
-    all_pass = all(v in ("PASS", "NO_BASELINE") for v in verdicts.values())
+    all_pass = all(v in ("PASS", "NO_BASELINE", "NO_DATA") for v in verdicts.values())
     
     total_issues = (
         len(reliability.get("issues", [])) +
