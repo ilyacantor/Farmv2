@@ -1298,7 +1298,8 @@
         function renderStressScenarioResult(data) {
             const summary = data.summary || {};
             const expected = data.__expected__ || {};
-            const workflows = data.workflows || [];
+            const workflowBatch = data.workflows || {};
+            const workflows = workflowBatch.workflows || [];
             
             return `
                 <div class="space-y-4">
