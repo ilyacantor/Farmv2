@@ -582,8 +582,8 @@
                         <p class="text-slate-400 text-sm mb-4">Push stress test to your orchestration platform and get validation results.</p>
                         
                         <div class="mb-4">
-                            <label class="block text-xs font-medium text-slate-400 mb-1">Platform URL</label>
-                            <input type="text" id="platformUrl" placeholder="https://your-platform.replit.app" 
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Platform URL <span id="platformUrlHint" class="text-emerald-400"></span></label>
+                            <input type="text" id="platformUrl" placeholder="Uses PLATFORM_URL env var if empty" 
                                 class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-rose-500 outline-none">
                         </div>
                         
@@ -1616,11 +1616,6 @@
 
         async function runStressTest() {
             const targetUrl = document.getElementById('platformUrl').value.trim();
-            if (!targetUrl) {
-                alert('Please enter the platform URL');
-                return;
-            }
-            
             const scale = document.getElementById('runScale').value;
             const workflows = parseInt(document.getElementById('runWorkflows').value);
             const chaos = parseInt(document.getElementById('runChaos').value) / 100;
@@ -1634,16 +1629,20 @@
             statsEl.textContent = '';
             
             try {
+                const payload = {
+                    scale: scale,
+                    workflow_count: workflows,
+                    chaos_rate: chaos,
+                    wait_for_completion: true
+                };
+                if (targetUrl) {
+                    payload.target_url = targetUrl;
+                }
+                
                 const resp = await fetch('/api/agents/run-stress-test', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        target_url: targetUrl,
-                        scale: scale,
-                        workflow_count: workflows,
-                        chaos_rate: chaos,
-                        wait_for_completion: true
-                    })
+                    body: JSON.stringify(payload)
                 });
                 
                 const data = await resp.json();
@@ -1989,6 +1988,21 @@
                 FarmState.aodBaseUrl = config.aod_base_url;
             } catch (e) {
                 console.warn('Failed to load config:', e);
+            }
+        }
+        
+        async function loadPlatformConfig() {
+            try {
+                const response = await fetch('/api/agents/platform-config');
+                const config = await response.json();
+                const hint = document.getElementById('platformUrlHint');
+                const input = document.getElementById('platformUrl');
+                if (config.has_platform_url && hint && input) {
+                    hint.textContent = '(using env)';
+                    input.placeholder = config.platform_url;
+                }
+            } catch (e) {
+                console.warn('Failed to load platform config:', e);
             }
         }
         
@@ -4458,6 +4472,7 @@
 
         async function init() {
             await loadConfig();
+            await loadPlatformConfig();
             await loadAllDataSafely();
             addLogEntry('Farm Console loaded', 'info');
             

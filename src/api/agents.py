@@ -4,6 +4,7 @@ Generates synthetic agent profiles, workflows, and stress test scenarios.
 """
 from datetime import datetime
 from typing import Optional, List
+import os
 
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
@@ -31,7 +32,7 @@ router = APIRouter(tags=["agents"])
 
 
 class StressTestRequest(BaseModel):
-    target_url: str
+    target_url: Optional[str] = None
     scale: str = "small"
     workflow_count: int = 5
     chaos_rate: float = 0.2
@@ -336,6 +337,16 @@ async def get_chaos_catalog():
     }
 
 
+@router.get("/api/agents/platform-config")
+async def get_platform_config():
+    """Get platform configuration including default target URL."""
+    platform_url = os.environ.get("PLATFORM_URL", "")
+    return {
+        "platform_url": platform_url,
+        "has_platform_url": bool(platform_url),
+    }
+
+
 @router.post("/api/agents/run-stress-test")
 async def run_stress_test(request: StressTestRequest):
     """
@@ -351,6 +362,10 @@ async def run_stress_test(request: StressTestRequest):
     """
     if request.scale not in ["small", "medium", "large"]:
         raise HTTPException(status_code=400, detail="scale must be: small, medium, or large")
+    
+    target_url = request.target_url or os.environ.get("PLATFORM_URL")
+    if not target_url:
+        raise HTTPException(status_code=400, detail="target_url is required. Set PLATFORM_URL env var or provide target_url in request.")
     
     fleet = generate_agent_fleet(seed=request.seed, scale=request.scale)
     
@@ -399,7 +414,7 @@ async def run_stress_test(request: StressTestRequest):
         },
     }
     
-    client = OrchestrationClient(request.target_url)
+    client = OrchestrationClient(target_url)
     
     try:
         result = await client.run_full_stress_test(
@@ -447,7 +462,7 @@ async def run_stress_test(request: StressTestRequest):
         return {
             "status": status,
             "error": error_msg,
-            "target_url": request.target_url,
+            "target_url": target_url,
             "scenario_id": scenario["scenario_id"],
             "fleet_summary": {
                 "total_agents": fleet["total_agents"],
