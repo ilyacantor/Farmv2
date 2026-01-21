@@ -197,6 +197,10 @@ class CMDBConfigItem(BaseModel):
     vendor: Optional[str] = None
     external_ref: Optional[str] = None
     canonical_domain: Optional[str] = None
+    is_system_of_record: bool = False
+    data_tier: Optional[str] = None
+    data_domain: Optional[str] = None
+    description: Optional[str] = None
 
 
 class CloudResource(BaseModel):
@@ -252,6 +256,8 @@ class NetworkCert(BaseModel):
 class FinanceVendor(BaseModel):
     vendor_id: str
     vendor_name: str
+    domain: Optional[str] = None
+    annual_spend: Optional[float] = None
 
 
 class FinanceContract(BaseModel):
@@ -261,6 +267,10 @@ class FinanceContract(BaseModel):
     start_date: str
     end_date: Optional[str] = None
     owner_email: Optional[str] = None
+    domain: Optional[str] = None
+    annual_value: Optional[float] = None
+    contract_type: Optional[str] = None
+    contract_term_years: Optional[int] = None
 
 
 class FinanceTransaction(BaseModel):

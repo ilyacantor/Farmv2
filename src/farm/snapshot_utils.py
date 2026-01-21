@@ -113,6 +113,10 @@ def extract_expected_summary(snapshot_dict: Dict[str, Any]) -> Dict[str, Any]:
     infra = expected.get('infra_expected') or expected.get('infra', [])
     rejected = expected.get('rejected_assets') or expected.get('rejected_expected', {})
     
+    sor_high = expected.get('sor_high_domains', [])
+    sor_medium = expected.get('sor_medium_domains', [])
+    sor_low = expected.get('sor_low_domains', [])
+    
     summary = {
         'shadows_count': len(shadows) if isinstance(shadows, list) else 0,
         'zombies_count': len(zombies) if isinstance(zombies, list) else 0,
@@ -121,6 +125,9 @@ def extract_expected_summary(snapshot_dict: Dict[str, Any]) -> Dict[str, Any]:
         'rejected_count': len(rejected) if isinstance(rejected, (list, dict)) else 0,
         'mode': expected.get('mode', 'unknown'),
         'has_validation': '_validation' in expected,
+        'sor_high_count': len(sor_high) if isinstance(sor_high, list) else 0,
+        'sor_medium_count': len(sor_medium) if isinstance(sor_medium, list) else 0,
+        'sor_low_count': len(sor_low) if isinstance(sor_low, list) else 0,
     }
     
     reason_codes = expected.get('reason_codes', {})

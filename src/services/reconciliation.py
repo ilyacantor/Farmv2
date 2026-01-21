@@ -1166,6 +1166,10 @@ def compute_expected_block(
         if obj.get('domain') or obj.get('canonical_domain')
     )
     
+    from src.services.sor_scoring import compute_sor_expectations
+    middleware_routes = snapshot.get('middleware_routes', [])
+    sor_expectations = compute_sor_expectations(candidates, planes, middleware_routes)
+    
     return {
         'shadow_expected': shadow_expected,
         'zombie_expected': zombie_expected,
@@ -1180,6 +1184,11 @@ def compute_expected_block(
         'reconciliation_mode': mode,
         'idp_record_count_total': idp_record_count_total,
         'idp_record_count_by_domain': idp_record_count_by_domain,
+        'sor_high_domains': sor_expectations.sor_high_domains,
+        'sor_medium_domains': sor_expectations.sor_medium_domains,
+        'sor_low_domains': sor_expectations.sor_low_domains,
+        'sor_domain_mapping': sor_expectations.sor_domain_mapping,
+        'sor_scores': sor_expectations.sor_scores,
     }
 
 

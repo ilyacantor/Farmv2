@@ -440,6 +440,59 @@ def validate_stress_test_coverage(expected_block: dict, result: ValidationResult
             )
 
 
+def validate_sor_expectations(expected_block: dict, result: ValidationResult) -> None:
+    """Check 6: Validate SOR expectations for consistency.
+    
+    Validates:
+    - SOR domains have valid likelihood levels
+    - SOR domain mapping is consistent
+    - Shadow + SOR candidates are flagged as high priority
+    """
+    result.checks_performed.append('SOR_EXPECTATIONS')
+    
+    sor_high = expected_block.get('sor_high_domains', [])
+    sor_medium = expected_block.get('sor_medium_domains', [])
+    sor_low = expected_block.get('sor_low_domains', [])
+    sor_mapping = expected_block.get('sor_domain_mapping', {})
+    sor_scores = expected_block.get('sor_scores', {})
+    
+    if not sor_high and not sor_medium and not sor_low:
+        return
+    
+    all_sor_domains = set(sor_high) | set(sor_medium) | set(sor_low)
+    
+    for domain in all_sor_domains:
+        if domain not in sor_mapping:
+            result.add_warning(
+                asset_key=domain,
+                rule='SOR_MISSING_DOMAIN_MAPPING',
+                message=f'SOR domain {domain} has no data domain mapping',
+                reason_codes=[]
+            )
+    
+    shadow_expected = expected_block.get('shadow_expected', [])
+    shadow_keys = {s.get('asset_key', '') for s in shadow_expected}
+    
+    shadow_sor_high = set(sor_high) & shadow_keys
+    shadow_sor_medium = set(sor_medium) & shadow_keys
+    
+    for domain in shadow_sor_high:
+        result.add_warning(
+            asset_key=domain,
+            rule='SHADOW_SOR_HIGH_PRIORITY',
+            message=f'Shadow asset {domain} is HIGH likelihood SOR - critical risk flag',
+            reason_codes=['SHADOW_SOR_CANDIDATE']
+        )
+    
+    for domain in shadow_sor_medium:
+        result.add_warning(
+            asset_key=domain,
+            rule='SHADOW_SOR_MEDIUM_PRIORITY',
+            message=f'Shadow asset {domain} is MEDIUM likelihood SOR - attention required',
+            reason_codes=['SHADOW_SOR_CANDIDATE']
+        )
+
+
 def validate_expected_block(expected_block: dict) -> ValidationResult:
     """
     Validate the expected block for self-consistency.
@@ -453,6 +506,7 @@ def validate_expected_block(expected_block: dict) -> ValidationResult:
     result = ValidationResult(valid=True)
     validate_expected_block_consistency(expected_block, result)
     validate_stress_test_coverage(expected_block, result)
+    validate_sor_expectations(expected_block, result)
     return result
 
 
@@ -483,6 +537,7 @@ def validate_snapshot_expected(snapshot: dict) -> ValidationResult:
     validate_finance_consistency(snapshot, expected_block, result)
     validate_join_hygiene(snapshot, result)
     validate_stress_test_coverage(expected_block, result)
+    validate_sor_expectations(expected_block, result)
     
     return result
 
