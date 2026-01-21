@@ -551,7 +551,8 @@ async def run_stress_test(request: StressTestRequest):
                     duration_ms,
                 )
         except Exception as db_err:
-            pass
+            import logging
+            logging.getLogger("farm.agents").warning(f"Failed to save stress test run {run_id}: {db_err}")
         
         return response_data
     except Exception as e:
