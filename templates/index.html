@@ -618,11 +618,15 @@
                             <h3 class="text-md font-semibold text-slate-300">Result</h3>
                             <div class="flex items-center gap-2">
                                 <span id="agentResultStats" class="text-xs text-slate-500"></span>
+                                <button onclick="toggleResultView()" id="toggleViewBtn" class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded transition-all">Show JSON</button>
                                 <button onclick="downloadAgentResult()" class="px-2 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded transition-all">Download</button>
                             </div>
                         </div>
                         <div class="p-4 overflow-auto" style="max-height: calc(100vh - 200px);">
-                            <pre id="agentResultJson" class="text-xs text-slate-300 font-mono whitespace-pre-wrap">Click a generator button to see results...</pre>
+                            <div id="agentResultFormatted" class="text-sm text-slate-300">
+                                <p class="text-slate-500">Click a generator button to see results...</p>
+                            </div>
+                            <pre id="agentResultJson" class="hidden text-xs text-slate-300 font-mono whitespace-pre-wrap"></pre>
                         </div>
                     </div>
                 </div>
@@ -1162,24 +1166,330 @@
             chevron.classList.toggle('rotate-180');
         }
 
+        let showingJson = false;
+        
+        function toggleResultView() {
+            const formatted = document.getElementById('agentResultFormatted');
+            const json = document.getElementById('agentResultJson');
+            const btn = document.getElementById('toggleViewBtn');
+            
+            showingJson = !showingJson;
+            formatted.classList.toggle('hidden', showingJson);
+            json.classList.toggle('hidden', !showingJson);
+            btn.textContent = showingJson ? 'Show Summary' : 'Show JSON';
+        }
+
+        function renderFleetResult(data) {
+            const dist = data.distribution || {};
+            const byType = dist.by_type || {};
+            const byReliability = dist.by_reliability || {};
+            
+            return `
+                <div class="space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-lg bg-purple-600/30 flex items-center justify-center">
+                            <span class="text-2xl font-bold text-purple-400">${data.total_agents}</span>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Agent Fleet Generated</h3>
+                            <p class="text-slate-400 text-sm">Seed: ${data.seed} | Scale: ${data.scale}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-slate-900/50 rounded-lg p-3">
+                            <h4 class="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">By Role</h4>
+                            <div class="space-y-1">
+                                ${Object.entries(byType).map(([type, count]) => `
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-sm capitalize ${type === 'planner' ? 'text-purple-400' : type === 'worker' ? 'text-cyan-400' : type === 'specialist' ? 'text-orange-400' : 'text-emerald-400'}">${type}</span>
+                                        <span class="text-sm text-white font-medium">${count}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                        
+                        <div class="bg-slate-900/50 rounded-lg p-3">
+                            <h4 class="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">By Reliability</h4>
+                            <div class="space-y-1">
+                                ${Object.entries(byReliability).map(([rel, count]) => `
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-sm ${rel === 'rock_solid' ? 'text-emerald-400' : rel === 'reliable' ? 'text-cyan-400' : rel === 'flaky' ? 'text-yellow-400' : 'text-red-400'}">${rel.replace('_', ' ')}</span>
+                                        <span class="text-sm text-white font-medium">${count}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-slate-900/50 rounded-lg p-3">
+                        <h4 class="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Sample Agents</h4>
+                        <div class="space-y-2 max-h-48 overflow-y-auto">
+                            ${(data.agents || []).slice(0, 5).map(a => `
+                                <div class="flex items-center justify-between p-2 bg-slate-800/50 rounded">
+                                    <div>
+                                        <span class="text-white font-medium">${a.agent_id}</span>
+                                        <span class="text-xs text-slate-500 ml-2">${a.type}</span>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        <span class="text-xs px-2 py-0.5 rounded ${a.reliability === 'rock_solid' ? 'bg-emerald-900/50 text-emerald-400' : a.reliability === 'reliable' ? 'bg-cyan-900/50 text-cyan-400' : 'bg-yellow-900/50 text-yellow-400'}">${a.reliability}</span>
+                                        <span class="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300">${a.capabilities?.length || 0} capabilities</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            ${(data.agents || []).length > 5 ? `<p class="text-xs text-slate-500 text-center">+ ${data.agents.length - 5} more agents</p>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderWorkflowResult(data) {
+            const tasks = data.tasks || [];
+            const chaosEvents = tasks.filter(t => t.chaos_injection).length;
+            const expected = data.__expected__ || {};
+            
+            return `
+                <div class="space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-lg bg-cyan-600/30 flex items-center justify-center">
+                            <span class="text-2xl font-bold text-cyan-400">${tasks.length}</span>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Workflow Generated</h3>
+                            <p class="text-slate-400 text-sm">Type: ${data.workflow_type} | ID: ${data.workflow_id}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-3 gap-3">
+                        <div class="bg-slate-900/50 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-white">${tasks.length}</div>
+                            <div class="text-xs text-slate-400">Total Tasks</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-orange-400">${chaosEvents}</div>
+                            <div class="text-xs text-slate-400">Chaos Events</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-emerald-400">${Math.round((expected.expected_completion_rate || 0) * 100)}%</div>
+                            <div class="text-xs text-slate-400">Expected Success</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-slate-900/50 rounded-lg p-3">
+                        <h4 class="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Task Flow</h4>
+                        <div class="space-y-2 max-h-64 overflow-y-auto">
+                            ${tasks.map((t, i) => `
+                                <div class="flex items-center gap-2 p-2 bg-slate-800/50 rounded ${t.chaos_injection ? 'border border-orange-600/50' : ''}">
+                                    <span class="w-6 h-6 rounded-full bg-slate-700 flex items-center justify-center text-xs text-white">${i + 1}</span>
+                                    <div class="flex-1">
+                                        <span class="text-white text-sm">${t.task_id}</span>
+                                        ${t.dependencies?.length ? `<span class="text-xs text-slate-500 ml-2">depends on: ${t.dependencies.join(', ')}</span>` : ''}
+                                    </div>
+                                    ${t.chaos_injection ? `<span class="text-xs px-2 py-0.5 rounded bg-orange-900/50 text-orange-400">${t.chaos_injection.type}</span>` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderStressScenarioResult(data) {
+            const summary = data.summary || {};
+            const expected = data.__expected__ || {};
+            const workflows = data.workflows || [];
+            
+            return `
+                <div class="space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-lg bg-orange-600/30 flex items-center justify-center">
+                            <span class="text-xl font-bold text-orange-400">${summary.total_workflows || 0}</span>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Stress Scenario Ready</h3>
+                            <p class="text-slate-400 text-sm">ID: ${data.scenario_id}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-4 gap-3">
+                        <div class="bg-slate-900/50 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-purple-400">${summary.total_agents || 0}</div>
+                            <div class="text-xs text-slate-400">Agents</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-cyan-400">${summary.total_workflows || 0}</div>
+                            <div class="text-xs text-slate-400">Workflows</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-white">${summary.total_tasks || 0}</div>
+                            <div class="text-xs text-slate-400">Tasks</div>
+                        </div>
+                        <div class="bg-slate-900/50 rounded-lg p-3 text-center">
+                            <div class="text-2xl font-bold text-orange-400">${summary.chaos_events_expected || 0}</div>
+                            <div class="text-xs text-slate-400">Chaos Events</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-emerald-900/30 border border-emerald-700/50 rounded-lg p-3">
+                        <h4 class="text-xs font-medium text-emerald-400 mb-2 uppercase tracking-wide">Expected Results (for validation)</h4>
+                        <div class="grid grid-cols-2 gap-2 text-sm">
+                            <div class="flex justify-between"><span class="text-slate-400">Min completion rate:</span><span class="text-white">${Math.round((expected.expected_completion_rate || 0) * 100)}%</span></div>
+                            <div class="flex justify-between"><span class="text-slate-400">All workflows assigned:</span><span class="${expected.all_workflows_assigned ? 'text-emerald-400' : 'text-red-400'}">${expected.all_workflows_assigned ? 'Yes' : 'No'}</span></div>
+                            <div class="flex justify-between"><span class="text-slate-400">Chaos recovery possible:</span><span class="${expected.chaos_recovery_possible ? 'text-emerald-400' : 'text-yellow-400'}">${expected.chaos_recovery_possible ? 'Yes' : 'Maybe'}</span></div>
+                            <div class="flex justify-between"><span class="text-slate-400">Total tasks expected:</span><span class="text-white">${expected.total_tasks || 0}</span></div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-slate-900/50 rounded-lg p-3">
+                        <h4 class="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Workflow Summary</h4>
+                        <div class="space-y-1 max-h-32 overflow-y-auto">
+                            ${workflows.slice(0, 6).map(w => `
+                                <div class="flex items-center justify-between p-2 bg-slate-800/50 rounded">
+                                    <span class="text-sm text-white">${w.workflow_id}</span>
+                                    <div class="flex gap-2">
+                                        <span class="text-xs text-slate-400">${w.tasks?.length || 0} tasks</span>
+                                        <span class="text-xs px-2 py-0.5 rounded bg-slate-700 text-slate-300">${w.workflow_type}</span>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            ${workflows.length > 6 ? `<p class="text-xs text-slate-500 text-center">+ ${workflows.length - 6} more workflows</p>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderStressTestResult(data) {
+            const status = data.status;
+            const validation = data.execution_result?.validation || {};
+            const checks = validation.checks || [];
+            
+            const statusColors = {
+                'completed': 'bg-emerald-600/30 border-emerald-500 text-emerald-400',
+                'completed_with_failures': 'bg-red-600/30 border-red-500 text-red-400',
+                'fleet_ingestion_timeout': 'bg-yellow-600/30 border-yellow-500 text-yellow-400',
+                'fleet_ingestion_failed': 'bg-red-600/30 border-red-500 text-red-400',
+                'scenario_submission_timeout': 'bg-yellow-600/30 border-yellow-500 text-yellow-400',
+                'scenario_submission_failed': 'bg-red-600/30 border-red-500 text-red-400',
+                'timeout': 'bg-yellow-600/30 border-yellow-500 text-yellow-400',
+                'execution_error': 'bg-red-600/30 border-red-500 text-red-400',
+            };
+            
+            const statusLabels = {
+                'completed': 'All Checks Passed',
+                'completed_with_failures': 'Some Checks Failed',
+                'fleet_ingestion_timeout': 'Fleet Upload Timed Out',
+                'fleet_ingestion_failed': 'Fleet Upload Failed',
+                'scenario_submission_timeout': 'Scenario Submit Timed Out',
+                'scenario_submission_failed': 'Scenario Submit Failed',
+                'timeout': 'Test Timed Out',
+                'execution_error': 'Execution Error',
+            };
+            
+            const passedChecks = checks.filter(c => c.passed).length;
+            
+            return `
+                <div class="space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-lg ${status === 'completed' ? 'bg-emerald-600/30' : 'bg-red-600/30'} flex items-center justify-center">
+                            ${status === 'completed' 
+                                ? '<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+                                : '<svg class="w-6 h-6 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
+                            }
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-semibold text-white">Stress Test ${status === 'completed' ? 'Passed' : 'Complete'}</h3>
+                            <p class="text-slate-400 text-sm">Target: ${data.target_url || 'Unknown'}</p>
+                        </div>
+                    </div>
+                    
+                    <div class="rounded-lg p-3 border ${statusColors[status] || 'bg-slate-900/50 border-slate-700 text-slate-400'}">
+                        <div class="flex items-center justify-between">
+                            <span class="font-medium">${statusLabels[status] || status}</span>
+                            ${checks.length > 0 ? `<span class="text-sm">${passedChecks}/${checks.length} checks passed</span>` : ''}
+                        </div>
+                        ${data.error ? `<p class="text-sm mt-1 opacity-80">${data.error}</p>` : ''}
+                    </div>
+                    
+                    ${checks.length > 0 ? `
+                        <div class="bg-slate-900/50 rounded-lg p-3">
+                            <h4 class="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Validation Checks</h4>
+                            <div class="space-y-1">
+                                ${checks.map(c => `
+                                    <div class="flex items-center justify-between p-2 rounded ${c.passed ? 'bg-emerald-900/20' : 'bg-red-900/20'}">
+                                        <div class="flex items-center gap-2">
+                                            ${c.passed 
+                                                ? '<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>'
+                                                : '<svg class="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>'
+                                            }
+                                            <span class="text-sm ${c.passed ? 'text-emerald-300' : 'text-red-300'}">${c.check}</span>
+                                        </div>
+                                        <span class="text-xs text-slate-500">${c.expected !== undefined ? 'expected: ' + c.expected + ', got: ' + c.actual : ''}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    ${data.execution_result?.scenario_results ? `
+                        <div class="bg-slate-900/50 rounded-lg p-3">
+                            <h4 class="text-xs font-medium text-slate-400 mb-2 uppercase tracking-wide">Platform Response</h4>
+                            <div class="grid grid-cols-2 gap-2 text-sm">
+                                ${data.execution_result.scenario_results.completion_rate !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">Completion rate:</span><span class="text-white">${Math.round(data.execution_result.scenario_results.completion_rate * 100)}%</span></div>` : ''}
+                                ${data.execution_result.scenario_results.tasks_completed !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">Tasks completed:</span><span class="text-white">${data.execution_result.scenario_results.tasks_completed}</span></div>` : ''}
+                                ${data.execution_result.scenario_results.chaos_events_recovered !== undefined ? `<div class="flex justify-between"><span class="text-slate-400">Chaos recovered:</span><span class="text-white">${data.execution_result.scenario_results.chaos_events_recovered}</span></div>` : ''}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function setAgentResult(data, type) {
+            const formattedEl = document.getElementById('agentResultFormatted');
+            const jsonEl = document.getElementById('agentResultJson');
+            
+            currentAgentResult = data;
+            jsonEl.textContent = JSON.stringify(data, null, 2);
+            
+            if (type === 'fleet') {
+                formattedEl.innerHTML = renderFleetResult(data);
+            } else if (type === 'workflow') {
+                formattedEl.innerHTML = renderWorkflowResult(data);
+            } else if (type === 'scenario') {
+                formattedEl.innerHTML = renderStressScenarioResult(data);
+            } else if (type === 'stress-test') {
+                formattedEl.innerHTML = renderStressTestResult(data);
+            } else {
+                formattedEl.innerHTML = `<pre class="text-xs">${JSON.stringify(data, null, 2)}</pre>`;
+            }
+            
+            if (showingJson) {
+                formattedEl.classList.add('hidden');
+                jsonEl.classList.remove('hidden');
+            } else {
+                formattedEl.classList.remove('hidden');
+                jsonEl.classList.add('hidden');
+            }
+        }
+
         async function generateAgentFleet() {
             const scale = document.getElementById('agentScale').value;
             const seed = document.getElementById('agentSeed').value;
-            const resultEl = document.getElementById('agentResultJson');
+            const formattedEl = document.getElementById('agentResultFormatted');
             const statsEl = document.getElementById('agentResultStats');
             
-            resultEl.textContent = 'Generating fleet...';
+            formattedEl.innerHTML = '<p class="text-slate-400">Generating fleet...</p>';
             statsEl.textContent = '';
             
             try {
                 const resp = await fetch(`/api/agents/fleet?scale=${scale}&seed=${seed}`);
                 const data = await resp.json();
-                currentAgentResult = data;
-                
-                resultEl.textContent = JSON.stringify(data, null, 2);
-                statsEl.textContent = `${data.total_agents} agents | ${Object.keys(data.distribution?.by_type || {}).length} types`;
+                setAgentResult(data, 'fleet');
+                statsEl.textContent = `${data.total_agents} agents`;
             } catch (e) {
-                resultEl.textContent = `Error: ${e.message}`;
+                formattedEl.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
             }
         }
 
@@ -1187,22 +1497,19 @@
             const type = document.getElementById('workflowType').value;
             const tasks = document.getElementById('workflowTasks').value;
             const chaosRate = document.getElementById('chaosRate').value / 100;
-            const resultEl = document.getElementById('agentResultJson');
+            const formattedEl = document.getElementById('agentResultFormatted');
             const statsEl = document.getElementById('agentResultStats');
             
-            resultEl.textContent = 'Generating workflow...';
+            formattedEl.innerHTML = '<p class="text-slate-400">Generating workflow...</p>';
             statsEl.textContent = '';
             
             try {
                 const resp = await fetch(`/api/agents/workflow?workflow_type=${type}&num_tasks=${tasks}&chaos_rate=${chaosRate}`);
                 const data = await resp.json();
-                currentAgentResult = data;
-                
-                resultEl.textContent = JSON.stringify(data, null, 2);
-                const chaosEvents = data.__expected__?.chaos_events_expected || 0;
-                statsEl.textContent = `${data.tasks?.length || 0} tasks | ${chaosEvents} chaos events`;
+                setAgentResult(data, 'workflow');
+                statsEl.textContent = `${data.tasks?.length || 0} tasks`;
             } catch (e) {
-                resultEl.textContent = `Error: ${e.message}`;
+                formattedEl.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
             }
         }
 
@@ -1210,22 +1517,19 @@
             const scale = document.getElementById('stressScale').value;
             const workflows = document.getElementById('stressWorkflows').value;
             const chaos = document.getElementById('stressChaos').value / 100;
-            const resultEl = document.getElementById('agentResultJson');
+            const formattedEl = document.getElementById('agentResultFormatted');
             const statsEl = document.getElementById('agentResultStats');
             
-            resultEl.textContent = 'Generating stress scenario...';
+            formattedEl.innerHTML = '<p class="text-slate-400">Generating stress scenario...</p>';
             statsEl.textContent = '';
             
             try {
                 const resp = await fetch(`/api/agents/stress-scenario?scale=${scale}&workflow_count=${workflows}&chaos_rate=${chaos}`);
                 const data = await resp.json();
-                currentAgentResult = data;
-                
-                resultEl.textContent = JSON.stringify(data, null, 2);
-                const summary = data.summary || {};
-                statsEl.textContent = `${summary.total_agents || 0} agents | ${summary.total_workflows || 0} workflows | ${summary.total_tasks || 0} tasks`;
+                setAgentResult(data, 'scenario');
+                statsEl.textContent = `${data.summary?.total_workflows || 0} workflows`;
             } catch (e) {
-                resultEl.textContent = `Error: ${e.message}`;
+                formattedEl.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
             }
         }
 
@@ -1319,13 +1623,13 @@
             const scale = document.getElementById('runScale').value;
             const workflows = parseInt(document.getElementById('runWorkflows').value);
             const chaos = parseInt(document.getElementById('runChaos').value) / 100;
-            const resultEl = document.getElementById('agentResultJson');
+            const formattedEl = document.getElementById('agentResultFormatted');
             const statsEl = document.getElementById('agentResultStats');
             const btn = document.getElementById('runStressBtn');
             
             btn.disabled = true;
             btn.textContent = 'Running...';
-            resultEl.textContent = 'Connecting to platform and running stress test...';
+            formattedEl.innerHTML = '<p class="text-slate-400">Connecting to platform and running stress test...</p>';
             statsEl.textContent = '';
             
             try {
@@ -1342,40 +1646,25 @@
                 });
                 
                 const data = await resp.json();
-                currentAgentResult = data;
                 
                 if (resp.ok) {
-                    resultEl.textContent = JSON.stringify(data, null, 2);
-                    const status = data.status;
+                    data.target_url = targetUrl;
+                    setAgentResult(data, 'stress-test');
                     
-                    if (status === 'fleet_ingestion_timeout') {
-                        statsEl.innerHTML = `<span class="text-yellow-400">Fleet Ingestion Timeout</span>`;
-                    } else if (status === 'fleet_ingestion_failed') {
-                        statsEl.innerHTML = `<span class="text-red-400">Fleet Ingestion Failed</span>`;
-                    } else if (status === 'scenario_submission_timeout') {
-                        statsEl.innerHTML = `<span class="text-yellow-400">Scenario Submission Timeout</span>`;
-                    } else if (status === 'scenario_submission_failed') {
-                        statsEl.innerHTML = `<span class="text-red-400">Scenario Submission Failed</span>`;
-                    } else if (status === 'timeout') {
-                        statsEl.innerHTML = `<span class="text-yellow-400">Execution Timeout</span>`;
-                    } else if (status === 'execution_error') {
-                        statsEl.innerHTML = `<span class="text-red-400">Execution Error</span>`;
-                    } else if (status === 'completed') {
-                        const validation = data.execution_result?.validation;
-                        statsEl.innerHTML = `<span class="text-green-400">PASSED</span> | ${validation?.checks?.length || 0} checks`;
+                    const status = data.status;
+                    if (status === 'completed') {
+                        statsEl.innerHTML = `<span class="text-green-400">PASSED</span>`;
                     } else if (status === 'completed_with_failures') {
-                        const validation = data.execution_result?.validation;
-                        const failedChecks = validation?.checks?.filter(c => !c.passed).length || 0;
-                        statsEl.innerHTML = `<span class="text-red-400">FAILED</span> | ${failedChecks} failed checks`;
+                        statsEl.innerHTML = `<span class="text-red-400">FAILED</span>`;
                     } else {
-                        statsEl.textContent = `Status: ${status}`;
+                        statsEl.innerHTML = `<span class="text-yellow-400">${status.replace(/_/g, ' ')}</span>`;
                     }
                 } else {
-                    resultEl.textContent = `Error: ${data.detail || JSON.stringify(data)}`;
+                    formattedEl.innerHTML = `<p class="text-red-400">Error: ${data.detail || JSON.stringify(data)}</p>`;
                     statsEl.innerHTML = '<span class="text-red-400">Request Failed</span>';
                 }
             } catch (e) {
-                resultEl.textContent = `Error: ${e.message}`;
+                formattedEl.innerHTML = `<p class="text-red-400">Error: ${e.message}</p>`;
                 statsEl.textContent = 'Error';
             } finally {
                 btn.disabled = false;
