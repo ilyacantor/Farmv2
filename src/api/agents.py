@@ -588,20 +588,25 @@ def _quick_verdict(validation: dict, status: str) -> str:
         return "FAIL"
     if status in ["fleet_ingestion_timeout", "scenario_submission_timeout", "timeout"]:
         return "DEGRADED"
-    
-    checks = validation.get("checks", [])
-    if not checks:
-        return "NO_DATA"
-    
-    passed = sum(1 for c in checks if c.get("passed"))
-    total = len(checks)
-    
-    if passed == total:
+    if status == "completed":
         return "PASS"
-    elif passed >= total * 0.8:
-        return "DEGRADED"
-    else:
+    if status == "completed_with_failures":
+        checks = validation.get("checks", [])
+        if not checks:
+            return "FAIL"
+        passed = sum(1 for c in checks if c.get("passed"))
+        total = len(checks)
+        if passed >= total * 0.8:
+            return "DEGRADED"
         return "FAIL"
+    return "NO_DATA"
+
+
+def _generate_test_id(scale: str, workflow_count: int, chaos_rate: float, seed: int) -> str:
+    """Generate a unique human-readable test identifier."""
+    scale_abbrev = {"small": "sm", "medium": "md", "large": "lg"}.get(scale, scale[:2])
+    chaos_pct = int(chaos_rate * 100)
+    return f"{scale_abbrev}-{workflow_count}wf-{chaos_pct}ch-s{seed}"
 
 
 @router.get("/api/agents/stress-test-runs")
@@ -633,6 +638,7 @@ async def list_stress_test_runs(
                     "workflow_count": row["workflow_count"],
                     "chaos_rate": row["chaos_rate"],
                     "seed": row["seed"],
+                    "test_id": _generate_test_id(row["scale"] or "sm", row["workflow_count"] or 0, row["chaos_rate"] or 0.0, row["seed"] or 0),
                     "status": row["status"],
                     "verdict": _quick_verdict(validation, row["status"]),
                     "error_message": row["error_message"],

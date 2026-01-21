@@ -1620,35 +1620,18 @@
                 const createdAt = run.created_at ? new Date(run.created_at) : null;
                 const timeStr = createdAt ? createdAt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
                 const durationSec = run.duration_ms ? (run.duration_ms / 1000).toFixed(1) : '--';
-                const truncatedUrl = run.target_url ? (run.target_url.length > 30 ? run.target_url.substring(0, 30) + '...' : run.target_url) : 'Unknown';
                 const verdict = run.verdict || 'NO_DATA';
                 const badgeClass = verdictBadgeClasses[verdict] || 'bg-slate-700 text-slate-400 border-slate-600';
-                
-                const validation = run.validation || {};
-                const checks = validation.checks || [];
-                const passedChecks = checks.filter(c => c.passed).length;
-                const checksStr = checks.length > 0 ? `${passedChecks}/${checks.length}` : '--';
+                const testId = run.test_id || `${run.scale || 'sm'}-${run.workflow_count || 0}wf`;
                 
                 return `
                     <div onclick="viewStressTestRun(${idx})" class="p-3 hover:bg-slate-700/30 cursor-pointer transition-colors">
                         <div class="flex items-center justify-between mb-1">
                             <div class="flex items-center gap-2">
-                                <span class="text-xs text-slate-500">${timeStr}</span>
+                                <span class="text-xs font-mono text-cyan-400">${testId}</span>
                                 <span class="px-1.5 py-0.5 text-xs rounded border ${badgeClass}">${verdict}</span>
                             </div>
                             <span class="text-xs text-slate-500">${durationSec}s</span>
-                        </div>
-                        <div class="flex items-center justify-between text-xs">
-                            <span class="text-slate-400 truncate max-w-[180px]" title="${run.target_url || ''}">${truncatedUrl}</span>
-                            <div class="flex items-center gap-2 text-slate-500">
-                                <span>${run.scale || '--'}</span>
-                                <span class="text-slate-600">|</span>
-                                <span>${run.workflow_count || '--'} wf</span>
-                                <span class="text-slate-600">|</span>
-                                <span>${Math.round((run.chaos_rate || 0) * 100)}% chaos</span>
-                                <span class="text-slate-600">|</span>
-                                <span class="text-cyan-400">${checksStr} checks</span>
-                            </div>
                         </div>
                     </div>
                 `;
