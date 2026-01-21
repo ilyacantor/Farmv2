@@ -447,6 +447,62 @@ class DatabaseManager:
                     )
                 """)
                 
+                self._log("Creating sim_agents table (AOA simulation)...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS sim_agents (
+                        agent_id TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        agent_type TEXT NOT NULL,
+                        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+                        capabilities JSONB NOT NULL DEFAULT '[]',
+                        tools JSONB NOT NULL DEFAULT '[]',
+                        policy_template TEXT NOT NULL DEFAULT 'standard',
+                        created_at TEXT NOT NULL,
+                        last_active_at TEXT
+                    )
+                """)
+                
+                self._log("Creating sim_agent_runs table (AOA simulation)...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS sim_agent_runs (
+                        run_id TEXT PRIMARY KEY,
+                        agent_id TEXT NOT NULL,
+                        workflow_id TEXT,
+                        status TEXT NOT NULL DEFAULT 'pending',
+                        started_at TEXT NOT NULL,
+                        completed_at TEXT,
+                        duration_ms INTEGER,
+                        cost_usd REAL DEFAULT 0.0,
+                        budget_limit_usd REAL DEFAULT 1.0,
+                        tasks_completed INTEGER DEFAULT 0,
+                        tasks_total INTEGER DEFAULT 0,
+                        error_message TEXT
+                    )
+                """)
+                
+                self._log("Creating sim_agent_approvals table (AOA simulation)...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS sim_agent_approvals (
+                        approval_id TEXT PRIMARY KEY,
+                        agent_id TEXT NOT NULL,
+                        run_id TEXT,
+                        approval_type TEXT NOT NULL DEFAULT 'policy_gate',
+                        is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+                        requested_at TEXT NOT NULL,
+                        resolved_at TEXT,
+                        resolver TEXT
+                    )
+                """)
+                
+                self._log("Creating sim_state table (simulation control)...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS sim_state (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    )
+                """)
+                
                 # Indexes for new tables
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_meta_tenant_created ON snapshots_meta(tenant_id, created_at DESC)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_meta_fingerprint ON snapshots_meta(snapshot_fingerprint)")
@@ -456,6 +512,12 @@ class DatabaseManager:
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_stress_test_runs_created ON stress_test_runs(created_at DESC)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_stress_test_runs_status ON stress_test_runs(status)")
+                
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_sim_agents_active ON sim_agents(is_active)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_sim_agent_runs_agent ON sim_agent_runs(agent_id)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_sim_agent_runs_status ON sim_agent_runs(status)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_sim_agent_runs_started ON sim_agent_runs(started_at DESC)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_sim_agent_approvals_agent ON sim_agent_approvals(agent_id)")
                 
                 self._schema_initialized = True
                 self._log("Schema initialized")

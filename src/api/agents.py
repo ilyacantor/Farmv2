@@ -790,3 +790,126 @@ async def push_workflow_to_platform(
         raise HTTPException(status_code=500, detail=f"Failed to push workflow: {str(e)}")
     finally:
         await client.close()
+
+
+from src.services.aoa_simulation import simulator
+
+
+class SimulationInitRequest(BaseModel):
+    agent_count: int = 50
+    seed: int = 12345
+
+
+class SimulationActivityRequest(BaseModel):
+    runs_count: int = 100
+    approvals_count: int = 30
+
+
+@router.get("/api/agents/aoa-functions")
+async def get_aoa_functions():
+    """
+    Get AOA function metrics calculated from simulation data.
+    
+    These metrics mirror the calculations in AOD's /api/v1/orchestration/functions endpoint:
+    - Discover: active_agents / total_agents * 100
+    - Sense: execution_rate + 5
+    - Policy: 100 - (failed_runs / total_runs * 50)
+    - Plan: (total_runs - failed_runs) / total_runs * 100
+    - Prioritize: approved_count / total_approvals * 100
+    - Execute: completed_runs / total_runs * 100
+    - Budget: (runs - runs_over_budget) / runs * 100
+    - Observe: execution_rate + 3
+    - Learn: execution_rate - 10
+    - Lifecycle: Same as Discover rate
+    """
+    try:
+        metrics = await simulator.get_aoa_metrics()
+        return metrics
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get AOA metrics: {str(e)}")
+
+
+@router.post("/api/agents/simulation/init")
+async def initialize_simulation(request: SimulationInitRequest):
+    """
+    Initialize the agent simulation with a fleet of agents.
+    
+    This creates synthetic agents in the database that can then generate
+    activity data (runs, approvals) to populate AOA function metrics.
+    """
+    try:
+        simulator.seed = request.seed
+        simulator.rng = __import__("random").Random(request.seed)
+        result = await simulator.initialize_fleet(count=request.agent_count)
+        return {
+            "status": "initialized",
+            "seed": request.seed,
+            **result,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to initialize simulation: {str(e)}")
+
+
+@router.post("/api/agents/simulation/generate")
+async def generate_simulation_activity(request: SimulationActivityRequest):
+    """
+    Generate synthetic agent activity (runs and approvals).
+    
+    This populates the simulation tables with realistic agent run data
+    that will affect AOA function metrics.
+    """
+    try:
+        result = await simulator.generate_activity(
+            runs_count=request.runs_count,
+            approvals_count=request.approvals_count,
+        )
+        return {
+            "status": "generated",
+            **result,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate activity: {str(e)}")
+
+
+@router.post("/api/agents/simulation/start-live")
+async def start_live_simulation(interval_seconds: float = Query(5.0, ge=1.0, le=60.0)):
+    """
+    Start continuous live simulation that generates activity in the background.
+    
+    This simulates real-time agent orchestration activity, causing AOA metrics
+    to change over time.
+    """
+    try:
+        simulator.start_live_simulation(interval_seconds=interval_seconds)
+        state = await simulator.get_simulation_state()
+        return {
+            "status": "live_simulation_started",
+            "interval_seconds": interval_seconds,
+            **state,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start live simulation: {str(e)}")
+
+
+@router.post("/api/agents/simulation/stop-live")
+async def stop_live_simulation():
+    """Stop the background live simulation."""
+    try:
+        simulator.stop_live_simulation()
+        state = await simulator.get_simulation_state()
+        return {
+            "status": "live_simulation_stopped",
+            **state,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to stop live simulation: {str(e)}")
+
+
+@router.get("/api/agents/simulation/state")
+async def get_simulation_state():
+    """Get current simulation state including counts and running status."""
+    try:
+        state = await simulator.get_simulation_state()
+        return state
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get simulation state: {str(e)}")
