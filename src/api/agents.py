@@ -5,11 +5,15 @@ Generates synthetic agent profiles, workflows, and stress test scenarios.
 from datetime import datetime
 from typing import Optional, List
 import os
+import uuid
+import time
 
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
 import json
 import asyncio
+
+from src.farm.db import connection as db_connection
 
 from src.generators.agents import (
     generate_agent_profile,
@@ -455,6 +459,8 @@ async def run_stress_test(request: StressTestRequest):
     }
     
     client = OrchestrationClient(target_url)
+    run_id = str(uuid.uuid4())
+    start_time = time.time()
     
     try:
         result = await client.run_full_stress_test(
@@ -462,6 +468,8 @@ async def run_stress_test(request: StressTestRequest):
             scenario_data=scenario,
             wait_for_completion=request.wait_for_completion,
         )
+        
+        duration_ms = int((time.time() - start_time) * 1000)
         
         if result is None:
             result = {}
@@ -499,23 +507,143 @@ async def run_stress_test(request: StressTestRequest):
             status = "completed_with_failures"
             error_msg = None
         
-        return {
+        fleet_summary = {
+            "total_agents": fleet["total_agents"],
+            "planners": len(planners),
+            "workers": len(workers),
+        }
+        
+        response_data = {
+            "run_id": run_id,
             "status": status,
             "error": error_msg,
             "target_url": target_url,
             "scenario_id": scenario["scenario_id"],
-            "fleet_summary": {
-                "total_agents": fleet["total_agents"],
-                "planners": len(planners),
-                "workers": len(workers),
-            },
+            "fleet_summary": fleet_summary,
             "scenario_summary": scenario["summary"],
             "execution_result": result,
+            "duration_ms": duration_ms,
         }
+        
+        try:
+            async with db_connection() as conn:
+                await conn.execute("""
+                    INSERT INTO stress_test_runs 
+                    (run_id, created_at, target_url, scale, workflow_count, chaos_rate, seed,
+                     status, error_message, fleet_summary, scenario_summary, expected, validation,
+                     execution_result, duration_ms)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                """,
+                    run_id,
+                    datetime.now().isoformat(),
+                    target_url,
+                    request.scale,
+                    request.workflow_count,
+                    request.chaos_rate,
+                    request.seed,
+                    status,
+                    error_msg,
+                    json.dumps(fleet_summary),
+                    json.dumps(scenario["summary"]),
+                    json.dumps(scenario["__expected__"]),
+                    json.dumps(result.get("validation") or {}),
+                    json.dumps(result),
+                    duration_ms,
+                )
+        except Exception as db_err:
+            pass
+        
+        return response_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stress test failed: {str(e)}")
     finally:
         await client.close()
+
+
+@router.get("/api/agents/stress-test-runs")
+async def list_stress_test_runs(
+    limit: int = Query(50, description="Maximum number of runs to return", ge=1, le=200),
+):
+    """
+    List stress test runs with their status and summary.
+    Returns recent runs ordered by creation time (newest first).
+    """
+    try:
+        async with db_connection() as conn:
+            rows = await conn.fetch("""
+                SELECT run_id, created_at, target_url, scale, workflow_count, chaos_rate, seed,
+                       status, error_message, fleet_summary, scenario_summary, expected, validation, duration_ms
+                FROM stress_test_runs
+                ORDER BY created_at DESC
+                LIMIT $1
+            """, limit)
+            
+            runs = []
+            for row in rows:
+                runs.append({
+                    "run_id": row["run_id"],
+                    "created_at": row["created_at"],
+                    "target_url": row["target_url"],
+                    "scale": row["scale"],
+                    "workflow_count": row["workflow_count"],
+                    "chaos_rate": row["chaos_rate"],
+                    "seed": row["seed"],
+                    "status": row["status"],
+                    "error_message": row["error_message"],
+                    "fleet_summary": row["fleet_summary"] if isinstance(row["fleet_summary"], dict) else json.loads(row["fleet_summary"] or "{}"),
+                    "scenario_summary": row["scenario_summary"] if isinstance(row["scenario_summary"], dict) else json.loads(row["scenario_summary"] or "{}"),
+                    "expected": row["expected"] if isinstance(row["expected"], dict) else json.loads(row["expected"] or "{}"),
+                    "validation": row["validation"] if isinstance(row["validation"], dict) else json.loads(row["validation"] or "{}"),
+                    "duration_ms": row["duration_ms"],
+                })
+            
+            return {
+                "runs": runs,
+                "total": len(runs),
+            }
+    except Exception as e:
+        return {"runs": [], "total": 0, "error": str(e)}
+
+
+@router.get("/api/agents/stress-test-runs/{run_id}")
+async def get_stress_test_run(run_id: str):
+    """
+    Get details of a specific stress test run including full execution result.
+    """
+    try:
+        async with db_connection() as conn:
+            row = await conn.fetchrow("""
+                SELECT run_id, created_at, target_url, scale, workflow_count, chaos_rate, seed,
+                       status, error_message, fleet_summary, scenario_summary, expected, validation,
+                       execution_result, duration_ms
+                FROM stress_test_runs
+                WHERE run_id = $1
+            """, run_id)
+            
+            if not row:
+                raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
+            
+            return {
+                "run_id": row["run_id"],
+                "created_at": row["created_at"],
+                "target_url": row["target_url"],
+                "scale": row["scale"],
+                "workflow_count": row["workflow_count"],
+                "chaos_rate": row["chaos_rate"],
+                "seed": row["seed"],
+                "status": row["status"],
+                "error_message": row["error_message"],
+                "fleet_summary": row["fleet_summary"] if isinstance(row["fleet_summary"], dict) else json.loads(row["fleet_summary"] or "{}"),
+                "scenario_summary": row["scenario_summary"] if isinstance(row["scenario_summary"], dict) else json.loads(row["scenario_summary"] or "{}"),
+                "expected": row["expected"] if isinstance(row["expected"], dict) else json.loads(row["expected"] or "{}"),
+                "validation": row["validation"] if isinstance(row["validation"], dict) else json.loads(row["validation"] or "{}"),
+                "execution_result": row["execution_result"] if isinstance(row["execution_result"], dict) else json.loads(row["execution_result"] or "{}"),
+                "duration_ms": row["duration_ms"],
+            }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get run: {str(e)}")
 
 
 @router.post("/api/agents/push-fleet")
