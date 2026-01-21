@@ -121,6 +121,20 @@ Returns:
 
 Streams continuous workflow payloads (NDJSON) for load testing.
 
+### Stress Test Run Persistence
+
+**Endpoints:**
+- `GET /api/agents/stress-test-runs?limit=50` - List recent stress test runs
+- `GET /api/agents/stress-test-runs/{run_id}` - Get full details for a specific run
+
+Stress test runs are persisted to the database with:
+- Run metadata (scale, workflow_count, chaos_rate, seed)
+- Fleet and scenario summaries
+- Validation results and execution outcome
+- Duration and status (completed, completed_with_failures, timeout, etc.)
+
+The UI displays run history in the Agents tab with color-coded status badges.
+
 ### Full Documentation
 
 See [`docs/agent-orchestration-guide.md`](docs/agent-orchestration-guide.md) for complete protocol specifications, data schemas, and integration patterns.
