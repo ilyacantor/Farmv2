@@ -582,6 +582,28 @@ async def run_stress_test(request: StressTestRequest):
         await client.close()
 
 
+def _quick_verdict(validation: dict, status: str) -> str:
+    """Quick verdict calculation for list view without full analysis."""
+    if status in ["fleet_ingestion_failed", "scenario_submission_failed", "execution_error"]:
+        return "FAIL"
+    if status in ["fleet_ingestion_timeout", "scenario_submission_timeout", "timeout"]:
+        return "DEGRADED"
+    
+    checks = validation.get("checks", [])
+    if not checks:
+        return "NO_DATA"
+    
+    passed = sum(1 for c in checks if c.get("passed"))
+    total = len(checks)
+    
+    if passed == total:
+        return "PASS"
+    elif passed >= total * 0.8:
+        return "DEGRADED"
+    else:
+        return "FAIL"
+
+
 @router.get("/api/agents/stress-test-runs")
 async def list_stress_test_runs(
     limit: int = Query(50, description="Maximum number of runs to return", ge=1, le=200),
@@ -602,6 +624,7 @@ async def list_stress_test_runs(
             
             runs = []
             for row in rows:
+                validation = row["validation"] if isinstance(row["validation"], dict) else json.loads(row["validation"] or "{}")
                 runs.append({
                     "run_id": row["run_id"],
                     "created_at": row["created_at"],
@@ -611,11 +634,12 @@ async def list_stress_test_runs(
                     "chaos_rate": row["chaos_rate"],
                     "seed": row["seed"],
                     "status": row["status"],
+                    "verdict": _quick_verdict(validation, row["status"]),
                     "error_message": row["error_message"],
                     "fleet_summary": row["fleet_summary"] if isinstance(row["fleet_summary"], dict) else json.loads(row["fleet_summary"] or "{}"),
                     "scenario_summary": row["scenario_summary"] if isinstance(row["scenario_summary"], dict) else json.loads(row["scenario_summary"] or "{}"),
                     "expected": row["expected"] if isinstance(row["expected"], dict) else json.loads(row["expected"] or "{}"),
-                    "validation": row["validation"] if isinstance(row["validation"], dict) else json.loads(row["validation"] or "{}"),
+                    "validation": validation,
                     "duration_ms": row["duration_ms"],
                 })
             

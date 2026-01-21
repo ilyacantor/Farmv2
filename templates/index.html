@@ -1609,26 +1609,11 @@
                 return;
             }
             
-            const statusBadgeClasses = {
-                'completed': 'bg-emerald-600/30 text-emerald-400 border-emerald-500',
-                'completed_with_failures': 'bg-red-600/30 text-red-400 border-red-500',
-                'fleet_ingestion_timeout': 'bg-yellow-600/30 text-yellow-400 border-yellow-500',
-                'fleet_ingestion_failed': 'bg-red-600/30 text-red-400 border-red-500',
-                'scenario_submission_timeout': 'bg-yellow-600/30 text-yellow-400 border-yellow-500',
-                'scenario_submission_failed': 'bg-red-600/30 text-red-400 border-red-500',
-                'timeout': 'bg-yellow-600/30 text-yellow-400 border-yellow-500',
-                'execution_error': 'bg-red-600/30 text-red-400 border-red-500',
-            };
-            
-            const statusLabels = {
-                'completed': 'Passed',
-                'completed_with_failures': 'Failed',
-                'fleet_ingestion_timeout': 'Fleet Timeout',
-                'fleet_ingestion_failed': 'Fleet Error',
-                'scenario_submission_timeout': 'Submit Timeout',
-                'scenario_submission_failed': 'Submit Error',
-                'timeout': 'Timeout',
-                'execution_error': 'Error',
+            const verdictBadgeClasses = {
+                'PASS': 'bg-emerald-600/30 text-emerald-400 border-emerald-500',
+                'FAIL': 'bg-red-600/30 text-red-400 border-red-500',
+                'DEGRADED': 'bg-yellow-600/30 text-yellow-400 border-yellow-500',
+                'NO_DATA': 'bg-slate-600/30 text-slate-400 border-slate-500',
             };
             
             container.innerHTML = stressTestHistory.map((run, idx) => {
@@ -1636,8 +1621,8 @@
                 const timeStr = createdAt ? createdAt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
                 const durationSec = run.duration_ms ? (run.duration_ms / 1000).toFixed(1) : '--';
                 const truncatedUrl = run.target_url ? (run.target_url.length > 30 ? run.target_url.substring(0, 30) + '...' : run.target_url) : 'Unknown';
-                const badgeClass = statusBadgeClasses[run.status] || 'bg-slate-700 text-slate-400 border-slate-600';
-                const statusLabel = statusLabels[run.status] || run.status;
+                const verdict = run.verdict || 'NO_DATA';
+                const badgeClass = verdictBadgeClasses[verdict] || 'bg-slate-700 text-slate-400 border-slate-600';
                 
                 const validation = run.validation || {};
                 const checks = validation.checks || [];
@@ -1649,7 +1634,7 @@
                         <div class="flex items-center justify-between mb-1">
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-slate-500">${timeStr}</span>
-                                <span class="px-1.5 py-0.5 text-xs rounded border ${badgeClass}">${statusLabel}</span>
+                                <span class="px-1.5 py-0.5 text-xs rounded border ${badgeClass}">${verdict}</span>
                             </div>
                             <span class="text-xs text-slate-500">${durationSec}s</span>
                         </div>
@@ -1822,13 +1807,15 @@
                     data.target_url = targetUrl;
                     setAgentResult(data, 'stress-test');
                     
-                    const status = data.status;
-                    if (status === 'completed') {
-                        statsEl.innerHTML = `<span class="text-green-400">PASSED</span>`;
-                    } else if (status === 'completed_with_failures') {
-                        statsEl.innerHTML = `<span class="text-red-400">FAILED</span>`;
+                    const verdict = data.analysis?.overall_verdict || 'NO_DATA';
+                    if (verdict === 'PASS') {
+                        statsEl.innerHTML = `<span class="text-green-400">PASS</span>`;
+                    } else if (verdict === 'FAIL') {
+                        statsEl.innerHTML = `<span class="text-red-400">FAIL</span>`;
+                    } else if (verdict === 'DEGRADED') {
+                        statsEl.innerHTML = `<span class="text-yellow-400">DEGRADED</span>`;
                     } else {
-                        statsEl.innerHTML = `<span class="text-yellow-400">${status.replace(/_/g, ' ')}</span>`;
+                        statsEl.innerHTML = `<span class="text-slate-400">${verdict}</span>`;
                     }
                 } else {
                     formattedEl.innerHTML = `<p class="text-red-400">Error: ${data.detail || JSON.stringify(data)}</p>`;
