@@ -124,12 +124,18 @@ def _analyze_reliability(metrics: dict) -> dict:
         verdict = "FAIL"
         summary = f"{failed_recoveries} of {chaos_expected} failures caused permanent task drops"
         issues.append(f"When things go wrong, {chaos_recovery_rate:.0%} recover - {100 - int(chaos_recovery_rate*100)}% of failures become user-visible outages")
-        recommendations.append("In production, these unrecovered failures would cause dropped requests or stuck workflows")
+        recommendations.append("Add retry with exponential backoff (1s, 2s, 4s...) - most transient failures self-heal")
+        recommendations.append("Implement circuit breakers to stop cascading failures when a service is down")
+        recommendations.append("Add compensation handlers to gracefully undo partial work when multi-step workflows fail")
     else:
         verdict = "FAIL"
         summary = f"Critical: {failed_recoveries} of {chaos_expected} failures caused permanent task drops"
         issues.append(f"Only {chaos_recovery_rate:.0%} of failures recover - most problems become user-visible outages")
-        recommendations.append("Platform cannot handle real-world chaos - needs retry logic, circuit breakers, or compensation handlers")
+        recommendations.append("Add retry with exponential backoff (1s, 2s, 4s...) - most transient failures self-heal")
+        recommendations.append("Implement circuit breakers to stop cascading failures when a service is down")
+        recommendations.append("Add compensation handlers to gracefully undo partial work when multi-step workflows fail")
+        recommendations.append("Make operations idempotent so retries are safe (same input = same result)")
+        recommendations.append("Add dead letter queues for failed tasks to prevent silent data loss")
     
     if retry_success_rate < 0.90 and metrics["retry_attempts"] > 0:
         issues.append(f"Retry success rate is {retry_success_rate:.0%}, below 90% target")
