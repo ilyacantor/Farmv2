@@ -40,19 +40,29 @@ def _extract_metrics(execution_result: dict, expected: dict, fleet_summary: dict
     scenario_results = _safe_get(execution_result, "scenario_results", default={})
     validation = _safe_get(execution_result, "validation", default={})
     
+    results_status = _safe_get(scenario_results, "status", default="unknown")
+    results_unavailable = results_status in ["timeout", "error", "unknown"] and "tasks_completed" not in scenario_results
+    
     tasks_completed = _safe_get(scenario_results, "tasks_completed", default=0)
     total_tasks = _safe_get(expected, "total_tasks", default=0) or _safe_get(scenario_summary, "total_tasks", default=0)
-    completion_rate = tasks_completed / total_tasks if total_tasks > 0 else 0.0
+    
+    if results_unavailable:
+        completion_rate = None
+    else:
+        completion_rate = tasks_completed / total_tasks if total_tasks > 0 else 0.0
     
     chaos_expected = _safe_get(expected, "chaos_events_expected", default=0) or _safe_get(scenario_summary, "chaos_events_expected", default=0)
     chaos_recovered = _safe_get(scenario_results, "chaos_events_recovered", default=0)
     
-    if chaos_recovered == 0:
+    if chaos_recovered == 0 and not results_unavailable:
         workflow_results = _safe_get(scenario_results, "workflow_results", default=[])
         for wf in workflow_results:
             chaos_recovered += wf.get("chaos_events_handled", 0)
     
-    chaos_recovery_rate = chaos_recovered / chaos_expected if chaos_expected > 0 else 1.0
+    if results_unavailable:
+        chaos_recovery_rate = None
+    else:
+        chaos_recovery_rate = chaos_recovered / chaos_expected if chaos_expected > 0 else 1.0
     
     error_count = _safe_get(scenario_results, "error_count", default=0)
     error_rate = error_count / total_tasks if total_tasks > 0 else 0.0
@@ -105,6 +115,7 @@ def _extract_metrics(execution_result: dict, expected: dict, fleet_summary: dict
         "fleet_status": fleet_status,
         "scenario_status": scenario_status,
         "results_status": results_status,
+        "results_unavailable": results_unavailable,
     }
 
 
@@ -115,17 +126,32 @@ def _analyze_reliability(metrics: dict) -> dict:
     failure_modes = metrics["failure_modes"]
     chaos_expected = metrics["chaos_expected"]
     chaos_recovered = metrics["chaos_recovered"]
-    failed_recoveries = chaos_expected - chaos_recovered
+    results_unavailable = metrics.get("results_unavailable", False)
     
     issues = []
     recommendations = []
     
-    if chaos_recovery_rate >= THRESHOLDS["chaos_recovery_pass"]:
+    if results_unavailable:
+        verdict = "NO_DATA"
+        summary = "Results unavailable - test timed out or errored before completion"
+        issues.append("Platform did not return results in time")
+        recommendations.append("Check platform health and increase timeout if needed")
+        return {
+            "verdict": verdict,
+            "summary": summary,
+            "details": {"results_unavailable": True},
+            "issues": issues,
+            "recommendations": recommendations,
+        }
+    
+    failed_recoveries = chaos_expected - chaos_recovered
+    
+    if chaos_recovery_rate is None or chaos_expected == 0:
         verdict = "PASS"
-        if chaos_expected > 0:
-            summary = f"Platform recovered from {chaos_recovered}/{chaos_expected} injected failures"
-        else:
-            summary = "No chaos events injected in this test"
+        summary = "No chaos events injected in this test"
+    elif chaos_recovery_rate >= THRESHOLDS["chaos_recovery_pass"]:
+        verdict = "PASS"
+        summary = f"Platform recovered from {chaos_recovered}/{chaos_expected} injected failures ({chaos_recovery_rate:.0%})"
     elif chaos_recovery_rate >= THRESHOLDS["chaos_recovery_degraded"]:
         verdict = "FAIL"
         summary = f"{failed_recoveries} of {chaos_expected} failures caused permanent task drops"
@@ -198,11 +224,24 @@ def _analyze_capacity(metrics: dict) -> dict:
     throughput = metrics["throughput_tasks_per_sec"]
     bottleneck = metrics["bottleneck_detected"]
     completion_rate = metrics["completion_rate"]
+    results_unavailable = metrics.get("results_unavailable", False)
     
     issues = []
     recommendations = []
     
+    if results_unavailable:
+        return {
+            "verdict": "NO_DATA",
+            "summary": "Results unavailable - test timed out or errored before completion",
+            "details": {"results_unavailable": True},
+            "issues": ["Platform did not return results in time"],
+            "recommendations": ["Check platform health and increase timeout if needed"],
+        }
+    
     tasks_per_agent = tasks_completed / total_agents if total_agents > 0 else 0
+    
+    if completion_rate is None:
+        completion_rate = 0.0
     
     if completion_rate >= THRESHOLDS["completion_rate_pass"] and throughput >= THRESHOLDS["throughput_min_tasks_per_sec"]:
         verdict = "PASS"
