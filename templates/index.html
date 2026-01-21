@@ -357,6 +357,112 @@
         </div>
 
         <div id="agentsTab" class="hidden">
+            <div class="bg-gradient-to-r from-purple-900/30 to-cyan-900/30 rounded-xl p-5 border border-purple-700/50 mb-6">
+                <div class="flex items-center justify-between cursor-pointer" onclick="toggleAgentGuide()">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg bg-purple-600/30 flex items-center justify-center">
+                            <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-lg font-semibold text-white">Agent Stress Testing Guide</h2>
+                            <p class="text-slate-400 text-sm">Learn how to generate test data for your AI agent platform</p>
+                        </div>
+                    </div>
+                    <svg id="guideChevron" class="w-5 h-5 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </div>
+                
+                <div id="agentGuideContent" class="hidden mt-5 space-y-4">
+                    <div class="bg-slate-800/60 rounded-lg p-4">
+                        <h3 class="text-md font-semibold text-purple-400 mb-2">What is this?</h3>
+                        <p class="text-slate-300 text-sm leading-relaxed">
+                            This tool generates realistic test data for AI agent orchestration platforms. Instead of building fake test cases by hand, 
+                            you can create hundreds of synthetic agents and workflows with a single click. The generated data includes built-in 
+                            "chaos" events (simulated failures) to test how well your platform handles real-world problems.
+                        </p>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-slate-800/60 rounded-lg p-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-6 h-6 rounded bg-purple-600/50 flex items-center justify-center text-xs font-bold text-purple-300">1</div>
+                                <h4 class="font-semibold text-purple-400">Agent Fleet</h4>
+                            </div>
+                            <p class="text-slate-400 text-sm">
+                                Creates a team of AI agents with different roles: <span class="text-purple-300">Planners</span> break down complex tasks, 
+                                <span class="text-cyan-300">Workers</span> execute them, <span class="text-orange-300">Specialists</span> handle specific domains, 
+                                and <span class="text-emerald-300">Reviewers/Approvers</span> validate work.
+                            </p>
+                        </div>
+                        
+                        <div class="bg-slate-800/60 rounded-lg p-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-6 h-6 rounded bg-cyan-600/50 flex items-center justify-center text-xs font-bold text-cyan-300">2</div>
+                                <h4 class="font-semibold text-cyan-400">Workflows</h4>
+                            </div>
+                            <p class="text-slate-400 text-sm">
+                                Creates task graphs that agents need to complete. <span class="text-cyan-300">Linear</span> = step-by-step, 
+                                <span class="text-cyan-300">DAG</span> = complex dependencies, <span class="text-cyan-300">Parallel</span> = many tasks at once, 
+                                <span class="text-cyan-300">Saga</span> = tasks with rollback capability.
+                            </p>
+                        </div>
+                        
+                        <div class="bg-slate-800/60 rounded-lg p-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-6 h-6 rounded bg-orange-600/50 flex items-center justify-center text-xs font-bold text-orange-300">3</div>
+                                <h4 class="font-semibold text-orange-400">Stress Scenario</h4>
+                            </div>
+                            <p class="text-slate-400 text-sm">
+                                Combines agents + workflows into a complete test package. Includes <span class="text-orange-300">expected results</span> 
+                                so you can automatically verify if your platform performed correctly. Great for integration testing.
+                            </p>
+                        </div>
+                        
+                        <div class="bg-slate-800/60 rounded-lg p-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-6 h-6 rounded bg-rose-600/50 flex items-center justify-center text-xs font-bold text-rose-300">4</div>
+                                <h4 class="font-semibold text-rose-400">Run Against Platform</h4>
+                            </div>
+                            <p class="text-slate-400 text-sm">
+                                The power feature: sends test data directly to your platform, waits for results, and 
+                                <span class="text-rose-300">validates them automatically</span>. Shows you exactly which checks passed or failed.
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-slate-800/60 rounded-lg p-4">
+                        <h3 class="text-md font-semibold text-emerald-400 mb-2">Quick Start</h3>
+                        <ol class="text-slate-300 text-sm space-y-2">
+                            <li class="flex items-start gap-2">
+                                <span class="text-emerald-400 font-bold">1.</span>
+                                <span><strong>Just exploring?</strong> Click "Generate Fleet" or "Generate Stress Scenario" to see example data.</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-emerald-400 font-bold">2.</span>
+                                <span><strong>Testing your platform?</strong> Use "Run Against Platform" - enter your platform's URL and click run.</span>
+                            </li>
+                            <li class="flex items-start gap-2">
+                                <span class="text-emerald-400 font-bold">3.</span>
+                                <span><strong>Building an integration?</strong> See the technical docs at <code class="text-cyan-400 bg-slate-900 px-1 rounded">/docs/agent-orchestration-guide.md</code></span>
+                            </li>
+                        </ol>
+                    </div>
+                    
+                    <div class="bg-amber-900/30 border border-amber-700/50 rounded-lg p-4">
+                        <div class="flex items-start gap-2">
+                            <svg class="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                            <div>
+                                <h4 class="font-semibold text-amber-400 text-sm">What is "Chaos"?</h4>
+                                <p class="text-amber-200/80 text-sm">
+                                    Chaos is intentional failures injected into workflows. Your platform should handle these gracefully - 
+                                    retrying failed tasks, triggering compensations, or escalating to humans. The chaos rate controls how 
+                                    many tasks will have problems. Start with 10-20% for realistic testing.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="space-y-6">
                     <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
@@ -1048,6 +1154,13 @@
 
         let agentStreamController = null;
         let currentAgentResult = null;
+
+        function toggleAgentGuide() {
+            const content = document.getElementById('agentGuideContent');
+            const chevron = document.getElementById('guideChevron');
+            content.classList.toggle('hidden');
+            chevron.classList.toggle('rotate-180');
+        }
 
         async function generateAgentFleet() {
             const scale = document.getElementById('agentScale').value;
