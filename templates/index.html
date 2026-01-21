@@ -472,148 +472,39 @@
             
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div class="space-y-6">
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
-                        <h2 class="text-lg font-semibold text-purple-400 mb-4">Agent Fleet Generator</h2>
-                        <p class="text-slate-400 text-sm mb-4">Generate synthetic agent profiles for orchestration platform stress testing.</p>
-                        
-                        <div class="grid grid-cols-2 gap-3 mb-4">
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Scale</label>
-                                <select id="agentScale" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-purple-500 outline-none">
-                                    <option value="small">Small (10 agents)</option>
-                                    <option value="medium" selected>Medium (50 agents)</option>
-                                    <option value="large">Large (100 agents)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Seed</label>
-                                <input type="number" id="agentSeed" value="12345" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-purple-500 outline-none">
-                            </div>
-                        </div>
-                        
-                        <div class="flex gap-2">
-                            <button onclick="generateAgentFleet()" class="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-semibold py-2 px-4 rounded-lg transition-all">
-                                Generate Fleet
-                            </button>
-                            <button onclick="copyAgentResult()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all" title="Copy JSON">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
-                        <h2 class="text-lg font-semibold text-cyan-400 mb-4">Workflow Generator</h2>
-                        <p class="text-slate-400 text-sm mb-4">Generate task graphs with dependencies and chaos injection.</p>
-                        
-                        <div class="grid grid-cols-2 gap-3 mb-4">
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Workflow Type</label>
-                                <select id="workflowType" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="linear">Linear (A->B->C)</option>
-                                    <option value="dag" selected>DAG (Complex)</option>
-                                    <option value="parallel">Parallel (Fan-out)</option>
-                                    <option value="saga">Saga (Compensation)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Tasks</label>
-                                <input type="number" id="workflowTasks" value="6" min="2" max="20" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                            </div>
-                        </div>
-                        
-                        <div class="mb-4">
-                            <label class="block text-xs font-medium text-slate-400 mb-1">Chaos Rate: <span id="chaosRateValue">20</span>%</label>
-                            <input type="range" id="chaosRate" min="0" max="100" value="20" oninput="document.getElementById('chaosRateValue').textContent = this.value" class="w-full">
-                        </div>
-                        
-                        <button onclick="generateWorkflow()" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2 px-4 rounded-lg transition-all">
-                            Generate Workflow
-                        </button>
-                    </div>
-
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
-                        <h2 class="text-lg font-semibold text-orange-400 mb-4">Stress Scenario</h2>
-                        <p class="text-slate-400 text-sm mb-4">Generate complete stress test package with agents + workflows.</p>
-                        
-                        <div class="grid grid-cols-3 gap-3 mb-4">
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Scale</label>
-                                <select id="stressScale" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-orange-500 outline-none">
-                                    <option value="small">Small</option>
-                                    <option value="medium" selected>Medium</option>
-                                    <option value="large">Large</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Workflows</label>
-                                <input type="number" id="stressWorkflows" value="10" min="1" max="50" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-orange-500 outline-none">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Chaos %</label>
-                                <input type="number" id="stressChaos" value="20" min="0" max="100" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-orange-500 outline-none">
-                            </div>
-                        </div>
-                        
-                        <button onclick="generateStressScenario()" class="w-full bg-orange-600 hover:bg-orange-500 text-white font-semibold py-2 px-4 rounded-lg transition-all">
-                            Generate Stress Scenario
-                        </button>
-                    </div>
-
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
-                        <h2 class="text-lg font-semibold text-emerald-400 mb-4">Streaming Workloads</h2>
-                        <p class="text-slate-400 text-sm mb-4">Continuous workflow stream for load testing.</p>
-                        
-                        <div class="grid grid-cols-2 gap-3 mb-4">
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Rate (wf/sec)</label>
-                                <input type="number" id="streamRate" value="10" min="1" max="100" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Chaos %</label>
-                                <input type="number" id="streamChaos" value="10" min="0" max="100" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none">
-                            </div>
-                        </div>
-                        
-                        <div class="flex gap-2">
-                            <button id="streamStartBtn" onclick="toggleAgentStream()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2 px-4 rounded-lg transition-all">
-                                Start Stream
-                            </button>
-                            <button onclick="copyStreamUrl()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-all" title="Copy URL">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-rose-700/50">
-                        <h2 class="text-lg font-semibold text-rose-400 mb-4">Run Against Platform</h2>
-                        <p class="text-slate-400 text-sm mb-4">Push stress test to your orchestration platform and get validation results.</p>
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-cyan-700/50">
+                        <h2 class="text-lg font-semibold text-cyan-400 mb-2">Stress Test</h2>
+                        <p class="text-slate-400 text-sm mb-4">Generate agents, workflows with chaos injection, push to your platform, and validate results.</p>
                         
                         <div class="mb-4">
                             <label class="block text-xs font-medium text-slate-400 mb-1">Platform URL <span id="platformUrlHint" class="text-emerald-400"></span></label>
                             <input type="text" id="platformUrl" placeholder="Uses PLATFORM_URL env var if empty" 
-                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-rose-500 outline-none">
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
                         </div>
                         
                         <div class="grid grid-cols-3 gap-3 mb-4">
                             <div>
                                 <label class="block text-xs font-medium text-slate-400 mb-1">Scale</label>
-                                <select id="runScale" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-rose-500 outline-none">
-                                    <option value="small">Small</option>
-                                    <option value="medium" selected>Medium</option>
-                                    <option value="large">Large</option>
+                                <select id="runScale" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                    <option value="small">Small (10 agents)</option>
+                                    <option value="medium" selected>Medium (50 agents)</option>
+                                    <option value="large">Large (100 agents)</option>
                                 </select>
+                                <p class="text-xs text-slate-500 mt-1">How many AI agents to simulate</p>
                             </div>
                             <div>
                                 <label class="block text-xs font-medium text-slate-400 mb-1">Workflows</label>
-                                <input type="number" id="runWorkflows" value="5" min="1" max="50" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-rose-500 outline-none">
+                                <input type="number" id="runWorkflows" value="5" min="1" max="50" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                <p class="text-xs text-slate-500 mt-1">Parallel task graphs to run</p>
                             </div>
                             <div>
                                 <label class="block text-xs font-medium text-slate-400 mb-1">Chaos %</label>
-                                <input type="number" id="runChaos" value="20" min="0" max="100" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-rose-500 outline-none">
+                                <input type="number" id="runChaos" value="20" min="0" max="100" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                <p class="text-xs text-slate-500 mt-1">Injected failures to test recovery</p>
                             </div>
                         </div>
                         
-                        <button id="runStressBtn" onclick="runStressTest()" class="w-full bg-rose-600 hover:bg-rose-500 text-white font-semibold py-2 px-4 rounded-lg transition-all">
+                        <button id="runStressBtn" onclick="runStressTest()" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2 px-4 rounded-lg transition-all">
                             Run Stress Test
                         </button>
                     </div>

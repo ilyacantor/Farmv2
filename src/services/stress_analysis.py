@@ -109,24 +109,27 @@ def _analyze_reliability(metrics: dict) -> dict:
     failure_modes = metrics["failure_modes"]
     chaos_expected = metrics["chaos_expected"]
     chaos_recovered = metrics["chaos_recovered"]
+    failed_recoveries = chaos_expected - chaos_recovered
     
     issues = []
     recommendations = []
     
     if chaos_recovery_rate >= THRESHOLDS["chaos_recovery_pass"]:
         verdict = "PASS"
-        recovered_str = f"{chaos_recovered}/{chaos_expected}" if chaos_expected > 0 else "N/A"
-        summary = f"Platform recovered from {recovered_str} chaos events"
+        if chaos_expected > 0:
+            summary = f"Platform recovered from {chaos_recovered}/{chaos_expected} injected failures"
+        else:
+            summary = "No chaos events injected in this test"
     elif chaos_recovery_rate >= THRESHOLDS["chaos_recovery_degraded"]:
         verdict = "FAIL"
-        recovered_str = f"{chaos_recovered}/{chaos_expected}"
-        summary = f"Platform recovered from only {recovered_str} chaos events (below 80% threshold)"
-        issues.append(f"Chaos recovery rate {chaos_recovery_rate:.0%} is below 80% threshold")
+        summary = f"{failed_recoveries} of {chaos_expected} failures caused permanent task drops"
+        issues.append(f"When things go wrong, {chaos_recovery_rate:.0%} recover - {100 - int(chaos_recovery_rate*100)}% of failures become user-visible outages")
+        recommendations.append("In production, these unrecovered failures would cause dropped requests or stuck workflows")
     else:
         verdict = "FAIL"
-        recovered_str = f"{chaos_recovered}/{chaos_expected}"
-        summary = f"Critical: Platform recovered from only {recovered_str} chaos events"
-        issues.append(f"Chaos recovery rate {chaos_recovery_rate:.0%} is critically low (below 50%)")
+        summary = f"Critical: {failed_recoveries} of {chaos_expected} failures caused permanent task drops"
+        issues.append(f"Only {chaos_recovery_rate:.0%} of failures recover - most problems become user-visible outages")
+        recommendations.append("Platform cannot handle real-world chaos - needs retry logic, circuit breakers, or compensation handlers")
     
     if retry_success_rate < 0.90 and metrics["retry_attempts"] > 0:
         issues.append(f"Retry success rate is {retry_success_rate:.0%}, below 90% target")
