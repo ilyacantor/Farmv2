@@ -46,6 +46,12 @@ def _extract_metrics(execution_result: dict, expected: dict, fleet_summary: dict
     
     chaos_expected = _safe_get(expected, "chaos_events_expected", default=0) or _safe_get(scenario_summary, "chaos_events_expected", default=0)
     chaos_recovered = _safe_get(scenario_results, "chaos_events_recovered", default=0)
+    
+    if chaos_recovered == 0:
+        workflow_results = _safe_get(scenario_results, "workflow_results", default=[])
+        for wf in workflow_results:
+            chaos_recovered += wf.get("chaos_events_handled", 0)
+    
     chaos_recovery_rate = chaos_recovered / chaos_expected if chaos_expected > 0 else 1.0
     
     error_count = _safe_get(scenario_results, "error_count", default=0)
