@@ -426,6 +426,27 @@ class DatabaseManager:
                     )
                 """)
                 
+                self._log("Creating stress_test_runs table...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS stress_test_runs (
+                        run_id TEXT PRIMARY KEY,
+                        created_at TEXT NOT NULL,
+                        target_url TEXT NOT NULL,
+                        scale TEXT NOT NULL,
+                        workflow_count INTEGER NOT NULL,
+                        chaos_rate REAL NOT NULL,
+                        seed INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        error_message TEXT,
+                        fleet_summary JSONB NOT NULL DEFAULT '{}',
+                        scenario_summary JSONB NOT NULL DEFAULT '{}',
+                        expected JSONB NOT NULL DEFAULT '{}',
+                        validation JSONB NOT NULL DEFAULT '{}',
+                        execution_result JSONB,
+                        duration_ms INTEGER
+                    )
+                """)
+                
                 # Indexes for new tables
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_meta_tenant_created ON snapshots_meta(tenant_id, created_at DESC)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_snapshots_meta_fingerprint ON snapshots_meta(snapshot_fingerprint)")
@@ -433,6 +454,8 @@ class DatabaseManager:
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_recon_cache_snapshot ON reconciliation_analysis_cache(snapshot_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_stress_test_runs_created ON stress_test_runs(created_at DESC)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_stress_test_runs_status ON stress_test_runs(status)")
                 
                 self._schema_initialized = True
                 self._log("Schema initialized")
