@@ -219,9 +219,15 @@ def generate_agent_profile(
         "tools": tools,
         "policy": POLICY_TEMPLATES[policy_template].copy(),
         "policy_template": policy_template,
-        "reliability": RELIABILITY_PROFILES[reliability_tier].copy(),
+        "reliability": {
+            "profile": reliability_tier.value,
+            **RELIABILITY_PROFILES[reliability_tier],
+        },
         "reliability_tier": reliability_tier.value,
-        "cost": COST_PROFILES[cost_tier].copy(),
+        "cost": {
+            "profile": cost_tier.value,
+            **COST_PROFILES[cost_tier],
+        },
         "cost_tier": cost_tier.value,
         "memory": memory_config,
         "metadata": {
