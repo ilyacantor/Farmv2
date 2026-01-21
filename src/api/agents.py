@@ -347,6 +347,46 @@ async def get_platform_config():
     }
 
 
+@router.get("/api/agents/operator-guide")
+async def get_operator_guide():
+    """Serve the operator guide as HTML."""
+    from fastapi.responses import HTMLResponse
+    import markdown
+    
+    guide_path = "docs/agent-operator-guide.md"
+    try:
+        with open(guide_path, "r") as f:
+            md_content = f.read()
+        
+        html_content = markdown.markdown(
+            md_content,
+            extensions=['tables', 'fenced_code', 'codehilite']
+        )
+        
+        styled_html = f"""
+        <style>
+            .prose h1 {{ font-size: 1.5rem; font-weight: 700; color: #f1f5f9; margin-bottom: 1rem; }}
+            .prose h2 {{ font-size: 1.25rem; font-weight: 600; color: #c084fc; margin-top: 1.5rem; margin-bottom: 0.75rem; border-bottom: 1px solid #334155; padding-bottom: 0.5rem; }}
+            .prose h3 {{ font-size: 1rem; font-weight: 600; color: #22d3ee; margin-top: 1rem; margin-bottom: 0.5rem; }}
+            .prose h4 {{ font-size: 0.875rem; font-weight: 600; color: #94a3b8; margin-top: 0.75rem; }}
+            .prose p {{ color: #cbd5e1; margin-bottom: 0.75rem; line-height: 1.6; }}
+            .prose ul, .prose ol {{ color: #cbd5e1; margin-bottom: 0.75rem; padding-left: 1.5rem; }}
+            .prose li {{ margin-bottom: 0.25rem; }}
+            .prose table {{ width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.875rem; }}
+            .prose th {{ background: #1e293b; color: #c084fc; padding: 0.5rem; text-align: left; border: 1px solid #334155; }}
+            .prose td {{ background: #0f172a; color: #cbd5e1; padding: 0.5rem; border: 1px solid #334155; }}
+            .prose code {{ background: #1e293b; color: #22d3ee; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.8rem; }}
+            .prose pre {{ background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem; padding: 1rem; overflow-x: auto; margin-bottom: 1rem; }}
+            .prose pre code {{ background: transparent; padding: 0; }}
+            .prose strong {{ color: #f1f5f9; }}
+        </style>
+        <div class="prose">{html_content}</div>
+        """
+        return HTMLResponse(content=styled_html)
+    except FileNotFoundError:
+        return HTMLResponse(content="<p class='text-red-400'>Guide not found</p>", status_code=404)
+
+
 @router.post("/api/agents/run-stress-test")
 async def run_stress_test(request: StressTestRequest):
     """

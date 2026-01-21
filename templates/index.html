@@ -460,6 +460,13 @@
                             </div>
                         </div>
                     </div>
+                    
+                    <div class="flex justify-center pt-2">
+                        <button onclick="openOperatorGuide()" class="flex items-center gap-2 px-4 py-2 bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/50 rounded-lg text-purple-300 text-sm font-medium transition-all">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            Full Operator Guide
+                        </button>
+                    </div>
                 </div>
             </div>
             
@@ -716,6 +723,21 @@
                 </button>
             </div>
             <div id="detailContent"></div>
+        </div>
+    </div>
+
+    <!-- Operator Guide Modal -->
+    <div id="operatorGuideModal" class="modal-overlay hidden">
+        <div class="bg-slate-800 rounded-xl shadow-2xl border border-slate-700 w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="flex items-center justify-between p-4 border-b border-slate-700 bg-gradient-to-r from-purple-900/30 to-cyan-900/30">
+                <h2 class="text-lg font-semibold text-white">Agent Stress Testing - Operator Guide</h2>
+                <button onclick="closeModal('operatorGuideModal')" class="p-1 hover:bg-slate-700 rounded transition-colors">
+                    <svg class="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div id="operatorGuideContent" class="flex-1 overflow-y-auto p-6 prose prose-invert prose-sm max-w-none">
+                <p class="text-slate-400">Loading guide...</p>
+            </div>
         </div>
     </div>
 
@@ -2003,6 +2025,24 @@
                 }
             } catch (e) {
                 console.warn('Failed to load platform config:', e);
+            }
+        }
+        
+        async function openOperatorGuide() {
+            const modal = document.getElementById('operatorGuideModal');
+            const content = document.getElementById('operatorGuideContent');
+            modal.classList.remove('hidden');
+            
+            try {
+                const resp = await fetch('/api/agents/operator-guide');
+                if (resp.ok) {
+                    const html = await resp.text();
+                    content.innerHTML = html;
+                } else {
+                    content.innerHTML = '<p class="text-red-400">Failed to load guide</p>';
+                }
+            } catch (e) {
+                content.innerHTML = `<p class="text-red-400">Error loading guide: ${e.message}</p>`;
             }
         }
         
