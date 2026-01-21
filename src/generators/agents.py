@@ -60,7 +60,10 @@ CAPABILITY_SETS = {
 
 POLICY_TEMPLATES = {
     "permissive": {
+        "template": "permissive",
         "requires_approval": [],
+        "requires_approval_above": 10000.0,
+        "max_concurrent_tasks": 100,
         "rate_limits": {"api_calls_per_min": 1000, "tokens_per_hour": 1000000},
         "escalation_threshold": 10,
         "allowed_data_access": ["public", "internal", "confidential"],
@@ -68,7 +71,10 @@ POLICY_TEMPLATES = {
         "can_modify_state": True,
     },
     "standard": {
+        "template": "standard",
         "requires_approval": ["payments", "data_delete", "external_api"],
+        "requires_approval_above": 1000.0,
+        "max_concurrent_tasks": 10,
         "rate_limits": {"api_calls_per_min": 100, "tokens_per_hour": 100000},
         "escalation_threshold": 3,
         "allowed_data_access": ["public", "internal"],
@@ -76,7 +82,10 @@ POLICY_TEMPLATES = {
         "can_modify_state": True,
     },
     "restricted": {
+        "template": "restricted",
         "requires_approval": ["payments", "data_delete", "external_api", "code_execute", "file_write"],
+        "requires_approval_above": 100.0,
+        "max_concurrent_tasks": 3,
         "rate_limits": {"api_calls_per_min": 20, "tokens_per_hour": 20000},
         "escalation_threshold": 1,
         "allowed_data_access": ["public"],
@@ -84,7 +93,10 @@ POLICY_TEMPLATES = {
         "can_modify_state": False,
     },
     "audit_heavy": {
+        "template": "audit_heavy",
         "requires_approval": ["*"],
+        "requires_approval_above": 0.0,
+        "max_concurrent_tasks": 5,
         "rate_limits": {"api_calls_per_min": 50, "tokens_per_hour": 50000},
         "escalation_threshold": 1,
         "allowed_data_access": ["public", "internal"],
@@ -97,44 +109,44 @@ POLICY_TEMPLATES = {
 RELIABILITY_PROFILES = {
     ReliabilityTier.ROCK_SOLID: {
         "success_rate": 0.999,
-        "avg_latency_ms": 50,
+        "mean_latency_ms": 50,
         "latency_stddev_ms": 10,
-        "timeout_probability": 0.001,
+        "timeout_rate": 0.001,
         "crash_probability": 0.0001,
         "retry_success_rate": 0.99,
     },
     ReliabilityTier.RELIABLE: {
         "success_rate": 0.95,
-        "avg_latency_ms": 200,
+        "mean_latency_ms": 200,
         "latency_stddev_ms": 50,
-        "timeout_probability": 0.02,
+        "timeout_rate": 0.02,
         "crash_probability": 0.005,
         "retry_success_rate": 0.90,
     },
     ReliabilityTier.FLAKY: {
         "success_rate": 0.80,
-        "avg_latency_ms": 500,
+        "mean_latency_ms": 500,
         "latency_stddev_ms": 300,
-        "timeout_probability": 0.10,
+        "timeout_rate": 0.10,
         "crash_probability": 0.02,
         "retry_success_rate": 0.70,
     },
     ReliabilityTier.UNRELIABLE: {
         "success_rate": 0.60,
-        "avg_latency_ms": 2000,
+        "mean_latency_ms": 2000,
         "latency_stddev_ms": 1500,
-        "timeout_probability": 0.25,
+        "timeout_rate": 0.25,
         "crash_probability": 0.05,
         "retry_success_rate": 0.50,
     },
 }
 
 COST_PROFILES = {
-    CostTier.FREE: {"per_call_cost": 0.0, "token_cost": 0.0, "monthly_cap": None},
-    CostTier.CHEAP: {"per_call_cost": 0.0001, "token_cost": 0.000001, "monthly_cap": 10.0},
-    CostTier.STANDARD: {"per_call_cost": 0.001, "token_cost": 0.00001, "monthly_cap": 100.0},
-    CostTier.PREMIUM: {"per_call_cost": 0.01, "token_cost": 0.0001, "monthly_cap": 1000.0},
-    CostTier.ENTERPRISE: {"per_call_cost": 0.05, "token_cost": 0.0005, "monthly_cap": None},
+    CostTier.FREE: {"tier": "free", "per_invocation": 0.0, "per_token": 0.0, "monthly_cap": None},
+    CostTier.CHEAP: {"tier": "cheap", "per_invocation": 0.0001, "per_token": 0.000001, "monthly_cap": 10.0},
+    CostTier.STANDARD: {"tier": "standard", "per_invocation": 0.001, "per_token": 0.00001, "monthly_cap": 100.0},
+    CostTier.PREMIUM: {"tier": "premium", "per_invocation": 0.01, "per_token": 0.0001, "monthly_cap": 1000.0},
+    CostTier.ENTERPRISE: {"tier": "enterprise", "per_invocation": 0.05, "per_token": 0.0005, "monthly_cap": None},
 }
 
 SPECIALIST_DOMAINS = [
