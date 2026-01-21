@@ -69,6 +69,7 @@ POLICY_TEMPLATES = {
         "allowed_data_access": ["public", "internal", "confidential"],
         "can_delegate": True,
         "can_modify_state": True,
+        "audit_all_actions": False,
     },
     "standard": {
         "template": "standard",
@@ -80,6 +81,7 @@ POLICY_TEMPLATES = {
         "allowed_data_access": ["public", "internal"],
         "can_delegate": True,
         "can_modify_state": True,
+        "audit_all_actions": False,
     },
     "restricted": {
         "template": "restricted",
@@ -91,6 +93,7 @@ POLICY_TEMPLATES = {
         "allowed_data_access": ["public"],
         "can_delegate": False,
         "can_modify_state": False,
+        "audit_all_actions": False,
     },
     "audit_heavy": {
         "template": "audit_heavy",

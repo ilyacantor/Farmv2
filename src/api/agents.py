@@ -420,6 +420,7 @@ async def run_stress_test(request: StressTestRequest):
     )
     
     agent_ids = [a["agent_id"] for a in fleet["agents"]]
+    agent_types = {a["agent_id"]: a["type"] for a in fleet["agents"]}
     planners = [a["agent_id"] for a in fleet["agents"] if a["type"] == "planner"]
     workers = [a["agent_id"] for a in fleet["agents"] if a["type"] == "worker"]
     
@@ -429,15 +430,22 @@ async def run_stress_test(request: StressTestRequest):
     for workflow in batch["workflows"]:
         for task in workflow["tasks"]:
             if task["type"] in ["decision", "aggregation"]:
-                task["assigned_agent"] = rng.choice(planners) if planners else rng.choice(agent_ids)
+                assigned = rng.choice(planners) if planners else rng.choice(agent_ids)
             else:
-                task["assigned_agent"] = rng.choice(workers) if workers else rng.choice(agent_ids)
+                assigned = rng.choice(workers) if workers else rng.choice(agent_ids)
+            task["assigned_agent"] = assigned
+            task["assigned_agent_type"] = agent_types.get(assigned, "worker")
     
     scenario = {
         "scenario_id": f"stress-{request.seed}-{request.scale}",
         "seed": request.seed,
         "scale": request.scale,
         "generated_at": datetime.now().isoformat(),
+        "agents": {
+            "agents": fleet["agents"],
+            "total_agents": fleet["total_agents"],
+            "distribution": fleet["distribution"],
+        },
         "workflows": batch["workflows"],
         "summary": {
             "total_agents": fleet["total_agents"],

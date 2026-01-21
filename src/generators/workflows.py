@@ -488,8 +488,13 @@ def compute_expected_outcome(workflow: Dict[str, Any]) -> Dict[str, Any]:
         expected_status = "may_fail"
     
     execution_order = compute_execution_order(tasks)
+    critical_path_length = compute_critical_path_length(tasks)
     
     checkpoint_count = sum(1 for t in tasks if t.get("is_system") or t["type"] == "checkpoint")
+    
+    parallelizable_tasks = sum(1 for t in tasks if len(t.get("depends_on", [])) == 0 or len(t.get("depends_on", [])) > 0)
+    unique_agents = len(set(t.get("assigned_agent") for t in tasks if t.get("assigned_agent")))
+    min_agents = max(1, unique_agents) if unique_agents else max(1, len(tasks) // 3)
     
     return {
         "expected_status": expected_status,
@@ -504,7 +509,36 @@ def compute_expected_outcome(workflow: Dict[str, Any]) -> Dict[str, Any]:
         "chaos_events_expected": len(chaos_tasks),
         "parallel_branches": workflow.get("parallel_branches", 0),
         "is_saga": workflow.get("type") == WorkflowType.SAGA.value,
+        "total_tasks": len(tasks),
+        "critical_path_length": critical_path_length,
+        "parallelizable_tasks": sum(1 for t in tasks if len(t.get("depends_on", [])) == 0),
+        "min_agents_required": min_agents,
+        "estimated_total_duration_ms": total_duration,
     }
+
+
+def compute_critical_path_length(tasks: List[Dict[str, Any]]) -> int:
+    """Compute the length of the critical path (longest dependency chain)."""
+    if not tasks:
+        return 0
+    
+    task_map = {t["task_id"]: t for t in tasks}
+    memo = {}
+    
+    def get_depth(task_id: str) -> int:
+        if task_id in memo:
+            return memo[task_id]
+        task = task_map.get(task_id)
+        if not task:
+            return 0
+        deps = task.get("depends_on", [])
+        if not deps:
+            memo[task_id] = 1
+        else:
+            memo[task_id] = 1 + max(get_depth(d) for d in deps)
+        return memo[task_id]
+    
+    return max(get_depth(t["task_id"]) for t in tasks)
 
 
 def compute_execution_order(tasks: List[Dict[str, Any]]) -> List[str]:
