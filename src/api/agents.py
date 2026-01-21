@@ -408,29 +408,36 @@ async def run_stress_test(request: StressTestRequest):
             wait_for_completion=request.wait_for_completion,
         )
         
-        fleet_status = result.get("fleet_ingestion", {}).get("status")
-        scenario_status = result.get("scenario_submission", {}).get("status")
-        results_status = result.get("scenario_results", {}).get("status")
+        if result is None:
+            result = {}
+        
+        fleet_ingestion = result.get("fleet_ingestion") or {}
+        scenario_submission = result.get("scenario_submission") or {}
+        scenario_results = result.get("scenario_results") or {}
+        
+        fleet_status = fleet_ingestion.get("status")
+        scenario_status = scenario_submission.get("status")
+        results_status = scenario_results.get("status")
         
         if fleet_status == "timeout":
             status = "fleet_ingestion_timeout"
-            error_msg = result.get("fleet_ingestion", {}).get("error", "Fleet ingestion timed out")
+            error_msg = fleet_ingestion.get("error", "Fleet ingestion timed out")
         elif fleet_status == "error":
             status = "fleet_ingestion_failed"
-            error_msg = result.get("fleet_ingestion", {}).get("error", "Unknown error")
+            error_msg = fleet_ingestion.get("error", "Unknown error")
         elif scenario_status == "timeout":
             status = "scenario_submission_timeout"
-            error_msg = result.get("scenario_submission", {}).get("error", "Scenario submission timed out")
+            error_msg = scenario_submission.get("error", "Scenario submission timed out")
         elif scenario_status == "error":
             status = "scenario_submission_failed"
-            error_msg = result.get("scenario_submission", {}).get("error", "Unknown error")
+            error_msg = scenario_submission.get("error", "Unknown error")
         elif results_status == "timeout":
             status = "timeout"
-            error_msg = result.get("scenario_results", {}).get("error", "Scenario did not complete in time")
+            error_msg = scenario_results.get("error", "Scenario did not complete in time")
         elif results_status == "error":
             status = "execution_error"
-            error_msg = result.get("scenario_results", {}).get("error", "Unknown error")
-        elif result.get("validation", {}).get("passed"):
+            error_msg = scenario_results.get("error", "Unknown error")
+        elif (result.get("validation") or {}).get("passed"):
             status = "completed"
             error_msg = None
         else:
