@@ -55,6 +55,19 @@ AOS Farm is built with FastAPI and Uvicorn for the backend, Supabase PostgreSQL 
 -   **Classification Logic:** Classifies assets as **Shadow** (ungoverned + active), **Zombie** (governed + stale + ongoing finance), **Parked** (ungoverned + stale), or **Clean** (governed + active).
 -   **Activity Detection:** Activity is determined by discovery and IdP timestamps only; finance data does not count as activity. Recent activity is defined as within `activity_window_days` (default 90).
 
+**System of Record (SOR) Scoring:**
+-   **SOR is Orthogonal:** SOR scoring is independent of Shadow/Zombie/Governed classifications. An asset can be Governed + SOR, Shadow + SOR-candidate (RED FLAG!), or Zombie + former-SOR.
+-   **Signal Weights:** cmdb_authoritative (+40), known_sor_vendor (+30), middleware_exporter (+25), high_data_tier (+20), primary_domain_match (+20), multi_consumer (+15), data_domain_alignment (+10).
+-   **Confidence Thresholds:** High >= 0.75, Medium >= 0.50, Low > 0 but < 0.50, None = 0.
+-   **Known SOR Vendors by Domain:**
+    -   Customer: salesforce.com, hubspot.com, dynamics.com, zendesk.com
+    -   Employee: workday.com, adp.com, bamboohr.com, ultipro.com
+    -   Financial: netsuite.com, quickbooks.com, xero.com, sage.com
+    -   Product: sap.com, oracle.com, epicor.com, infor.com
+    -   Identity: okta.com, onelogin.com, auth0.com, ping.com
+    -   IT Assets: servicenow.com, freshservice.com, jira.atlassian.com
+-   **Shadow + SOR Flag:** Assets classified as Shadow but with high/medium SOR likelihood are flagged as critical risk during validation.
+
 **Key API Endpoints:**
 -   `/api/snapshots`: For generating, listing, retrieving, and deleting snapshots.
 -   `/api/reconciliations`: For initiating and listing reconciliation runs.
