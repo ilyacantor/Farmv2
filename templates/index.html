@@ -835,6 +835,7 @@
             currentLifecycleAssets: null,
             lastCreatedSnapshotId: null,
             aodBaseUrl: null,
+            aodDiscoverUrl: null,
             currentTraceFilter: 'all',
             mismatchKeysCache: new Set(),
             currentTestSnapshotId: null,
@@ -2190,6 +2191,7 @@
                 const response = await fetch('/api/config');
                 const config = await response.json();
                 FarmState.aodBaseUrl = config.aod_base_url;
+                FarmState.aodDiscoverUrl = config.aod_discover_url;
             } catch (e) {
                 console.warn('Failed to load config:', e);
             }
@@ -2230,18 +2232,18 @@
         
         function navigateToAOD() {
             closeModal('aodNavigateModal');
-            if (FarmState.aodBaseUrl) {
-                window.open(FarmState.aodBaseUrl, 'aos_discover');
+            if (FarmState.aodDiscoverUrl) {
+                window.open(FarmState.aodDiscoverUrl, 'aos_discover');
             } else {
-                alert('AOD_BASE_URL not configured. Please set the environment variable.');
+                alert('AOS Discover URL not configured.');
             }
         }
         
         function goToDiscoverWithSnapshot(snapshotId) {
-            if (FarmState.aodBaseUrl) {
-                window.open(FarmState.aodBaseUrl, 'aos_discover');
+            if (FarmState.aodDiscoverUrl) {
+                window.open(FarmState.aodDiscoverUrl, 'aos_discover');
             } else {
-                alert('AOD_BASE_URL not configured. Please set the environment variable.');
+                alert('AOS Discover URL not configured.');
             }
         }
         
@@ -5183,7 +5185,7 @@
                     );
                 } else if (step === 3) {
                     const returnUrl = state?.returnUrl;
-                    const aodUrl = FarmState.aodBaseUrl || returnUrl;
+                    const aodUrl = FarmState.aodDiscoverUrl || returnUrl;
                     if (aodUrl) {
                         const backUrl = returnUrl 
                             ? returnUrl.split('?')[0] + '?guided=1&tour_phase=8'

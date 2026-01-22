@@ -26,8 +26,10 @@ router = APIRouter(tags=["policy"])
 async def get_config():
     """Return frontend configuration values."""
     aod_url = os.environ.get("AOD_BASE_URL", "") or os.environ.get("AOD_URL", "")
+    aod_discover_url = os.environ.get("AOD_DISCOVER_URL", "https://discover.autonomos.software")
     return {
-        "aod_base_url": aod_url.rstrip("/") if aod_url else None
+        "aod_base_url": aod_url.rstrip("/") if aod_url else None,
+        "aod_discover_url": aod_discover_url.rstrip("/") if aod_discover_url else None
     }
 
 
