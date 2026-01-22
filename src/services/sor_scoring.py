@@ -174,7 +174,7 @@ def score_asset_for_sor(
     
     if cmdb_record:
         is_sor = cmdb_record.get("is_system_of_record", False)
-        data_tier = cmdb_record.get("data_tier", "").lower()
+        data_tier = (cmdb_record.get("data_tier") or "").lower()
         is_authoritative = cmdb_record.get("authoritative", False)
         
         if is_sor or data_tier == "gold" or is_authoritative:
