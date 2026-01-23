@@ -230,4 +230,5 @@ The UI displays run history in the Agents tab with color-coded status badges.
 
 ### Full Documentation
 
-See [`docs/agent-orchestration-guide.md`](docs/agent-orchestration-guide.md) for complete protocol specifications, data schemas, and integration patterns.
+- [`docs/aoa-stress-testing-reference.md`](docs/aoa-stress-testing-reference.md) - Complete reference for AOA stress testing capabilities
+- [`docs/agent-orchestration-guide.md`](docs/agent-orchestration-guide.md) - Protocol specifications, data schemas, and integration patterns
