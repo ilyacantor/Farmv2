@@ -74,11 +74,24 @@ AOS Farm is built with FastAPI and Uvicorn for the backend, Supabase PostgreSQL 
 -   **Snapshot Management:** APIs for generating, retrieving, listing, and deleting snapshots, including `__expected__` grading metadata.
 -   **Reconciliation System:** Compares AOD results against expectations and generates detailed markdown assessment reports.
 -   **Validation Suite:** Checks consistency for expected blocks, clock invariants, finance, join hygiene, and gradeability gates.
+-   **End-to-End Injection Tests:** Inject test payloads into the Fabric (iPaaS) and verify arrival at destination (Data Warehouse).
 -   **Hot/Cold Storage:** Separates snapshot metadata (hot) from full blobs (cold) for performance optimization.
 -   **Database Resilience:** Implements connection pooling, circuit breaker, exponential backoff, and a concurrency semaphore.
 -   **Background Jobs:** Asynchronous job pattern with progress tracking for large-scale snapshots.
 -   **Policy Alignment:** Farm consumes policy from AOD; discrepancies indicate bugs.
 -   **Analysis Versioning:** Auto-computed version from source hashes; stale cached analyses are recomputed.
+
+**Farm.Verifier Module (src/verifier/):**
+The Verifier namespace contains the core Test Oracle logic:
+-   `injection_tests.py`: End-to-end injection test framework
+    -   `create_injection_payload()`: Generate fingerprinted test payloads
+    -   `verify_payload_arrival()`: Compare expected vs actual payloads
+    -   `run_e2e_injection_test()`: Full injection test workflow
+
+**Verifier API Endpoints:**
+-   `GET /api/verifier/health`: Verifier module health and capabilities
+-   `GET /api/verifier/payload`: Generate test payload for manual injection
+-   `POST /api/verifier/injection-test`: Run end-to-end injection test
 
 **Design Principles:**
 -   **Ownership Boundaries:** Farm manages the reconciliation UI, while AOD handles structured actual output.
