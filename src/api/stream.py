@@ -1,7 +1,19 @@
 """
 Streaming endpoints for simulating enterprise data pipelines.
-Part of Phase 1: The Resilient Ingest (Sidecar) architecture.
-Phase 3: Adds "Source of Truth" repair endpoint for Active Repair Agent.
+
+ARCHITECTURAL BOUNDARY: These are TEST ORACLE endpoints.
+
+Purpose:
+- Generate synthetic "toxic" data streams for testing DCL resilience
+- Provide GROUND TRUTH (pristine records) for DCL/AAM to verify repairs
+- Farm does NOT perform repairs - it only provides the "correct answer"
+
+The /api/source/* endpoints are "Source of Truth" APIs:
+- DCL/AAM calls these to get the pristine version of a record
+- DCL/AAM performs the repair itself
+- DCL/AAM calls /api/verify/* to confirm the repair matches ground truth
+
+This is verification/QA, not operational repair.
 """
 import asyncio
 import hashlib

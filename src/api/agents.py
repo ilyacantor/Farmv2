@@ -1,6 +1,19 @@
 """
 API endpoints for Agent Orchestration Stress Testing.
-Generates synthetic agent profiles, workflows, and stress test scenarios.
+
+ARCHITECTURAL BOUNDARY: These are TEST ORACLE endpoints.
+
+Purpose:
+- Generate SYNTHETIC agent profiles and workflows for stress testing
+- Compute EXPECTED outcomes for validation
+- Grade actual orchestration results against expectations
+
+The simulation endpoints (AOA Simulation) generate SYNTHETIC agent behaviors
+for testing AOA (The Orchestrator). Farm does NOT execute real workflows -
+it only generates test scenarios and validates results.
+
+Push endpoints send test data to external platforms for integration testing.
+This is still verification/QA - Farm generates the test, the target executes it.
 """
 from datetime import datetime
 from typing import Optional, List

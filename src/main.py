@@ -1,3 +1,22 @@
+"""
+AOS Farm - Test Oracle for the AutonomOS Platform.
+
+ARCHITECTURAL BOUNDARY: Farm is strictly a VERIFIER, not an operator.
+
+What Farm DOES:
+- Generate synthetic test data (snapshots, agent profiles, workflows)
+- Compute expected outcomes (__expected__ blocks)
+- Grade actual results against expectations (reconciliation)
+- Provide ground truth APIs for other systems to verify repairs
+
+What Farm does NOT do (belongs to other components):
+- NO Repair Logic (belongs to AAM - The Mesh)
+- NO Connector Provisioning (belongs to AOA - The Orchestrator)
+- NO Raw Data Buffering (belongs to DCL - The Brain)
+- NO Operational Execution (belongs to AOA)
+
+Farm must be independently deployable as a watchdog, not a manager.
+"""
 import json
 import logging
 import uuid as uuid_mod

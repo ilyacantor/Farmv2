@@ -1,7 +1,43 @@
 # AOS Farm
 
 ## Overview
-AOS Farm is a synthetic enterprise data generator. Its main purpose is to create realistic source-of-truth data planes and raw observation streams to generate robust testing data for the AutonomOS AOD (Discover) module. This data specifically focuses on raw evidence to improve the accuracy and reliability of anomaly detection. The project aims to eliminate "green-test theater" by enforcing strict rules that ensure all changes preserve real-world semantics, are provable with real-world output, and include negative tests.
+AOS Farm is the **Test Oracle** for the AutonomOS platform. Its sole purpose is to generate synthetic test data, compute expected outcomes, and grade actual results. Farm is a verification/QA tool - it does NOT perform operational tasks, repairs, or infrastructure management.
+
+**Architectural Role:** Farm is the "Verifier" in the AOS Self-Healing Mesh architecture. It generates ground truth and validates that other components (AOD, DCL, AAM, AOA) behave correctly.
+
+## Architectural Boundaries (CRITICAL)
+
+### What FARM Does (Test Oracle Functions)
+- **Generate** synthetic enterprise data (snapshots, agent profiles, workflows)
+- **Compute** expected outcomes (`__expected__` blocks with classifications)
+- **Grade** actual results against expectations (reconciliation)
+- **Provide** ground truth APIs for other systems to verify their repairs
+- **Validate** data consistency and semantic correctness
+
+### What FARM Does NOT Do (Forbidden - Belongs to Other Components)
+- **NO Repair Logic** - Self-healing belongs to AAM (The Mesh)
+- **NO Connector Provisioning** - Infrastructure belongs to AOA (The Orchestrator)
+- **NO Raw Data Buffering** - Data handling belongs to DCL (The Brain)
+- **NO Operational Execution** - Workflow execution belongs to AOA
+
+### Platform Component Boundaries
+| Component | Role | Owns |
+|-----------|------|------|
+| **FARM** | Test Oracle | Test data, expectations, grading |
+| **AAM** | Self-Healing Mesh | Repair, reconnection, connector lifecycle |
+| **DCL** | Metadata Brain | Metadata routing (no raw payloads) |
+| **AOA** | Orchestrator | Execution, infrastructure, workflow runtime |
+| **AOD** | Discover | Asset discovery, classification, policy |
+
+### Constraint Enforcement
+- Farm must treat infrastructure as a "Black Box" - it audits inputs/outputs but never manages containers or workers
+- Farm's "Source of Truth" endpoints provide ground truth for DCL/AAM to verify their repairs, but Farm does not perform repairs itself
+- Farm must be independently deployable as a watchdog, not a manager
+
+---
+
+## Legacy Overview (Historical Context)
+AOS Farm was originally designed as a synthetic enterprise data generator. Its main purpose is to create realistic source-of-truth data planes and raw observation streams to generate robust testing data for the AutonomOS AOD (Discover) module. This data specifically focuses on raw evidence to improve the accuracy and reliability of anomaly detection. The project aims to eliminate "green-test theater" by enforcing strict rules that ensure all changes preserve real-world semantics, are provable with real-world output, and include negative tests.
 
 ## User Preferences
 ### Guardrail: No "Green-Test Theater"

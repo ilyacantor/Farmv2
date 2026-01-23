@@ -1,6 +1,16 @@
 """
 Reconciliation service for computing expected classifications and comparing with AOD.
 
+ARCHITECTURAL BOUNDARY: This is the core TEST ORACLE logic.
+
+Purpose:
+- Compute EXPECTED classifications based on synthetic data
+- Compare ACTUAL results (from AOD) against expectations
+- Generate detailed grading/audit reports
+
+Farm does NOT make operational decisions - it only validates that AOD's
+decisions match the expected outcomes based on the test data.
+
 ================================================================================
 FARM GOVERNANCE & CORRELATION CONTRACT
 ================================================================================
