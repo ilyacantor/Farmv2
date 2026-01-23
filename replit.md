@@ -3,7 +3,38 @@
 ## Overview
 AOS Farm is the **Test Oracle** for the AutonomOS platform. Its sole purpose is to generate synthetic test data, compute expected outcomes, and grade actual results. Farm is a verification/QA tool - it does NOT perform operational tasks, repairs, or infrastructure management.
 
-**Architectural Role:** Farm is the "Verifier" in the AOS Self-Healing Mesh architecture. It generates ground truth and validates that other components (AOD, DCL, AAM, AOA) behave correctly.
+**Architectural Role:** Farm is the "Verifier" (Test Oracle) in the AOS Fabric Plane Mesh architecture. It generates ground truth and validates that other components (AOD, DCL, AAM, AOA) behave correctly.
+
+**RACI:** FARM is A/R (Accountable/Responsible) for Ground Truth Validation, End-to-End Injection Tests, and Accuracy Measurement.
+
+## Fabric Plane Mesh Architecture (CRITICAL)
+
+### The 4 Fabric Planes
+AAM (The Mesh) connects ONLY to Fabric Planes, not directly to SaaS applications (except in Scrappy mode):
+
+| Fabric Plane | Examples | Role |
+|--------------|----------|------|
+| **IPAAS** | Workato, MuleSoft, Boomi | Integration flow control plane |
+| **API_GATEWAY** | Kong, Apigee, AWS API Gateway | Managed API access layer |
+| **EVENT_BUS** | Kafka, EventBridge, RabbitMQ | Streaming backbone |
+| **DATA_WAREHOUSE** | Snowflake, BigQuery, Redshift | Source of Truth storage |
+
+### The 4 Enterprise Presets
+Presets determine connection strategy based on organization architecture:
+
+| Preset | Name | Primary Plane | Org Size | Data Flow Pattern |
+|--------|------|---------------|----------|-------------------|
+| **PRESET_6** | Scrappy | API_GATEWAY | 1-50 | P2P API allowed |
+| **PRESET_8** | iPaaS-Centric | IPAAS | 50-500 | All via Workato/MuleSoft |
+| **PRESET_9** | Platform-Oriented | EVENT_BUS | 500-5000 | Kafka domain events |
+| **PRESET_11** | Warehouse-Centric | DATA_WAREHOUSE | 1000+ | Snowflake as canonical store |
+
+### Farm's Role in Fabric Mesh
+Farm generates test scenarios for each preset and verifies data flows correctly through the Fabric:
+- **Injection Testing:** Inject canary records into source Fabric Plane
+- **Arrival Verification:** Poll destination Fabric Plane for arrival
+- **Accuracy Measurement:** Compare expected vs actual payloads
+- **Latency Tracking:** Measure transit time through Fabric Mesh
 
 ## Architectural Boundaries (CRITICAL)
 
