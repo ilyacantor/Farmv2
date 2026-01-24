@@ -443,9 +443,34 @@ class DatabaseManager:
                         expected JSONB NOT NULL DEFAULT '{}',
                         validation JSONB NOT NULL DEFAULT '{}',
                         execution_result JSONB,
-                        duration_ms INTEGER
+                        duration_ms INTEGER,
+                        -- AOA integration fields (added for FARM-AOA protocol)
+                        aoa_verdict TEXT,
+                        aoa_analysis JSONB,
+                        aoa_validation JSONB,
+                        comparative_analysis JSONB,
+                        dashboard_metrics JSONB DEFAULT '[]'
                     )
                 """)
+
+                # Migration: Add AOA columns if missing (for existing databases)
+                self._log("Running stress_test_runs schema migration...")
+                for column, coltype, default in [
+                    ("aoa_verdict", "TEXT", None),
+                    ("aoa_analysis", "JSONB", None),
+                    ("aoa_validation", "JSONB", None),
+                    ("comparative_analysis", "JSONB", None),
+                    ("dashboard_metrics", "JSONB", "'[]'"),
+                ]:
+                    try:
+                        default_clause = f" DEFAULT {default}" if default else ""
+                        await conn.execute(f"""
+                            ALTER TABLE stress_test_runs
+                            ADD COLUMN IF NOT EXISTS {column} {coltype}{default_clause}
+                        """)
+                    except Exception:
+                        # Column already exists or other benign error
+                        pass
                 
                 self._log("Creating sim_agents table (AOA simulation)...")
                 await conn.execute("""

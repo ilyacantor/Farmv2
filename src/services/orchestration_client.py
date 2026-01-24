@@ -1,8 +1,17 @@
 import httpx
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Callable
 from datetime import datetime
+
+from src.services.aoa_client import (
+    AOAClient,
+    AOAScenarioResult,
+    AOAVerdict,
+    AOADashboardMetrics,
+    ComparativeAnalysis,
+    validate_aoa_response,
+)
 
 logger = logging.getLogger("farm.orchestration_client")
 
@@ -318,8 +327,64 @@ class OrchestrationClient:
             })
             if not passed:
                 validation["passed"] = False
-        
+
         return validation
+
+    async def run_full_stress_test_with_aoa(
+        self,
+        fleet_data: dict,
+        scenario_data: dict,
+        wait_for_completion: bool = True,
+        enable_dashboard_polling: bool = False,
+        on_dashboard_metrics: Optional[Callable[[AOADashboardMetrics], None]] = None,
+        on_progress: Optional[Callable[[AOAScenarioResult], None]] = None
+    ) -> dict:
+        """
+        Execute stress test using enhanced AOA client with FARM-compatible validation.
+
+        This method uses the AOAClient for:
+        - Structured AOA validation format handling
+        - Dashboard polling during test execution
+        - Comparative analysis between FARM __expected__ and AOA validation
+        """
+        aoa_client = AOAClient(
+            base_url=self.base_url,
+            tenant_id="stress-test",
+            timeout=self.timeout
+        )
+
+        try:
+            result = await aoa_client.run_full_stress_test(
+                fleet_data=fleet_data,
+                scenario_data=scenario_data,
+                wait_for_completion=wait_for_completion,
+                enable_dashboard_polling=enable_dashboard_polling,
+                on_dashboard_metrics=on_dashboard_metrics,
+                on_progress=on_progress
+            )
+
+            # Generate comparative analysis if we have expected block
+            if "__expected__" in scenario_data and result.get("scenario_results"):
+                scenario_result = result["scenario_results"]
+                if isinstance(scenario_result, dict):
+                    aoa_result = AOAScenarioResult.from_dict(scenario_result)
+                    comparative = aoa_client.compare_farm_expected_with_aoa(
+                        scenario_data["__expected__"],
+                        aoa_result
+                    )
+                    result["comparative_analysis"] = comparative.to_dict()
+
+            return result
+        finally:
+            await aoa_client.close()
+
+    def parse_aoa_validation(self, response: dict) -> dict:
+        """
+        Parse AOA validation response into FARM-compatible format.
+
+        Use this to interpret AOA's new validation format.
+        """
+        return validate_aoa_response({}, response)
 
 
 _client_instance: Optional[OrchestrationClient] = None
