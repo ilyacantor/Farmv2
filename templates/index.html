@@ -542,6 +542,25 @@
                                 <p class="text-xs text-slate-500 mt-1">Injected failures to test recovery</p>
                             </div>
                         </div>
+
+                        <!-- AOA Integration Options -->
+                        <div class="mb-4 p-3 bg-slate-900/40 rounded-lg border border-purple-700/30">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-xs font-medium text-purple-400">AOA Integration</span>
+                                <span class="text-xs text-slate-500">FARM-AOA Protocol</span>
+                            </div>
+                            <div class="flex flex-wrap gap-4">
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="useAoaClient" checked class="w-4 h-4 rounded border-slate-600 bg-slate-700 text-cyan-500 focus:ring-cyan-500">
+                                    <span class="text-sm text-slate-300">Enhanced AOA Client</span>
+                                </label>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="enableDashboardPolling" class="w-4 h-4 rounded border-slate-600 bg-slate-700 text-cyan-500 focus:ring-cyan-500">
+                                    <span class="text-sm text-slate-300">Dashboard Polling</span>
+                                </label>
+                            </div>
+                            <p class="text-xs text-slate-500 mt-2">Enhanced client provides structured validation, comparative analysis, and AOA verdicts</p>
+                        </div>
                         
                         <button id="runStressBtn" onclick="runStressTest()" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2 px-4 rounded-lg transition-all">
                             Run Stress Test
@@ -563,6 +582,60 @@
                         </div>
                         <div id="stressHistoryList" class="divide-y divide-slate-700/50 max-h-64 overflow-y-auto">
                             <div class="text-slate-500 text-center py-8 text-sm">Loading history...</div>
+                        </div>
+                    </div>
+
+                    <!-- Streaming Load Test Panel -->
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-emerald-700/50">
+                        <h2 class="text-lg font-semibold text-emerald-400 mb-2">Streaming Load Test</h2>
+                        <p class="text-slate-400 text-sm mb-4">Continuously stream workflows to AOA for sustained load testing.</p>
+
+                        <div class="mb-4">
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Target Platform URL</label>
+                            <input type="text" id="streamTargetUrl" placeholder="Required for streaming tests"
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none">
+                        </div>
+
+                        <div class="grid grid-cols-3 gap-3 mb-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Rate (wf/s)</label>
+                                <input type="number" id="streamLoadRate" value="10" min="1" max="100" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Duration (s)</label>
+                                <input type="number" id="streamLoadDuration" value="60" min="10" max="600" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Chaos %</label>
+                                <input type="number" id="streamLoadChaos" value="20" min="0" max="100" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-emerald-500 outline-none">
+                            </div>
+                        </div>
+
+                        <div class="flex gap-2 mb-4">
+                            <button id="startStreamLoadBtn" onclick="startStreamingLoadTest()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2 px-4 rounded-lg transition-all">
+                                Start Streaming Test
+                            </button>
+                            <button id="stopStreamLoadBtn" onclick="stopStreamingLoadTest()" class="px-4 bg-red-600/30 hover:bg-red-600/50 text-red-300 font-semibold py-2 rounded-lg transition-all hidden">
+                                Stop
+                            </button>
+                        </div>
+
+                        <div id="streamLoadStatus" class="hidden bg-slate-900/40 rounded-lg p-3 border border-emerald-700/30">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-semibold text-emerald-400">Test Progress</span>
+                                <span id="streamLoadStatusBadge" class="px-2 py-0.5 text-xs rounded bg-emerald-600/30 text-emerald-300">running</span>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div class="text-slate-400">Submitted: <span id="streamLoadSubmitted" class="text-emerald-400">0</span></div>
+                                <div class="text-slate-400">Succeeded: <span id="streamLoadSucceeded" class="text-cyan-400">0</span></div>
+                                <div class="text-slate-400">Failed: <span id="streamLoadFailed" class="text-red-400">0</span></div>
+                                <div class="text-slate-400">Rate: <span id="streamLoadActualRate" class="text-purple-400">0</span>/s</div>
+                            </div>
+                            <div class="mt-2">
+                                <div class="w-full bg-slate-700 rounded-full h-1.5">
+                                    <div id="streamLoadProgress" class="bg-emerald-500 h-1.5 rounded-full transition-all" style="width: 0%"></div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1417,6 +1490,91 @@
             const v = verdictColors[analysis.overall_verdict] || verdictColors['FAIL'];
             const confidence = Math.round((analysis.confidence_score || 0) * 100);
             
+            // AOA Integration fields
+            const aoaVerdict = data.aoa_verdict;
+            const aoaAnalysis = data.aoa_analysis || analysis.aoa_analysis;
+            const comparative = data.comparative_analysis || analysis.comparative_analysis;
+            const dashboardMetrics = data.dashboard_metrics;
+
+            // Build AOA verdict badge if available
+            let aoaVerdictHtml = '';
+            if (aoaVerdict && aoaVerdict !== 'NO_DATA') {
+                const aoaV = verdictColors[aoaVerdict] || verdictColors['FAIL'];
+                aoaVerdictHtml = `
+                    <div class="flex items-center gap-2 mt-2">
+                        <span class="text-xs text-purple-400">AOA Verdict:</span>
+                        <span class="px-2 py-0.5 text-xs rounded ${aoaV.bg} ${aoaV.text} border ${aoaV.border}">${aoaVerdict}</span>
+                    </div>
+                `;
+            }
+
+            // Build comparative analysis section if available
+            let comparativeHtml = '';
+            if (comparative && comparative.alignment_score !== undefined) {
+                const alignmentPct = Math.round(comparative.alignment_score * 100);
+                const alignmentColor = alignmentPct >= 80 ? 'text-emerald-400' : alignmentPct >= 50 ? 'text-yellow-400' : 'text-red-400';
+                const discrepancies = comparative.discrepancies || [];
+
+                comparativeHtml = `
+                    <div class="bg-purple-900/20 rounded-lg p-3 border border-purple-700/30">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-sm font-semibold text-purple-400">FARM vs AOA Alignment</span>
+                            <span class="text-lg font-bold ${alignmentColor}">${alignmentPct}%</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mb-2">${comparative.summary || ''}</p>
+                        ${discrepancies.length > 0 ? `
+                            <div class="mt-2 space-y-1">
+                                <span class="text-xs text-slate-500">Discrepancies:</span>
+                                ${discrepancies.slice(0, 3).map(d => `
+                                    <div class="text-xs text-red-300 pl-2">• ${d.field}: expected ${JSON.stringify(d.farm_expected || d.expected)} got ${JSON.stringify(d.aoa_actual || d.actual)}</div>
+                                `).join('')}
+                                ${discrepancies.length > 3 ? `<div class="text-xs text-slate-500 pl-2">...and ${discrepancies.length - 3} more</div>` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            // Build AOA analysis section if available
+            let aoaAnalysisHtml = '';
+            if (aoaAnalysis && aoaAnalysis.summary) {
+                aoaAnalysisHtml = `
+                    <div class="bg-cyan-900/20 rounded-lg p-3 border border-cyan-700/30">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-sm font-semibold text-cyan-400">AOA Analysis</span>
+                            ${aoaAnalysis.verdict ? `<span class="px-1.5 py-0.5 text-xs rounded bg-cyan-600/30 text-cyan-300">${aoaAnalysis.verdict}</span>` : ''}
+                        </div>
+                        <p class="text-xs text-slate-300">${aoaAnalysis.summary}</p>
+                        ${aoaAnalysis.metrics ? `
+                            <div class="flex flex-wrap gap-3 mt-2 text-xs">
+                                ${aoaAnalysis.metrics.completion_rate !== undefined ? `<span class="text-slate-400">Completion: <span class="text-emerald-400">${Math.round(aoaAnalysis.metrics.completion_rate * 100)}%</span></span>` : ''}
+                                ${aoaAnalysis.metrics.chaos_recovery_rate !== undefined ? `<span class="text-slate-400">Chaos Recovery: <span class="text-purple-400">${Math.round(aoaAnalysis.metrics.chaos_recovery_rate * 100)}%</span></span>` : ''}
+                                ${aoaAnalysis.metrics.throughput_tasks_per_sec !== undefined ? `<span class="text-slate-400">Throughput: <span class="text-cyan-400">${aoaAnalysis.metrics.throughput_tasks_per_sec.toFixed(1)}/s</span></span>` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            // Build dashboard metrics section if available
+            let dashboardHtml = '';
+            if (dashboardMetrics && dashboardMetrics.length > 0) {
+                const last = dashboardMetrics[dashboardMetrics.length - 1];
+                dashboardHtml = `
+                    <div class="bg-slate-700/30 rounded-lg p-3 border border-slate-600/30">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-semibold text-slate-400">Dashboard Snapshots</span>
+                            <span class="text-xs text-slate-500">${dashboardMetrics.length} samples</span>
+                        </div>
+                        <div class="flex flex-wrap gap-3 text-xs">
+                            <span class="text-slate-400">Active Agents: <span class="text-emerald-400">${last.active_agents || 0}</span></span>
+                            <span class="text-slate-400">Active Workflows: <span class="text-cyan-400">${last.active_workflows || 0}</span></span>
+                            <span class="text-slate-400">Recovery: <span class="text-purple-400">${Math.round((last.chaos_recovery_rate || 0) * 100)}%</span></span>
+                        </div>
+                    </div>
+                `;
+            }
+
             return `
                 <div class="space-y-4">
                     <div class="flex items-center gap-4 p-4 rounded-lg ${v.bg} border ${v.border}">
@@ -1427,9 +1585,14 @@
                                 <span class="text-xs text-slate-400">(${confidence}% confidence)</span>
                             </div>
                             <p class="text-cyan-400 font-mono text-sm">${testId}</p>
+                            ${aoaVerdictHtml}
                         </div>
                     </div>
-                    
+
+                    ${comparativeHtml}
+                    ${aoaAnalysisHtml}
+                    ${dashboardHtml}
+
                     <div class="grid gap-3">
                         ${renderAnalysisSection('Reliability', '🔄', analysis.reliability)}
                         ${renderAnalysisSection('Capacity', '📊', analysis.capacity)}
@@ -1680,15 +1843,26 @@
                 const timeStr = createdAt ? createdAt.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Unknown';
                 const durationSec = run.duration_ms ? (run.duration_ms / 1000).toFixed(1) : '--';
                 const verdict = run.verdict || 'NO_DATA';
+                const aoaVerdict = run.aoa_verdict;
                 const badgeClass = verdictBadgeClasses[verdict] || 'bg-slate-700 text-slate-400 border-slate-600';
                 const testId = run.test_id || `${run.scale || 'sm'}-${run.workflow_count || 0}wf`;
-                
+
+                // Show AOA badge if different from FARM verdict
+                let aoaBadge = '';
+                if (aoaVerdict && aoaVerdict !== verdict && aoaVerdict !== 'NO_DATA') {
+                    const aoaBadgeClass = verdictBadgeClasses[aoaVerdict] || 'bg-slate-700 text-slate-400 border-slate-600';
+                    aoaBadge = `<span class="px-1 py-0.5 text-xs rounded border ${aoaBadgeClass}" title="AOA Verdict">A:${aoaVerdict}</span>`;
+                } else if (aoaVerdict && aoaVerdict !== 'NO_DATA') {
+                    aoaBadge = `<span class="text-xs text-purple-400" title="AOA Enhanced">*</span>`;
+                }
+
                 return `
                     <div onclick="viewStressTestRun(${idx})" class="p-3 hover:bg-slate-700/30 cursor-pointer transition-colors">
                         <div class="flex items-center justify-between mb-1">
                             <div class="flex items-center gap-2">
                                 <span class="text-xs font-mono text-cyan-400">${testId}</span>
                                 <span class="px-1.5 py-0.5 text-xs rounded border ${badgeClass}">${verdict}</span>
+                                ${aoaBadge}
                             </div>
                             <span class="text-xs text-slate-500">${durationSec}s</span>
                         </div>
@@ -1726,7 +1900,13 @@
                         scenario_summary: fullRun.scenario_summary,
                         execution_result: fullRun.execution_result || { validation: fullRun.validation },
                         duration_ms: fullRun.duration_ms,
-                        analysis: fullRun.analysis
+                        analysis: fullRun.analysis,
+                        // AOA integration fields
+                        aoa_verdict: fullRun.aoa_verdict,
+                        aoa_analysis: fullRun.aoa_analysis,
+                        aoa_validation: fullRun.aoa_validation,
+                        comparative_analysis: fullRun.comparative_analysis,
+                        dashboard_metrics: fullRun.dashboard_metrics
                     };
                     setAgentResult(resultData, 'stress-test');
                 } else {
@@ -1817,6 +1997,123 @@
             navigator.clipboard.writeText(url);
         }
 
+        // Streaming Load Test Functions
+        let currentStreamTestId = null;
+        let streamTestPollInterval = null;
+
+        async function startStreamingLoadTest() {
+            const targetUrl = document.getElementById('streamTargetUrl').value.trim();
+            if (!targetUrl) {
+                alert('Target Platform URL is required for streaming load tests');
+                return;
+            }
+
+            const rate = parseInt(document.getElementById('streamLoadRate').value);
+            const duration = parseInt(document.getElementById('streamLoadDuration').value);
+            const chaos = parseInt(document.getElementById('streamLoadChaos').value) / 100;
+
+            const startBtn = document.getElementById('startStreamLoadBtn');
+            const stopBtn = document.getElementById('stopStreamLoadBtn');
+            const statusDiv = document.getElementById('streamLoadStatus');
+
+            startBtn.disabled = true;
+            startBtn.textContent = 'Starting...';
+
+            try {
+                const resp = await fetch('/api/agents/stream-load-test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_url: targetUrl,
+                        rate: rate,
+                        duration_seconds: duration,
+                        chaos_rate: chaos
+                    })
+                });
+
+                const data = await resp.json();
+
+                if (resp.ok && data.test_id) {
+                    currentStreamTestId = data.test_id;
+                    startBtn.classList.add('hidden');
+                    stopBtn.classList.remove('hidden');
+                    statusDiv.classList.remove('hidden');
+
+                    // Start polling for status
+                    pollStreamingLoadTestStatus();
+                    streamTestPollInterval = setInterval(pollStreamingLoadTestStatus, 1000);
+                } else {
+                    alert('Failed to start streaming test: ' + (data.detail || JSON.stringify(data)));
+                    startBtn.disabled = false;
+                    startBtn.textContent = 'Start Streaming Test';
+                }
+            } catch (e) {
+                alert('Error starting streaming test: ' + e.message);
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start Streaming Test';
+            }
+        }
+
+        async function pollStreamingLoadTestStatus() {
+            if (!currentStreamTestId) return;
+
+            try {
+                const resp = await fetch(`/api/agents/stream-load-test/${currentStreamTestId}/status`);
+                const data = await resp.json();
+
+                document.getElementById('streamLoadSubmitted').textContent = data.workflows_submitted || 0;
+                document.getElementById('streamLoadSucceeded').textContent = data.workflows_succeeded || 0;
+                document.getElementById('streamLoadFailed').textContent = data.workflows_failed || 0;
+                document.getElementById('streamLoadActualRate').textContent = (data.actual_rate || 0).toFixed(1);
+
+                const progress = Math.min(100, (data.elapsed_seconds / data.duration_seconds) * 100);
+                document.getElementById('streamLoadProgress').style.width = progress + '%';
+
+                const badge = document.getElementById('streamLoadStatusBadge');
+                if (data.status === 'completed') {
+                    badge.textContent = 'completed';
+                    badge.className = 'px-2 py-0.5 text-xs rounded bg-emerald-600/30 text-emerald-300';
+                    onStreamingTestComplete();
+                } else if (data.status === 'failed') {
+                    badge.textContent = 'failed';
+                    badge.className = 'px-2 py-0.5 text-xs rounded bg-red-600/30 text-red-300';
+                    onStreamingTestComplete();
+                } else {
+                    badge.textContent = 'running';
+                    badge.className = 'px-2 py-0.5 text-xs rounded bg-cyan-600/30 text-cyan-300 animate-pulse';
+                }
+            } catch (e) {
+                console.error('Failed to poll streaming test status:', e);
+            }
+        }
+
+        async function stopStreamingLoadTest() {
+            if (!currentStreamTestId) return;
+
+            try {
+                await fetch(`/api/agents/stream-load-test/${currentStreamTestId}/stop`, { method: 'POST' });
+            } catch (e) {
+                console.error('Failed to stop streaming test:', e);
+            }
+        }
+
+        function onStreamingTestComplete() {
+            if (streamTestPollInterval) {
+                clearInterval(streamTestPollInterval);
+                streamTestPollInterval = null;
+            }
+
+            const startBtn = document.getElementById('startStreamLoadBtn');
+            const stopBtn = document.getElementById('stopStreamLoadBtn');
+
+            startBtn.classList.remove('hidden');
+            startBtn.disabled = false;
+            startBtn.textContent = 'Start Streaming Test';
+            stopBtn.classList.add('hidden');
+
+            currentStreamTestId = null;
+        }
+
         async function runStressTest() {
             const targetUrl = document.getElementById('platformUrl').value.trim();
             const scale = document.getElementById('runScale').value;
@@ -1832,11 +2129,16 @@
             statsEl.textContent = '';
             
             try {
+                const useAoaClient = document.getElementById('useAoaClient').checked;
+                const enableDashboardPolling = document.getElementById('enableDashboardPolling').checked;
+
                 const payload = {
                     scale: scale,
                     workflow_count: workflows,
                     chaos_rate: chaos,
-                    wait_for_completion: true
+                    wait_for_completion: true,
+                    use_aoa_client: useAoaClient,
+                    enable_dashboard_polling: enableDashboardPolling
                 };
                 if (targetUrl) {
                     payload.target_url = targetUrl;
