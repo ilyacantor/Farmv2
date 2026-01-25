@@ -211,6 +211,7 @@
                         <button id="tabOverview" onclick="switchMainTab('overview')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Overview</button>
                         <button id="tabConsole" onclick="switchMainTab('console')" class="px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors">Console</button>
                         <button id="tabAgents" onclick="switchMainTab('agents')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Agents</button>
+                        <button id="tabScenarios" onclick="switchMainTab('scenarios')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Scenarios</button>
                         <button id="tabTest" onclick="switchMainTab('test')" class="hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Test Lab</button>
                     </nav>
                 </div>
@@ -655,6 +656,218 @@
                                 <p class="text-slate-500">Click a generator button to see results...</p>
                             </div>
                             <pre id="agentResultJson" class="hidden text-xs text-slate-300 font-mono whitespace-pre-wrap"></pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="scenariosTab" class="hidden h-full overflow-hidden">
+            <div class="space-y-6">
+                <!-- Section 1: Scenario Generation -->
+                <div class="bg-slate-800/60 rounded-xl p-5 border border-cyan-700/50">
+                    <div class="flex items-center gap-3 mb-4">
+                        <div class="w-10 h-10 rounded-lg bg-cyan-600/30 flex items-center justify-center">
+                            <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 class="text-lg font-semibold text-white">DCL/BLL/NLQ Scenario Testing</h2>
+                            <p class="text-slate-400 text-sm">Generate realistic business scenarios for agent verification</p>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Scale</label>
+                            <select id="scenarioScale" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                <option value="small">Small (5 customers)</option>
+                                <option value="medium" selected>Medium (20 customers)</option>
+                                <option value="large">Large (50 customers)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-slate-400 mb-1">Seed (optional)</label>
+                            <input type="number" id="scenarioSeed" placeholder="Random if empty" 
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                        </div>
+                        <div class="flex items-end">
+                            <button onclick="generateScenario()" id="generateScenarioBtn"
+                                class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2 px-4 rounded-lg transition-all cyan-glow">
+                                Generate Scenario
+                            </button>
+                        </div>
+                        <div class="flex items-end">
+                            <button onclick="clearScenario()" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 py-2 px-4 rounded-lg transition-all">
+                                Clear
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Manifest Display -->
+                    <div id="scenarioManifestContainer" class="hidden">
+                        <div class="border-t border-slate-700 pt-4 mt-4">
+                            <h3 class="text-sm font-semibold text-cyan-400 mb-2">Scenario Manifest</h3>
+                            <div id="scenarioManifest" class="bg-slate-900/60 rounded-lg p-3 text-xs font-mono text-slate-300 max-h-48 overflow-y-auto"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Metrics Dashboard -->
+                <div id="scenarioMetricsContainer" class="hidden">
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-purple-700/50">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 rounded-lg bg-purple-600/30 flex items-center justify-center">
+                                <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-semibold text-white">Scenario Metrics Dashboard</h2>
+                                <p class="text-slate-400 text-sm">Ground truth metrics for verification</p>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                            <div class="bg-slate-900/50 rounded-lg p-4 border border-emerald-700/30">
+                                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Total Revenue</div>
+                                <div id="metricRevenue" class="text-xl font-bold text-emerald-400">--</div>
+                                <div id="metricRevenuePeriod" class="text-xs text-slate-500"></div>
+                            </div>
+                            <div class="bg-slate-900/50 rounded-lg p-4 border border-cyan-700/30">
+                                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">MoM Trend</div>
+                                <div id="metricMoM" class="text-xl font-bold text-cyan-400">--</div>
+                                <div id="metricMoMBreakdown" class="text-xs text-slate-500 mt-1 max-h-16 overflow-y-auto"></div>
+                            </div>
+                            <div class="bg-slate-900/50 rounded-lg p-4 border border-purple-700/30">
+                                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Top Customers</div>
+                                <div id="metricTopCustomers" class="text-sm text-purple-400 max-h-24 overflow-y-auto"></div>
+                            </div>
+                            <div class="bg-slate-900/50 rounded-lg p-4 border border-orange-700/30">
+                                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Vendor Spend</div>
+                                <div id="metricVendorSpend" class="text-xl font-bold text-orange-400">--</div>
+                                <div id="metricVendorCount" class="text-xs text-slate-500"></div>
+                            </div>
+                            <div class="bg-slate-900/50 rounded-lg p-4 border border-rose-700/30">
+                                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Resource Health</div>
+                                <div id="metricResourceHealth" class="text-sm">
+                                    <span class="text-emerald-400">Active: --</span>
+                                    <span class="text-amber-400 ml-2">Zombie: --</span>
+                                    <span class="text-rose-400 ml-2">Orphan: --</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Toxic Stream Controls -->
+                <div id="scenarioStreamContainer" class="hidden">
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-orange-700/50">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-orange-600/30 flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 class="text-lg font-semibold text-white">Toxic Stream Controls</h2>
+                                    <p class="text-slate-400 text-sm">Inject chaos into the data stream</p>
+                                </div>
+                            </div>
+                            <button onclick="startToxicStream()" id="startStreamBtn"
+                                class="px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white font-semibold rounded-lg transition-all">
+                                Start Stream
+                            </button>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-2">Chaos Rate: <span id="chaosRateValue">20</span>%</label>
+                                <input type="range" id="scenarioChaosRate" min="0" max="100" value="20" 
+                                    class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer"
+                                    oninput="document.getElementById('chaosRateValue').textContent = this.value">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-2">Chaos Types</label>
+                                <div class="flex flex-wrap gap-2">
+                                    <label class="flex items-center gap-1 text-xs text-slate-300">
+                                        <input type="checkbox" id="chaosTypeMissing" checked class="w-3 h-3 rounded">
+                                        Missing Fields
+                                    </label>
+                                    <label class="flex items-center gap-1 text-xs text-slate-300">
+                                        <input type="checkbox" id="chaosTypeCorrupt" checked class="w-3 h-3 rounded">
+                                        Corrupted Values
+                                    </label>
+                                    <label class="flex items-center gap-1 text-xs text-slate-300">
+                                        <input type="checkbox" id="chaosTypeDuplicate" checked class="w-3 h-3 rounded">
+                                        Duplicates
+                                    </label>
+                                    <label class="flex items-center gap-1 text-xs text-slate-300">
+                                        <input type="checkbox" id="chaosTypeOutOfOrder" class="w-3 h-3 rounded">
+                                        Out of Order
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 class="text-xs font-medium text-slate-400 mb-2">Stream Preview (first 5 records)</h4>
+                            <div id="streamPreview" class="bg-slate-900/60 rounded-lg p-3 text-xs font-mono text-slate-300 max-h-32 overflow-y-auto">
+                                <span class="text-slate-500">Generate a scenario to preview stream...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 4: Verification Tools -->
+                <div id="scenarioVerifyContainer" class="hidden">
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-emerald-700/50">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 rounded-lg bg-emerald-600/30 flex items-center justify-center">
+                                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-semibold text-white">Verification Tools</h2>
+                                <p class="text-slate-400 text-sm">Lookup source invoices and verify repaired data</p>
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <!-- Source Invoice Lookup -->
+                            <div class="space-y-3">
+                                <div class="flex gap-2">
+                                    <input type="text" id="scenarioInvoiceId" placeholder="Invoice ID (e.g., INV-001)"
+                                        class="flex-1 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                    <button onclick="lookupSourceInvoice()" 
+                                        class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all">
+                                        Lookup
+                                    </button>
+                                </div>
+                                <div>
+                                    <h4 class="text-xs font-medium text-slate-400 mb-1">Source Invoice</h4>
+                                    <pre id="sourceInvoiceResult" class="bg-slate-900/60 rounded-lg p-3 text-xs font-mono text-emerald-300 max-h-40 overflow-y-auto">Enter an invoice ID to lookup...</pre>
+                                </div>
+                            </div>
+                            
+                            <!-- Repaired Invoice Verification -->
+                            <div class="space-y-3">
+                                <textarea id="repairedInvoiceInput" placeholder="Paste repaired invoice JSON here..."
+                                    class="w-full h-24 bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:border-cyan-500 outline-none resize-none"></textarea>
+                                <div class="flex gap-2">
+                                    <button onclick="verifyInvoice()" 
+                                        class="flex-1 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg transition-all">
+                                        Verify Invoice
+                                    </button>
+                                </div>
+                                <div>
+                                    <h4 class="text-xs font-medium text-slate-400 mb-1">Verification Result</h4>
+                                    <pre id="verifyResult" class="bg-slate-900/60 rounded-lg p-3 text-xs font-mono text-cyan-300 max-h-40 overflow-y-auto">Paste a repaired invoice and click Verify...</pre>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1155,10 +1368,12 @@
             const overviewTab = document.getElementById('overviewTab');
             const consoleTab = document.getElementById('consoleTab');
             const agentsTab = document.getElementById('agentsTab');
+            const scenariosTab = document.getElementById('scenariosTab');
             const testTab = document.getElementById('testTab');
             const tabOverview = document.getElementById('tabOverview');
             const tabConsole = document.getElementById('tabConsole');
             const tabAgents = document.getElementById('tabAgents');
+            const tabScenarios = document.getElementById('tabScenarios');
             const tabTest = document.getElementById('tabTest');
             
             const activeClass = 'px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors';
@@ -1168,11 +1383,13 @@
             overviewTab.classList.add('hidden');
             consoleTab.classList.add('hidden');
             agentsTab.classList.add('hidden');
+            scenariosTab.classList.add('hidden');
             testTab.classList.add('hidden');
             
             tabOverview.className = inactiveClass;
             tabConsole.className = inactiveClass;
             tabAgents.className = inactiveClass;
+            tabScenarios.className = inactiveClass;
             tabTest.className = hiddenInactiveClass;
             
             if (tab === 'overview') {
@@ -1185,6 +1402,9 @@
                 agentsTab.classList.remove('hidden');
                 tabAgents.className = activeClass;
                 refreshAOAMetrics();
+            } else if (tab === 'scenarios') {
+                scenariosTab.classList.remove('hidden');
+                tabScenarios.className = activeClass;
             } else if (tab === 'test') {
                 testTab.classList.remove('hidden');
                 tabTest.className = activeClass;
@@ -1199,6 +1419,250 @@
                 const date = formatPSTShort(snap.created_at);
                 select.innerHTML += `<option value="${snap.snapshot_id}">${snap.tenant_id} - ${date}</option>`;
             });
+        }
+
+        // Scenario state
+        let currentScenario = null;
+
+        async function generateScenario() {
+            const scale = document.getElementById('scenarioScale').value;
+            const seedInput = document.getElementById('scenarioSeed').value;
+            const seed = seedInput ? parseInt(seedInput) : null;
+            
+            const body = { scale };
+            if (seed) body.seed = seed;
+            
+            const btn = document.getElementById('generateScenarioBtn');
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            
+            try {
+                const resp = await fetch('/api/scenarios/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await resp.json();
+                currentScenario = data;
+                renderScenarioManifest(data.manifest || data);
+                loadScenarioMetrics(data.scenario_id);
+                showScenarioSections(true);
+            } catch (e) {
+                console.error('Failed to generate scenario:', e);
+                document.getElementById('scenarioManifest').textContent = 'Error: ' + e.message;
+                document.getElementById('scenarioManifestContainer').classList.remove('hidden');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Generate Scenario';
+            }
+        }
+
+        function showScenarioSections(show) {
+            const containers = ['scenarioManifestContainer', 'scenarioMetricsContainer', 'scenarioStreamContainer', 'scenarioVerifyContainer'];
+            containers.forEach(id => {
+                document.getElementById(id).classList.toggle('hidden', !show);
+            });
+        }
+
+        function clearScenario() {
+            currentScenario = null;
+            showScenarioSections(false);
+            document.getElementById('scenarioManifest').textContent = '';
+            document.getElementById('sourceInvoiceResult').textContent = 'Enter an invoice ID to lookup...';
+            document.getElementById('verifyResult').textContent = 'Paste a repaired invoice and click Verify...';
+            document.getElementById('streamPreview').innerHTML = '<span class="text-slate-500">Generate a scenario to preview stream...</span>';
+        }
+
+        async function loadScenarioMetrics(scenarioId) {
+            if (!scenarioId) return;
+            
+            try {
+                const [revenue, mom, top, spend, health] = await Promise.all([
+                    fetch(`/api/scenarios/${scenarioId}/metrics/revenue`).then(r => r.json()).catch(() => ({ total: 0 })),
+                    fetch(`/api/scenarios/${scenarioId}/metrics/revenue-mom`).then(r => r.json()).catch(() => ({ months: [] })),
+                    fetch(`/api/scenarios/${scenarioId}/metrics/top-customers?limit=5`).then(r => r.json()).catch(() => ({ customers: [] })),
+                    fetch(`/api/scenarios/${scenarioId}/metrics/vendor-spend`).then(r => r.json()).catch(() => ({ total: 0, vendors: [] })),
+                    fetch(`/api/scenarios/${scenarioId}/metrics/resource-health`).then(r => r.json()).catch(() => ({ active: 0, zombie: 0, orphan: 0 }))
+                ]);
+                
+                renderScenarioMetrics(revenue, mom, top, spend, health);
+                loadStreamPreview(scenarioId);
+            } catch (e) {
+                console.error('Failed to load metrics:', e);
+            }
+        }
+
+        async function loadStreamPreview(scenarioId) {
+            try {
+                // Fetch chaos catalog to show available chaos types
+                const catalogResp = await fetch(`/api/scenarios/${scenarioId}/chaos-catalog`);
+                const catalog = await catalogResp.json();
+                
+                const preview = document.getElementById('streamPreview');
+                if (catalog.chaos_types && catalog.chaos_types.length > 0) {
+                    preview.innerHTML = `
+                        <div class="text-xs text-slate-400 mb-2">Available chaos types (${catalog.total_types}):</div>
+                        ${catalog.chaos_types.map(ct => `
+                            <div class="mb-1 text-xs">
+                                <span class="text-orange-400">${ct.type}</span>: ${ct.description}
+                            </div>
+                        `).join('')}
+                    `;
+                } else {
+                    preview.innerHTML = '<span class="text-slate-500">Chaos catalog unavailable</span>';
+                }
+            } catch (e) {
+                console.error('Failed to load chaos catalog:', e);
+                document.getElementById('streamPreview').innerHTML = '<span class="text-slate-500">Failed to load chaos info</span>';
+            }
+        }
+
+        async function lookupSourceInvoice() {
+            if (!currentScenario) {
+                document.getElementById('sourceInvoiceResult').textContent = 'Generate a scenario first';
+                return;
+            }
+            const invoiceId = document.getElementById('scenarioInvoiceId').value;
+            if (!invoiceId) {
+                document.getElementById('sourceInvoiceResult').textContent = 'Enter an invoice ID';
+                return;
+            }
+            
+            try {
+                const resp = await fetch(`/api/scenarios/${currentScenario.scenario_id}/source/invoice/${encodeURIComponent(invoiceId)}`);
+                const data = await resp.json();
+                document.getElementById('sourceInvoiceResult').textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                document.getElementById('sourceInvoiceResult').textContent = 'Error: ' + e.message;
+            }
+        }
+
+        async function verifyInvoice() {
+            if (!currentScenario) {
+                document.getElementById('verifyResult').textContent = 'Generate a scenario first';
+                return;
+            }
+            const repaired = document.getElementById('repairedInvoiceInput').value;
+            if (!repaired.trim()) {
+                document.getElementById('verifyResult').textContent = 'Paste repaired invoice JSON first';
+                return;
+            }
+            
+            try {
+                const resp = await fetch(`/api/scenarios/${currentScenario.scenario_id}/verify/invoice`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: repaired
+                });
+                const result = await resp.json();
+                const resultEl = document.getElementById('verifyResult');
+                if (result.valid) {
+                    resultEl.className = 'bg-slate-900/60 rounded-lg p-3 text-xs font-mono text-emerald-400 max-h-40 overflow-y-auto';
+                } else {
+                    resultEl.className = 'bg-slate-900/60 rounded-lg p-3 text-xs font-mono text-rose-400 max-h-40 overflow-y-auto';
+                }
+                resultEl.textContent = JSON.stringify(result, null, 2);
+            } catch (e) {
+                document.getElementById('verifyResult').textContent = 'Error: ' + e.message;
+            }
+        }
+
+        function startToxicStream() {
+            if (!currentScenario) {
+                alert('Generate a scenario first');
+                return;
+            }
+            
+            const chaosRate = parseInt(document.getElementById('scenarioChaosRate').value) / 100;
+            const chaos = chaosRate > 0;
+            
+            // Build stream URL with parameters
+            const streamUrl = `/api/scenarios/${currentScenario.scenario_id}/stream/toxic?chaos=${chaos}&chaos_rate=${chaosRate}&speed=normal`;
+            
+            // Open stream in new tab for viewing
+            window.open(streamUrl, '_blank');
+            
+            const btn = document.getElementById('startStreamBtn');
+            btn.textContent = 'Stream Opened';
+            btn.className = 'px-4 py-2 bg-emerald-600 text-white font-semibold rounded-lg';
+            setTimeout(() => {
+                btn.textContent = 'Start Stream';
+                btn.className = 'px-4 py-2 bg-orange-600 hover:bg-orange-500 text-white font-semibold rounded-lg transition-all';
+            }, 2000);
+        }
+
+        function renderScenarioManifest(manifest) {
+            const container = document.getElementById('scenarioManifest');
+            if (!manifest) {
+                container.textContent = 'No manifest data';
+                return;
+            }
+            
+            const formatted = typeof manifest === 'string' ? manifest : JSON.stringify(manifest, null, 2);
+            container.textContent = formatted;
+            document.getElementById('scenarioManifestContainer').classList.remove('hidden');
+        }
+
+        function renderScenarioMetrics(revenue, mom, top, spend, health) {
+            // Total Revenue - API returns: { total_revenue, currency, period_start, period_end }
+            const revenueEl = document.getElementById('metricRevenue');
+            const revenuePeriodEl = document.getElementById('metricRevenuePeriod');
+            revenueEl.textContent = formatCurrency(revenue.total_revenue || 0);
+            revenuePeriodEl.textContent = revenue.period_start && revenue.period_end 
+                ? `${revenue.period_start} to ${revenue.period_end}` 
+                : '';
+            
+            // MoM Trend - API returns: { months: [{month, revenue, delta_pct, delta_abs}] }
+            const momEl = document.getElementById('metricMoM');
+            const momBreakdownEl = document.getElementById('metricMoMBreakdown');
+            if (mom.months && mom.months.length > 1) {
+                const lastMonth = mom.months[mom.months.length - 1];
+                if (lastMonth.delta_pct !== null && lastMonth.delta_pct !== undefined) {
+                    const trendSign = lastMonth.delta_pct >= 0 ? '+' : '';
+                    momEl.textContent = `${trendSign}${lastMonth.delta_pct.toFixed(1)}%`;
+                } else {
+                    momEl.textContent = '--';
+                }
+                momBreakdownEl.innerHTML = mom.months.map(m => 
+                    `<div class="text-xs">${m.month}: ${formatCurrency(m.revenue)}</div>`
+                ).join('');
+            } else {
+                momEl.textContent = '--';
+            }
+            
+            // Top Customers - API returns: { customers: [{customer_id, name, revenue, percent_of_total}] }
+            const topEl = document.getElementById('metricTopCustomers');
+            if (top.customers && top.customers.length > 0) {
+                topEl.innerHTML = top.customers.map((c, i) => 
+                    `<div class="flex justify-between text-xs"><span>${i+1}. ${c.name || c.customer_id}</span><span class="text-slate-400">${formatCurrency(c.revenue || 0)} (${(c.percent_of_total || 0).toFixed(1)}%)</span></div>`
+                ).join('');
+            } else {
+                topEl.innerHTML = '<span class="text-slate-500">No data</span>';
+            }
+            
+            // Vendor Spend - API returns: { vendors: [{vendor_id, name, total_spend, invoice_count}] }
+            const vendorSpendEl = document.getElementById('metricVendorSpend');
+            const vendorCountEl = document.getElementById('metricVendorCount');
+            const totalSpend = spend.vendors ? spend.vendors.reduce((sum, v) => sum + (v.total_spend || 0), 0) : 0;
+            vendorSpendEl.textContent = formatCurrency(totalSpend);
+            vendorCountEl.textContent = spend.vendors ? `${spend.vendors.length} vendors` : '';
+            
+            // Resource Health - API returns: { active_count, zombie_count, orphan_count, zombie_ids[], orphan_ids[] }
+            const healthEl = document.getElementById('metricResourceHealth');
+            healthEl.innerHTML = `
+                <span class="text-emerald-400">Active: ${health.active_count || 0}</span>
+                <span class="text-amber-400 ml-2">Zombie: ${health.zombie_count || 0}</span>
+                <span class="text-rose-400 ml-2">Orphan: ${health.orphan_count || 0}</span>
+            `;
+        }
+
+        function formatCurrency(value) {
+            if (value >= 1000000) {
+                return '$' + (value / 1000000).toFixed(1) + 'M';
+            } else if (value >= 1000) {
+                return '$' + (value / 1000).toFixed(1) + 'K';
+            }
+            return '$' + value.toFixed(2);
         }
 
         let agentStreamController = null;
