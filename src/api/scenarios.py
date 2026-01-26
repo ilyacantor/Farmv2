@@ -416,3 +416,70 @@ async def get_scenario_chaos_catalog(
         "default_chaos_rate": 0.15,
         "total_types": 5
     }
+
+
+@router.get("/nlq/questions")
+async def get_nlq_questions(
+    category: Optional[str] = Query(None, description="Filter by category"),
+    limit: int = Query(100, ge=1, le=100, description="Number of questions to return")
+):
+    """
+    Get NLQ test questions for DCL validation.
+    
+    Returns a dataset of natural language questions that can be validated
+    against Farm's ground truth endpoints.
+    """
+    import os
+    
+    questions_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "nlq_test_questions.json")
+    
+    try:
+        with open(questions_path, "r") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="NLQ questions dataset not found")
+    
+    questions = data.get("questions", [])
+    
+    if category:
+        questions = [q for q in questions if q.get("category") == category]
+    
+    return {
+        "metadata": data.get("metadata", {}),
+        "categories": data.get("categories", {}),
+        "questions": questions[:limit],
+        "total_count": len(questions)
+    }
+
+
+@router.get("/nlq/categories")
+async def get_nlq_categories():
+    """
+    Get available NLQ question categories.
+    """
+    import os
+    
+    questions_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "nlq_test_questions.json")
+    
+    try:
+        with open(questions_path, "r") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="NLQ questions dataset not found")
+    
+    categories = data.get("categories", {})
+    questions = data.get("questions", [])
+    
+    # Count questions per category
+    category_counts = {}
+    for q in questions:
+        cat = q.get("category", "unknown")
+        category_counts[cat] = category_counts.get(cat, 0) + 1
+    
+    return {
+        "categories": [
+            {"id": cat_id, "description": desc, "count": category_counts.get(cat_id, 0)}
+            for cat_id, desc in categories.items()
+        ],
+        "total_categories": len(categories)
+    }
