@@ -472,3 +472,129 @@ async def get_scenario_chaos_catalog(
         "default_chaos_rate": 0.15,
         "total_types": 5
     }
+
+
+@router.get("/nlq/invoices")
+async def get_nlq_invoices(
+    year: Optional[int] = Query(None, description="Filter by year (2024 or 2025)"),
+    quarter: Optional[int] = Query(None, ge=1, le=4, description="Filter by quarter (1-4)"),
+    customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
+    format: str = Query("json", description="Response format: json or csv")
+):
+    """
+    Get invoice dataset for NLQ time-window query testing.
+    
+    Supports filtering by year, quarter, and customer.
+    Returns data spanning 2024-2025 for time_window queries.
+    """
+    import os
+    from datetime import datetime
+    
+    invoices_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "nlq_invoices.json")
+    
+    try:
+        with open(invoices_path, "r") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="NLQ invoices dataset not found")
+    
+    invoices = data.get("invoices", [])
+    
+    # Apply filters
+    if year:
+        invoices = [inv for inv in invoices if inv["invoice_date"].startswith(str(year))]
+    
+    if quarter:
+        quarter_months = {1: ["01", "02", "03"], 2: ["04", "05", "06"], 3: ["07", "08", "09"], 4: ["10", "11", "12"]}
+        months = quarter_months[quarter]
+        invoices = [inv for inv in invoices if inv["invoice_date"][5:7] in months]
+    
+    if customer_id:
+        invoices = [inv for inv in invoices if inv["customer_id"] == customer_id]
+    
+    if format == "csv":
+        from fastapi.responses import PlainTextResponse
+        csv_lines = ["invoice_id,customer_id,customer_name,amount,invoice_date"]
+        for inv in invoices:
+            csv_lines.append(f'{inv["invoice_id"]},{inv["customer_id"]},{inv["customer_name"]},{inv["amount"]},{inv["invoice_date"]}')
+        return PlainTextResponse("\n".join(csv_lines), media_type="text/csv")
+    
+    return {
+        "metadata": data.get("metadata", {}),
+        "invoices": invoices,
+        "count": len(invoices),
+        "ground_truth": data.get("ground_truth", {})
+    }
+
+
+@router.get("/nlq/invoices/ground-truth")
+async def get_nlq_invoices_ground_truth(
+    time_window: Optional[str] = Query(None, description="Time window: last_year, last_quarter, ytd, all_time"),
+    customer_id: Optional[str] = Query(None, description="Filter by customer ID")
+):
+    """
+    Get pre-computed ground truth for invoice queries.
+    
+    Useful for validating NLQ queries like:
+    - "What is total revenue last year?"
+    - "Who are the top customers?"
+    - "What was Q3 2024 revenue?"
+    """
+    import os
+    from datetime import datetime
+    
+    invoices_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "nlq_invoices.json")
+    
+    try:
+        with open(invoices_path, "r") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="NLQ invoices dataset not found")
+    
+    ground_truth = data.get("ground_truth", {})
+    invoices = data.get("invoices", [])
+    
+    # Compute based on time window
+    result = {
+        "time_window": time_window or "all_time",
+        "computed_at": datetime.utcnow().isoformat()
+    }
+    
+    if customer_id:
+        customer_data = ground_truth.get("customer_totals", {}).get(customer_id)
+        if customer_data:
+            result["customer"] = {
+                "customer_id": customer_id,
+                **customer_data
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
+        return result
+    
+    if time_window == "last_year" or time_window == "2024":
+        result["total_revenue"] = ground_truth.get("total_revenue_2024", 0)
+        result["quarters"] = {k: v for k, v in ground_truth.get("quarterly_revenue", {}).items() if k.startswith("2024")}
+    elif time_window == "ytd" or time_window == "2025":
+        result["total_revenue"] = ground_truth.get("total_revenue_2025", 0)
+        result["quarters"] = {k: v for k, v in ground_truth.get("quarterly_revenue", {}).items() if k.startswith("2025")}
+    elif time_window and time_window.startswith("Q"):
+        parts = time_window.split("_")
+        if len(parts) == 2:
+            quarter_key = f"{parts[1]}_Q{parts[0][1]}"
+            result["total_revenue"] = ground_truth.get("quarterly_revenue", {}).get(quarter_key, 0)
+    else:
+        result["total_revenue"] = ground_truth.get("total_revenue_all_time", 0)
+        result["by_year"] = {
+            "2024": ground_truth.get("total_revenue_2024", 0),
+            "2025": ground_truth.get("total_revenue_2025", 0)
+        }
+        result["quarterly_revenue"] = ground_truth.get("quarterly_revenue", {})
+    
+    # Top customers
+    customer_totals = ground_truth.get("customer_totals", {})
+    sorted_customers = sorted(customer_totals.items(), key=lambda x: x[1]["total"], reverse=True)
+    result["top_customers"] = [
+        {"customer_id": cid, **cdata} for cid, cdata in sorted_customers[:5]
+    ]
+    
+    return result
