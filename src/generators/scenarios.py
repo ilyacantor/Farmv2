@@ -34,6 +34,8 @@ from src.models.scenarios import (
     VendorSpendItem,
     VendorSpendMetric,
     ResourceHealthMetric,
+    TotalRevenueResponse,
+    DateRange,
 )
 
 
@@ -143,6 +145,112 @@ ASSET_NAMES = [
 ]
 
 
+def parse_time_window(time_window: Optional[str], reference_date: Optional[datetime] = None) -> tuple[Optional[datetime], Optional[datetime], str]:
+    """Parse a time window string into start/end dates and a human-readable period name.
+
+    Args:
+        time_window: Time window string (e.g., "last_year", "this_quarter", "q1", "2024")
+        reference_date: Reference date for relative calculations (defaults to Dec 31, 2025)
+
+    Returns:
+        Tuple of (start_date, end_date, period_description)
+        Returns (None, None, "All Time") if time_window is None or empty
+    """
+    if not time_window:
+        return None, None, "All Time"
+
+    # Use end of 2025 as reference since our data ends there
+    ref = reference_date or datetime(2025, 12, 31)
+    current_year = ref.year
+    current_month = ref.month
+    current_quarter = (current_month - 1) // 3 + 1
+
+    time_window_lower = time_window.lower().strip()
+
+    # Year-based windows
+    if time_window_lower == "last_year":
+        start = datetime(current_year - 1, 1, 1)
+        end = datetime(current_year - 1, 12, 31, 23, 59, 59)
+        return start, end, f"Last Year ({current_year - 1})"
+
+    if time_window_lower == "this_year":
+        start = datetime(current_year, 1, 1)
+        end = datetime(current_year, 12, 31, 23, 59, 59)
+        return start, end, f"This Year ({current_year})"
+
+    if time_window_lower == "ytd":
+        start = datetime(current_year, 1, 1)
+        end = ref
+        return start, end, f"Year to Date ({current_year})"
+
+    # Specific year (e.g., "2024", "2025")
+    if time_window_lower.isdigit() and len(time_window_lower) == 4:
+        year = int(time_window_lower)
+        start = datetime(year, 1, 1)
+        end = datetime(year, 12, 31, 23, 59, 59)
+        return start, end, str(year)
+
+    # Quarter-based windows
+    quarter_map = {"q1": 1, "q2": 2, "q3": 3, "q4": 4}
+    if time_window_lower in quarter_map:
+        q = quarter_map[time_window_lower]
+        # Assume current year for explicit quarters
+        start_month = (q - 1) * 3 + 1
+        end_month = q * 3
+        start = datetime(current_year, start_month, 1)
+        # Last day of end_month
+        if end_month == 12:
+            end = datetime(current_year, 12, 31, 23, 59, 59)
+        else:
+            end = datetime(current_year, end_month + 1, 1) - timedelta(seconds=1)
+        return start, end, f"Q{q} {current_year}"
+
+    if time_window_lower == "this_quarter":
+        start_month = (current_quarter - 1) * 3 + 1
+        end_month = current_quarter * 3
+        start = datetime(current_year, start_month, 1)
+        if end_month == 12:
+            end = datetime(current_year, 12, 31, 23, 59, 59)
+        else:
+            end = datetime(current_year, end_month + 1, 1) - timedelta(seconds=1)
+        return start, end, f"Q{current_quarter} {current_year}"
+
+    if time_window_lower == "last_quarter":
+        if current_quarter == 1:
+            # Last quarter of previous year
+            start = datetime(current_year - 1, 10, 1)
+            end = datetime(current_year - 1, 12, 31, 23, 59, 59)
+            return start, end, f"Q4 {current_year - 1}"
+        else:
+            prev_q = current_quarter - 1
+            start_month = (prev_q - 1) * 3 + 1
+            end_month = prev_q * 3
+            start = datetime(current_year, start_month, 1)
+            end = datetime(current_year, end_month + 1, 1) - timedelta(seconds=1)
+            return start, end, f"Q{prev_q} {current_year}"
+
+    # Month-based windows
+    if time_window_lower == "this_month":
+        start = datetime(current_year, current_month, 1)
+        if current_month == 12:
+            end = datetime(current_year, 12, 31, 23, 59, 59)
+        else:
+            end = datetime(current_year, current_month + 1, 1) - timedelta(seconds=1)
+        return start, end, f"{start.strftime('%B %Y')}"
+
+    if time_window_lower == "last_month":
+        if current_month == 1:
+            start = datetime(current_year - 1, 12, 1)
+            end = datetime(current_year - 1, 12, 31, 23, 59, 59)
+        else:
+            start = datetime(current_year, current_month - 1, 1)
+            end = datetime(current_year, current_month, 1) - timedelta(seconds=1)
+        return start, end, f"{start.strftime('%B %Y')}"
+
+    # Unknown time window - return None to indicate invalid
+    return None, None, "All Time"
+
+
 class ScenarioGenerator:
     """Deterministic scenario generator for ground truth validation."""
     
@@ -153,7 +261,7 @@ class ScenarioGenerator:
         self.rng = random.Random(seed)
         
         self.time_range = TimeRange(
-            start_date="2025-10-01",
+            start_date="2024-01-01",
             end_date="2025-12-31"
         )
         
@@ -177,18 +285,25 @@ class ScenarioGenerator:
         hash_val = hashlib.md5(hash_input.encode()).hexdigest()[:8]
         return f"{prefix}-{hash_val}"
     
-    def _random_date_in_range(self, month: int) -> str:
-        """Generate a random date within the specified month (Oct=10, Nov=11, Dec=12)."""
-        year = 2025
-        if month == 10:
-            day = self.rng.randint(1, 31)
-        elif month == 11:
-            day = self.rng.randint(1, 30)
+    def _random_date_in_month(self, year: int, month: int) -> str:
+        """Generate a random date within the specified year and month."""
+        days_in_month = {
+            1: 31, 2: 28, 3: 31, 4: 30, 5: 31, 6: 30,
+            7: 31, 8: 31, 9: 30, 10: 31, 11: 30, 12: 31
+        }
+        # Handle leap year for February
+        if month == 2 and year % 4 == 0 and (year % 100 != 0 or year % 400 == 0):
+            max_day = 29
         else:
-            day = self.rng.randint(1, 31)
-        
+            max_day = days_in_month[month]
+
+        day = self.rng.randint(1, max_day)
         dt = datetime(year, month, day, self.rng.randint(0, 23), self.rng.randint(0, 59))
         return dt.isoformat() + "Z"
+
+    def _random_date_in_range(self, month: int) -> str:
+        """Generate a random date within the specified month (legacy support, assumes 2025)."""
+        return self._random_date_in_month(2025, month)
     
     def _generate_customers(self):
         """Generate customer records with hierarchy and pathologies."""
@@ -217,14 +332,16 @@ class ScenarioGenerator:
                 parent_id = self._customers[parent_idx].customer_id
             
             region = self.rng.choice(list(RegionEnum))
-            created_month = self.rng.choice([10, 11, 12])
-            
+            # Customers created across the full 2-year range
+            created_year = self.rng.choice([2024, 2025])
+            created_month = self.rng.randint(1, 12)
+
             customer = Customer(
                 customer_id=self._generate_id("CUST", i),
                 name=name,
                 region=region,
                 parent_customer_id=parent_id,
-                created_at=self._random_date_in_range(created_month)
+                created_at=self._random_date_in_month(created_year, created_month)
             )
             self._customers.append(customer)
         
@@ -253,34 +370,42 @@ class ScenarioGenerator:
             self._vendors.append(vendor)
     
     def _generate_invoices(self):
-        """Generate invoice records with refunds and pathologies."""
+        """Generate invoice records with refunds and pathologies.
+
+        Invoices are distributed across 24 months (Jan 2024 - Dec 2025)
+        with realistic distribution patterns.
+        """
         config = SCALE_CONFIGS[self.scale]
         count = self.rng.randint(config["invoices_min"], config["invoices_max"])
-        
-        per_month = count // 3
+
+        # Scale up invoice count for 2-year range (was designed for 3 months)
+        # Multiply by ~8 to maintain similar monthly density
+        count = count * 8
+
+        # Generate list of (year, month) tuples for 24 months
+        months_in_range = [(2024, m) for m in range(1, 13)] + [(2025, m) for m in range(1, 13)]
+        per_month = count // 24
+
         currency_variance = 0
         refund_count = 0
         orphaned_refs = 0
-        
+
         for i in range(count):
-            if i < per_month:
-                month = 10
-            elif i < per_month * 2:
-                month = 11
-            else:
-                month = 12
-            
+            # Determine which month this invoice belongs to
+            month_idx = min(i // per_month, 23) if per_month > 0 else self.rng.randint(0, 23)
+            year, month = months_in_range[month_idx]
+
             customer = self.rng.choice(self._customers)
             vendor = self.rng.choice(self._vendors)
-            
+
             currency = CurrencyEnum.USD
             if self.rng.random() < 0.15:
                 currency = self.rng.choice([CurrencyEnum.EUR, CurrencyEnum.GBP, CurrencyEnum.JPY])
                 currency_variance += 1
-            
+
             base_amount = self.rng.uniform(100, 50000)
             amount = round(base_amount, 2)
-            
+
             is_refund = False
             original_invoice_id = None
             if self.rng.random() < 0.10 and i > 20:
@@ -288,23 +413,23 @@ class ScenarioGenerator:
                 refund_count += 1
                 amount = -abs(amount * self.rng.uniform(0.1, 1.0))
                 amount = round(amount, 2)
-                
+
                 if self.rng.random() < 0.1:
                     original_invoice_id = self._generate_id("INV", 999999)
                     orphaned_refs += 1
                 else:
                     ref_idx = self.rng.randint(0, i - 1)
                     original_invoice_id = self._invoices[ref_idx].invoice_id
-            
-            invoice_date = self._random_date_in_range(month)
+
+            invoice_date = self._random_date_in_month(year, month)
             due_date_dt = datetime.fromisoformat(invoice_date.rstrip("Z")) + timedelta(days=30)
             due_date = due_date_dt.isoformat() + "Z"
-            
+
             if is_refund:
                 status = InvoiceStatus.paid
             else:
                 status = self.rng.choice([InvoiceStatus.paid, InvoiceStatus.pending, InvoiceStatus.overdue])
-            
+
             invoice = Invoice(
                 invoice_id=self._generate_id("INV", i),
                 customer_id=customer.customer_id,
@@ -318,7 +443,7 @@ class ScenarioGenerator:
                 original_invoice_id=original_invoice_id
             )
             self._invoices.append(invoice)
-        
+
         self._pathologies.currency_variance_count = currency_variance
         self._pathologies.refund_invoices = refund_count
         self._pathologies.orphaned_references = orphaned_refs
@@ -462,19 +587,120 @@ class ScenarioGenerator:
             prev_revenue = revenue
         
         return RevenueMoMMetric(months=result)
-    
-    def get_top_customers(self, limit: int = 10) -> TopCustomersMetric:
-        """Return top customers by revenue."""
-        total_revenue = sum(self._revenue_by_customer.values())
-        
+
+    def get_total_revenue(self, time_window: Optional[str] = None) -> TotalRevenueResponse:
+        """Return total revenue metric with optional time filtering.
+
+        Args:
+            time_window: Optional time filter. Supported values:
+                - "last_year" / "this_year" / "ytd" (year-to-date)
+                - "last_quarter" / "this_quarter" / "q1" / "q2" / "q3" / "q4"
+                - "last_month" / "this_month"
+                - Specific year: "2024", "2025"
+                - None: returns all-time total
+
+        Returns:
+            TotalRevenueResponse with revenue, period info, and date range
+        """
+        start_date, end_date, period_name = parse_time_window(time_window)
+
+        # Filter invoices by date range
+        total_revenue = 0.0
+        transaction_count = 0
+
+        for inv in self._invoices:
+            if inv.is_refund:
+                continue
+
+            # Parse invoice date
+            inv_date_str = inv.invoice_date.rstrip("Z")
+            try:
+                inv_date = datetime.fromisoformat(inv_date_str)
+            except ValueError:
+                continue
+
+            # Apply time filter if specified
+            if start_date and end_date:
+                if not (start_date <= inv_date <= end_date):
+                    continue
+
+            # Convert to USD
+            rate = getattr(self._currency_rates, inv.currency.value)
+            usd_amount = inv.amount * rate
+            total_revenue += usd_amount
+            transaction_count += 1
+
+        # Build response
+        if start_date and end_date:
+            date_range = DateRange(
+                start=start_date.strftime("%Y-%m-%d"),
+                end=end_date.strftime("%Y-%m-%d")
+            )
+            time_window_applied = time_window
+        else:
+            date_range = DateRange(
+                start=self.time_range.start_date,
+                end=self.time_range.end_date
+            )
+            time_window_applied = None
+
+        return TotalRevenueResponse(
+            total_revenue=round(total_revenue, 2),
+            period=period_name,
+            transaction_count=transaction_count,
+            time_window_applied=time_window_applied,
+            date_range=date_range
+        )
+
+    def get_top_customers(self, limit: int = 10, time_window: Optional[str] = None) -> TopCustomersMetric:
+        """Return top customers by revenue with optional time filtering.
+
+        Args:
+            limit: Number of top customers to return (default 10)
+            time_window: Optional time filter. Supported values:
+                - "last_year" / "this_year" / "ytd" (year-to-date)
+                - "last_quarter" / "this_quarter" / "q1" / "q2" / "q3" / "q4"
+                - "last_month" / "this_month"
+                - Specific year: "2024", "2025"
+                - None: returns all-time totals
+
+        Returns:
+            TopCustomersMetric with customers ranked by revenue in the time period
+        """
+        start_date, end_date, _ = parse_time_window(time_window)
+
+        # Compute revenue by customer for the specified time window
+        revenue_by_customer: dict[str, float] = defaultdict(float)
+
+        for inv in self._invoices:
+            if inv.is_refund:
+                continue
+
+            # Apply time filter if specified
+            if start_date and end_date:
+                inv_date_str = inv.invoice_date.rstrip("Z")
+                try:
+                    inv_date = datetime.fromisoformat(inv_date_str)
+                except ValueError:
+                    continue
+                if not (start_date <= inv_date <= end_date):
+                    continue
+
+            # Convert to USD
+            rate = getattr(self._currency_rates, inv.currency.value)
+            usd_amount = inv.amount * rate
+            revenue_by_customer[inv.customer_id] += usd_amount
+
+        total_revenue = sum(revenue_by_customer.values())
+
         sorted_customers = sorted(
-            self._revenue_by_customer.items(),
+            revenue_by_customer.items(),
             key=lambda x: x[1],
             reverse=True
         )[:limit]
-        
+
         customer_map = {c.customer_id: c.name for c in self._customers}
-        
+
         result = []
         for cust_id, revenue in sorted_customers:
             pct = round((revenue / total_revenue) * 100, 2) if total_revenue > 0 else 0
@@ -484,7 +710,7 @@ class ScenarioGenerator:
                 revenue=round(revenue, 2),
                 percent_of_total=pct
             ))
-        
+
         return TopCustomersMetric(customers=result)
     
     def get_vendor_spend(self) -> VendorSpendMetric:

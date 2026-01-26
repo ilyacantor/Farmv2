@@ -27,6 +27,7 @@ from src.models.scenarios import (
     VendorSpendMetric,
     ResourceHealthMetric,
     InvoiceVerificationResult,
+    TotalRevenueResponse,
 )
 from src.generators.scenarios import get_or_create_scenario, ScenarioGenerator
 
@@ -124,14 +125,53 @@ async def get_revenue_mom(scenario_id: str = Path(..., description="Scenario ID"
     return generator.get_revenue_mom()
 
 
+@router.get("/{scenario_id}/metrics/total-revenue", response_model=TotalRevenueResponse)
+async def get_total_revenue(
+    scenario_id: str = Path(..., description="Scenario ID"),
+    time_window: Optional[str] = Query(
+        None,
+        description="Time filter: 'last_year', 'this_year', 'ytd', 'last_quarter', 'this_quarter', "
+                    "'q1'-'q4', 'last_month', 'this_month', or a year like '2024'. "
+                    "Leave empty for all-time total."
+    )
+):
+    """Get total revenue with optional time filtering.
+
+    Supports various time window filters for temporal revenue queries:
+    - **Year-based**: `last_year`, `this_year`, `ytd` (year-to-date), or specific year (`2024`, `2025`)
+    - **Quarter-based**: `last_quarter`, `this_quarter`, `q1`, `q2`, `q3`, `q4`
+    - **Month-based**: `last_month`, `this_month`
+    - **All-time**: Leave `time_window` empty or null
+
+    Returns total revenue, transaction count, and the date range applied.
+    """
+    generator = _get_generator(scenario_id)
+    return generator.get_total_revenue(time_window)
+
+
 @router.get("/{scenario_id}/metrics/top-customers", response_model=TopCustomersMetric)
 async def get_top_customers(
     scenario_id: str = Path(..., description="Scenario ID"),
-    limit: int = Query(10, ge=1, le=100, description="Number of top customers to return")
+    limit: int = Query(10, ge=1, le=100, description="Number of top customers to return"),
+    time_window: Optional[str] = Query(
+        None,
+        description="Time filter: 'last_year', 'this_year', 'ytd', 'last_quarter', 'this_quarter', "
+                    "'q1'-'q4', 'last_month', 'this_month', or a year like '2024'. "
+                    "Leave empty for all-time totals."
+    )
 ):
-    """Get top customers by revenue."""
+    """Get top customers by revenue with optional time filtering.
+
+    Supports various time window filters for temporal queries:
+    - **Year-based**: `last_year`, `this_year`, `ytd` (year-to-date), or specific year (`2024`, `2025`)
+    - **Quarter-based**: `last_quarter`, `this_quarter`, `q1`, `q2`, `q3`, `q4`
+    - **Month-based**: `last_month`, `this_month`
+    - **All-time**: Leave `time_window` empty or null
+
+    Returns top customers ranked by revenue in the specified time period.
+    """
     generator = _get_generator(scenario_id)
-    return generator.get_top_customers(limit)
+    return generator.get_top_customers(limit, time_window)
 
 
 @router.get("/{scenario_id}/metrics/vendor-spend", response_model=VendorSpendMetric)

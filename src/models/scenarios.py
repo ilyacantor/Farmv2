@@ -135,6 +135,22 @@ class RevenueMetric(BaseModel):
     period_end: str
 
 
+class DateRange(BaseModel):
+    """Date range for time-filtered queries."""
+    start: str
+    end: str
+
+
+class TotalRevenueResponse(BaseModel):
+    """Response model for time-filtered total revenue queries."""
+    total_revenue: float
+    period: str  # Human-readable: "Last Year (2025)", "Q3 2025", etc.
+    transaction_count: int
+    time_window_applied: Optional[str] = None  # The filter that was applied
+    date_range: DateRange
+    warning: Optional[str] = None  # For graceful degradation
+
+
 class MonthlyRevenue(BaseModel):
     month: str
     revenue: float
