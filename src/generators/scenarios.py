@@ -751,7 +751,19 @@ class ScenarioGenerator:
         if not self._generated:
             self.generate()
         return self._invoices
-    
+
+    def get_customers(self) -> list[Customer]:
+        """Get all customers in the scenario."""
+        if not self._generated:
+            self.generate()
+        return self._customers
+
+    def get_vendors(self) -> list[Vendor]:
+        """Get all vendors in the scenario."""
+        if not self._generated:
+            self.generate()
+        return self._vendors
+
     def get_invoice(self, invoice_id: str) -> Optional[Invoice]:
         """Get a specific invoice by ID."""
         for inv in self._invoices:

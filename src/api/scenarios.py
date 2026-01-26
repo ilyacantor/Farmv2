@@ -5,7 +5,9 @@ Provides endpoints to generate scenarios and access ground truth metrics
 for validating intent resolution and aggregation correctness.
 """
 import asyncio
+import csv
 import hashlib
+import io
 import json
 import random
 import time
@@ -14,7 +16,7 @@ from enum import Enum
 from typing import Optional, AsyncGenerator
 
 from fastapi import APIRouter, Query, Path, HTTPException, Body
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 
 from src.models.scenarios import (
@@ -179,6 +181,60 @@ async def get_vendor_spend(scenario_id: str = Path(..., description="Scenario ID
     """Get vendor spend breakdown."""
     generator = _get_generator(scenario_id)
     return generator.get_vendor_spend()
+
+
+@router.get("/{scenario_id}/export/invoices.csv")
+async def export_invoices_csv(
+    scenario_id: str = Path(..., description="Scenario ID"),
+    limit: Optional[int] = Query(None, ge=1, le=10000, description="Limit number of invoices (default: all)")
+):
+    """Export invoices as CSV for local testing.
+
+    Returns CSV with columns:
+    - invoice_id, customer_id, customer_name, vendor_id, vendor_name
+    - amount, currency, invoice_date, due_date, status, is_refund
+
+    Data spans 2024-2025 for testing time_window queries.
+    """
+    generator = _get_generator(scenario_id)
+    invoices = generator.get_invoices()
+    customers = {c.customer_id: c.name for c in generator.get_customers()}
+    vendors = {v.vendor_id: v.name for v in generator.get_vendors()}
+
+    if limit:
+        invoices = invoices[:limit]
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header
+    writer.writerow([
+        "invoice_id", "customer_id", "customer_name", "vendor_id", "vendor_name",
+        "amount", "currency", "invoice_date", "due_date", "status", "is_refund"
+    ])
+
+    # Data rows
+    for inv in invoices:
+        writer.writerow([
+            inv.invoice_id,
+            inv.customer_id,
+            customers.get(inv.customer_id, "Unknown"),
+            inv.vendor_id,
+            vendors.get(inv.vendor_id, "Unknown"),
+            inv.amount,
+            inv.currency.value,
+            inv.invoice_date[:10],  # Just the date part
+            inv.due_date[:10],
+            inv.status.value,
+            inv.is_refund
+        ])
+
+    csv_content = output.getvalue()
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=invoices_{scenario_id}.csv"}
+    )
 
 
 @router.get("/{scenario_id}/metrics/resource-health", response_model=ResourceHealthMetric)
