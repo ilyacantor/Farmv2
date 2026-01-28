@@ -303,6 +303,64 @@ async def health_check():
         }
     )
 
+@app.get("/api/docs/user-guide")
+async def get_user_guide():
+    """Serve the user guide as rendered HTML."""
+    import os
+    import markdown
+    
+    guide_path = os.path.join(os.path.dirname(__file__), "..", "docs", "USER_GUIDE.md")
+    
+    try:
+        with open(guide_path, "r") as f:
+            md_content = f.read()
+    except FileNotFoundError:
+        return HTMLResponse("<div class='text-red-400'>User guide not found</div>", status_code=404)
+    
+    html_content = markdown.markdown(
+        md_content, 
+        extensions=['tables', 'fenced_code', 'codehilite', 'toc']
+    )
+    
+    styled_html = f'''
+    <style>
+        .guide-content h1 {{ font-size: 1.75rem; font-weight: 700; color: #34d399; margin-bottom: 1rem; margin-top: 2rem; }}
+        .guide-content h2 {{ font-size: 1.25rem; font-weight: 600; color: #60a5fa; margin-bottom: 0.75rem; margin-top: 1.5rem; border-bottom: 1px solid #475569; padding-bottom: 0.5rem; }}
+        .guide-content h3 {{ font-size: 1rem; font-weight: 600; color: #a78bfa; margin-bottom: 0.5rem; margin-top: 1rem; }}
+        .guide-content p {{ color: #cbd5e1; margin-bottom: 0.75rem; line-height: 1.6; }}
+        .guide-content ul, .guide-content ol {{ color: #cbd5e1; margin-left: 1.5rem; margin-bottom: 0.75rem; }}
+        .guide-content li {{ margin-bottom: 0.25rem; }}
+        .guide-content code {{ background: #1e293b; padding: 0.125rem 0.375rem; border-radius: 0.25rem; font-size: 0.875rem; color: #f472b6; }}
+        .guide-content pre {{ background: #0f172a; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; margin-bottom: 1rem; border: 1px solid #334155; }}
+        .guide-content pre code {{ background: none; padding: 0; color: #e2e8f0; }}
+        .guide-content table {{ width: 100%; border-collapse: collapse; margin-bottom: 1rem; }}
+        .guide-content th {{ background: #1e293b; color: #94a3b8; padding: 0.5rem; text-align: left; border: 1px solid #334155; font-size: 0.875rem; }}
+        .guide-content td {{ padding: 0.5rem; border: 1px solid #334155; color: #cbd5e1; font-size: 0.875rem; }}
+        .guide-content a {{ color: #60a5fa; text-decoration: underline; }}
+        .guide-content hr {{ border: none; border-top: 1px solid #475569; margin: 2rem 0; }}
+        .guide-content blockquote {{ border-left: 3px solid #6366f1; padding-left: 1rem; color: #94a3b8; font-style: italic; }}
+    </style>
+    <div class="guide-content">{html_content}</div>
+    '''
+    
+    return HTMLResponse(styled_html)
+
+@app.get("/api/docs/user-guide/raw")
+async def get_user_guide_raw():
+    """Serve the raw markdown user guide."""
+    import os
+    from fastapi.responses import PlainTextResponse
+    
+    guide_path = os.path.join(os.path.dirname(__file__), "..", "docs", "USER_GUIDE.md")
+    
+    try:
+        with open(guide_path, "r") as f:
+            content = f.read()
+    except FileNotFoundError:
+        return PlainTextResponse("User guide not found", status_code=404)
+    
+    return PlainTextResponse(content, media_type="text/markdown")
+
 @app.get("/api/_test/error-html")
 async def test_error_html():
     """Test endpoint: Simulates server returning HTML (for frontend resilience testing).
