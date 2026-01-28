@@ -1,460 +1,207 @@
-# AOS Farm User Guide
+# AOS Farm Operator Guide
 
-AOS Farm is the **Test Oracle** for the AutonomOS platform. It generates synthetic test data, computes expected outcomes, and grades actual results to ensure other AOS components behave correctly.
-
----
-
-## Table of Contents
-
-1. [Quick Start](#quick-start)
-2. [Snapshot Management](#snapshot-management)
-3. [Reconciliation & Grading](#reconciliation--grading)
-4. [Agent Stress Testing](#agent-stress-testing)
-5. [DCL/NLQ Testing](#dclnlq-testing)
-6. [API Reference](#api-reference)
+Welcome to AOS Farm, the Test Oracle for AutonomOS. This guide will help you use the platform to generate test data, run validations, and stress test your systems.
 
 ---
 
-## Quick Start
+## Getting Started
 
-### Base URL
-```
-https://your-farm-instance.replit.app
-```
+When you open AOS Farm, you'll see a navigation bar at the top with these tabs:
 
-### Generate Your First Scenario
-```bash
-curl -X POST "https://your-farm-url/api/scenarios/generate" \
-  -H "Content-Type: application/json" \
-  -d '{"seed": 12345, "scale": "medium"}'
-```
-
-Response:
-```json
-{
-  "scenario_id": "dfa0ae0d57c9",
-  "manifest": {
-    "entity_counts": {
-      "invoices": 604,
-      "customers": 133,
-      "vendors": 25,
-      "assets": 261
-    }
-  }
-}
-```
-
-### Key Concepts
-
-| Term | Description |
-|------|-------------|
-| **Scenario** | A deterministic dataset for testing DCL/NLQ systems |
-| **Snapshot** | Enterprise data with 7 correlated data planes for AOD grading |
-| **Reconciliation** | Comparing AOD results against expected outcomes |
-| **Stress Test** | Agent fleet + workflow generation for AOA validation |
+- **Overview** - System status and quick actions
+- **Console** - Main workspace for snapshots and reconciliations
+- **Agents** - Stress testing for agent orchestration systems
+- **Scenarios** - Ground truth datasets for data validation
+- **Guide** - This documentation
 
 ---
 
-## Snapshot Management
+## Console Tab: Snapshots & Validation
 
-Snapshots represent synthetic enterprise data used to test and grade AOD (AutonomOS Discover).
+The Console is your main workspace for managing test data.
 
-### Generate a Snapshot
-```bash
-curl -X POST "https://your-farm-url/api/snapshots" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "org_name": "TestCorp",
-    "preset": "PRESET_3_PLATFORM_ORIENTED",
-    "scale": "small",
-    "seed": 42
-  }'
-```
+### Creating a Snapshot
 
-### List Snapshots
-```bash
-curl "https://your-farm-url/api/snapshots"
-```
+A snapshot is a synthetic dataset representing an enterprise's systems, integrations, and data flows.
 
-### Retrieve a Snapshot
-```bash
-curl "https://your-farm-url/api/snapshots/{snapshot_id}"
-```
+1. In the left panel, find the **Snapshots** section
+2. Click **Generate New Snapshot**
+3. Configure your snapshot:
+   - **Organization Name**: Give it a memorable name (e.g., "TestCorp Q4")
+   - **Preset**: Choose an enterprise archetype:
+     - *iPaaS-Centric*: Heavy use of integration platforms like MuleSoft
+     - *Warehouse-Centric*: Data warehouse as the integration hub
+     - *Platform-Oriented*: Balanced modern platform approach
+     - *API Gateway*: API-first architecture
+     - *Event-Driven*: Streaming and event bus focus
+     - *Scrappy*: Direct connections (small business style)
+   - **Scale**: Small, Medium, or Large dataset size
+   - **Seed** (optional): A number for reproducible results
+4. Click **Generate**
+5. Wait for the snapshot to appear in the list
 
-### Delete a Snapshot
-```bash
-curl -X DELETE "https://your-farm-url/api/snapshots/{snapshot_id}"
-```
+### Viewing Snapshot Details
 
-### Enterprise Presets
+Click any snapshot in the list to see:
+- Entity counts (apps, integrations, users, assets)
+- Data quality metrics
+- Generated timestamp
 
-| Preset | Description |
-|--------|-------------|
-| `PRESET_1_IPAAS_CENTRIC` | Heavy iPaaS usage (MuleSoft, Workato) |
-| `PRESET_2_WAREHOUSE_CENTRIC` | Data warehouse as integration hub |
-| `PRESET_3_PLATFORM_ORIENTED` | Balanced platform approach |
-| `PRESET_4_API_GATEWAY` | API Gateway-centric architecture |
-| `PRESET_5_EVENT_DRIVEN` | Event bus / streaming focus |
-| `PRESET_6_SCRAPPY` | Direct SaaS connections (no fabric) |
+### Deleting Snapshots
 
-### Data Planes (7 Correlated Layers)
-
-Each snapshot contains:
-1. **Applications** - SaaS and internal apps
-2. **Integrations** - Connections between apps
-3. **Data Flows** - Movement of data
-4. **Users** - Identity and access
-5. **Assets** - Infrastructure resources
-6. **Vendors** - Third-party providers
-7. **Finance** - Invoices and spend
+To remove old snapshots:
+1. Click the red **Erase All** button (removes all snapshots)
+2. Confirm when prompted
 
 ---
 
-## Reconciliation & Grading
+## Console Tab: Validation Lab
 
-Reconciliation compares AOD's discovered results against Farm's expected outcomes.
+The Validation Lab compares actual system results against expected outcomes.
 
-### Create a Reconciliation Run
-```bash
-curl -X POST "https://your-farm-url/api/reconciliations" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "snapshot_id": "snap_abc123",
-    "aod_results": { ... }
-  }'
-```
+### Running a Reconciliation
 
-### List Reconciliation Runs
-```bash
-curl "https://your-farm-url/api/reconciliations?limit=25"
-```
+A reconciliation checks if your discovery system (AOD) found what it should have found.
 
-### Get Reconciliation Details
-```bash
-curl "https://your-farm-url/api/reconciliations/{run_id}"
-```
+1. Select a snapshot from the dropdown
+2. Paste your system's results (or use the test input)
+3. Click **Run Reconciliation**
+4. Review the results:
+   - **Green**: Matches expected
+   - **Yellow**: Partial match
+   - **Red**: Missing or incorrect
 
-### Grading Metrics
+### Understanding Results
 
-| Metric | Description |
-|--------|-------------|
-| `accuracy` | % of correct matches |
-| `precision` | True positives / (True positives + False positives) |
-| `recall` | True positives / (True positives + False negatives) |
-| `f1_score` | Harmonic mean of precision and recall |
+Each reconciliation shows:
+- **Accuracy**: Overall correctness percentage
+- **Precision**: How many found items were correct
+- **Recall**: How many expected items were found
+- **Mismatches**: Specific items that didn't match
 
 ---
 
-## Agent Stress Testing
+## Agents Tab: Stress Testing
 
-Generate synthetic agent fleets and workflow graphs to stress test AOA (AutonomOS Agents).
+Use this tab to test how your agent orchestration system handles load and chaos.
 
-### Generate Agent Fleet
-```bash
-curl -X POST "https://your-farm-url/api/agents/fleet" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "count": 50,
-    "seed": 999,
-    "chaos_rate": 0.1
-  }'
-```
+### Generating an Agent Fleet
 
-### Generate Workflow Graph
-```bash
-curl -X POST "https://your-farm-url/api/agents/workflow" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "pattern": "dag",
-    "node_count": 20,
-    "seed": 123
-  }'
-```
+1. Go to the **Agents** tab
+2. Set the number of agents to generate
+3. Optionally set a seed for reproducible results
+4. Click **Generate Fleet**
 
-Workflow Patterns:
-- `linear` - Sequential steps
-- `dag` - Directed Acyclic Graph
-- `parallel` - Concurrent branches
-- `saga` - Compensating transactions
+This creates synthetic agent profiles with different capabilities, permissions, and behaviors.
 
-### Generate Stress Scenario
-```bash
-curl -X POST "https://your-farm-url/api/agents/stress-scenario" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "agent_count": 100,
-    "workflow_count": 50,
-    "chaos_types": ["tool_timeout", "agent_conflict"],
-    "seed": 555
-  }'
-```
+### Generating Workflows
 
-### Chaos Injection Types
+1. Choose a workflow pattern:
+   - *Linear*: Step-by-step tasks
+   - *DAG*: Branching decision trees
+   - *Parallel*: Concurrent task execution
+   - *Saga*: Multi-step with rollback capabilities
+2. Set the number of nodes
+3. Click **Generate Workflow**
 
-| Type | Description |
-|------|-------------|
-| `tool_timeout` | Simulated tool execution delays |
-| `agent_conflict` | Multiple agents claiming same task |
-| `memory_pressure` | High memory usage simulation |
-| `network_partition` | Simulated network failures |
-| `approval_delay` | Human approval bottlenecks |
+### Running a Stress Test
 
-### Run Stress Test
-```bash
-curl -X POST "https://your-farm-url/api/agents/stress-test/run" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "scenario_id": "stress_abc123",
-    "target_url": "https://aoa-instance.example.com"
-  }'
-```
-
-### List Stress Test Results
-```bash
-curl "https://your-farm-url/api/agents/stress-runs"
-```
+1. Generate both a fleet and workflows
+2. Configure chaos injection (optional):
+   - *Tool Timeout*: Simulates slow responses
+   - *Agent Conflict*: Multiple agents claiming same task
+   - *Memory Pressure*: High resource usage
+   - *Network Issues*: Connection problems
+3. Click **Run Stress Test**
+4. Monitor results in the stress test history
 
 ---
 
-## DCL/NLQ Testing
+## Scenarios Tab: Data Validation
 
-Use Farm as ground truth for validating Data Contract Library (DCL), Business Logic Layer (BLL), and Natural Language Query (NLQ) systems.
+Scenarios provide ground truth datasets for testing data systems.
 
-### 1. Generate a Scenario
+### Generating a Scenario
 
-```bash
-curl -X POST "https://your-farm-url/api/scenarios/generate" \
-  -H "Content-Type: application/json" \
-  -d '{"seed": 12345, "scale": "medium"}'
-```
+1. Go to the **Scenarios** tab
+2. Choose a scale (Small, Medium, or Large)
+3. Optionally enter a seed number for reproducibility
+4. Click **Generate Scenario**
 
-Save the `scenario_id` for subsequent calls.
+The scenario includes customers, invoices, vendors, and assets spanning multiple months.
 
-### 2. Query Ground Truth Metrics
+### Viewing Metrics
 
-**Total Revenue:**
-```bash
-curl "https://your-farm-url/api/scenarios/{scenario_id}/metrics/revenue"
-```
+After generating a scenario, you'll see five metric cards:
 
-**Month-over-Month Trend:**
-```bash
-curl "https://your-farm-url/api/scenarios/{scenario_id}/metrics/revenue-mom"
-```
+1. **Total Revenue**: Combined revenue for the period
+2. **Month-over-Month**: Revenue trend between months
+3. **Top Customers**: Highest revenue customers
+4. **Vendor Spend**: Spending by vendor
+5. **Resource Health**: Active vs. zombie vs. orphan assets
 
-**Top Customers:**
-```bash
-curl "https://your-farm-url/api/scenarios/{scenario_id}/metrics/top-customers?limit=5"
-```
+These metrics are the "correct answers" your data systems should produce.
 
-**Vendor Spend:**
-```bash
-curl "https://your-farm-url/api/scenarios/{scenario_id}/metrics/vendor-spend"
-```
+### Testing with Toxic Data
 
-**Resource Health:**
-```bash
-curl "https://your-farm-url/api/scenarios/{scenario_id}/metrics/resource-health"
-```
+To test how your system handles bad data:
 
-### 3. Test NLQ Validation Flow
+1. Adjust the **Chaos Rate** slider (0-100%)
+2. Click **Start Stream**
+3. A new tab opens with streaming data containing errors:
+   - Missing required fields
+   - Duplicate records
+   - Invalid currency codes
+   - Outdated timestamps
+   - References to non-existent records
 
-```python
-# 1. Generate deterministic scenario
-scenario = requests.post(f"{FARM}/api/scenarios/generate", 
-    json={"seed": 12345, "scale": "medium"}).json()
-scenario_id = scenario["scenario_id"]
+### Verifying Repairs
 
-# 2. Get ground truth
-ground_truth = requests.get(
-    f"{FARM}/api/scenarios/{scenario_id}/metrics/top-customers?limit=5").json()
+If your system repairs bad data:
 
-# 3. Execute NLQ query in DCL
-dcl_result = dcl.execute_nlq("Who are our top 5 customers?")
-
-# 4. Compare results
-assert dcl_result == ground_truth["customers"]
-```
-
-### 4. Toxic Stream Testing
-
-Test DCL's drift detection and repair capabilities:
-
-```bash
-# Start toxic data stream
-curl "https://your-farm-url/api/scenarios/{scenario_id}/stream/toxic?chaos=true&chaos_rate=0.15"
-```
-
-Chaos Types:
-| Type | Description |
-|------|-------------|
-| `missing_fields` | Required fields omitted |
-| `duplicate_invoice` | Same invoice_id repeated |
-| `incorrect_currency` | Invalid currency codes |
-| `stale_timestamp` | Very old dates (2020) |
-| `orphaned_reference` | Non-existent customer/vendor IDs |
-
-### 5. Repair & Verify Flow
-
-```bash
-# Get pristine source data
-curl "https://your-farm-url/api/source/salesforce/invoice/{invoice_id}"
-
-# Verify repaired record
-curl -X POST "https://your-farm-url/api/verify/salesforce/invoice" \
-  -H "Content-Type: application/json" \
-  -d '{"invoice_id": "INV-123", "amount": 50000, ...}'
-```
-
-### 6. NLQ Test Questions
-
-Get pre-built NLQ test questions:
-
-```bash
-# All questions (100)
-curl "https://your-farm-url/api/scenarios/nlq/questions"
-
-# Filter by category
-curl "https://your-farm-url/api/scenarios/nlq/questions?category=top_customers"
-
-# List categories
-curl "https://your-farm-url/api/scenarios/nlq/categories"
-```
-
-### 7. Invoice Dataset for Time-Window Queries
-
-```bash
-# Get full dataset
-curl "https://your-farm-url/api/scenarios/nlq/invoices"
-
-# Filter by year
-curl "https://your-farm-url/api/scenarios/nlq/invoices?year=2024"
-
-# Filter by quarter
-curl "https://your-farm-url/api/scenarios/nlq/invoices?year=2024&quarter=4"
-
-# CSV export
-curl "https://your-farm-url/api/scenarios/nlq/invoices?format=csv"
-
-# Ground truth metrics
-curl "https://your-farm-url/api/scenarios/nlq/invoices/ground-truth?time_window=2024"
-```
+1. Enter the invoice ID in the **Verify Repair** section
+2. Paste your repaired record
+3. Click **Verify**
+4. See if your repair matches the expected values
 
 ---
 
-## API Reference
+## Tips for Success
 
-### Snapshots
+### Reproducibility
+- Use the same **seed** number to generate identical datasets
+- This is useful for comparing results across test runs
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/snapshots` | Generate new snapshot |
-| GET | `/api/snapshots` | List all snapshots |
-| GET | `/api/snapshots/{id}` | Get snapshot details |
-| DELETE | `/api/snapshots/{id}` | Delete snapshot |
+### Interpreting Results
+- **100% accuracy** is the goal but not always realistic
+- Focus on improving the metrics that matter most to your use case
+- Compare results over time to track improvements
 
-### Reconciliations
+### Troubleshooting
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/reconciliations` | Create reconciliation run |
-| GET | `/api/reconciliations` | List reconciliation runs |
-| GET | `/api/reconciliations/{id}` | Get run details |
+**Scenario not loading?**
+Scenarios are stored in memory. If the server restarted, generate a new one.
 
-### Scenarios (DCL/NLQ)
+**Metrics showing zeros?**
+Make sure you've generated a scenario first.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/scenarios/generate` | Generate scenario |
-| GET | `/api/scenarios/{id}/metrics/revenue` | Total revenue |
-| GET | `/api/scenarios/{id}/metrics/revenue-mom` | MoM trend |
-| GET | `/api/scenarios/{id}/metrics/top-customers` | Top N customers |
-| GET | `/api/scenarios/{id}/metrics/vendor-spend` | Vendor spending |
-| GET | `/api/scenarios/{id}/metrics/resource-health` | Asset health |
-| GET | `/api/scenarios/{id}/stream/toxic` | Toxic data stream |
-| GET | `/api/scenarios/nlq/questions` | NLQ test questions |
-| GET | `/api/scenarios/nlq/categories` | Question categories |
-| GET | `/api/scenarios/nlq/invoices` | Invoice dataset |
-| GET | `/api/scenarios/nlq/invoices/ground-truth` | Invoice metrics |
-
-### Source & Verify (Repair Flow)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/source/salesforce/invoice/{id}` | Get pristine source |
-| POST | `/api/verify/salesforce/invoice` | Verify repaired record |
-
-### Agent Stress Testing
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/agents/fleet` | Generate agent fleet |
-| POST | `/api/agents/workflow` | Generate workflow graph |
-| POST | `/api/agents/stress-scenario` | Generate stress scenario |
-| POST | `/api/agents/stress-test/run` | Execute stress test |
-| GET | `/api/agents/stress-runs` | List stress test results |
-
-### Verifier
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/verifier/health` | Health check |
-| POST | `/api/verifier/payload` | Generate injection payload |
-| POST | `/api/verifier/inject` | Run injection test |
+**Stream not showing errors?**
+Check that the chaos rate slider is above 0%.
 
 ---
 
-## Best Practices
+## Quick Reference
 
-### Deterministic Testing
-- Always use explicit `seed` values for reproducibility
-- Same `seed` + `scale` = identical `scenario_id` and data
-- Store seeds in CI/CD config for regression testing
-
-### Ground Truth Validation
-```python
-# Pattern for NLQ testing
-def test_nlq_query(query: str, expected_endpoint: str, expected_field: str):
-    dcl_result = dcl.execute(query)
-    farm_truth = requests.get(f"{FARM}{expected_endpoint}").json()
-    assert dcl_result == farm_truth[expected_field]
-```
-
-### Toxic Stream Integration
-```python
-# DCL integration pattern
-for record in farm.stream_toxic(scenario_id):
-    if record.get("_stream_meta", {}).get("chaos_applied"):
-        # Detect and repair
-        pristine = farm.get_source(record["invoice_id"])
-        repaired = dcl.repair(record, pristine)
-        farm.verify(repaired)
-```
-
-### No Green-Test Theater
-- Always include negative tests
-- Verify error cases, not just happy paths
-- Use `UPSTREAM_ERROR`, `INVALID_SNAPSHOT`, `INVALID_INPUT_CONTRACT` statuses
-- Real proof: show failure-before / success-after
+| What you want to do | Where to go |
+|---------------------|-------------|
+| Create test data | Console > Generate Snapshot |
+| Check system accuracy | Console > Validation Lab |
+| Stress test agents | Agents tab |
+| Validate data systems | Scenarios tab |
+| View this guide | Guide tab |
 
 ---
 
-## Troubleshooting
+## Need Help?
 
-### Scenario not found
-Scenarios are stored in memory. Generate a new one if the server restarted.
-
-### Metrics returning zeros
-Ensure you're using the correct `scenario_id` from the generate response.
-
-### Toxic stream not showing chaos
-Check `chaos=true` and `chaos_rate` > 0 in query parameters.
-
-### Verification failing
-Ensure all required fields match the source exactly (case-sensitive).
-
----
-
-## Support
-
-For issues or feature requests, contact the AutonomOS platform team.
+Contact your AutonomOS platform administrator for additional support.
