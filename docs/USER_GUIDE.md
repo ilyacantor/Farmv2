@@ -8,17 +8,20 @@ Welcome to AOS Farm, the Test Oracle for AutonomOS. This guide will help you use
 
 When you open AOS Farm, you'll see a navigation bar at the top with these tabs:
 
-- **Overview** - System status and quick actions
-- **Console** - Main workspace for snapshots and reconciliations
-- **Agents** - Stress testing for agent orchestration systems
-- **Scenarios** - Ground truth datasets for data validation
-- **Guide** - This documentation
+| Tab | Module | Purpose |
+|-----|--------|---------|
+| **Overview** | - | System status and quick actions |
+| **AOD** | AutonomOS Discover | Test data discovery and reconciliation |
+| **AOA** | AutonomOS Agents | Stress test agent orchestration |
+| **NLQ** | Natural Language Query | Ground truth datasets for query validation |
+| **DCL** | Data Contract Library | Toxic stream testing and repair verification |
+| **Guide** | - | This documentation |
 
 ---
 
-## Console Tab: Snapshots & Validation
+## AOD Tab: Discovery Testing
 
-The Console is your main workspace for managing test data.
+The AOD (AutonomOS Discover) tab is your workspace for testing data discovery systems.
 
 ### Creating a Snapshot
 
@@ -40,54 +43,36 @@ A snapshot is a synthetic dataset representing an enterprise's systems, integrat
 4. Click **Generate**
 5. Wait for the snapshot to appear in the list
 
-### Viewing Snapshot Details
-
-Click any snapshot in the list to see:
-- Entity counts (apps, integrations, users, assets)
-- Data quality metrics
-- Generated timestamp
-
-### Deleting Snapshots
-
-To remove old snapshots:
-1. Click the red **Erase All** button (removes all snapshots)
-2. Confirm when prompted
-
----
-
-## Console Tab: Validation Lab
-
-The Validation Lab compares actual system results against expected outcomes.
-
 ### Running a Reconciliation
 
-A reconciliation checks if your discovery system (AOD) found what it should have found.
+A reconciliation checks if AOD correctly discovered what was expected.
 
 1. Select a snapshot from the dropdown
-2. Paste your system's results (or use the test input)
+2. Paste AOD's discovery results (or use test input)
 3. Click **Run Reconciliation**
 4. Review the results:
    - **Green**: Matches expected
    - **Yellow**: Partial match
    - **Red**: Missing or incorrect
 
-### Understanding Results
+### Understanding Grading Metrics
 
-Each reconciliation shows:
-- **Accuracy**: Overall correctness percentage
-- **Precision**: How many found items were correct
-- **Recall**: How many expected items were found
-- **Mismatches**: Specific items that didn't match
+| Metric | What it measures |
+|--------|------------------|
+| Accuracy | Overall correctness percentage |
+| Precision | How many found items were correct |
+| Recall | How many expected items were found |
+| F1 Score | Balance between precision and recall |
 
 ---
 
-## Agents Tab: Stress Testing
+## AOA Tab: Agent Stress Testing
 
-Use this tab to test how your agent orchestration system handles load and chaos.
+The AOA (AutonomOS Agents) tab tests how your agent orchestration system handles load and chaos.
 
 ### Generating an Agent Fleet
 
-1. Go to the **Agents** tab
+1. Go to the **AOA** tab
 2. Set the number of agents to generate
 3. Optionally set a seed for reproducible results
 4. Click **Generate Fleet**
@@ -117,52 +102,93 @@ This creates synthetic agent profiles with different capabilities, permissions, 
 
 ---
 
-## Scenarios Tab: Data Validation
+## NLQ Tab: Query Ground Truth
 
-Scenarios provide ground truth datasets for testing data systems.
+The NLQ (Natural Language Query) tab provides ground truth datasets for validating query systems.
 
 ### Generating a Scenario
 
-1. Go to the **Scenarios** tab
+1. Go to the **NLQ** tab
 2. Choose a scale (Small, Medium, or Large)
 3. Optionally enter a seed number for reproducibility
 4. Click **Generate Scenario**
 
 The scenario includes customers, invoices, vendors, and assets spanning multiple months.
 
-### Viewing Metrics
+### Viewing Ground Truth Metrics
 
-After generating a scenario, you'll see five metric cards:
+After generating a scenario, you'll see five metric cards showing the "correct answers":
 
 1. **Total Revenue**: Combined revenue for the period
 2. **Month-over-Month**: Revenue trend between months
-3. **Top Customers**: Highest revenue customers
-4. **Vendor Spend**: Spending by vendor
+3. **Top Customers**: Highest revenue customers by rank
+4. **Vendor Spend**: Spending breakdown by vendor
 5. **Resource Health**: Active vs. zombie vs. orphan assets
 
-These metrics are the "correct answers" your data systems should produce.
+### How to Use for NLQ Validation
 
-### Testing with Toxic Data
+1. Generate a scenario with a specific seed
+2. Run your NLQ query (e.g., "Who are our top 5 customers?")
+3. Compare your system's answer to Farm's ground truth
+4. The results should match
 
-To test how your system handles bad data:
+---
+
+## DCL Tab: Data Contract Testing
+
+The DCL (Data Contract Library) tab tests how your data ingestion system handles bad data.
+
+### Setting Up
+
+1. Go to the **DCL** tab
+2. If no scenario is loaded, click **Quick Generate** to create one
+3. The scenario provides the source data for testing
+
+### Starting a Toxic Stream
+
+A toxic stream is data with intentional errors to test DCL's resilience.
 
 1. Adjust the **Chaos Rate** slider (0-100%)
-2. Click **Start Stream**
-3. A new tab opens with streaming data containing errors:
-   - Missing required fields
-   - Duplicate records
-   - Invalid currency codes
-   - Outdated timestamps
-   - References to non-existent records
+   - 0% = clean data
+   - 20% = occasional errors
+   - 50% = heavy chaos
+2. Select which chaos types to include:
+   - **Missing Fields**: Required fields omitted
+   - **Duplicates**: Same record repeated
+   - **Invalid Currency**: Wrong currency codes
+   - **Stale Timestamps**: Very old dates
+   - **Orphan Refs**: References to non-existent records
+3. Click **Start Stream**
+4. A new tab opens with the streaming data
+
+### The DCL Test Flow
+
+The integration flow panel shows the expected workflow:
+
+1. **Ingest Toxic Stream** - DCL receives bad data
+2. **DCL Detects Chaos** - Identifies problems via metadata flags
+3. **Fetch Source** - Retrieves pristine data from Farm
+4. **Repair Record** - DCL fixes the data
+5. **Verify Fix** - Confirms repair matches source
+
+### Looking Up Source Data
+
+When DCL detects a bad record, it needs the correct version:
+
+1. Enter the Invoice ID in the lookup field
+2. Click **Lookup**
+3. The pristine (correct) record appears
+4. DCL uses this to repair the damaged record
 
 ### Verifying Repairs
 
-If your system repairs bad data:
+After DCL repairs a record, verify it's correct:
 
-1. Enter the invoice ID in the **Verify Repair** section
-2. Paste your repaired record
-3. Click **Verify**
-4. See if your repair matches the expected values
+1. Paste DCL's repaired record in the text box
+2. Click **Verify Repair**
+3. Results show:
+   - **VALID**: Repair matches source
+   - **INVALID**: Lists the mismatched fields
 
 ---
 
@@ -170,14 +196,22 @@ If your system repairs bad data:
 
 ### Reproducibility
 - Use the same **seed** number to generate identical datasets
-- This is useful for comparing results across test runs
+- This is essential for comparing results across test runs
+- Document which seeds you use for important tests
 
-### Interpreting Results
+### Understanding Results
 - **100% accuracy** is the goal but not always realistic
-- Focus on improving the metrics that matter most to your use case
+- Focus on improving the metrics that matter most
 - Compare results over time to track improvements
 
-### Troubleshooting
+### Cross-Module Testing
+- Generate a scenario in NLQ, then use it in DCL
+- Scenarios are shared across tabs once generated
+- The same scenario can test both query accuracy and data repair
+
+---
+
+## Troubleshooting
 
 **Scenario not loading?**
 Scenarios are stored in memory. If the server restarted, generate a new one.
@@ -185,8 +219,11 @@ Scenarios are stored in memory. If the server restarted, generate a new one.
 **Metrics showing zeros?**
 Make sure you've generated a scenario first.
 
-**Stream not showing errors?**
+**Toxic stream not showing errors?**
 Check that the chaos rate slider is above 0%.
+
+**DCL verification failing?**
+Ensure all required fields match exactly (case-sensitive).
 
 ---
 
@@ -194,11 +231,23 @@ Check that the chaos rate slider is above 0%.
 
 | What you want to do | Where to go |
 |---------------------|-------------|
-| Create test data | Console > Generate Snapshot |
-| Check system accuracy | Console > Validation Lab |
-| Stress test agents | Agents tab |
-| Validate data systems | Scenarios tab |
+| Create test data for discovery | AOD > Generate Snapshot |
+| Check discovery accuracy | AOD > Validation Lab |
+| Stress test agents | AOA tab |
+| Get query ground truth | NLQ tab |
+| Test data ingestion | DCL tab |
 | View this guide | Guide tab |
+
+---
+
+## Module Summary
+
+| Module | Full Name | Tests |
+|--------|-----------|-------|
+| **AOD** | AutonomOS Discover | Data discovery accuracy |
+| **AOA** | AutonomOS Agents | Agent orchestration resilience |
+| **NLQ** | Natural Language Query | Query result correctness |
+| **DCL** | Data Contract Library | Data ingestion and repair |
 
 ---
 
