@@ -5,7 +5,9 @@ Provides endpoints to generate scenarios and access ground truth metrics
 for validating intent resolution and aggregation correctness.
 """
 import asyncio
+import csv
 import hashlib
+import io
 import json
 import random
 import time
@@ -14,7 +16,7 @@ from enum import Enum
 from typing import Optional, AsyncGenerator
 
 from fastapi import APIRouter, Query, Path, HTTPException, Body
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 
 from src.models.scenarios import (
@@ -179,6 +181,60 @@ async def get_vendor_spend(scenario_id: str = Path(..., description="Scenario ID
     """Get vendor spend breakdown."""
     generator = _get_generator(scenario_id)
     return generator.get_vendor_spend()
+
+
+@router.get("/{scenario_id}/export/invoices.csv")
+async def export_invoices_csv(
+    scenario_id: str = Path(..., description="Scenario ID"),
+    limit: Optional[int] = Query(None, ge=1, le=10000, description="Limit number of invoices (default: all)")
+):
+    """Export invoices as CSV for local testing.
+
+    Returns CSV with columns:
+    - invoice_id, customer_id, customer_name, vendor_id, vendor_name
+    - amount, currency, invoice_date, due_date, status, is_refund
+
+    Data spans 2024-2025 for testing time_window queries.
+    """
+    generator = _get_generator(scenario_id)
+    invoices = generator.get_invoices()
+    customers = {c.customer_id: c.name for c in generator.get_customers()}
+    vendors = {v.vendor_id: v.name for v in generator.get_vendors()}
+
+    if limit:
+        invoices = invoices[:limit]
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header
+    writer.writerow([
+        "invoice_id", "customer_id", "customer_name", "vendor_id", "vendor_name",
+        "amount", "currency", "invoice_date", "due_date", "status", "is_refund"
+    ])
+
+    # Data rows
+    for inv in invoices:
+        writer.writerow([
+            inv.invoice_id,
+            inv.customer_id,
+            customers.get(inv.customer_id, "Unknown"),
+            inv.vendor_id,
+            vendors.get(inv.vendor_id, "Unknown"),
+            inv.amount,
+            inv.currency.value,
+            inv.invoice_date[:10],  # Just the date part
+            inv.due_date[:10],
+            inv.status.value,
+            inv.is_refund
+        ])
+
+    csv_content = output.getvalue()
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=invoices_{scenario_id}.csv"}
+    )
 
 
 @router.get("/{scenario_id}/metrics/resource-health", response_model=ResourceHealthMetric)
@@ -418,68 +474,127 @@ async def get_scenario_chaos_catalog(
     }
 
 
-@router.get("/nlq/questions")
-async def get_nlq_questions(
-    category: Optional[str] = Query(None, description="Filter by category"),
-    limit: int = Query(100, ge=1, le=100, description="Number of questions to return")
+@router.get("/nlq/invoices")
+async def get_nlq_invoices(
+    year: Optional[int] = Query(None, description="Filter by year (2024 or 2025)"),
+    quarter: Optional[int] = Query(None, ge=1, le=4, description="Filter by quarter (1-4)"),
+    customer_id: Optional[str] = Query(None, description="Filter by customer ID"),
+    format: str = Query("json", description="Response format: json or csv")
 ):
     """
-    Get NLQ test questions for DCL validation.
+    Get invoice dataset for NLQ time-window query testing.
     
-    Returns a dataset of natural language questions that can be validated
-    against Farm's ground truth endpoints.
+    Supports filtering by year, quarter, and customer.
+    Returns data spanning 2024-2025 for time_window queries.
     """
     import os
+    from datetime import datetime
     
-    questions_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "nlq_test_questions.json")
+    invoices_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "nlq_invoices.json")
     
     try:
-        with open(questions_path, "r") as f:
+        with open(invoices_path, "r") as f:
             data = json.load(f)
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="NLQ questions dataset not found")
+        raise HTTPException(status_code=404, detail="NLQ invoices dataset not found")
     
-    questions = data.get("questions", [])
+    invoices = data.get("invoices", [])
     
-    if category:
-        questions = [q for q in questions if q.get("category") == category]
+    # Apply filters
+    if year:
+        invoices = [inv for inv in invoices if inv["invoice_date"].startswith(str(year))]
+    
+    if quarter:
+        quarter_months = {1: ["01", "02", "03"], 2: ["04", "05", "06"], 3: ["07", "08", "09"], 4: ["10", "11", "12"]}
+        months = quarter_months[quarter]
+        invoices = [inv for inv in invoices if inv["invoice_date"][5:7] in months]
+    
+    if customer_id:
+        invoices = [inv for inv in invoices if inv["customer_id"] == customer_id]
+    
+    if format == "csv":
+        from fastapi.responses import PlainTextResponse
+        csv_lines = ["invoice_id,customer_id,customer_name,amount,invoice_date"]
+        for inv in invoices:
+            csv_lines.append(f'{inv["invoice_id"]},{inv["customer_id"]},{inv["customer_name"]},{inv["amount"]},{inv["invoice_date"]}')
+        return PlainTextResponse("\n".join(csv_lines), media_type="text/csv")
     
     return {
         "metadata": data.get("metadata", {}),
-        "categories": data.get("categories", {}),
-        "questions": questions[:limit],
-        "total_count": len(questions)
+        "invoices": invoices,
+        "count": len(invoices),
+        "ground_truth": data.get("ground_truth", {})
     }
 
 
-@router.get("/nlq/categories")
-async def get_nlq_categories():
+@router.get("/nlq/invoices/ground-truth")
+async def get_nlq_invoices_ground_truth(
+    time_window: Optional[str] = Query(None, description="Time window: last_year, last_quarter, ytd, all_time"),
+    customer_id: Optional[str] = Query(None, description="Filter by customer ID")
+):
     """
-    Get available NLQ question categories.
+    Get pre-computed ground truth for invoice queries.
+    
+    Useful for validating NLQ queries like:
+    - "What is total revenue last year?"
+    - "Who are the top customers?"
+    - "What was Q3 2024 revenue?"
     """
     import os
+    from datetime import datetime
     
-    questions_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "nlq_test_questions.json")
+    invoices_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "nlq_invoices.json")
     
     try:
-        with open(questions_path, "r") as f:
+        with open(invoices_path, "r") as f:
             data = json.load(f)
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="NLQ questions dataset not found")
+        raise HTTPException(status_code=404, detail="NLQ invoices dataset not found")
     
-    categories = data.get("categories", {})
-    questions = data.get("questions", [])
+    ground_truth = data.get("ground_truth", {})
+    invoices = data.get("invoices", [])
     
-    # Count questions per category
-    category_counts = {}
-    for q in questions:
-        cat = q.get("category", "unknown")
-        category_counts[cat] = category_counts.get(cat, 0) + 1
-    
-    return {
-        "categories": [
-            {"id": cat_id, "description": desc, "count": category_counts.get(cat_id, 0)}
-            for cat_id, desc in categories.items()
-        ],
-        "total_categories": len(categories)
+    # Compute based on time window
+    result = {
+        "time_window": time_window or "all_time",
+        "computed_at": datetime.utcnow().isoformat()
     }
+    
+    if customer_id:
+        customer_data = ground_truth.get("customer_totals", {}).get(customer_id)
+        if customer_data:
+            result["customer"] = {
+                "customer_id": customer_id,
+                **customer_data
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
+        return result
+    
+    if time_window == "last_year" or time_window == "2024":
+        result["total_revenue"] = ground_truth.get("total_revenue_2024", 0)
+        result["quarters"] = {k: v for k, v in ground_truth.get("quarterly_revenue", {}).items() if k.startswith("2024")}
+    elif time_window == "ytd" or time_window == "2025":
+        result["total_revenue"] = ground_truth.get("total_revenue_2025", 0)
+        result["quarters"] = {k: v for k, v in ground_truth.get("quarterly_revenue", {}).items() if k.startswith("2025")}
+    elif time_window and time_window.startswith("Q"):
+        parts = time_window.split("_")
+        if len(parts) == 2:
+            quarter_key = f"{parts[1]}_Q{parts[0][1]}"
+            result["total_revenue"] = ground_truth.get("quarterly_revenue", {}).get(quarter_key, 0)
+    else:
+        result["total_revenue"] = ground_truth.get("total_revenue_all_time", 0)
+        result["by_year"] = {
+            "2024": ground_truth.get("total_revenue_2024", 0),
+            "2025": ground_truth.get("total_revenue_2025", 0)
+        }
+        result["quarterly_revenue"] = ground_truth.get("quarterly_revenue", {})
+    
+    # Top customers
+    customer_totals = ground_truth.get("customer_totals", {})
+    sorted_customers = sorted(customer_totals.items(), key=lambda x: x[1]["total"], reverse=True)
+    result["top_customers"] = [
+        {"customer_id": cid, **cdata} for cid, cdata in sorted_customers[:5]
+    ]
+    
+    return result
