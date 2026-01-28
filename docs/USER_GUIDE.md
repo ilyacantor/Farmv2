@@ -14,7 +14,7 @@ When you open AOS Farm, you'll see a navigation bar at the top with these tabs:
 | **AOD** | AutonomOS Discover | Test data discovery and reconciliation |
 | **AOA** | AutonomOS Agents | Stress test agent orchestration |
 | **NLQ** | Natural Language Query | Ground truth datasets for query validation |
-| **DCL** | Data Contract Library | Toxic stream testing and repair verification |
+| **DCL** | Data Connectivity Layer | Toxic stream testing and repair verification |
 | **Guide** | - | This documentation |
 
 ---
@@ -134,9 +134,9 @@ After generating a scenario, you'll see five metric cards showing the "correct a
 
 ---
 
-## DCL Tab: Data Contract Testing
+## DCL Tab: Data Connectivity Testing
 
-The DCL (Data Contract Library) tab tests how your data ingestion system handles bad data.
+The DCL (Data Connectivity Layer) tab tests how your data ingestion system handles bad data.
 
 ### Setting Up
 
@@ -247,7 +247,7 @@ Ensure all required fields match exactly (case-sensitive).
 | **AOD** | AutonomOS Discover | Data discovery accuracy |
 | **AOA** | AutonomOS Agents | Agent orchestration resilience |
 | **NLQ** | Natural Language Query | Query result correctness |
-| **DCL** | Data Contract Library | Data ingestion and repair |
+| **DCL** | Data Connectivity Layer | Data ingestion and repair |
 
 ---
 
