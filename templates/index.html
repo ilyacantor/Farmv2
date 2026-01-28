@@ -246,7 +246,82 @@
             </iframe>
         </div>
 
-        <div id="consoleTab" class="grid grid-cols-2 gap-4" style="min-width: 0;">
+        <div id="consoleTab" class="hidden">
+            <!-- AOD Collapsible Guide -->
+            <div class="bg-gradient-to-r from-cyan-900/30 to-emerald-900/30 rounded-xl p-5 border border-cyan-700/50 mb-6">
+                <div class="flex items-center justify-between cursor-pointer" onclick="toggleAodGuide()">
+                    <div class="flex items-center gap-3">
+                        <div class="w-10 h-10 rounded-lg bg-cyan-600/30 flex items-center justify-center">
+                            <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                        </div>
+                        <div>
+                            <h2 class="text-lg font-semibold text-white">Discovery Testing Guide</h2>
+                            <p class="text-slate-400 text-sm">Learn how to test your AOD (AutonomOS Discover) system</p>
+                        </div>
+                    </div>
+                    <svg id="aodGuideChevron" class="w-5 h-5 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                </div>
+                
+                <div id="aodGuideContent" class="hidden mt-5 space-y-4">
+                    <div class="bg-slate-800/60 rounded-lg p-4">
+                        <h3 class="text-md font-semibold text-cyan-400 mb-2">What is this?</h3>
+                        <p class="text-slate-300 text-sm leading-relaxed">
+                            This module generates synthetic enterprise data snapshots to test your AOD (AutonomOS Discover) system.
+                            Each snapshot contains 7 correlated data planes (accounts, contacts, deals, assets, vendors, invoices, tickets)
+                            with built-in expected outcomes for grading discovery accuracy.
+                        </p>
+                    </div>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-slate-800/60 rounded-lg p-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-6 h-6 rounded bg-cyan-600/50 flex items-center justify-center text-xs font-bold text-cyan-300">1</div>
+                                <h4 class="font-semibold text-cyan-400">Generate Snapshot</h4>
+                            </div>
+                            <p class="text-slate-400 text-sm">
+                                Choose a <span class="text-cyan-300">scale</span> (small/medium/large) and optional <span class="text-cyan-300">seed</span> 
+                                for reproducibility. The generator creates realistic enterprise data with intentional anomalies for testing.
+                            </p>
+                        </div>
+                        
+                        <div class="bg-slate-800/60 rounded-lg p-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-6 h-6 rounded bg-emerald-600/50 flex items-center justify-center text-xs font-bold text-emerald-300">2</div>
+                                <h4 class="font-semibold text-emerald-400">Review Data Planes</h4>
+                            </div>
+                            <p class="text-slate-400 text-sm">
+                                Explore the generated data: <span class="text-emerald-300">accounts</span>, <span class="text-emerald-300">contacts</span>, 
+                                <span class="text-emerald-300">deals</span>, <span class="text-emerald-300">assets</span>, and more. Each record links 
+                                to related records across planes.
+                            </p>
+                        </div>
+                        
+                        <div class="bg-slate-800/60 rounded-lg p-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-6 h-6 rounded bg-purple-600/50 flex items-center justify-center text-xs font-bold text-purple-300">3</div>
+                                <h4 class="font-semibold text-purple-400">Run Against AOD</h4>
+                            </div>
+                            <p class="text-slate-400 text-sm">
+                                Feed the snapshot to your AOD system and capture its discovery results. 
+                                AOD should identify relationships, anomalies, and data quality issues.
+                            </p>
+                        </div>
+                        
+                        <div class="bg-slate-800/60 rounded-lg p-4">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-6 h-6 rounded bg-rose-600/50 flex items-center justify-center text-xs font-bold text-rose-300">4</div>
+                                <h4 class="font-semibold text-rose-400">Reconcile & Grade</h4>
+                            </div>
+                            <p class="text-slate-400 text-sm">
+                                Compare AOD's actual results against the <span class="text-rose-300">expected outcomes</span> embedded in the snapshot.
+                                Get precision, recall, and accuracy metrics to measure discovery quality.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-4" style="min-width: 0;">
             <div class="space-y-6 min-w-0">
                 <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
                     <h2 class="text-lg font-semibold text-cyan-400 mb-4">Enterprise Generator</h2>
@@ -666,6 +741,80 @@
 
         <div id="scenariosTab" class="hidden h-full overflow-hidden">
             <div class="space-y-6">
+                <!-- NLQ Collapsible Guide -->
+                <div class="bg-gradient-to-r from-cyan-900/30 to-blue-900/30 rounded-xl p-5 border border-cyan-700/50">
+                    <div class="flex items-center justify-between cursor-pointer" onclick="toggleNlqGuide()">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-cyan-600/30 flex items-center justify-center">
+                                <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-semibold text-white">NLQ Testing Guide</h2>
+                                <p class="text-slate-400 text-sm">Learn how to validate natural language query systems</p>
+                            </div>
+                        </div>
+                        <svg id="nlqGuideChevron" class="w-5 h-5 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </div>
+                    
+                    <div id="nlqGuideContent" class="hidden mt-5 space-y-4">
+                        <div class="bg-slate-800/60 rounded-lg p-4">
+                            <h3 class="text-md font-semibold text-cyan-400 mb-2">What is this?</h3>
+                            <p class="text-slate-300 text-sm leading-relaxed">
+                                This module provides ground truth datasets for testing Natural Language Query systems. 
+                                Generate deterministic business scenarios with pre-computed metric answers, then verify 
+                                your NLQ system returns the correct values when asked natural language questions.
+                            </p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="bg-slate-800/60 rounded-lg p-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-6 h-6 rounded bg-cyan-600/50 flex items-center justify-center text-xs font-bold text-cyan-300">1</div>
+                                    <h4 class="font-semibold text-cyan-400">Generate Scenario</h4>
+                                </div>
+                                <p class="text-slate-400 text-sm">
+                                    Create a business scenario with <span class="text-cyan-300">customers</span>, <span class="text-cyan-300">invoices</span>, 
+                                    <span class="text-cyan-300">vendors</span>, and <span class="text-cyan-300">assets</span>. The same seed always 
+                                    produces identical data for reproducible testing.
+                                </p>
+                            </div>
+                            
+                            <div class="bg-slate-800/60 rounded-lg p-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-6 h-6 rounded bg-emerald-600/50 flex items-center justify-center text-xs font-bold text-emerald-300">2</div>
+                                    <h4 class="font-semibold text-emerald-400">Get Ground Truth</h4>
+                                </div>
+                                <p class="text-slate-400 text-sm">
+                                    Retrieve pre-computed answers: <span class="text-emerald-300">total revenue</span>, <span class="text-emerald-300">top customers</span>, 
+                                    <span class="text-emerald-300">vendor spend</span>, and more. These are the "correct answers" for validating NLQ output.
+                                </p>
+                            </div>
+                            
+                            <div class="bg-slate-800/60 rounded-lg p-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-6 h-6 rounded bg-purple-600/50 flex items-center justify-center text-xs font-bold text-purple-300">3</div>
+                                    <h4 class="font-semibold text-purple-400">Test Questions</h4>
+                                </div>
+                                <p class="text-slate-400 text-sm">
+                                    Use the 100-question test bank across <span class="text-purple-300">23 categories</span> to evaluate your NLQ system.
+                                    Each question has expected answer patterns for automated grading.
+                                </p>
+                            </div>
+                            
+                            <div class="bg-slate-800/60 rounded-lg p-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-6 h-6 rounded bg-rose-600/50 flex items-center justify-center text-xs font-bold text-rose-300">4</div>
+                                    <h4 class="font-semibold text-rose-400">Validate & Grade</h4>
+                                </div>
+                                <p class="text-slate-400 text-sm">
+                                    Compare your NLQ system's answers against ground truth. Track <span class="text-rose-300">accuracy by category</span> 
+                                    to identify which question types need improvement.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- Section 1: Scenario Generation -->
                 <div class="bg-slate-800/60 rounded-xl p-5 border border-cyan-700/50">
                     <div class="flex items-center gap-3 mb-4">
@@ -675,8 +824,8 @@
                             </svg>
                         </div>
                         <div>
-                            <h2 class="text-lg font-semibold text-cyan-400">Natural Language Query (NLQ)</h2>
-                            <p class="text-slate-400 text-sm">Ground truth datasets for validating natural language query systems</p>
+                            <h2 class="text-lg font-semibold text-cyan-400">Scenario Generator</h2>
+                            <p class="text-slate-400 text-sm">Generate deterministic business scenarios with ground truth metrics</p>
                         </div>
                     </div>
                     
@@ -769,6 +918,80 @@
         <!-- DCL Tab -->
         <div id="dclTab" class="hidden h-full overflow-hidden">
             <div class="space-y-6">
+                <!-- DCL Collapsible Guide -->
+                <div class="bg-gradient-to-r from-orange-900/30 to-rose-900/30 rounded-xl p-5 border border-orange-700/50">
+                    <div class="flex items-center justify-between cursor-pointer" onclick="toggleDclGuide()">
+                        <div class="flex items-center gap-3">
+                            <div class="w-10 h-10 rounded-lg bg-orange-600/30 flex items-center justify-center">
+                                <svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-semibold text-white">DCL Testing Guide</h2>
+                                <p class="text-slate-400 text-sm">Learn how to test data ingestion resilience</p>
+                            </div>
+                        </div>
+                        <svg id="dclGuideChevron" class="w-5 h-5 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </div>
+                    
+                    <div id="dclGuideContent" class="hidden mt-5 space-y-4">
+                        <div class="bg-slate-800/60 rounded-lg p-4">
+                            <h3 class="text-md font-semibold text-orange-400 mb-2">What is this?</h3>
+                            <p class="text-slate-300 text-sm leading-relaxed">
+                                This module tests your DCL (Data Connectivity Layer) system's ability to handle bad data. 
+                                It generates "toxic" data streams with intentional errors, provides pristine source data for repairs, 
+                                and validates that repaired records match the original.
+                            </p>
+                        </div>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="bg-slate-800/60 rounded-lg p-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-6 h-6 rounded bg-orange-600/50 flex items-center justify-center text-xs font-bold text-orange-300">1</div>
+                                    <h4 class="font-semibold text-orange-400">Ingest Toxic Stream</h4>
+                                </div>
+                                <p class="text-slate-400 text-sm">
+                                    Generate a stream of records with controlled chaos: <span class="text-orange-300">missing fields</span>, 
+                                    <span class="text-orange-300">duplicates</span>, <span class="text-orange-300">wrong currencies</span>, 
+                                    <span class="text-orange-300">stale timestamps</span>, and <span class="text-orange-300">orphaned references</span>.
+                                </p>
+                            </div>
+                            
+                            <div class="bg-slate-800/60 rounded-lg p-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-6 h-6 rounded bg-yellow-600/50 flex items-center justify-center text-xs font-bold text-yellow-300">2</div>
+                                    <h4 class="font-semibold text-yellow-400">Detect Chaos</h4>
+                                </div>
+                                <p class="text-slate-400 text-sm">
+                                    Your DCL system should detect these data quality issues. Each toxic record includes 
+                                    <span class="text-yellow-300">chaos metadata</span> describing what's wrong for verification.
+                                </p>
+                            </div>
+                            
+                            <div class="bg-slate-800/60 rounded-lg p-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-6 h-6 rounded bg-emerald-600/50 flex items-center justify-center text-xs font-bold text-emerald-300">3</div>
+                                    <h4 class="font-semibold text-emerald-400">Fetch Source & Repair</h4>
+                                </div>
+                                <p class="text-slate-400 text-sm">
+                                    Look up the <span class="text-emerald-300">pristine source record</span> using the invoice ID, 
+                                    then repair the corrupted data. Farm provides the authoritative "clean" version.
+                                </p>
+                            </div>
+                            
+                            <div class="bg-slate-800/60 rounded-lg p-4">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-6 h-6 rounded bg-rose-600/50 flex items-center justify-center text-xs font-bold text-rose-300">4</div>
+                                    <h4 class="font-semibold text-rose-400">Verify Repair</h4>
+                                </div>
+                                <p class="text-slate-400 text-sm">
+                                    Submit your repaired record for verification. Farm compares it against the source and 
+                                    returns <span class="text-rose-300">field-by-field validation</span> results.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <!-- DCL Header -->
                 <div class="bg-slate-800/60 rounded-xl p-5 border border-orange-700/50">
                     <div class="flex items-center gap-3 mb-4">
@@ -1912,6 +2135,27 @@
         function toggleAgentGuide() {
             const content = document.getElementById('agentGuideContent');
             const chevron = document.getElementById('guideChevron');
+            content.classList.toggle('hidden');
+            chevron.classList.toggle('rotate-180');
+        }
+        
+        function toggleAodGuide() {
+            const content = document.getElementById('aodGuideContent');
+            const chevron = document.getElementById('aodGuideChevron');
+            content.classList.toggle('hidden');
+            chevron.classList.toggle('rotate-180');
+        }
+        
+        function toggleNlqGuide() {
+            const content = document.getElementById('nlqGuideContent');
+            const chevron = document.getElementById('nlqGuideChevron');
+            content.classList.toggle('hidden');
+            chevron.classList.toggle('rotate-180');
+        }
+        
+        function toggleDclGuide() {
+            const content = document.getElementById('dclGuideContent');
+            const chevron = document.getElementById('dclGuideChevron');
             content.classList.toggle('hidden');
             chevron.classList.toggle('rotate-180');
         }
