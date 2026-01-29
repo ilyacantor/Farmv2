@@ -216,6 +216,14 @@ docs/
 | /api/source/salesforce/invoice/{id} | GET | Fetch pristine source record |
 | /api/verify/salesforce/invoice | POST | Verify repaired record |
 
+### Fabric Plane Endpoints
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| /api/fabric/industries | GET | List all industry verticals with profiles |
+| /api/fabric/weights/{industry} | GET | Get vendor weights for an industry |
+| /api/fabric/generate | POST | Generate fabric config by industry |
+| /api/fabric/weights-matrix | GET | Get complete vendor weight matrix |
+
 ---
 
 ## Technical Stack
@@ -248,6 +256,8 @@ Once generated, scenarios are available across NLQ and DCL tabs. Generate once, 
 
 ## Recent Changes
 
+- 2026-01-29: Added weighted fabric plane vendor selection with 9 industry verticals (Finance, Healthcare, Manufacturing, Logistics, Tech/SaaS, Retail, Media, Government)
+- 2026-01-29: Added Fabric API endpoints for industry-weighted vendor configuration generation
 - 2026-01-28: Added collapsible guide panels to all module tabs (AOD, AOA, NLQ, DCL)
 - 2026-01-28: Fixed DCL naming (Data Connectivity Layer, not Data Contract Library)
 - 2026-01-28: Updated NLQ tab header with clear description
