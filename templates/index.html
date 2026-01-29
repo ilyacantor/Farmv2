@@ -5399,6 +5399,84 @@
             }
         }
 
+        function renderFabricAndSORSection(data) {
+            const fabricPlanes = data.meta?.fabric_planes || [];
+            const sors = data.meta?.sors || [];
+            const industry = data.meta?.industry || 'default';
+            
+            if (fabricPlanes.length === 0 && sors.length === 0) {
+                return '';
+            }
+            
+            const fabricIcons = {
+                ipaas: '<svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>',
+                api_gateway: '<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>',
+                event_bus: '<svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>',
+                data_warehouse: '<svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4"/></svg>'
+            };
+            
+            const fabricLabels = {
+                ipaas: 'iPaaS',
+                api_gateway: 'API Gateway',
+                event_bus: 'Event Bus',
+                data_warehouse: 'Data Warehouse'
+            };
+            
+            const sorIcons = {
+                crm: '<svg class="w-3.5 h-3.5 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
+                erp: '<svg class="w-3.5 h-3.5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>',
+                hr: '<svg class="w-3.5 h-3.5 text-violet-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/></svg>',
+                finance: '<svg class="w-3.5 h-3.5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+                identity: '<svg class="w-3.5 h-3.5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>',
+                cmdb: '<svg class="w-3.5 h-3.5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>'
+            };
+            
+            let html = '<div class="border-t border-slate-700/50">';
+            
+            if (fabricPlanes.length > 0) {
+                html += `
+                    <div class="p-3 bg-slate-800/40">
+                        <div class="flex items-center justify-between mb-2">
+                            <span class="text-xs font-medium text-slate-400 uppercase tracking-wide">Fabric Planes</span>
+                            <span class="text-xs text-slate-500">${industry.replace(/_/g, ' ')}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            ${fabricPlanes.map(fp => `
+                                <div class="flex items-center gap-2 bg-slate-900/50 rounded px-2 py-1.5">
+                                    ${fabricIcons[fp.plane_type] || ''}
+                                    <div class="flex-1 min-w-0">
+                                        <div class="text-xs text-slate-300 truncate">${fp.vendor}</div>
+                                        <div class="text-[10px] text-slate-500">${fabricLabels[fp.plane_type] || fp.plane_type}</div>
+                                    </div>
+                                    <span class="w-2 h-2 rounded-full ${fp.is_healthy ? 'bg-green-500' : 'bg-red-500'}"></span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            if (sors.length > 0) {
+                html += `
+                    <div class="p-3 bg-slate-800/20 border-t border-slate-700/30">
+                        <div class="text-xs font-medium text-slate-400 uppercase tracking-wide mb-2">Systems of Record</div>
+                        <div class="grid grid-cols-3 gap-2">
+                            ${sors.map(sor => `
+                                <div class="flex items-center gap-1.5 text-xs">
+                                    ${sorIcons[sor.domain] || ''}
+                                    <span class="text-slate-400">${sor.domain.toUpperCase()}:</span>
+                                    <span class="text-slate-300 truncate">${sor.sor_name}</span>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            return html;
+        }
+
         function renderSnapshotExpanded(snapshotId, data) {
             const container = document.getElementById(`expand-${snapshotId}`);
             if (!container) return;
@@ -5466,6 +5544,7 @@
                             `;
                         }).join('')}
                     </div>
+                    ${renderFabricAndSORSection(data)}
                     <div class="p-3 border-t border-slate-700/50 flex gap-2">
                         <button onclick="event.stopPropagation(); downloadSnapshot('${snapshotId}')" 
                             class="bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium py-1.5 px-3 rounded transition-all">
