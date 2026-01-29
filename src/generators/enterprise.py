@@ -10,6 +10,11 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from src.models.policy import PolicyConfig
+from src.models.fabric import (
+    IndustryVertical,
+    FabricPlaneType,
+    generate_fabric_config,
+)
 from src.models.planes import (
     DiscoveryObservation,
     IdPObject,
@@ -35,6 +40,8 @@ from src.models.planes import (
     AllPlanes,
     SnapshotMeta,
     SnapshotResponse,
+    FabricPlaneInfo,
+    SORInfo,
     SourceEnum,
     CategoryHintEnum,
     EnvironmentHintEnum,
@@ -98,6 +105,7 @@ class EnterpriseGenerator:
         snapshot_time: Optional[datetime] = None,
         data_preset: Optional[DataPresetEnum] = None,
         policy_config: Optional[PolicyConfig] = None,
+        industry: Optional[IndustryVertical] = None,
     ):
         self.tenant_id = tenant_id
         self.seed = seed
@@ -105,6 +113,7 @@ class EnterpriseGenerator:
         self.enterprise_profile = enterprise_profile
         self.realism_profile = realism_profile
         self.data_preset = data_preset
+        self.industry = industry or IndustryVertical.DEFAULT
         self.preset_config = PresetConfig.from_preset(data_preset, scale=scale) if data_preset else None
         self.policy = policy_config or load_mock_policy_config()
         self.rng = random.Random(seed)
@@ -1252,6 +1261,43 @@ class EnterpriseGenerator:
             memo="Stress test: Zombie asset - stale activity but ongoing payment",
         ))
 
+    def _generate_fabric_planes(self) -> list[FabricPlaneInfo]:
+        """Generate fabric plane configuration using industry-weighted vendor selection."""
+        fabric_config = generate_fabric_config(industry=self.industry, seed=self.seed)
+        return [
+            FabricPlaneInfo(
+                plane_type=plane_type.value,
+                vendor=config.vendor,
+                is_healthy=config.is_healthy,
+            )
+            for plane_type, config in fabric_config.items()
+        ]
+    
+    def _generate_sors(self) -> list[SORInfo]:
+        """Generate Systems of Record based on enterprise profile and observed data."""
+        sors = []
+        
+        sor_mappings = {
+            "crm": [("Salesforce", "saas"), ("HubSpot", "saas"), ("Microsoft Dynamics", "saas")],
+            "erp": [("SAP", "erp"), ("NetSuite", "saas"), ("Oracle EBS", "erp")],
+            "hr": [("Workday", "saas"), ("BambooHR", "saas"), ("ADP", "saas")],
+            "finance": [("QuickBooks", "saas"), ("Xero", "saas"), ("SAP", "erp")],
+            "identity": [("Okta", "idp"), ("Azure AD", "idp"), ("OneLogin", "idp")],
+            "cmdb": [("ServiceNow", "itsm"), ("Jira", "saas"), ("Freshservice", "saas")],
+        }
+        
+        for domain, options in sor_mappings.items():
+            sor_name, sor_type = self.rng.choice(options)
+            confidence = self.rng.choice(["high", "high", "high", "medium"])
+            sors.append(SORInfo(
+                domain=domain,
+                sor_name=sor_name,
+                sor_type=sor_type,
+                confidence=confidence,
+            ))
+        
+        return sors
+
     def generate(self) -> SnapshotResponse:
         self._init_enterprise()
         
@@ -1293,6 +1339,9 @@ class EnterpriseGenerator:
             "security_attestations": len(security.attestations),
         }
         
+        fabric_planes = self._generate_fabric_planes()
+        sors = self._generate_sors()
+        
         meta = SnapshotMeta(
             snapshot_id=self.run_id,
             tenant_id=self.tenant_id,
@@ -1302,6 +1351,9 @@ class EnterpriseGenerator:
             realism_profile=self.realism_profile,
             created_at=self.base_date.isoformat() + "Z",
             counts=counts,
+            fabric_planes=fabric_planes,
+            sors=sors,
+            industry=self.industry.value,
         )
         
         return SnapshotResponse(meta=meta, planes=planes)

@@ -347,6 +347,21 @@ class AllPlanes(BaseModel):
 SCHEMA_VERSION = "farm.v1"
 
 
+class FabricPlaneInfo(BaseModel):
+    """Summary of a fabric plane vendor selection."""
+    plane_type: str
+    vendor: str
+    is_healthy: bool = True
+
+
+class SORInfo(BaseModel):
+    """System of Record information."""
+    domain: str
+    sor_name: str
+    sor_type: str
+    confidence: str = "high"
+
+
 class SnapshotMeta(BaseModel):
     schema_version: str = SCHEMA_VERSION
     snapshot_id: str
@@ -357,6 +372,9 @@ class SnapshotMeta(BaseModel):
     realism_profile: RealismProfileEnum
     created_at: str
     counts: dict[str, int] = Field(default_factory=dict)
+    fabric_planes: list[FabricPlaneInfo] = Field(default_factory=list)
+    sors: list[SORInfo] = Field(default_factory=list)
+    industry: Optional[str] = None
     
     @property
     def snapshot_as_of(self) -> str:
