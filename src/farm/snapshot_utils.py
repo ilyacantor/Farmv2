@@ -146,13 +146,20 @@ def compute_snapshot_metadata(snapshot_dict: Dict[str, Any], blob_json: str) -> 
         - expected_summary: dict
         - blob_size_bytes: int
         - blob_hash: str
+        - fabric_planes: list
+        - sors: list
+        - industry: str
     """
+    meta = snapshot_dict.get('meta', {})
     return {
         'total_assets': compute_total_assets(snapshot_dict),
         'plane_counts': compute_plane_counts(snapshot_dict),
         'expected_summary': extract_expected_summary(snapshot_dict),
         'blob_size_bytes': len(blob_json.encode('utf-8')),
         'blob_hash': compute_blob_hash(blob_json),
+        'fabric_planes': meta.get('fabric_planes', []),
+        'sors': meta.get('sors', []),
+        'industry': meta.get('industry', 'default'),
     }
 
 

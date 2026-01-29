@@ -1,6 +1,6 @@
 from datetime import datetime
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 import uuid
 
@@ -424,6 +424,9 @@ class SnapshotMetadata(BaseModel):
     realism_profile: str
     created_at: str
     schema_version: str = SCHEMA_VERSION
+    fabric_planes: Optional[List[Dict[str, Any]]] = None
+    sors: Optional[List[Dict[str, Any]]] = None
+    industry: Optional[str] = None
 
 
 class ReconcileStatusEnum(str, Enum):

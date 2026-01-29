@@ -246,7 +246,7 @@
             </iframe>
         </div>
 
-        <div id="consoleTab" class="hidden">
+        <div id="consoleTab" class="">
             <!-- AOD Collapsible Guide -->
             <div class="bg-gradient-to-r from-cyan-900/30 to-emerald-900/30 rounded-xl p-5 border border-cyan-700/50 mb-6">
                 <div class="flex items-center justify-between cursor-pointer" onclick="toggleAodGuide()">
@@ -5282,24 +5282,44 @@
             container.innerHTML = FarmState.snapshots.map(snap => {
                 const created = new Date(snap.created_at);
                 const isExpanded = FarmState.expandedSnapshots[snap.snapshot_id];
+                const cachedData = FarmState.snapshotDataCache[snap.snapshot_id];
+                const fabricPlanes = cachedData?.meta?.fabric_planes || snap.fabric_planes || [];
+                const sors = cachedData?.meta?.sors || snap.sors || [];
+                const industry = cachedData?.meta?.industry || snap.industry || '';
                 
                 return `
                     <div class="border-b border-slate-700/50" data-snapshot-id="${snap.snapshot_id}">
-                        <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer flex items-center justify-between" 
+                        <div class="p-4 hover:bg-slate-900/40 transition-colors cursor-pointer" 
                              onclick="toggleSnapshotExpand('${snap.snapshot_id}')">
-                            <div class="flex-1">
-                                <div class="flex items-center gap-2 mb-1">
+                            <div class="flex items-center justify-between mb-2">
+                                <div class="flex items-center gap-2">
                                     <svg class="w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-90' : ''}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                                     </svg>
                                     <span class="text-cyan-400 font-medium">${snap.tenant_id}</span>
                                     <span class="text-slate-600 text-xs">seed:${snap.seed}</span>
+                                    ${industry ? `<span class="text-xs px-1.5 py-0.5 bg-slate-700/50 rounded text-slate-400">${industry.replace(/_/g, ' ')}</span>` : ''}
                                 </div>
-                                <div class="text-xs text-slate-500 ml-6">
-                                    ${snap.scale} | ${snap.enterprise_profile.replace('_', ' ')} | ${snap.realism_profile}${FarmState.generationTimeCache[snap.snapshot_id] ? ` | <span class="text-emerald-400">${FarmState.generationTimeCache[snap.snapshot_id]}s</span>` : ''}
-                                </div>
+                                <div class="text-xs text-slate-500">${getTimeAgo(created)}</div>
                             </div>
-                            <div class="text-xs text-slate-500">${getTimeAgo(created)}</div>
+                            <div class="text-xs text-slate-500 ml-6 mb-2">
+                                ${snap.scale} | ${snap.enterprise_profile.replace('_', ' ')} | ${snap.realism_profile}${FarmState.generationTimeCache[snap.snapshot_id] ? ` | <span class="text-emerald-400">${FarmState.generationTimeCache[snap.snapshot_id]}s</span>` : ''}
+                            </div>
+                            ${fabricPlanes.length > 0 ? `
+                                <div class="ml-6 flex flex-wrap gap-2 mb-2">
+                                    ${fabricPlanes.map(fp => `
+                                        <span class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded ${fp.is_healthy ? 'bg-emerald-900/30 text-emerald-400' : 'bg-red-900/30 text-red-400'}">
+                                            <span class="w-1.5 h-1.5 rounded-full ${fp.is_healthy ? 'bg-emerald-500' : 'bg-red-500'}"></span>
+                                            ${fp.vendor}
+                                        </span>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
+                            ${sors.length > 0 ? `
+                                <div class="ml-6 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-500">
+                                    ${sors.map(sor => `<span><span class="text-slate-600">${sor.domain}:</span> ${sor.sor_name}</span>`).join('')}
+                                </div>
+                            ` : ''}
                         </div>
                         <div id="expand-${snap.snapshot_id}" class="${isExpanded ? '' : 'hidden'}"></div>
                     </div>
@@ -6030,6 +6050,7 @@
             await loadPlatformConfig();
             await loadStressTestHistory();
             await loadAllDataSafely();
+            switchMainTab('console');
             addLogEntry('Farm Console loaded', 'info');
             
             // Ensure reconciliations are rendered after data loads

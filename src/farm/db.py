@@ -389,6 +389,14 @@ class DatabaseManager:
                     )
                 """)
                 
+                # Add fabric/SOR columns to snapshots_meta if they don't exist
+                try:
+                    await conn.execute("ALTER TABLE snapshots_meta ADD COLUMN IF NOT EXISTS fabric_planes JSONB DEFAULT '[]'")
+                    await conn.execute("ALTER TABLE snapshots_meta ADD COLUMN IF NOT EXISTS sors JSONB DEFAULT '[]'")
+                    await conn.execute("ALTER TABLE snapshots_meta ADD COLUMN IF NOT EXISTS industry TEXT DEFAULT 'default'")
+                except Exception:
+                    pass  # Columns may already exist
+                
                 self._log("Creating snapshots_blob table (cold storage)...")
                 await conn.execute("""
                     CREATE TABLE IF NOT EXISTS snapshots_blob (

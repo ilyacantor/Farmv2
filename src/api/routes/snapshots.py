@@ -225,15 +225,19 @@ async def _create_snapshot_inline(request, fingerprint, run_id, unique_snapshot_
                 meta_info['created_at'], SCHEMA_VERSION, blob_json)
 
             # New hot path table (metadata only)
+            fabric_planes_json = json.dumps(meta.get('fabric_planes', []))
+            sors_json = json.dumps(meta.get('sors', []))
+            industry = meta.get('industry', 'default')
             await conn.execute("""
-                INSERT INTO snapshots_meta (snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, backfill_state)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'complete')
+                INSERT INTO snapshots_meta (snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, backfill_state, fabric_planes, sors, industry)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'complete', $16, $17, $18)
             """, unique_snapshot_id, run_id, fingerprint,
                 meta_info['tenant_id'], meta_info['seed'], meta_info['scale'],
                 meta_info['enterprise_profile'], meta_info['realism_profile'],
                 meta_info['created_at'], SCHEMA_VERSION,
                 meta['total_assets'], json.dumps(meta['plane_counts']),
-                json.dumps(meta['expected_summary']), meta['blob_size_bytes'], meta['blob_hash'])
+                json.dumps(meta['expected_summary']), meta['blob_size_bytes'], meta['blob_hash'],
+                fabric_planes_json, sors_json, industry)
 
             # New cold storage table (blob only)
             await conn.execute("""
@@ -281,13 +285,16 @@ async def get_snapshot_summary(snapshot_id: str):
     async with db_connection() as conn:
         # Try hot path first (snapshots_meta)
         meta_row = await conn.fetchrow(
-            "SELECT snapshot_id, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes FROM snapshots_meta WHERE snapshot_id = $1",
+            "SELECT snapshot_id, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, fabric_planes, sors, industry FROM snapshots_meta WHERE snapshot_id = $1",
             snapshot_id
         )
 
         if meta_row:
             plane_counts = json.loads(meta_row["plane_counts"]) if meta_row["plane_counts"] else {}
             expected_summary = json.loads(meta_row["expected_summary"]) if meta_row["expected_summary"] else {}
+            fabric_planes = json.loads(meta_row["fabric_planes"]) if meta_row.get("fabric_planes") else []
+            sors = json.loads(meta_row["sors"]) if meta_row.get("sors") else []
+            industry = meta_row.get("industry") or "default"
 
             return {
                 "meta": {
@@ -300,6 +307,9 @@ async def get_snapshot_summary(snapshot_id: str):
                     "created_at": meta_row["created_at"],
                     "snapshot_as_of": meta_row["created_at"],
                     "schema_version": meta_row["schema_version"],
+                    "fabric_planes": fabric_planes,
+                    "sors": sors,
+                    "industry": industry,
                 },
                 "plane_counts": plane_counts,
                 "total_assets": meta_row["total_assets"],
@@ -448,17 +458,24 @@ async def list_snapshots(
     async with db_connection() as conn:
         if tenant_id:
             rows = await conn.fetch(
-                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, fabric_planes, sors, industry FROM snapshots_meta WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
                 tenant_id, limit, offset
             )
         else:
             rows = await conn.fetch(
-                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version FROM snapshots ORDER BY created_at DESC LIMIT $1 OFFSET $2",
+                "SELECT snapshot_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, fabric_planes, sors, industry FROM snapshots_meta ORDER BY created_at DESC LIMIT $1 OFFSET $2",
                 limit, offset
             )
 
-        return [
-            SnapshotMetadata(
+        results = []
+        for row in rows:
+            fp = row["fabric_planes"]
+            sors = row["sors"]
+            if isinstance(fp, str):
+                fp = json.loads(fp) if fp else []
+            if isinstance(sors, str):
+                sors = json.loads(sors) if sors else []
+            results.append(SnapshotMetadata(
                 snapshot_id=row["snapshot_id"],
                 snapshot_fingerprint=row["snapshot_fingerprint"],
                 tenant_id=row["tenant_id"],
@@ -468,9 +485,11 @@ async def list_snapshots(
                 realism_profile=row["realism_profile"],
                 created_at=row["created_at"],
                 schema_version=row["schema_version"],
-            )
-            for row in rows
-        ]
+                fabric_planes=fp,
+                sors=sors,
+                industry=row["industry"],
+            ))
+        return results
 
 
 @router.delete("/api/snapshots/cleanup")

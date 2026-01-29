@@ -117,15 +117,19 @@ async def generate_snapshot_background_job(
 
         async with db_connection() as conn:
             await conn.execute(f"SET statement_timeout = '{DB_STATEMENT_TIMEOUT}s'")
+            fabric_planes_json = json.dumps(meta.get('fabric_planes', []))
+            sors_json = json.dumps(meta.get('sors', []))
+            industry = meta.get('industry', 'default')
             await conn.execute("""
-                INSERT INTO snapshots_meta (snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, backfill_state)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'complete')
+                INSERT INTO snapshots_meta (snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, backfill_state, fabric_planes, sors, industry)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'complete', $16, $17, $18)
             """, unique_snapshot_id, run_id, fingerprint,
                 meta_info['tenant_id'], meta_info['seed'], meta_info['scale'],
                 meta_info['enterprise_profile'], meta_info['realism_profile'],
                 meta_info['created_at'], SCHEMA_VERSION,
                 meta['total_assets'], json.dumps(meta['plane_counts']),
-                json.dumps(meta['expected_summary']), meta['blob_size_bytes'], meta['blob_hash'])
+                json.dumps(meta['expected_summary']), meta['blob_size_bytes'], meta['blob_hash'],
+                fabric_planes_json, sors_json, industry)
 
         async with db_connection() as conn:
             await conn.execute(f"SET statement_timeout = '{DB_STATEMENT_TIMEOUT}s'")
