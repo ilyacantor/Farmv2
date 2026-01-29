@@ -32,8 +32,18 @@ from src.models.scenarios import (
     TotalRevenueResponse,
 )
 from src.generators.scenarios import get_or_create_scenario, ScenarioGenerator
+from src.models.fabric import (
+    IndustryVertical,
+    FabricPlaneType,
+    FabricPlaneConfig,
+    IndustryProfile,
+    INDUSTRY_VENDOR_WEIGHTS,
+    generate_fabric_config,
+    select_vendor_weighted,
+)
 
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
+fabric_router = APIRouter(prefix="/api/fabric", tags=["fabric"])
 
 
 class GenerateRequest(BaseModel):
@@ -598,3 +608,137 @@ async def get_nlq_invoices_ground_truth(
     ]
     
     return result
+
+
+class FabricConfigRequest(BaseModel):
+    industry: IndustryVertical = IndustryVertical.DEFAULT
+    seed: Optional[int] = None
+
+
+class FabricVendorWeight(BaseModel):
+    vendor: str
+    weight: float
+
+
+class FabricPlaneWeights(BaseModel):
+    plane_type: str
+    vendors: list[FabricVendorWeight]
+
+
+class IndustryWeightsResponse(BaseModel):
+    industry: str
+    industry_profile: dict
+    planes: list[FabricPlaneWeights]
+
+
+class FabricConfigResponse(BaseModel):
+    industry: str
+    seed: Optional[int]
+    config: dict
+
+
+@fabric_router.get("/industries")
+async def list_industries():
+    """List all available industry verticals with their profiles."""
+    industries = []
+    for industry in IndustryVertical:
+        profile = IndustryProfile.for_industry(industry)
+        industries.append({
+            "id": industry.value,
+            "name": profile.name,
+            "description": profile.description,
+            "primary_cloud": profile.primary_cloud,
+            "compliance_focus": profile.compliance_focus,
+            "typical_scale": profile.typical_scale,
+        })
+    return {"industries": industries}
+
+
+@fabric_router.get("/weights/{industry}")
+async def get_industry_weights(
+    industry: IndustryVertical = Path(..., description="Industry vertical")
+) -> IndustryWeightsResponse:
+    """Get the weighted vendor distribution for an industry."""
+    weights = INDUSTRY_VENDOR_WEIGHTS.get(industry, INDUSTRY_VENDOR_WEIGHTS[IndustryVertical.DEFAULT])
+    profile = IndustryProfile.for_industry(industry)
+    
+    planes = []
+    for plane_type in FabricPlaneType:
+        plane_weights = weights.get(plane_type, {})
+        vendors = [
+            FabricVendorWeight(vendor=v, weight=w)
+            for v, w in sorted(plane_weights.items(), key=lambda x: -x[1])
+        ]
+        planes.append(FabricPlaneWeights(
+            plane_type=plane_type.value,
+            vendors=vendors
+        ))
+    
+    return IndustryWeightsResponse(
+        industry=industry.value,
+        industry_profile={
+            "name": profile.name,
+            "description": profile.description,
+            "primary_cloud": profile.primary_cloud,
+            "compliance_focus": profile.compliance_focus,
+            "typical_scale": profile.typical_scale,
+        },
+        planes=planes
+    )
+
+
+@fabric_router.post("/generate")
+async def generate_fabric(request: FabricConfigRequest) -> FabricConfigResponse:
+    """
+    Generate a fabric plane configuration for an enterprise.
+    
+    Uses industry-specific weighted vendor selection based on 2025/2026 market data.
+    Deterministic when seed is provided - same seed always produces identical config.
+    """
+    config = generate_fabric_config(industry=request.industry, seed=request.seed)
+    
+    config_dict = {}
+    for plane_type, plane_config in config.items():
+        config_dict[plane_type.value] = {
+            "vendor": plane_config.vendor,
+            "endpoint": plane_config.endpoint,
+            "is_healthy": plane_config.is_healthy,
+            "latency_ms": plane_config.latency_ms,
+        }
+    
+    return FabricConfigResponse(
+        industry=request.industry.value,
+        seed=request.seed,
+        config=config_dict
+    )
+
+
+@fabric_router.get("/weights-matrix")
+async def get_weights_matrix():
+    """
+    Get the complete vendor weight matrix across all industries.
+    
+    Returns a matrix showing how vendor selection probability varies
+    by industry vertical for each fabric plane type.
+    """
+    matrix = {}
+    
+    for industry in IndustryVertical:
+        weights = INDUSTRY_VENDOR_WEIGHTS.get(industry, {})
+        industry_data = {}
+        
+        for plane_type in FabricPlaneType:
+            plane_weights = weights.get(plane_type, {})
+            industry_data[plane_type.value] = {
+                v: round(w, 2) for v, w in 
+                sorted(plane_weights.items(), key=lambda x: -x[1])
+            }
+        
+        matrix[industry.value] = industry_data
+    
+    return {
+        "description": "Vendor selection weights by industry and fabric plane (2025/2026 market data)",
+        "matrix": matrix,
+        "planes": [p.value for p in FabricPlaneType],
+        "industries": [i.value for i in IndustryVertical],
+    }

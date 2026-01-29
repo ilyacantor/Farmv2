@@ -4,6 +4,7 @@ Fabric Plane Mesh Architecture Types.
 This module defines the core abstractions for the AOS Fabric Plane Mesh:
 - 4 Fabric Planes: IPAAS, API_GATEWAY, EVENT_BUS, DATA_WAREHOUSE
 - 4 Enterprise Presets: SCRAPPY, IPAAS_CENTRIC, PLATFORM_ORIENTED, WAREHOUSE_CENTRIC
+- Industry-specific vendor weights based on 2025/2026 market adoption
 
 CRITICAL CONSTRAINT: AAM (The Mesh) connects ONLY to Fabric Planes, not directly
 to individual SaaS applications (except in Preset 6 Scrappy mode).
@@ -11,8 +12,9 @@ to individual SaaS applications (except in Preset 6 Scrappy mode).
 FARM uses these types to generate appropriate test scenarios for each preset.
 """
 from enum import Enum
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel, Field
+import random
 
 
 class FabricPlaneType(str, Enum):
@@ -21,6 +23,19 @@ class FabricPlaneType(str, Enum):
     API_GATEWAY = "api_gateway"
     EVENT_BUS = "event_bus"
     DATA_WAREHOUSE = "data_warehouse"
+
+
+class IndustryVertical(str, Enum):
+    """Industry verticals with distinct fabric adoption patterns."""
+    DEFAULT = "default"
+    FINANCE = "finance"
+    HEALTHCARE = "healthcare"
+    MANUFACTURING = "manufacturing"
+    LOGISTICS = "logistics"
+    TECH_SAAS = "tech_saas"
+    RETAIL = "retail"
+    MEDIA = "media"
+    GOVERNMENT = "government"
 
 
 class FabricRoute(str, Enum):
@@ -58,9 +73,9 @@ class FabricPlaneConfig(BaseModel):
     
 class FabricPlaneVendors:
     """Known vendors for each Fabric Plane type."""
-    IPAAS = ["workato", "mulesoft", "boomi", "tray.io", "celigo"]
+    IPAAS = ["workato", "mulesoft", "boomi", "tray.io", "celigo", "sap_integration_suite"]
     API_GATEWAY = ["kong", "apigee", "aws_api_gateway", "azure_api_management"]
-    EVENT_BUS = ["kafka", "eventbridge", "rabbitmq", "pulsar", "azure_event_hubs"]
+    EVENT_BUS = ["kafka", "confluent", "eventbridge", "rabbitmq", "pulsar", "azure_event_hubs"]
     DATA_WAREHOUSE = ["snowflake", "bigquery", "redshift", "databricks", "synapse"]
     
     @classmethod
@@ -71,6 +86,394 @@ class FabricPlaneVendors:
             FabricPlaneType.EVENT_BUS: cls.EVENT_BUS,
             FabricPlaneType.DATA_WAREHOUSE: cls.DATA_WAREHOUSE,
         }[plane_type]
+
+
+INDUSTRY_VENDOR_WEIGHTS: Dict[IndustryVertical, Dict[FabricPlaneType, Dict[str, float]]] = {
+    IndustryVertical.DEFAULT: {
+        FabricPlaneType.IPAAS: {
+            "mulesoft": 0.35,
+            "workato": 0.30,
+            "boomi": 0.15,
+            "tray.io": 0.10,
+            "celigo": 0.10,
+        },
+        FabricPlaneType.API_GATEWAY: {
+            "aws_api_gateway": 0.40,
+            "apigee": 0.30,
+            "kong": 0.15,
+            "azure_api_management": 0.15,
+        },
+        FabricPlaneType.EVENT_BUS: {
+            "eventbridge": 0.35,
+            "confluent": 0.30,
+            "kafka": 0.20,
+            "azure_event_hubs": 0.10,
+            "rabbitmq": 0.05,
+        },
+        FabricPlaneType.DATA_WAREHOUSE: {
+            "snowflake": 0.35,
+            "databricks": 0.25,
+            "bigquery": 0.20,
+            "redshift": 0.15,
+            "synapse": 0.05,
+        },
+    },
+    IndustryVertical.FINANCE: {
+        FabricPlaneType.IPAAS: {
+            "mulesoft": 0.55,
+            "boomi": 0.20,
+            "workato": 0.15,
+            "sap_integration_suite": 0.10,
+        },
+        FabricPlaneType.API_GATEWAY: {
+            "apigee": 0.50,
+            "kong": 0.25,
+            "aws_api_gateway": 0.15,
+            "azure_api_management": 0.10,
+        },
+        FabricPlaneType.EVENT_BUS: {
+            "confluent": 0.45,
+            "kafka": 0.30,
+            "eventbridge": 0.15,
+            "azure_event_hubs": 0.10,
+        },
+        FabricPlaneType.DATA_WAREHOUSE: {
+            "snowflake": 0.45,
+            "databricks": 0.25,
+            "synapse": 0.15,
+            "redshift": 0.10,
+            "bigquery": 0.05,
+        },
+    },
+    IndustryVertical.HEALTHCARE: {
+        FabricPlaneType.IPAAS: {
+            "mulesoft": 0.50,
+            "boomi": 0.25,
+            "workato": 0.15,
+            "celigo": 0.10,
+        },
+        FabricPlaneType.API_GATEWAY: {
+            "apigee": 0.45,
+            "aws_api_gateway": 0.25,
+            "azure_api_management": 0.20,
+            "kong": 0.10,
+        },
+        FabricPlaneType.EVENT_BUS: {
+            "confluent": 0.40,
+            "kafka": 0.25,
+            "azure_event_hubs": 0.20,
+            "eventbridge": 0.15,
+        },
+        FabricPlaneType.DATA_WAREHOUSE: {
+            "snowflake": 0.50,
+            "databricks": 0.20,
+            "synapse": 0.15,
+            "redshift": 0.10,
+            "bigquery": 0.05,
+        },
+    },
+    IndustryVertical.MANUFACTURING: {
+        FabricPlaneType.IPAAS: {
+            "sap_integration_suite": 0.40,
+            "boomi": 0.30,
+            "mulesoft": 0.20,
+            "workato": 0.10,
+        },
+        FabricPlaneType.API_GATEWAY: {
+            "kong": 0.40,
+            "aws_api_gateway": 0.25,
+            "apigee": 0.20,
+            "azure_api_management": 0.15,
+        },
+        FabricPlaneType.EVENT_BUS: {
+            "eventbridge": 0.35,
+            "rabbitmq": 0.25,
+            "kafka": 0.20,
+            "confluent": 0.15,
+            "azure_event_hubs": 0.05,
+        },
+        FabricPlaneType.DATA_WAREHOUSE: {
+            "databricks": 0.35,
+            "snowflake": 0.30,
+            "redshift": 0.20,
+            "synapse": 0.10,
+            "bigquery": 0.05,
+        },
+    },
+    IndustryVertical.LOGISTICS: {
+        FabricPlaneType.IPAAS: {
+            "sap_integration_suite": 0.35,
+            "boomi": 0.30,
+            "mulesoft": 0.20,
+            "workato": 0.15,
+        },
+        FabricPlaneType.API_GATEWAY: {
+            "kong": 0.35,
+            "aws_api_gateway": 0.30,
+            "apigee": 0.20,
+            "azure_api_management": 0.15,
+        },
+        FabricPlaneType.EVENT_BUS: {
+            "eventbridge": 0.40,
+            "rabbitmq": 0.25,
+            "kafka": 0.20,
+            "confluent": 0.10,
+            "azure_event_hubs": 0.05,
+        },
+        FabricPlaneType.DATA_WAREHOUSE: {
+            "databricks": 0.30,
+            "snowflake": 0.30,
+            "redshift": 0.25,
+            "bigquery": 0.10,
+            "synapse": 0.05,
+        },
+    },
+    IndustryVertical.TECH_SAAS: {
+        FabricPlaneType.IPAAS: {
+            "workato": 0.40,
+            "tray.io": 0.25,
+            "mulesoft": 0.20,
+            "celigo": 0.15,
+        },
+        FabricPlaneType.API_GATEWAY: {
+            "aws_api_gateway": 0.45,
+            "kong": 0.30,
+            "apigee": 0.15,
+            "azure_api_management": 0.10,
+        },
+        FabricPlaneType.EVENT_BUS: {
+            "kafka": 0.35,
+            "confluent": 0.30,
+            "eventbridge": 0.25,
+            "pulsar": 0.10,
+        },
+        FabricPlaneType.DATA_WAREHOUSE: {
+            "snowflake": 0.35,
+            "databricks": 0.30,
+            "bigquery": 0.25,
+            "redshift": 0.10,
+        },
+    },
+    IndustryVertical.RETAIL: {
+        FabricPlaneType.IPAAS: {
+            "workato": 0.35,
+            "mulesoft": 0.30,
+            "boomi": 0.20,
+            "celigo": 0.15,
+        },
+        FabricPlaneType.API_GATEWAY: {
+            "aws_api_gateway": 0.40,
+            "apigee": 0.30,
+            "kong": 0.20,
+            "azure_api_management": 0.10,
+        },
+        FabricPlaneType.EVENT_BUS: {
+            "eventbridge": 0.40,
+            "kafka": 0.25,
+            "confluent": 0.20,
+            "rabbitmq": 0.15,
+        },
+        FabricPlaneType.DATA_WAREHOUSE: {
+            "snowflake": 0.40,
+            "bigquery": 0.25,
+            "databricks": 0.20,
+            "redshift": 0.15,
+        },
+    },
+    IndustryVertical.MEDIA: {
+        FabricPlaneType.IPAAS: {
+            "workato": 0.35,
+            "tray.io": 0.30,
+            "mulesoft": 0.20,
+            "celigo": 0.15,
+        },
+        FabricPlaneType.API_GATEWAY: {
+            "aws_api_gateway": 0.45,
+            "kong": 0.25,
+            "apigee": 0.20,
+            "azure_api_management": 0.10,
+        },
+        FabricPlaneType.EVENT_BUS: {
+            "kafka": 0.40,
+            "confluent": 0.30,
+            "eventbridge": 0.20,
+            "pulsar": 0.10,
+        },
+        FabricPlaneType.DATA_WAREHOUSE: {
+            "bigquery": 0.35,
+            "snowflake": 0.30,
+            "databricks": 0.25,
+            "redshift": 0.10,
+        },
+    },
+    IndustryVertical.GOVERNMENT: {
+        FabricPlaneType.IPAAS: {
+            "mulesoft": 0.45,
+            "boomi": 0.30,
+            "sap_integration_suite": 0.15,
+            "workato": 0.10,
+        },
+        FabricPlaneType.API_GATEWAY: {
+            "apigee": 0.40,
+            "azure_api_management": 0.30,
+            "aws_api_gateway": 0.20,
+            "kong": 0.10,
+        },
+        FabricPlaneType.EVENT_BUS: {
+            "azure_event_hubs": 0.35,
+            "confluent": 0.30,
+            "kafka": 0.25,
+            "eventbridge": 0.10,
+        },
+        FabricPlaneType.DATA_WAREHOUSE: {
+            "synapse": 0.35,
+            "snowflake": 0.30,
+            "databricks": 0.20,
+            "redshift": 0.15,
+        },
+    },
+}
+
+
+def select_vendor_weighted(
+    plane_type: FabricPlaneType,
+    industry: IndustryVertical = IndustryVertical.DEFAULT,
+    rng: Optional[random.Random] = None
+) -> str:
+    """
+    Select a vendor for a fabric plane using industry-specific weights.
+    
+    Uses weighted random selection based on 2025/2026 market adoption data.
+    Same seed produces deterministic results for reproducible testing.
+    """
+    if rng is None:
+        rng = random.Random()
+    
+    weights = INDUSTRY_VENDOR_WEIGHTS.get(industry, INDUSTRY_VENDOR_WEIGHTS[IndustryVertical.DEFAULT])
+    plane_weights = weights.get(plane_type, {})
+    
+    if not plane_weights:
+        vendors = FabricPlaneVendors.for_plane(plane_type)
+        return rng.choice(vendors)
+    
+    vendors = list(plane_weights.keys())
+    weight_values = list(plane_weights.values())
+    
+    return rng.choices(vendors, weights=weight_values, k=1)[0]
+
+
+def generate_fabric_config(
+    industry: IndustryVertical = IndustryVertical.DEFAULT,
+    seed: Optional[int] = None
+) -> Dict[FabricPlaneType, "FabricPlaneConfig"]:
+    """
+    Generate a complete fabric plane configuration for an enterprise.
+    
+    Uses industry-specific weighted vendor selection for realistic scenarios.
+    Deterministic when seed is provided.
+    """
+    rng = random.Random(seed) if seed else random.Random()
+    
+    config = {}
+    for plane_type in FabricPlaneType:
+        vendor = select_vendor_weighted(plane_type, industry, rng)
+        config[plane_type] = FabricPlaneConfig(
+            plane_type=plane_type,
+            vendor=vendor,
+            endpoint=f"https://{vendor}.fabric.example.com/api/v1",
+            is_healthy=rng.random() > 0.05,
+            latency_ms=rng.randint(10, 200),
+        )
+    
+    return config
+
+
+class IndustryProfile(BaseModel):
+    """Profile describing industry-specific fabric characteristics."""
+    industry: IndustryVertical
+    name: str
+    description: str
+    primary_cloud: str
+    compliance_focus: List[str]
+    typical_scale: str
+    
+    @classmethod
+    def for_industry(cls, industry: IndustryVertical) -> "IndustryProfile":
+        profiles = {
+            IndustryVertical.DEFAULT: cls(
+                industry=industry,
+                name="Default Enterprise",
+                description="General enterprise with hyperscaler bundle",
+                primary_cloud="multi-cloud",
+                compliance_focus=["SOC2", "GDPR"],
+                typical_scale="500-5000 employees",
+            ),
+            IndustryVertical.FINANCE: cls(
+                industry=industry,
+                name="Regulated Finance",
+                description="Banks, insurance, investment firms with strict compliance",
+                primary_cloud="private/hybrid",
+                compliance_focus=["SOX", "PCI-DSS", "FFIEC", "GDPR"],
+                typical_scale="1000+ employees",
+            ),
+            IndustryVertical.HEALTHCARE: cls(
+                industry=industry,
+                name="Healthcare & Life Sciences",
+                description="Hospitals, pharma, biotech with patient data protection",
+                primary_cloud="private/hybrid",
+                compliance_focus=["HIPAA", "HITRUST", "FDA 21 CFR Part 11"],
+                typical_scale="500+ employees",
+            ),
+            IndustryVertical.MANUFACTURING: cls(
+                industry=industry,
+                name="Manufacturing & Industrial",
+                description="Factories, supply chain with edge computing focus",
+                primary_cloud="hybrid/edge",
+                compliance_focus=["ISO 27001", "ITAR"],
+                typical_scale="1000+ employees",
+            ),
+            IndustryVertical.LOGISTICS: cls(
+                industry=industry,
+                name="Logistics & Transportation",
+                description="Shipping, fleet management, supply chain",
+                primary_cloud="hybrid/edge",
+                compliance_focus=["ISO 27001", "C-TPAT"],
+                typical_scale="500+ employees",
+            ),
+            IndustryVertical.TECH_SAAS: cls(
+                industry=industry,
+                name="Tech & SaaS",
+                description="Software companies, cloud-native startups",
+                primary_cloud="public cloud",
+                compliance_focus=["SOC2", "ISO 27001", "GDPR"],
+                typical_scale="50-2000 employees",
+            ),
+            IndustryVertical.RETAIL: cls(
+                industry=industry,
+                name="Retail & E-commerce",
+                description="Online and physical retail with omnichannel focus",
+                primary_cloud="public cloud",
+                compliance_focus=["PCI-DSS", "GDPR", "CCPA"],
+                typical_scale="500+ employees",
+            ),
+            IndustryVertical.MEDIA: cls(
+                industry=industry,
+                name="Media & Entertainment",
+                description="Streaming, publishing, gaming with high throughput",
+                primary_cloud="public cloud",
+                compliance_focus=["GDPR", "COPPA"],
+                typical_scale="200+ employees",
+            ),
+            IndustryVertical.GOVERNMENT: cls(
+                industry=industry,
+                name="Government & Public Sector",
+                description="Federal, state, local government with sovereign cloud",
+                primary_cloud="sovereign/gov-cloud",
+                compliance_focus=["FedRAMP", "FISMA", "StateRAMP"],
+                typical_scale="1000+ employees",
+            ),
+        }
+        return profiles.get(industry, profiles[IndustryVertical.DEFAULT])
 
 
 class PresetCharacteristics(BaseModel):

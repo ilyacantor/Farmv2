@@ -46,7 +46,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from src.api.routes import router, compute_fingerprint
 from src.api.stream import router as stream_router
 from src.api.agents import router as agents_router
-from src.api.scenarios import router as scenarios_router
+from src.api.scenarios import router as scenarios_router, fabric_router
 from src.farm.db import DBUnavailable, close_pool, ensure_schema, connection as db_connection, is_healthy
 
 
@@ -290,6 +290,7 @@ app.include_router(router)
 app.include_router(stream_router)
 app.include_router(agents_router)
 app.include_router(scenarios_router)
+app.include_router(fabric_router)
 
 @app.get("/api/health")
 async def health_check():
