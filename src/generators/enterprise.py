@@ -769,18 +769,20 @@ class EnterpriseGenerator:
                 data_domain = DOMAIN_TO_SOR_TYPE.get(domain)
                 data_tier = "gold" if is_sor else None
 
-                # Determine fabric routing for this app (75% of apps get routed)
-                # SOR apps almost always have integration (95%), others 75%
-                route_probability = 0.95 if is_sor else 0.75
+                # Determine fabric routing for this app
+                # Known enterprise apps (in ENTERPRISE_APP_FABRIC_ROUTING) ALWAYS get routed
+                # SOR apps get 95% routing, other synthetic apps get 75%
                 integrates_via = None
                 fabric_vendor = None
 
-                if self.rng.random() < route_probability:
-                    # First check explicit domain mapping for known enterprise apps
-                    # This ensures Salesforce, Workday, etc. ALWAYS get routed correctly
-                    if domain in ENTERPRISE_APP_FABRIC_ROUTING:
-                        integrates_via = ENTERPRISE_APP_FABRIC_ROUTING[domain]
-                    else:
+                # PRIORITY 1: Known enterprise apps always get routed (100% probability)
+                if domain in ENTERPRISE_APP_FABRIC_ROUTING:
+                    integrates_via = ENTERPRISE_APP_FABRIC_ROUTING[domain]
+                    fabric_vendor = fabric_vendors.get(integrates_via)
+                else:
+                    # PRIORITY 2: Synthetic/unknown apps use probability-based routing
+                    route_probability = 0.95 if is_sor else 0.75
+                    if self.rng.random() < route_probability:
                         # Fall back to keyword matching for synthetic apps
                         app_name_lower = app.get("name", "").lower()
 
@@ -801,7 +803,7 @@ class EnterpriseGenerator:
                             # Default: most enterprise SaaS goes through iPaaS
                             integrates_via = self.rng.choice(["ipaas", "ipaas", "ipaas", "api_gateway"])
 
-                    fabric_vendor = fabric_vendors.get(integrates_via)
+                        fabric_vendor = fabric_vendors.get(integrates_via)
 
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
@@ -1372,13 +1374,16 @@ class EnterpriseGenerator:
         # Generate integration-tier contracts for SaaS apps that route through fabric
         # These contracts reference which platform handles the integration
         for app in self._saas_selection:
-            # 50% of apps have explicit integration contracts
-            if self.rng.random() < 0.50:
-                app_name_lower = app.get("name", "").lower()
-                app_domain = app.get("domain", "")
+            app_name_lower = app.get("name", "").lower()
+            app_domain = app.get("domain", "")
 
+            # Known enterprise apps always get integration contracts (100%)
+            # Synthetic apps get 50% probability
+            is_known_enterprise = app_domain in ENTERPRISE_APP_FABRIC_ROUTING
+            contract_probability = 1.0 if is_known_enterprise else 0.50
+            if self.rng.random() < contract_probability:
                 # First check explicit domain mapping (same as CMDB)
-                if app_domain in ENTERPRISE_APP_FABRIC_ROUTING:
+                if is_known_enterprise:
                     target_plane = ENTERPRISE_APP_FABRIC_ROUTING[app_domain]
                 # Fall back to keyword matching for synthetic apps
                 elif any(kw in app_name_lower for kw in ["sales", "crm", "hub", "dynamics", "workday", "adp", "bamboo", "netsuite", "quickbooks", "xero", "sap"]):
@@ -1487,8 +1492,11 @@ class EnterpriseGenerator:
             else:
                 target_plane = "ipaas"  # Default most SaaS to iPaaS
 
-            # Generate traffic linking this app to the fabric plane (75% of apps)
-            if self.rng.random() < 0.75:
+            # Generate traffic linking this app to the fabric plane
+            # Known enterprise apps always get traffic (100%), synthetic apps get 75%
+            is_known_enterprise = app_domain in ENTERPRISE_APP_FABRIC_ROUTING
+            traffic_probability = 1.0 if is_known_enterprise else 0.75
+            if self.rng.random() < traffic_probability:
                 fabric_vendor = fabric_vendors.get(target_plane)
                 vendor_info = FABRIC_VENDOR_DOMAINS.get(fabric_vendor, {})
                 fabric_domain = vendor_info.get("domain", f"{fabric_vendor}.com")

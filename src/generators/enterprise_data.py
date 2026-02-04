@@ -37,6 +37,13 @@ SAAS_APPS = [
     {"name": "Miro", "vendor": "Miro", "domain": "miro.com", "category": "saas"},
     {"name": "Asana", "vendor": "Asana", "domain": "asana.com", "category": "saas"},
     {"name": "Monday.com", "vendor": "monday.com", "domain": "monday.com", "category": "saas"},
+    # Additional enterprise apps that should always be routed
+    {"name": "NetSuite", "vendor": "Oracle", "domain": "netsuite.com", "category": "saas"},
+    {"name": "QuickBooks Online", "vendor": "Intuit", "domain": "quickbooks.com", "category": "saas"},
+    {"name": "SAP SuccessFactors", "vendor": "SAP", "domain": "sap.com", "category": "saas"},
+    {"name": "ADP Workforce", "vendor": "ADP", "domain": "adp.com", "category": "saas"},
+    {"name": "Tableau", "vendor": "Salesforce", "domain": "tableau.com", "category": "saas"},
+    {"name": "GitLab", "vendor": "GitLab", "domain": "gitlab.com", "category": "saas"},
 ]
 
 SHADOW_SAAS_APPS = [
