@@ -745,7 +745,20 @@ class EnterpriseGenerator:
 
         coverage = self.governance_rate
 
-        for app in self._saas_selection:
+        # Get fabric config to link SaaS apps to fabric planes
+        fabric_config = self._get_fabric_config()
+        fabric_vendors = {pt.value: cfg.vendor for pt, cfg in fabric_config.items()}
+
+        # Define which app categories route through which fabric plane
+        # CRM, ERP, HRIS, Finance apps typically go through iPaaS
+        # API-heavy apps may go through API Gateway
+        # High-volume data apps go through Event Bus or Data Warehouse
+        IPAAS_CATEGORIES = {"crm", "erp", "hris", "finance", "hr", "accounting", "marketing"}
+        API_GATEWAY_CATEGORIES = {"developer", "api", "devops", "monitoring"}
+        EVENT_BUS_CATEGORIES = {"analytics", "data", "bi", "streaming"}
+        DATA_WAREHOUSE_CATEGORIES = {"database", "storage", "datastore"}
+
+        for idx, app in enumerate(self._saas_selection):
             if self.rng.random() < coverage:
                 owner = self.rng.choice(self._employees) if self._employees else None
                 domain = app["domain"]
@@ -754,6 +767,36 @@ class EnterpriseGenerator:
                 is_sor = domain in DOMAIN_TO_SOR_TYPE
                 data_domain = DOMAIN_TO_SOR_TYPE.get(domain)
                 data_tier = "gold" if is_sor else None
+
+                # Determine fabric routing for this app (75% of apps get routed)
+                # SOR apps almost always have integration (95%), others 75%
+                route_probability = 0.95 if is_sor else 0.75
+                integrates_via = None
+                fabric_vendor = None
+
+                if self.rng.random() < route_probability:
+                    # Determine which plane based on app category or default to iPaaS
+                    app_category = app.get("category", "").lower()
+                    app_name_lower = app.get("name", "").lower()
+
+                    # Check category hints from app name
+                    if any(kw in app_name_lower for kw in ["sales", "crm", "hub", "dynamics"]):
+                        integrates_via = "ipaas"
+                    elif any(kw in app_name_lower for kw in ["workday", "adp", "bamboo", "gusto"]):
+                        integrates_via = "ipaas"
+                    elif any(kw in app_name_lower for kw in ["netsuite", "quickbooks", "xero", "sap"]):
+                        integrates_via = "ipaas"
+                    elif any(kw in app_name_lower for kw in ["github", "gitlab", "jenkins", "datadog"]):
+                        integrates_via = "api_gateway"
+                    elif any(kw in app_name_lower for kw in ["snowflake", "tableau", "looker", "power bi"]):
+                        integrates_via = "data_warehouse"
+                    elif any(kw in app_name_lower for kw in ["kafka", "segment", "amplitude"]):
+                        integrates_via = "event_bus"
+                    else:
+                        # Default: most enterprise SaaS goes through iPaaS
+                        integrates_via = self.rng.choice(["ipaas", "ipaas", "ipaas", "api_gateway"])
+
+                    fabric_vendor = fabric_vendors.get(integrates_via)
 
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
@@ -769,12 +812,21 @@ class EnterpriseGenerator:
                     data_tier=data_tier,
                     data_domain=data_domain,
                     description=f"Authoritative {data_domain} data system" if is_sor else None,
+                    integrates_via=integrates_via,
+                    fabric_vendor=fabric_vendor,
                 )
                 cis.append(ci)
-        
+
         for svc in self._internal_services:
             if self.rng.random() < coverage:
                 owner = self.rng.choice(self._employees) if self._employees else None
+                # Internal services often route through API Gateway or Event Bus (70% routed)
+                if self.rng.random() < 0.70:
+                    integrates_via = self.rng.choice(["api_gateway", "api_gateway", "event_bus"])
+                else:
+                    integrates_via = None
+                fabric_vendor = fabric_vendors.get(integrates_via) if integrates_via else None
+
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
                     name=self._apply_name_drift(svc["name"]),
@@ -783,11 +835,20 @@ class EnterpriseGenerator:
                     owner=f"{owner['first']} {owner['last']}" if owner else None,
                     owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
                     canonical_domain=svc.get("domain"),
+                    integrates_via=integrates_via,
+                    fabric_vendor=fabric_vendor,
                 )
                 cis.append(ci)
-        
+
         for ds in self._datastores:
             if self.rng.random() < coverage:
+                # Datastores route through data_warehouse or event_bus plane (80% routed)
+                if self.rng.random() < 0.80:
+                    integrates_via = self.rng.choice(["data_warehouse", "data_warehouse", "event_bus"])
+                else:
+                    integrates_via = None
+                fabric_vendor = fabric_vendors.get(integrates_via) if integrates_via else None
+
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
                     name=self._apply_name_drift(ds["name"]),
@@ -795,15 +856,20 @@ class EnterpriseGenerator:
                     lifecycle=LifecycleEnum.prod,
                     vendor=ds["vendor"] if self.rng.random() > 0.2 else None,
                     canonical_domain=ds.get("domain"),
+                    integrates_via=integrates_via,
+                    fabric_vendor=fabric_vendor,
                 )
                 cis.append(ci)
-        
+
         for zombie_app in self._zombie_apps:
             if self.rng.random() < coverage:
                 domain = zombie_app["domain"]
                 # Check if this zombie was a former SOR vendor
                 is_former_sor = bool(domain in DOMAIN_TO_SOR_TYPE or zombie_app.get("sor_domain"))
                 data_domain = zombie_app.get("sor_domain") or DOMAIN_TO_SOR_TYPE.get(domain)
+                # Zombies may still have integration configured (legacy)
+                integrates_via = "ipaas" if is_former_sor and self.rng.random() < 0.6 else None
+                fabric_vendor = fabric_vendors.get(integrates_via) if integrates_via else None
 
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
@@ -818,9 +884,11 @@ class EnterpriseGenerator:
                     data_tier="gold" if is_former_sor else None,
                     data_domain=data_domain,
                     description=f"DEPRECATED: Former {data_domain} SOR - pending decommission" if is_former_sor else None,
+                    integrates_via=integrates_via,
+                    fabric_vendor=fabric_vendor,
                 )
                 cis.append(ci)
-        
+
         for zombie_svc in self._zombie_services:
             if self.rng.random() < coverage:
                 ci = CMDBConfigItem(
@@ -831,7 +899,7 @@ class EnterpriseGenerator:
                     canonical_domain=zombie_svc.get("domain"),
                 )
                 cis.append(ci)
-        
+
         return CMDBPlane(cis=cis)
 
     def generate_cloud_plane(self) -> CloudPlane:
@@ -1230,12 +1298,18 @@ class EnterpriseGenerator:
         return cis
 
     def generate_fabric_finance_records(self) -> tuple[list[FinanceVendor], list[FinanceContract], list[FinanceTransaction]]:
-        """Generate finance records for fabric platform vendors."""
+        """Generate finance records for fabric platform vendors.
+
+        Creates:
+        1. Platform-level contracts for fabric vendors (Workato, Kafka, etc.)
+        2. Integration-tier contracts that reference which apps route through which platform
+        """
         vendors = []
         contracts = []
         transactions = []
 
         fabric_config = self._get_fabric_config()
+        fabric_vendors = {pt.value: cfg.vendor for pt, cfg in fabric_config.items()}
 
         for plane_type, config in fabric_config.items():
             vendor_key = config.vendor
@@ -1282,15 +1356,71 @@ class EnterpriseGenerator:
                     memo=f"Fabric platform subscription - {plane_type.value}",
                 ))
 
+        # Generate integration-tier contracts for SaaS apps that route through fabric
+        # These contracts reference which platform handles the integration
+        for app in self._saas_selection:
+            # 50% of apps have explicit integration contracts
+            if self.rng.random() < 0.50:
+                app_name_lower = app.get("name", "").lower()
+
+                # Determine which plane this app routes through
+                if any(kw in app_name_lower for kw in ["sales", "crm", "hub", "dynamics", "workday", "adp", "bamboo", "netsuite", "quickbooks", "xero", "sap"]):
+                    target_plane = "ipaas"
+                elif any(kw in app_name_lower for kw in ["github", "gitlab", "jenkins", "datadog"]):
+                    target_plane = "api_gateway"
+                elif any(kw in app_name_lower for kw in ["snowflake", "tableau", "looker"]):
+                    target_plane = "data_warehouse"
+                else:
+                    target_plane = "ipaas"
+
+                fabric_vendor = fabric_vendors.get(target_plane)
+                vendor_info = FABRIC_VENDOR_DOMAINS.get(fabric_vendor, {})
+                fabric_vendor_name = vendor_info.get("vendor_name", fabric_vendor)
+
+                # Create integration contract
+                integration_cost = round(self.rng.uniform(500, 5000), 2)  # Per-connector cost
+                contracts.append(FinanceContract(
+                    contract_id=f"CTR-INTEG-{self._generate_uuid()[:8].upper()}",
+                    vendor_name=fabric_vendor_name,
+                    product=f"{app['name']} Integration Connector",
+                    start_date=self._random_date(365),
+                    end_date=self._random_future_date(365),
+                    owner_email=f"integrations@{self.tenant_id.lower()}.com",
+                    domain=vendor_info.get("domain", f"{fabric_vendor}.com"),
+                    annual_value=integration_cost * 12,
+                    contract_type="integration",
+                    contract_term_years=1,
+                ))
+
+                # Transaction for the connector
+                transactions.append(FinanceTransaction(
+                    txn_id=f"TXN-INTEG-{self._generate_uuid()[:8].upper()}",
+                    vendor_name=fabric_vendor_name,
+                    amount=integration_cost,
+                    currency="USD",
+                    date=self._random_date(90),
+                    payment_type=PaymentTypeEnum.invoice,
+                    is_recurring=True,
+                    memo=f"Integration connector: {app['name']} via {target_plane}",
+                ))
+
         return vendors, contracts, transactions
 
     def generate_fabric_network_traffic(self) -> tuple[list[NetworkDNS], list[NetworkProxy]]:
-        """Generate network traffic to fabric vendor endpoints."""
+        """Generate network traffic to fabric vendor endpoints.
+
+        Creates traffic patterns that link SaaS apps to fabric planes:
+        - API calls from internal servers to fabric endpoints
+        - URL paths that reference specific SaaS app integrations
+        - Correlation between SaaS domains and fabric vendor traffic
+        """
         dns_records = []
         proxy_records = []
 
         fabric_config = self._get_fabric_config()
+        fabric_vendors = {pt.value: cfg.vendor for pt, cfg in fabric_config.items()}
 
+        # First, generate generic fabric traffic
         for plane_type, config in fabric_config.items():
             vendor_key = config.vendor
             vendor_info = FABRIC_VENDOR_DOMAINS.get(vendor_key, {})
@@ -1317,6 +1447,64 @@ class EnterpriseGenerator:
                     user_email=employee["email"] if employee and self.rng.random() > 0.6 else None,
                     timestamp=self._random_recent_date(7),
                 ))
+
+        # Now generate traffic that links SaaS apps to fabric planes
+        # This creates the correlation evidence that AOD needs
+        for app in self._saas_selection:
+            # Determine which fabric plane this app would route through
+            app_name_lower = app.get("name", "").lower()
+            app_domain = app.get("domain", "")
+
+            # Assign plane based on app type (same logic as CMDB)
+            if any(kw in app_name_lower for kw in ["sales", "crm", "hub", "dynamics", "workday", "adp", "bamboo", "netsuite", "quickbooks", "xero", "sap"]):
+                target_plane = "ipaas"
+            elif any(kw in app_name_lower for kw in ["github", "gitlab", "jenkins", "datadog"]):
+                target_plane = "api_gateway"
+            elif any(kw in app_name_lower for kw in ["snowflake", "tableau", "looker"]):
+                target_plane = "data_warehouse"
+            elif any(kw in app_name_lower for kw in ["kafka", "segment"]):
+                target_plane = "event_bus"
+            else:
+                target_plane = "ipaas"  # Default most SaaS to iPaaS
+
+            # Generate traffic linking this app to the fabric plane (75% of apps)
+            if self.rng.random() < 0.75:
+                fabric_vendor = fabric_vendors.get(target_plane)
+                vendor_info = FABRIC_VENDOR_DOMAINS.get(fabric_vendor, {})
+                fabric_domain = vendor_info.get("domain", f"{fabric_vendor}.com")
+
+                # Generate 3-8 proxy records showing integration traffic
+                num_integration_records = self.rng.randint(3, 8)
+                for _ in range(num_integration_records):
+                    # URL patterns that show the link: fabric API call with SaaS app context
+                    url_patterns = [
+                        f"https://api.{fabric_domain}/v1/connections/{app_domain.replace('.', '-')}/sync",
+                        f"https://api.{fabric_domain}/v1/recipes/{app['name'].lower().replace(' ', '-')}-integration/run",
+                        f"https://api.{fabric_domain}/v1/connectors/{app['vendor'].lower().replace(' ', '-')}/data",
+                        f"https://api.{fabric_domain}/v1/flows/{app_domain.split('.')[0]}-to-warehouse",
+                        f"https://api.{fabric_domain}/v1/integrations/{app_domain.replace('.', '_')}/webhook",
+                        f"https://api.{fabric_domain}/v1/apps/{app['name'].lower().replace(' ', '_')}/events",
+                    ]
+
+                    proxy_records.append(NetworkProxy(
+                        proxy_id=f"PRX-INTEG-{self._generate_uuid()[:8].upper()}",
+                        url=self.rng.choice(url_patterns),
+                        domain=fabric_domain,
+                        user_email=None,  # Machine-to-machine traffic
+                        timestamp=self._random_recent_date(7),
+                    ))
+
+                # Also generate DNS queries that show the correlation
+                dns_records.append(NetworkDNS(
+                    dns_id=f"DNS-INTEG-{self._generate_uuid()[:8].upper()}",
+                    queried_domain=f"{app_domain.split('.')[0]}.{fabric_domain}",
+                    source_device=f"SRV-INTEG-{self.rng.randint(100, 999)}",
+                    timestamp=self._random_recent_date(7),
+                ))
+
+        # Generate traffic for shadow apps too (they shouldn't route through fabric)
+        # This is negative evidence - shadow apps have NO fabric integration traffic
+        # (We don't generate any, which is correct)
 
         return dns_records, proxy_records
 
