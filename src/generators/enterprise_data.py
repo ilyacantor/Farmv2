@@ -52,6 +52,10 @@ SHADOW_SAAS_APPS = [
     {"name": "Webex", "vendor": "Cisco", "domain": "webex.com", "category": "saas"},
     {"name": "SurveyMonkey", "vendor": "Momentive", "domain": "surveymonkey.com", "category": "saas"},
     {"name": "Evernote", "vendor": "Evernote", "domain": "evernote.com", "category": "saas"},
+    # SOR vendor candidates in shadow (Category D: Shadow + SOR - HIGH RISK)
+    {"name": "Pipedrive", "vendor": "Pipedrive", "domain": "pipedrive.com", "category": "saas", "sor_domain": "customer"},
+    {"name": "Freshworks CRM", "vendor": "Freshworks", "domain": "freshworks.com", "category": "saas", "sor_domain": "customer"},
+    {"name": "BambooHR", "vendor": "BambooHR", "domain": "bamboohr.com", "category": "saas", "sor_domain": "employee"},
 ]
 
 ZOMBIE_APPS = [
@@ -61,6 +65,9 @@ ZOMBIE_APPS = [
     {"name": "Google+", "vendor": "Google", "domain": "plus.google.com", "category": "saas"},
     {"name": "Pivotal Tracker", "vendor": "Pivotal", "domain": "pivotaltracker.com", "category": "saas"},
     {"name": "Flowdock", "vendor": "CA Technologies", "domain": "flowdock.com", "category": "saas"},
+    # Former SOR vendors now zombie (Category E: Zombie + Former SOR - needs decommission plan)
+    {"name": "UltiPro Legacy", "vendor": "Ultimate Software", "domain": "ultipro.com", "category": "saas", "sor_domain": "employee"},
+    {"name": "Sage Legacy", "vendor": "Sage", "domain": "sage.com", "category": "saas", "sor_domain": "financial"},
 ]
 
 ZOMBIE_INTERNAL_SERVICES = [
@@ -246,4 +253,54 @@ GOVERNANCE_RATES = {
     RealismProfileEnum.clean: 0.95,
     RealismProfileEnum.typical: 0.60,
     RealismProfileEnum.messy: 0.15,
+}
+
+# =============================================================================
+# SYSTEM OF RECORD (SOR) VENDOR PATTERNS
+# =============================================================================
+# These patterns are used by Farm to generate test data with SOR expectations.
+# The scoring logic in sor_scoring.py uses these same patterns.
+
+SOR_VENDORS_BY_DOMAIN = {
+    "customer": {
+        "salesforce.com", "hubspot.com", "dynamics.com", "dynamics365.com",
+        "zoho.com", "pipedrive.com", "freshworks.com", "zendesk.com",
+    },
+    "employee": {
+        "workday.com", "adp.com", "bamboohr.com", "namely.com",
+        "paylocity.com", "paychex.com", "gusto.com", "rippling.com",
+        "successfactors.com", "ultipro.com", "dayforce.com",
+    },
+    "financial": {
+        "netsuite.com", "quickbooks.com", "xero.com", "sage.com",
+        "intacct.com", "freshbooks.com", "oracle.com", "sap.com",
+    },
+    "product": {
+        "sap.com", "oracle.com", "epicor.com", "infor.com",
+        "dynamics.com", "netsuite.com",
+    },
+    "identity": {
+        "okta.com", "onelogin.com", "auth0.com", "ping.com",
+        "duo.com",
+    },
+    "it_assets": {
+        "servicenow.com", "freshservice.com", "manageengine.com",
+    },
+}
+
+# Flatten into a domain -> data_domain lookup for easy checking
+DOMAIN_TO_SOR_TYPE = {}
+for data_domain, domains in SOR_VENDORS_BY_DOMAIN.items():
+    for d in domains:
+        if d not in DOMAIN_TO_SOR_TYPE:
+            DOMAIN_TO_SOR_TYPE[d] = data_domain
+
+# Known SOR apps from our app catalogs with their data domain
+SOR_APP_DOMAINS = {
+    "salesforce.com": "customer",
+    "workday.com": "employee",
+    "servicenow.com": "it_assets",
+    "okta.com": "identity",
+    "hubspot.com": "customer",
+    "zendesk.com": "customer",
 }

@@ -82,6 +82,9 @@ from src.generators.enterprise_data import (
     SCALE_MULTIPLIERS,
     CORROBORATION_RATES,
     GOVERNANCE_RATES,
+    SOR_VENDORS_BY_DOMAIN,
+    DOMAIN_TO_SOR_TYPE,
+    SOR_APP_DOMAINS,
 )
 
 
@@ -736,12 +739,19 @@ class EnterpriseGenerator:
 
     def generate_cmdb_plane(self) -> CMDBPlane:
         cis = []
-        
+
         coverage = self.governance_rate
-        
+
         for app in self._saas_selection:
             if self.rng.random() < coverage:
                 owner = self.rng.choice(self._employees) if self._employees else None
+                domain = app["domain"]
+
+                # Check if this is a known SOR vendor and enrich with SOR fields
+                is_sor = domain in DOMAIN_TO_SOR_TYPE
+                data_domain = DOMAIN_TO_SOR_TYPE.get(domain)
+                data_tier = "gold" if is_sor else None
+
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
                     name=self._apply_name_drift(app["name"]),
@@ -751,7 +761,11 @@ class EnterpriseGenerator:
                     owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
                     vendor=app["vendor"] if self.rng.random() > 0.15 else None,
                     external_ref=f"https://{app['domain']}/support" if self.rng.random() > 0.4 else None,
-                    canonical_domain=app["domain"],
+                    canonical_domain=domain,
+                    is_system_of_record=is_sor,
+                    data_tier=data_tier,
+                    data_domain=data_domain,
+                    description=f"Authoritative {data_domain} data system" if is_sor else None,
                 )
                 cis.append(ci)
         
@@ -783,6 +797,11 @@ class EnterpriseGenerator:
         
         for zombie_app in self._zombie_apps:
             if self.rng.random() < coverage:
+                domain = zombie_app["domain"]
+                # Check if this zombie was a former SOR vendor
+                is_former_sor = bool(domain in DOMAIN_TO_SOR_TYPE or zombie_app.get("sor_domain"))
+                data_domain = zombie_app.get("sor_domain") or DOMAIN_TO_SOR_TYPE.get(domain)
+
                 ci = CMDBConfigItem(
                     ci_id=f"CI{self.rng.randint(100000, 999999)}",
                     name=self._apply_name_drift(zombie_app["name"]),
@@ -790,7 +809,12 @@ class EnterpriseGenerator:
                     lifecycle=LifecycleEnum.prod,
                     vendor=zombie_app["vendor"],
                     external_ref=f"https://{zombie_app['domain']}",
-                    canonical_domain=zombie_app["domain"],
+                    canonical_domain=domain,
+                    # Former SOR fields - marked for historical record
+                    is_system_of_record=is_former_sor,
+                    data_tier="gold" if is_former_sor else None,
+                    data_domain=data_domain,
+                    description=f"DEPRECATED: Former {data_domain} SOR - pending decommission" if is_former_sor else None,
                 )
                 cis.append(ci)
         
@@ -950,11 +974,19 @@ class EnterpriseGenerator:
         
         for app in self._saas_selection:
             vendor_name = self._apply_name_drift(app["vendor"])
+            domain = app["domain"]
+
+            # Check if this is a known SOR vendor and enrich with enterprise contract fields
+            is_sor = domain in DOMAIN_TO_SOR_TYPE
+            annual_spend = round(self.rng.uniform(50000, 250000), 2) if is_sor else round(self.rng.uniform(5000, 50000), 2)
+
             vendors.append(FinanceVendor(
                 vendor_id=f"VND-{self._generate_uuid()[:8].upper()}",
                 vendor_name=vendor_name,
+                domain=domain,
+                annual_spend=annual_spend,
             ))
-            
+
             owner = self.rng.choice(self._employees) if self._employees else None
             contracts.append(FinanceContract(
                 contract_id=f"CTR-{self._generate_uuid()[:8].upper()}",
@@ -963,6 +995,10 @@ class EnterpriseGenerator:
                 start_date=self._random_date(730),
                 end_date=self._random_future_date(365) if self.rng.random() > 0.3 else None,
                 owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
+                domain=domain,
+                annual_value=annual_spend,
+                contract_type="enterprise" if is_sor else "standard",
+                contract_term_years=3 if is_sor else 1,
             ))
             
             if len(transactions) >= FINANCE_MAX_TRANSACTIONS:
@@ -982,13 +1018,21 @@ class EnterpriseGenerator:
         
         for i, shadow_app in enumerate(self._shadow_apps):
             vendor_name = self._apply_name_drift(shadow_app["vendor"])
+            domain = shadow_app["domain"]
+
+            # Check if this shadow app is an SOR candidate (RED FLAG scenario)
+            is_sor_candidate = bool(domain in DOMAIN_TO_SOR_TYPE or shadow_app.get("sor_domain"))
+            annual_spend = round(self.rng.uniform(20000, 80000), 2) if is_sor_candidate else round(self.rng.uniform(1000, 15000), 2)
+
             vendors.append(FinanceVendor(
                 vendor_id=f"VND-{self._generate_uuid()[:8].upper()}",
                 vendor_name=vendor_name,
+                domain=domain,
+                annual_spend=annual_spend,
             ))
-            
+
             has_ongoing_finance = (i % 3) != 0
-            
+
             owner = self.rng.choice(self._employees) if self._employees else None
             if has_ongoing_finance:
                 contracts.append(FinanceContract(
@@ -998,6 +1042,11 @@ class EnterpriseGenerator:
                     start_date=self._random_date(730),
                     end_date=self._random_future_date(365) if self.rng.random() > 0.3 else None,
                     owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
+                    domain=domain,
+                    annual_value=annual_spend,
+                    # Shadow SOR candidates may have enterprise-like contracts
+                    contract_type="enterprise" if is_sor_candidate and annual_spend >= 50000 else "standard",
+                    contract_term_years=2 if is_sor_candidate else 1,
                 ))
             
             if len(transactions) >= FINANCE_MAX_TRANSACTIONS:
@@ -1025,12 +1074,19 @@ class EnterpriseGenerator:
             # Finance matching uses normalized names, so avoid drift here
             vendor_name = zombie_app["vendor"]  # Canonical, no drift
             product_name = zombie_app["name"]   # Canonical, no drift
-            
+            domain = zombie_app["domain"]
+
+            # Check if this zombie was a former SOR vendor
+            is_former_sor = bool(domain in DOMAIN_TO_SOR_TYPE or zombie_app.get("sor_domain"))
+            annual_spend = round(self.rng.uniform(50000, 150000), 2) if is_former_sor else round(self.rng.uniform(5000, 30000), 2)
+
             vendors.append(FinanceVendor(
                 vendor_id=f"VND-{self._generate_uuid()[:8].upper()}",
                 vendor_name=vendor_name,
+                domain=domain,
+                annual_spend=annual_spend,
             ))
-            
+
             # Zombies MUST have ongoing finance - that's what defines them
             owner = self.rng.choice(self._employees) if self._employees else None
             contracts.append(FinanceContract(
@@ -1040,6 +1096,10 @@ class EnterpriseGenerator:
                 start_date=self._random_date(730),
                 end_date=self._random_future_date(365) if self.rng.random() > 0.3 else None,
                 owner_email=self._maybe_stale_owner(owner["email"]) if owner else None,
+                domain=domain,
+                annual_value=annual_spend,
+                contract_type="enterprise" if is_former_sor else "standard",
+                contract_term_years=3 if is_former_sor else 1,
             ))
             
             # Zombies get priority for transactions - don't skip due to cap
