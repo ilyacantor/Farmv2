@@ -85,6 +85,9 @@ from src.generators.enterprise_data import (
     SOR_VENDORS_BY_DOMAIN,
     DOMAIN_TO_SOR_TYPE,
     SOR_APP_DOMAINS,
+    FABRIC_VENDOR_DOMAINS,
+    FABRIC_CLOUD_RESOURCES,
+    FABRIC_VENDOR_CONTRACTS,
 )
 
 
@@ -1119,6 +1122,204 @@ class EnterpriseGenerator:
         
         return FinancePlane(vendors=vendors, contracts=contracts, transactions=transactions)
 
+    def _get_fabric_config(self) -> dict:
+        """Get the fabric plane configuration for this snapshot."""
+        from src.models.fabric import generate_fabric_config
+        return generate_fabric_config(industry=self.industry, seed=self.seed)
+
+    def generate_fabric_cloud_resources(self) -> list[CloudResource]:
+        """Generate cloud resources that ARE fabric plane infrastructure.
+
+        Includes: MSK clusters, API Gateway instances, EKS services running Kong,
+        EventBridge, Redshift clusters, etc.
+        """
+        resources = []
+        fabric_config = self._get_fabric_config()
+
+        for plane_type, config in fabric_config.items():
+            plane_key = plane_type.value  # e.g., "ipaas", "api_gateway", etc.
+            vendor = config.vendor
+
+            # Get cloud resource templates for this plane
+            plane_resources = FABRIC_CLOUD_RESOURCES.get(plane_key, [])
+
+            for res_template in plane_resources:
+                # Generate resource based on template
+                resource_name = f"{self.tenant_id.lower()}-{res_template['name']}-{plane_key}"
+                provider = res_template.get("provider", "aws")
+
+                # Map provider to CloudProviderEnum
+                provider_map = {
+                    "aws": CloudProviderEnum.aws,
+                    "gcp": CloudProviderEnum.gcp,
+                    "azure": CloudProviderEnum.azure,
+                    "snowflake": CloudProviderEnum.aws,  # Snowflake runs on AWS/Azure/GCP
+                    "confluent": CloudProviderEnum.aws,  # Confluent Cloud typically on hyperscaler
+                }
+                cloud_provider = provider_map.get(provider, CloudProviderEnum.aws)
+
+                # Add fabric-specific tags
+                tags = res_template.get("tags", {}).copy()
+                tags["fabric_plane"] = plane_key
+                tags["fabric_vendor"] = vendor
+                tags["managed_by"] = "platform-team"
+
+                region = self.rng.choice(CLOUD_REGIONS.get(cloud_provider.value, ["us-east-1"]))
+
+                resources.append(CloudResource(
+                    cloud_id=f"{cloud_provider.value}-fabric-{self._generate_uuid()[:8]}",
+                    cloud_provider=cloud_provider,
+                    resource_type=res_template["type"],
+                    name=resource_name,
+                    region=region,
+                    tags=tags,
+                ))
+
+        return resources
+
+    def generate_fabric_cmdb_items(self) -> list[CMDBConfigItem]:
+        """Generate CMDB items for fabric platforms with integrates_via relationships."""
+        cis = []
+        fabric_config = self._get_fabric_config()
+
+        for plane_type, config in fabric_config.items():
+            plane_key = plane_type.value
+            vendor = config.vendor
+            vendor_info = FABRIC_VENDOR_DOMAINS.get(vendor, {})
+
+            owner = self.rng.choice(self._employees) if self._employees else None
+
+            ci = CMDBConfigItem(
+                ci_id=f"CI-FABRIC-{self._generate_uuid()[:8].upper()}",
+                name=f"{vendor_info.get('vendor_name', vendor)} - {plane_key.replace('_', ' ').title()}",
+                ci_type=CITypeEnum.service,
+                lifecycle=LifecycleEnum.prod,
+                owner=f"{owner['first']} {owner['last']}" if owner else "Platform Team",
+                owner_email=owner["email"] if owner else f"platform@{self.tenant_id.lower()}.com",
+                vendor=vendor_info.get("vendor_name", vendor),
+                canonical_domain=vendor_info.get("domain"),
+                description=f"Fabric plane infrastructure for {plane_key}",
+                integrates_via=plane_key,
+                fabric_vendor=vendor,
+            )
+            cis.append(ci)
+
+        # Add integrates_via relationships for SaaS apps that route through fabric
+        for app in self._saas_selection[:10]:  # Top 10 apps get fabric routing
+            plane_type = self.rng.choice(["ipaas", "api_gateway", "event_bus"])
+            fabric_vendor = None
+            for pt, cfg in fabric_config.items():
+                if pt.value == plane_type:
+                    fabric_vendor = cfg.vendor
+                    break
+
+            ci = CMDBConfigItem(
+                ci_id=f"CI-{self.rng.randint(100000, 999999)}",
+                name=f"{app['name']} Integration",
+                ci_type=CITypeEnum.service,
+                lifecycle=LifecycleEnum.prod,
+                vendor=app["vendor"],
+                canonical_domain=app["domain"],
+                description=f"Integration configuration for {app['name']}",
+                integrates_via=plane_type,
+                fabric_vendor=fabric_vendor,
+                depends_on=[f"CI-FABRIC-{plane_type.upper()[:4]}"],
+            )
+            cis.append(ci)
+
+        return cis
+
+    def generate_fabric_finance_records(self) -> tuple[list[FinanceVendor], list[FinanceContract], list[FinanceTransaction]]:
+        """Generate finance records for fabric platform vendors."""
+        vendors = []
+        contracts = []
+        transactions = []
+
+        fabric_config = self._get_fabric_config()
+
+        for plane_type, config in fabric_config.items():
+            vendor_key = config.vendor
+            vendor_info = FABRIC_VENDOR_DOMAINS.get(vendor_key, {})
+            contract_info = FABRIC_VENDOR_CONTRACTS.get(vendor_key, {"annual_spend": (50000, 200000), "contract_term": 2})
+
+            vendor_name = vendor_info.get("vendor_name", vendor_key.replace("_", " ").title())
+            domain = vendor_info.get("domain", f"{vendor_key}.com")
+            spend_range = contract_info["annual_spend"]
+            annual_spend = round(self.rng.uniform(spend_range[0], spend_range[1]), 2)
+
+            vendors.append(FinanceVendor(
+                vendor_id=f"VND-FABRIC-{self._generate_uuid()[:8].upper()}",
+                vendor_name=vendor_name,
+                domain=domain,
+                annual_spend=annual_spend,
+            ))
+
+            owner = self.rng.choice(self._employees) if self._employees else None
+            contracts.append(FinanceContract(
+                contract_id=f"CTR-FABRIC-{self._generate_uuid()[:8].upper()}",
+                vendor_name=vendor_name,
+                product=f"{plane_type.value.replace('_', ' ').title()} Platform",
+                start_date=self._random_date(730),
+                end_date=self._random_future_date(365 * contract_info["contract_term"]),
+                owner_email=owner["email"] if owner else f"platform@{self.tenant_id.lower()}.com",
+                domain=domain,
+                annual_value=annual_spend,
+                contract_type="enterprise",
+                contract_term_years=contract_info["contract_term"],
+            ))
+
+            # Create recurring transactions for fabric vendors
+            num_txns = self.rng.randint(2, 4)
+            for _ in range(num_txns):
+                transactions.append(FinanceTransaction(
+                    txn_id=f"TXN-FABRIC-{self._generate_uuid()[:8].upper()}",
+                    vendor_name=vendor_name,
+                    amount=round(annual_spend / 12 * self.rng.uniform(0.9, 1.1), 2),
+                    currency="USD",
+                    date=self._random_date(365),
+                    payment_type=PaymentTypeEnum.invoice,
+                    is_recurring=True,
+                    memo=f"Fabric platform subscription - {plane_type.value}",
+                ))
+
+        return vendors, contracts, transactions
+
+    def generate_fabric_network_traffic(self) -> tuple[list[NetworkDNS], list[NetworkProxy]]:
+        """Generate network traffic to fabric vendor endpoints."""
+        dns_records = []
+        proxy_records = []
+
+        fabric_config = self._get_fabric_config()
+
+        for plane_type, config in fabric_config.items():
+            vendor_key = config.vendor
+            vendor_info = FABRIC_VENDOR_DOMAINS.get(vendor_key, {})
+            domain = vendor_info.get("domain", f"{vendor_key}.com")
+
+            # Generate DNS queries to fabric endpoints
+            num_queries = self.rng.randint(20, 50)
+            for _ in range(num_queries):
+                dns_records.append(NetworkDNS(
+                    dns_id=f"DNS-FABRIC-{self._generate_uuid()[:8].upper()}",
+                    queried_domain=f"api.{domain}",
+                    source_device=f"DEV-{self.rng.randint(1000, 9999)}" if self.rng.random() > 0.3 else None,
+                    timestamp=self._random_recent_date(7),
+                ))
+
+            # Generate proxy records for fabric API calls
+            num_proxy = self.rng.randint(30, 80)
+            for _ in range(num_proxy):
+                employee = self.rng.choice(self._employees) if self._employees else None
+                proxy_records.append(NetworkProxy(
+                    proxy_id=f"PRX-FABRIC-{self._generate_uuid()[:8].upper()}",
+                    url=f"https://api.{domain}/v1/{self.rng.choice(['webhooks', 'events', 'sync', 'data', 'integrations'])}",
+                    domain=domain,
+                    user_email=employee["email"] if employee and self.rng.random() > 0.6 else None,
+                    timestamp=self._random_recent_date(7),
+                ))
+
+        return dns_records, proxy_records
+
     def generate_security_plane(self) -> SecurityPlane:
         """Generate security attestations for governed apps.
         
@@ -1360,7 +1561,7 @@ class EnterpriseGenerator:
 
     def generate(self) -> SnapshotResponse:
         self._init_enterprise()
-        
+
         discovery = self.generate_discovery_plane()
         idp = self.generate_idp_plane()
         cmdb = self.generate_cmdb_plane()
@@ -1369,7 +1570,23 @@ class EnterpriseGenerator:
         network = self.generate_network_plane()
         finance = self.generate_finance_plane()
         security = self.generate_security_plane()
-        
+
+        # Add fabric routing signals to planes
+        fabric_cloud_resources = self.generate_fabric_cloud_resources()
+        cloud.resources.extend(fabric_cloud_resources)
+
+        fabric_cmdb_items = self.generate_fabric_cmdb_items()
+        cmdb.cis.extend(fabric_cmdb_items)
+
+        fabric_vendors, fabric_contracts, fabric_transactions = self.generate_fabric_finance_records()
+        finance.vendors.extend(fabric_vendors)
+        finance.contracts.extend(fabric_contracts)
+        finance.transactions.extend(fabric_transactions)
+
+        fabric_dns, fabric_proxy = self.generate_fabric_network_traffic()
+        network.dns.extend(fabric_dns)
+        network.proxy.extend(fabric_proxy)
+
         self._inject_stress_tests(discovery, idp, cmdb, network, finance)
         
         planes = AllPlanes(

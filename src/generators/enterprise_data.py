@@ -304,3 +304,73 @@ SOR_APP_DOMAINS = {
     "hubspot.com": "customer",
     "zendesk.com": "customer",
 }
+
+# =============================================================================
+# FABRIC PLANE VENDOR MAPPINGS
+# =============================================================================
+# These patterns are used by Farm to generate fabric routing signals in snapshots.
+# Maps fabric vendor names to their domains and cloud resource types.
+
+FABRIC_VENDOR_DOMAINS = {
+    # iPaaS vendors
+    "workato": {"domain": "workato.com", "plane": "ipaas", "vendor_name": "Workato"},
+    "mulesoft": {"domain": "mulesoft.com", "plane": "ipaas", "vendor_name": "MuleSoft"},
+    "boomi": {"domain": "boomi.com", "plane": "ipaas", "vendor_name": "Boomi"},
+    "tray.io": {"domain": "tray.io", "plane": "ipaas", "vendor_name": "Tray.io"},
+    "celigo": {"domain": "celigo.com", "plane": "ipaas", "vendor_name": "Celigo"},
+    "sap_integration_suite": {"domain": "sap.com", "plane": "ipaas", "vendor_name": "SAP Integration Suite"},
+    # API Gateway vendors
+    "kong": {"domain": "konghq.com", "plane": "api_gateway", "vendor_name": "Kong"},
+    "apigee": {"domain": "apigee.com", "plane": "api_gateway", "vendor_name": "Apigee"},
+    "aws_api_gateway": {"domain": "amazonaws.com", "plane": "api_gateway", "vendor_name": "AWS API Gateway"},
+    "azure_api_management": {"domain": "azure.com", "plane": "api_gateway", "vendor_name": "Azure API Management"},
+    # Event Bus vendors
+    "kafka": {"domain": "kafka.apache.org", "plane": "event_bus", "vendor_name": "Apache Kafka"},
+    "confluent": {"domain": "confluent.io", "plane": "event_bus", "vendor_name": "Confluent"},
+    "eventbridge": {"domain": "amazonaws.com", "plane": "event_bus", "vendor_name": "AWS EventBridge"},
+    "rabbitmq": {"domain": "rabbitmq.com", "plane": "event_bus", "vendor_name": "RabbitMQ"},
+    "pulsar": {"domain": "pulsar.apache.org", "plane": "event_bus", "vendor_name": "Apache Pulsar"},
+    "azure_event_hubs": {"domain": "azure.com", "plane": "event_bus", "vendor_name": "Azure Event Hubs"},
+    # Data Warehouse vendors
+    "snowflake": {"domain": "snowflake.com", "plane": "data_warehouse", "vendor_name": "Snowflake"},
+    "bigquery": {"domain": "cloud.google.com", "plane": "data_warehouse", "vendor_name": "Google BigQuery"},
+    "redshift": {"domain": "amazonaws.com", "plane": "data_warehouse", "vendor_name": "AWS Redshift"},
+    "databricks": {"domain": "databricks.com", "plane": "data_warehouse", "vendor_name": "Databricks"},
+    "synapse": {"domain": "azure.com", "plane": "data_warehouse", "vendor_name": "Azure Synapse"},
+}
+
+# Cloud resource types for fabric plane infrastructure
+FABRIC_CLOUD_RESOURCES = {
+    "ipaas": [
+        {"name": "workato-agent", "type": "ec2", "provider": "aws", "tags": {"service": "integration", "plane": "ipaas"}},
+        {"name": "mulesoft-runtime", "type": "ecs_service", "provider": "aws", "tags": {"service": "integration", "plane": "ipaas"}},
+        {"name": "integration-worker", "type": "compute_instance", "provider": "gcp", "tags": {"service": "integration", "plane": "ipaas"}},
+    ],
+    "api_gateway": [
+        {"name": "kong-gateway", "type": "eks_service", "provider": "aws", "tags": {"service": "api-gateway", "plane": "api_gateway"}},
+        {"name": "api-gateway", "type": "api_gateway", "provider": "aws", "tags": {"service": "api-gateway", "plane": "api_gateway"}},
+        {"name": "apigee-proxy", "type": "gke_service", "provider": "gcp", "tags": {"service": "api-gateway", "plane": "api_gateway"}},
+    ],
+    "event_bus": [
+        {"name": "kafka-cluster", "type": "msk_cluster", "provider": "aws", "tags": {"service": "event-bus", "plane": "event_bus"}},
+        {"name": "event-bus", "type": "eventbridge", "provider": "aws", "tags": {"service": "event-bus", "plane": "event_bus"}},
+        {"name": "confluent-cluster", "type": "confluent_cluster", "provider": "confluent", "tags": {"service": "event-bus", "plane": "event_bus"}},
+    ],
+    "data_warehouse": [
+        {"name": "analytics-warehouse", "type": "snowflake_warehouse", "provider": "snowflake", "tags": {"service": "data-warehouse", "plane": "data_warehouse"}},
+        {"name": "data-lake", "type": "redshift_cluster", "provider": "aws", "tags": {"service": "data-warehouse", "plane": "data_warehouse"}},
+        {"name": "bigquery-dataset", "type": "bigquery_dataset", "provider": "gcp", "tags": {"service": "data-warehouse", "plane": "data_warehouse"}},
+    ],
+}
+
+# Finance contract info for fabric vendors (annual_spend_range, contract_term_years)
+FABRIC_VENDOR_CONTRACTS = {
+    "workato": {"annual_spend": (50000, 200000), "contract_term": 2},
+    "mulesoft": {"annual_spend": (100000, 500000), "contract_term": 3},
+    "boomi": {"annual_spend": (30000, 150000), "contract_term": 2},
+    "kong": {"annual_spend": (20000, 100000), "contract_term": 1},
+    "apigee": {"annual_spend": (50000, 250000), "contract_term": 2},
+    "confluent": {"annual_spend": (40000, 200000), "contract_term": 2},
+    "snowflake": {"annual_spend": (100000, 1000000), "contract_term": 3},
+    "databricks": {"annual_spend": (80000, 500000), "contract_term": 2},
+}

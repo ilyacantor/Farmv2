@@ -201,6 +201,10 @@ class CMDBConfigItem(BaseModel):
     data_tier: Optional[str] = None
     data_domain: Optional[str] = None
     description: Optional[str] = None
+    # Fabric routing: which fabric plane this CI integrates via
+    integrates_via: Optional[str] = None  # e.g., "ipaas", "api_gateway", "event_bus", "data_warehouse"
+    fabric_vendor: Optional[str] = None   # e.g., "workato", "mulesoft", "kafka", "snowflake"
+    depends_on: Optional[List[str]] = None  # List of CI IDs this depends on
 
 
 class CloudResource(BaseModel):
