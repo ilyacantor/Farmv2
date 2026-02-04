@@ -88,6 +88,7 @@ from src.generators.enterprise_data import (
     FABRIC_VENDOR_DOMAINS,
     FABRIC_CLOUD_RESOURCES,
     FABRIC_VENDOR_CONTRACTS,
+    ENTERPRISE_APP_FABRIC_ROUTING,
 )
 
 
@@ -775,26 +776,30 @@ class EnterpriseGenerator:
                 fabric_vendor = None
 
                 if self.rng.random() < route_probability:
-                    # Determine which plane based on app category or default to iPaaS
-                    app_category = app.get("category", "").lower()
-                    app_name_lower = app.get("name", "").lower()
-
-                    # Check category hints from app name
-                    if any(kw in app_name_lower for kw in ["sales", "crm", "hub", "dynamics"]):
-                        integrates_via = "ipaas"
-                    elif any(kw in app_name_lower for kw in ["workday", "adp", "bamboo", "gusto"]):
-                        integrates_via = "ipaas"
-                    elif any(kw in app_name_lower for kw in ["netsuite", "quickbooks", "xero", "sap"]):
-                        integrates_via = "ipaas"
-                    elif any(kw in app_name_lower for kw in ["github", "gitlab", "jenkins", "datadog"]):
-                        integrates_via = "api_gateway"
-                    elif any(kw in app_name_lower for kw in ["snowflake", "tableau", "looker", "power bi"]):
-                        integrates_via = "data_warehouse"
-                    elif any(kw in app_name_lower for kw in ["kafka", "segment", "amplitude"]):
-                        integrates_via = "event_bus"
+                    # First check explicit domain mapping for known enterprise apps
+                    # This ensures Salesforce, Workday, etc. ALWAYS get routed correctly
+                    if domain in ENTERPRISE_APP_FABRIC_ROUTING:
+                        integrates_via = ENTERPRISE_APP_FABRIC_ROUTING[domain]
                     else:
-                        # Default: most enterprise SaaS goes through iPaaS
-                        integrates_via = self.rng.choice(["ipaas", "ipaas", "ipaas", "api_gateway"])
+                        # Fall back to keyword matching for synthetic apps
+                        app_name_lower = app.get("name", "").lower()
+
+                        # Check category hints from app name
+                        if any(kw in app_name_lower for kw in ["sales", "crm", "hub", "dynamics"]):
+                            integrates_via = "ipaas"
+                        elif any(kw in app_name_lower for kw in ["workday", "adp", "bamboo", "gusto"]):
+                            integrates_via = "ipaas"
+                        elif any(kw in app_name_lower for kw in ["netsuite", "quickbooks", "xero", "sap"]):
+                            integrates_via = "ipaas"
+                        elif any(kw in app_name_lower for kw in ["github", "gitlab", "jenkins", "datadog"]):
+                            integrates_via = "api_gateway"
+                        elif any(kw in app_name_lower for kw in ["snowflake", "tableau", "looker", "power bi"]):
+                            integrates_via = "data_warehouse"
+                        elif any(kw in app_name_lower for kw in ["kafka", "segment", "amplitude"]):
+                            integrates_via = "event_bus"
+                        else:
+                            # Default: most enterprise SaaS goes through iPaaS
+                            integrates_via = self.rng.choice(["ipaas", "ipaas", "ipaas", "api_gateway"])
 
                     fabric_vendor = fabric_vendors.get(integrates_via)
 
@@ -1191,9 +1196,17 @@ class EnterpriseGenerator:
         return FinancePlane(vendors=vendors, contracts=contracts, transactions=transactions)
 
     def _get_fabric_config(self) -> dict:
-        """Get the fabric plane configuration for this snapshot."""
-        from src.models.fabric import generate_fabric_config
-        return generate_fabric_config(industry=self.industry, seed=self.seed)
+        """Get the fabric plane configuration for this snapshot.
+
+        Caches the result to ensure consistent fabric_vendor values across all
+        plane generation methods. This is critical for data consistency - the
+        CMDB, network, finance, and metadata planes must all reference the same
+        fabric vendors.
+        """
+        if not hasattr(self, '_cached_fabric_config'):
+            from src.models.fabric import generate_fabric_config
+            self._cached_fabric_config = generate_fabric_config(industry=self.industry, seed=self.seed)
+        return self._cached_fabric_config
 
     def generate_fabric_cloud_resources(self) -> list[CloudResource]:
         """Generate cloud resources that ARE fabric plane infrastructure.
@@ -1362,9 +1375,13 @@ class EnterpriseGenerator:
             # 50% of apps have explicit integration contracts
             if self.rng.random() < 0.50:
                 app_name_lower = app.get("name", "").lower()
+                app_domain = app.get("domain", "")
 
-                # Determine which plane this app routes through
-                if any(kw in app_name_lower for kw in ["sales", "crm", "hub", "dynamics", "workday", "adp", "bamboo", "netsuite", "quickbooks", "xero", "sap"]):
+                # First check explicit domain mapping (same as CMDB)
+                if app_domain in ENTERPRISE_APP_FABRIC_ROUTING:
+                    target_plane = ENTERPRISE_APP_FABRIC_ROUTING[app_domain]
+                # Fall back to keyword matching for synthetic apps
+                elif any(kw in app_name_lower for kw in ["sales", "crm", "hub", "dynamics", "workday", "adp", "bamboo", "netsuite", "quickbooks", "xero", "sap"]):
                     target_plane = "ipaas"
                 elif any(kw in app_name_lower for kw in ["github", "gitlab", "jenkins", "datadog"]):
                     target_plane = "api_gateway"
@@ -1455,8 +1472,11 @@ class EnterpriseGenerator:
             app_name_lower = app.get("name", "").lower()
             app_domain = app.get("domain", "")
 
-            # Assign plane based on app type (same logic as CMDB)
-            if any(kw in app_name_lower for kw in ["sales", "crm", "hub", "dynamics", "workday", "adp", "bamboo", "netsuite", "quickbooks", "xero", "sap"]):
+            # First check explicit domain mapping (same as CMDB)
+            if app_domain in ENTERPRISE_APP_FABRIC_ROUTING:
+                target_plane = ENTERPRISE_APP_FABRIC_ROUTING[app_domain]
+            # Fall back to keyword matching for synthetic apps
+            elif any(kw in app_name_lower for kw in ["sales", "crm", "hub", "dynamics", "workday", "adp", "bamboo", "netsuite", "quickbooks", "xero", "sap"]):
                 target_plane = "ipaas"
             elif any(kw in app_name_lower for kw in ["github", "gitlab", "jenkins", "datadog"]):
                 target_plane = "api_gateway"
@@ -1711,8 +1731,12 @@ class EnterpriseGenerator:
         ))
 
     def _generate_fabric_planes(self) -> list[FabricPlaneInfo]:
-        """Generate fabric plane configuration using industry-weighted vendor selection."""
-        fabric_config = generate_fabric_config(industry=self.industry, seed=self.seed)
+        """Generate fabric plane configuration using industry-weighted vendor selection.
+
+        Uses the cached fabric config to ensure metadata planes match the CMDB,
+        network, and finance plane fabric_vendor values.
+        """
+        fabric_config = self._get_fabric_config()
         return [
             FabricPlaneInfo(
                 plane_type=plane_type.value,

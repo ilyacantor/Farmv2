@@ -363,6 +363,83 @@ FABRIC_CLOUD_RESOURCES = {
     ],
 }
 
+# =============================================================================
+# ENTERPRISE APP FABRIC ROUTING
+# =============================================================================
+# Maps known enterprise SaaS app domains to their fabric plane routing.
+# This ensures real apps like Salesforce, Workday, etc. always get routed.
+
+ENTERPRISE_APP_FABRIC_ROUTING = {
+    # CRM/Sales apps -> iPaaS (data sync with other systems)
+    "salesforce.com": "ipaas",
+    "hubspot.com": "ipaas",
+    "zendesk.com": "ipaas",
+    "zoho.com": "ipaas",
+    "pipedrive.com": "ipaas",
+    "freshworks.com": "ipaas",
+
+    # HRIS/HR apps -> iPaaS (employee data sync)
+    "workday.com": "ipaas",
+    "bamboohr.com": "ipaas",
+    "adp.com": "ipaas",
+    "gusto.com": "ipaas",
+    "namely.com": "ipaas",
+    "rippling.com": "ipaas",
+    "paylocity.com": "ipaas",
+
+    # Finance/ERP apps -> iPaaS (financial data flows)
+    "netsuite.com": "ipaas",
+    "quickbooks.com": "ipaas",
+    "xero.com": "ipaas",
+    "sage.com": "ipaas",
+    "oracle.com": "ipaas",
+    "sap.com": "ipaas",
+
+    # ITSM/ServiceDesk -> iPaaS (ticket/incident sync)
+    "servicenow.com": "ipaas",
+    "freshservice.com": "ipaas",
+
+    # DevOps/Developer tools -> API Gateway (API-centric)
+    "github.com": "api_gateway",
+    "atlassian.net": "api_gateway",
+    "gitlab.com": "api_gateway",
+    "bitbucket.org": "api_gateway",
+    "datadoghq.com": "api_gateway",
+    "pagerduty.com": "api_gateway",
+    "splunk.com": "api_gateway",
+
+    # Data/Analytics apps -> Data Warehouse (data flows)
+    "snowflakecomputing.com": "data_warehouse",
+    "tableau.com": "data_warehouse",
+    "looker.com": "data_warehouse",
+    "powerbi.com": "data_warehouse",
+    "databricks.com": "data_warehouse",
+
+    # Communication/Collaboration -> iPaaS (notifications, workflows)
+    "slack.com": "ipaas",
+    "zoom.us": "ipaas",
+    "microsoft.com": "ipaas",
+    "google.com": "ipaas",
+    "webex.com": "ipaas",
+
+    # Productivity apps -> iPaaS
+    "box.com": "ipaas",
+    "dropbox.com": "ipaas",
+    "docusign.com": "ipaas",
+    "notion.so": "ipaas",
+    "asana.com": "ipaas",
+    "monday.com": "ipaas",
+    "figma.com": "ipaas",
+    "miro.com": "ipaas",
+    "trello.com": "ipaas",
+    "clickup.com": "ipaas",
+
+    # Identity -> API Gateway (auth flows)
+    "okta.com": "api_gateway",
+    "onelogin.com": "api_gateway",
+    "auth0.com": "api_gateway",
+}
+
 # Finance contract info for fabric vendors (annual_spend_range, contract_term_years)
 FABRIC_VENDOR_CONTRACTS = {
     "workato": {"annual_spend": (50000, 200000), "contract_term": 2},
