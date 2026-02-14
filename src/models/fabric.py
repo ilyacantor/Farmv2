@@ -17,12 +17,26 @@ from pydantic import BaseModel, Field
 import random
 
 
+CORE_PLANE_TYPES = {"ipaas", "api_gateway", "event_bus", "data_warehouse"}
+ADVERSARIAL_PLANE_TYPES = {"etl", "service_mesh"}
+
+
 class FabricPlaneType(str, Enum):
-    """The 4 Fabric Planes that AAM connects to."""
+    """Fabric Planes that AAM connects to.
+    
+    Core (4 planes - all modes): IPAAS, API_GATEWAY, EVENT_BUS, DATA_WAREHOUSE
+    Adversarial (+2 planes): ETL, SERVICE_MESH
+    """
     IPAAS = "ipaas"
     API_GATEWAY = "api_gateway"
     EVENT_BUS = "event_bus"
     DATA_WAREHOUSE = "data_warehouse"
+    ETL = "etl"
+    SERVICE_MESH = "service_mesh"
+
+    @property
+    def is_adversarial_only(self) -> bool:
+        return self.value in ADVERSARIAL_PLANE_TYPES
 
 
 class IndustryVertical(str, Enum):
@@ -44,6 +58,8 @@ class FabricRoute(str, Enum):
     VIA_GATEWAY = "via_gateway"
     VIA_BUS = "via_bus"
     VIA_WAREHOUSE = "via_warehouse"
+    VIA_ETL = "via_etl"
+    VIA_MESH = "via_mesh"
     VIA_DIRECT = "via_direct"
 
 
@@ -77,6 +93,8 @@ class FabricPlaneVendors:
     API_GATEWAY = ["kong", "apigee", "aws_api_gateway", "azure_api_management"]
     EVENT_BUS = ["kafka", "confluent", "eventbridge", "rabbitmq", "pulsar", "azure_event_hubs"]
     DATA_WAREHOUSE = ["snowflake", "bigquery", "redshift", "databricks", "synapse"]
+    ETL = ["fivetran", "airbyte", "stitch", "dbt_cloud", "matillion", "hevo"]
+    SERVICE_MESH = ["istio", "linkerd", "consul_connect", "aws_app_mesh", "cilium"]
     
     @classmethod
     def for_plane(cls, plane_type: FabricPlaneType) -> list[str]:
@@ -85,6 +103,8 @@ class FabricPlaneVendors:
             FabricPlaneType.API_GATEWAY: cls.API_GATEWAY,
             FabricPlaneType.EVENT_BUS: cls.EVENT_BUS,
             FabricPlaneType.DATA_WAREHOUSE: cls.DATA_WAREHOUSE,
+            FabricPlaneType.ETL: cls.ETL,
+            FabricPlaneType.SERVICE_MESH: cls.SERVICE_MESH,
         }[plane_type]
 
 
@@ -117,6 +137,20 @@ INDUSTRY_VENDOR_WEIGHTS: Dict[IndustryVertical, Dict[FabricPlaneType, Dict[str, 
             "redshift": 0.15,
             "synapse": 0.05,
         },
+        FabricPlaneType.ETL: {
+            "fivetran": 0.40,
+            "airbyte": 0.25,
+            "stitch": 0.15,
+            "dbt_cloud": 0.10,
+            "matillion": 0.10,
+        },
+        FabricPlaneType.SERVICE_MESH: {
+            "istio": 0.40,
+            "linkerd": 0.25,
+            "consul_connect": 0.20,
+            "aws_app_mesh": 0.10,
+            "cilium": 0.05,
+        },
     },
     IndustryVertical.FINANCE: {
         FabricPlaneType.IPAAS: {
@@ -143,6 +177,19 @@ INDUSTRY_VENDOR_WEIGHTS: Dict[IndustryVertical, Dict[FabricPlaneType, Dict[str, 
             "synapse": 0.15,
             "redshift": 0.10,
             "bigquery": 0.05,
+        },
+        FabricPlaneType.ETL: {
+            "fivetran": 0.35,
+            "matillion": 0.25,
+            "dbt_cloud": 0.20,
+            "stitch": 0.10,
+            "airbyte": 0.10,
+        },
+        FabricPlaneType.SERVICE_MESH: {
+            "istio": 0.45,
+            "consul_connect": 0.30,
+            "linkerd": 0.15,
+            "aws_app_mesh": 0.10,
         },
     },
     IndustryVertical.HEALTHCARE: {
