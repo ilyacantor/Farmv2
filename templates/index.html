@@ -740,176 +740,244 @@
             </div>
         </div>
 
-        <div id="scenariosTab" class="hidden h-full overflow-hidden">
+        <div id="scenariosTab" class="hidden h-full overflow-auto" style="max-height: calc(100vh - 120px);">
             <div class="space-y-6">
-                <!-- NLQ Collapsible Guide -->
-                <div class="bg-gradient-to-r from-cyan-900/30 to-blue-900/30 rounded-xl p-5 border border-cyan-700/50">
-                    <div class="flex items-center justify-between cursor-pointer" onclick="toggleNlqGuide()">
+
+                <!-- Ground Truth Generator -->
+                <div class="bg-slate-800/60 rounded-xl p-5 border border-cyan-700/50">
+                    <div class="flex items-center justify-between mb-4">
                         <div class="flex items-center gap-3">
                             <div class="w-10 h-10 rounded-lg bg-cyan-600/30 flex items-center justify-center">
-                                <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                                <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
+                                </svg>
                             </div>
                             <div>
-                                <h2 class="text-lg font-semibold text-white">NLQ Testing Guide</h2>
-                                <p class="text-slate-400 text-sm">Learn how to validate natural language query systems</p>
+                                <h2 class="text-lg font-semibold text-white">Ground Truth Generator</h2>
+                                <p class="text-slate-400 text-sm">Generate multi-system business data with deterministic ground truth</p>
                             </div>
                         </div>
-                        <svg id="nlqGuideChevron" class="w-5 h-5 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        <div id="bdRunStatus" class="hidden px-3 py-1 rounded-lg text-xs font-mono"></div>
                     </div>
-                    
-                    <div id="nlqGuideContent" class="hidden mt-5 space-y-4">
-                        <div class="bg-slate-800/60 rounded-lg p-4">
-                            <h3 class="text-md font-semibold text-cyan-400 mb-2">What is this?</h3>
-                            <p class="text-slate-300 text-sm leading-relaxed">
-                                This module provides ground truth datasets for testing Natural Language Query systems. 
-                                Generate deterministic business scenarios with pre-computed metric answers, then verify 
-                                your NLQ system returns the correct values when asked natural language questions.
-                            </p>
+
+                    <!-- Preset Tiers -->
+                    <div class="mb-5">
+                        <label class="block text-xs font-medium text-slate-400 mb-3 uppercase tracking-wide">Preset Configuration</label>
+                        <div class="grid grid-cols-3 gap-3">
+                            <button onclick="bdSelectPreset('light')" id="bdPresetLight"
+                                class="group relative p-4 rounded-xl border-2 border-slate-700 hover:border-cyan-500/50 bg-slate-900/40 transition-all text-left">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-2 h-2 rounded-full bg-cyan-400"></div>
+                                    <span class="text-sm font-semibold text-cyan-400">Light</span>
+                                </div>
+                                <div class="space-y-1 text-xs text-slate-400">
+                                    <div>Volume: <span class="text-slate-300">5Q / $10M base</span></div>
+                                    <div>Complexity: <span class="text-slate-300">Tier 1 (CRM, ERP, Billing)</span></div>
+                                    <div>Drift: <span class="text-slate-300">5% YoY growth</span></div>
+                                </div>
+                            </button>
+                            <button onclick="bdSelectPreset('standard')" id="bdPresetStandard"
+                                class="group relative p-4 rounded-xl border-2 border-cyan-500/50 bg-cyan-900/10 transition-all text-left ring-1 ring-cyan-500/20">
+                                <div class="absolute -top-2 right-3 px-2 py-0.5 bg-cyan-600 text-[10px] font-bold text-white rounded-full">DEFAULT</div>
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
+                                    <span class="text-sm font-semibold text-emerald-400">Standard</span>
+                                </div>
+                                <div class="space-y-1 text-xs text-slate-400">
+                                    <div>Volume: <span class="text-slate-300">12Q / $22M base</span></div>
+                                    <div>Complexity: <span class="text-slate-300">Tiers 1+2 (+ HCM, Support)</span></div>
+                                    <div>Drift: <span class="text-slate-300">15% YoY growth</span></div>
+                                </div>
+                            </button>
+                            <button onclick="bdSelectPreset('full')" id="bdPresetFull"
+                                class="group relative p-4 rounded-xl border-2 border-slate-700 hover:border-purple-500/50 bg-slate-900/40 transition-all text-left">
+                                <div class="flex items-center gap-2 mb-2">
+                                    <div class="w-2 h-2 rounded-full bg-purple-400"></div>
+                                    <span class="text-sm font-semibold text-purple-400">Full</span>
+                                </div>
+                                <div class="space-y-1 text-xs text-slate-400">
+                                    <div>Volume: <span class="text-slate-300">20Q / $50M base</span></div>
+                                    <div>Complexity: <span class="text-slate-300">All Tiers (+ PM, Monitoring, Cloud)</span></div>
+                                    <div>Drift: <span class="text-slate-300">30% YoY growth</span></div>
+                                </div>
+                            </button>
                         </div>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div class="bg-slate-800/60 rounded-lg p-4">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-6 h-6 rounded bg-cyan-600/50 flex items-center justify-center text-xs font-bold text-cyan-300">1</div>
-                                    <h4 class="font-semibold text-cyan-400">Generate Scenario</h4>
-                                </div>
-                                <p class="text-slate-400 text-sm">
-                                    Create a business scenario with <span class="text-cyan-300">customers</span>, <span class="text-cyan-300">invoices</span>, 
-                                    <span class="text-cyan-300">vendors</span>, and <span class="text-cyan-300">assets</span>. The same seed always 
-                                    produces identical data for reproducible testing.
-                                </p>
+                    </div>
+
+                    <!-- Advanced Controls (collapsible) -->
+                    <div class="mb-4">
+                        <button onclick="document.getElementById('bdAdvanced').classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180')"
+                            class="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
+                            <svg class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            Advanced Configuration
+                        </button>
+                        <div id="bdAdvanced" class="hidden mt-3 grid grid-cols-2 md:grid-cols-5 gap-3">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Seed</label>
+                                <input type="number" id="bdSeed" value="42" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
                             </div>
-                            
-                            <div class="bg-slate-800/60 rounded-lg p-4">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-6 h-6 rounded bg-emerald-600/50 flex items-center justify-center text-xs font-bold text-emerald-300">2</div>
-                                    <h4 class="font-semibold text-emerald-400">Get Ground Truth</h4>
-                                </div>
-                                <p class="text-slate-400 text-sm">
-                                    Retrieve pre-computed answers: <span class="text-emerald-300">total revenue</span>, <span class="text-emerald-300">top customers</span>, 
-                                    <span class="text-emerald-300">vendor spend</span>, and more. These are the "correct answers" for validating NLQ output.
-                                </p>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Tiers</label>
+                                <select id="bdTiers" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                    <option value="1">Tier 1 (CRM/ERP/Billing)</option>
+                                    <option value="1,2" selected>Tiers 1+2 (+ HCM/Support)</option>
+                                    <option value="1,2,3">All Tiers (+ PM/Monitoring/Cloud)</option>
+                                </select>
                             </div>
-                            
-                            <div class="bg-slate-800/60 rounded-lg p-4">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-6 h-6 rounded bg-purple-600/50 flex items-center justify-center text-xs font-bold text-purple-300">3</div>
-                                    <h4 class="font-semibold text-purple-400">Test Questions</h4>
-                                </div>
-                                <p class="text-slate-400 text-sm">
-                                    Use the 100-question test bank across <span class="text-purple-300">23 categories</span> to evaluate your NLQ system.
-                                    Each question has expected answer patterns for automated grading.
-                                </p>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Base Revenue ($M)</label>
+                                <input type="number" id="bdBaseRevenue" value="22" step="1" min="1" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
                             </div>
-                            
-                            <div class="bg-slate-800/60 rounded-lg p-4">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-6 h-6 rounded bg-rose-600/50 flex items-center justify-center text-xs font-bold text-rose-300">4</div>
-                                    <h4 class="font-semibold text-rose-400">Validate & Grade</h4>
-                                </div>
-                                <p class="text-slate-400 text-sm">
-                                    Compare your NLQ system's answers against ground truth. Track <span class="text-rose-300">accuracy by category</span> 
-                                    to identify which question types need improvement.
-                                </p>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">YoY Growth</label>
+                                <select id="bdGrowthRate" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                    <option value="0.05">5% (Low drift)</option>
+                                    <option value="0.15" selected>15% (Medium drift)</option>
+                                    <option value="0.30">30% (High drift)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Quarters</label>
+                                <input type="number" id="bdQuarters" value="12" min="1" max="20" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Generate Button -->
+                    <div class="flex items-center gap-3">
+                        <button onclick="bdGenerate()" id="bdGenerateBtn"
+                            class="px-6 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-lg transition-all cyan-glow">
+                            Generate Ground Truth
+                        </button>
+                        <button onclick="bdClear()" class="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all">
+                            Clear
+                        </button>
+                        <label class="flex items-center gap-2 text-xs text-slate-400 ml-4">
+                            <input type="checkbox" id="bdPushDcl" class="w-3.5 h-3.5 rounded">
+                            Push to DCL on generate
+                        </label>
                     </div>
                 </div>
-                
-                <!-- Section 1: Scenario Generation -->
-                <div class="bg-slate-800/60 rounded-xl p-5 border border-cyan-700/50">
-                    <div class="flex items-center gap-3 mb-4">
-                        <div class="w-10 h-10 rounded-lg bg-cyan-600/30 flex items-center justify-center">
-                            <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                            </svg>
+
+                <!-- Generation Summary (hidden until generated) -->
+                <div id="bdSummaryContainer" class="hidden">
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-emerald-700/50">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="w-10 h-10 rounded-lg bg-emerald-600/30 flex items-center justify-center">
+                                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                            </div>
+                            <div>
+                                <h2 class="text-lg font-semibold text-white">Generation Summary</h2>
+                                <p class="text-slate-400 text-sm">Run <span id="bdRunId" class="text-cyan-400 font-mono">--</span></p>
+                            </div>
                         </div>
-                        <div>
-                            <h2 class="text-lg font-semibold text-cyan-400">Scenario Generator</h2>
-                            <p class="text-slate-400 text-sm">Generate deterministic business scenarios with ground truth metrics</p>
-                        </div>
-                    </div>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                        <div>
-                            <label class="block text-xs font-medium text-slate-400 mb-1">Scale</label>
-                            <select id="scenarioScale" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                <option value="small">Small (5 customers)</option>
-                                <option value="medium" selected>Medium (20 customers)</option>
-                                <option value="large">Large (50 customers)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-slate-400 mb-1">Seed (optional)</label>
-                            <input type="number" id="scenarioSeed" placeholder="Random if empty" 
-                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                        </div>
-                        <div class="flex items-end">
-                            <button onclick="generateScenario()" id="generateScenarioBtn"
-                                class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2 px-4 rounded-lg transition-all cyan-glow">
-                                Generate Scenario
-                            </button>
-                        </div>
-                        <div class="flex items-end">
-                            <button onclick="clearScenario()" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-300 py-2 px-4 rounded-lg transition-all">
-                                Clear
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <!-- Manifest Display -->
-                    <div id="scenarioManifestContainer" class="hidden">
-                        <div class="border-t border-slate-700 pt-4 mt-4">
-                            <h3 class="text-sm font-semibold text-cyan-400 mb-2">Scenario Manifest</h3>
-                            <div id="scenarioManifest" class="bg-slate-900/60 rounded-lg p-3 text-xs font-mono text-slate-300 max-h-48 overflow-y-auto"></div>
+
+                        <!-- Source Systems + Record Counts -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4" id="bdSystemCards"></div>
+
+                        <!-- Business Profile Trajectory -->
+                        <div class="border-t border-slate-700 pt-4 mt-2">
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="text-sm font-semibold text-slate-300">Business Trajectory</h3>
+                                <select id="bdTrajectoryMetric" onchange="bdRenderTrajectory()" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none">
+                                    <option value="revenue">Revenue ($M)</option>
+                                    <option value="arr">ARR ($M)</option>
+                                    <option value="headcount">Headcount</option>
+                                    <option value="customer_count">Customers</option>
+                                    <option value="pipeline">Pipeline ($M)</option>
+                                    <option value="cloud_spend">Cloud Spend ($M)</option>
+                                </select>
+                            </div>
+                            <div id="bdTrajectoryChart" class="flex items-end gap-1 h-24 px-2"></div>
+                            <div id="bdTrajectoryLabels" class="flex gap-1 px-2 mt-1"></div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Section 2: Metrics Dashboard -->
-                <div id="scenarioMetricsContainer" class="hidden">
+                <!-- Ground Truth Dashboard (hidden until generated) -->
+                <div id="bdGroundTruthContainer" class="hidden">
                     <div class="bg-slate-800/60 rounded-xl p-5 border border-purple-700/50">
-                        <div class="flex items-center gap-3 mb-4">
-                            <div class="w-10 h-10 rounded-lg bg-purple-600/30 flex items-center justify-center">
-                                <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                                </svg>
-                            </div>
-                            <div>
-                                <h2 class="text-lg font-semibold text-white">Scenario Metrics Dashboard</h2>
-                                <p class="text-slate-400 text-sm">Ground truth metrics for verification</p>
-                            </div>
-                        </div>
-                        
-                        <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
-                            <div class="bg-slate-900/50 rounded-lg p-4 border border-emerald-700/30">
-                                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Total Revenue</div>
-                                <div id="metricRevenue" class="text-xl font-bold text-emerald-400">--</div>
-                                <div id="metricRevenuePeriod" class="text-xs text-slate-500"></div>
-                            </div>
-                            <div class="bg-slate-900/50 rounded-lg p-4 border border-cyan-700/30">
-                                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">MoM Trend</div>
-                                <div id="metricMoM" class="text-xl font-bold text-cyan-400">--</div>
-                                <div id="metricMoMBreakdown" class="text-xs text-slate-500 mt-1 max-h-16 overflow-y-auto"></div>
-                            </div>
-                            <div class="bg-slate-900/50 rounded-lg p-4 border border-purple-700/30">
-                                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Top Customers</div>
-                                <div id="metricTopCustomers" class="text-sm text-purple-400 max-h-24 overflow-y-auto"></div>
-                            </div>
-                            <div class="bg-slate-900/50 rounded-lg p-4 border border-orange-700/30">
-                                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Vendor Spend</div>
-                                <div id="metricVendorSpend" class="text-xl font-bold text-orange-400">--</div>
-                                <div id="metricVendorCount" class="text-xs text-slate-500"></div>
-                            </div>
-                            <div class="bg-slate-900/50 rounded-lg p-4 border border-rose-700/30">
-                                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Resource Health</div>
-                                <div id="metricResourceHealth" class="text-sm">
-                                    <span class="text-emerald-400">Active: --</span>
-                                    <span class="text-amber-400 ml-2">Zombie: --</span>
-                                    <span class="text-rose-400 ml-2">Orphan: --</span>
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-purple-600/30 flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 class="text-lg font-semibold text-white">Ground Truth Metrics</h2>
+                                    <p class="text-slate-400 text-sm">Authoritative values per quarter across all categories</p>
                                 </div>
                             </div>
+                            <div class="flex items-center gap-2">
+                                <label class="text-xs text-slate-400">Quarter:</label>
+                                <select id="bdQuarterSelect" onchange="bdRenderGroundTruth()" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none"></select>
+                            </div>
                         </div>
+
+                        <!-- Metric Categories -->
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="bdMetricCategories"></div>
+
+                        <!-- Dimensional Breakdowns -->
+                        <div class="border-t border-slate-700 pt-4 mt-4">
+                            <h3 class="text-sm font-semibold text-slate-300 mb-3">Dimensional Breakdowns</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="bdDimensionalBreakdowns"></div>
+                        </div>
+
+                        <!-- Expected Conflicts -->
+                        <div class="border-t border-slate-700 pt-4 mt-4">
+                            <h3 class="text-sm font-semibold text-slate-300 mb-3">Expected Cross-System Conflicts</h3>
+                            <div id="bdConflicts" class="space-y-2"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reconciliation Scorecard (hidden until generated) -->
+                <div id="bdReconcileContainer" class="hidden">
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-rose-700/50">
+                        <div class="flex items-center justify-between mb-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-10 h-10 rounded-lg bg-rose-600/30 flex items-center justify-center">
+                                    <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 class="text-lg font-semibold text-white">Reconciliation Scorecard</h2>
+                                    <p class="text-slate-400 text-sm">Compare submitted results against ground truth</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <button onclick="bdLoadSampleActuals()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs text-slate-300 rounded-lg transition-all">
+                                    Load Sample Actuals
+                                </button>
+                                <button onclick="bdReconcile()" id="bdReconcileBtn" class="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-xs text-white font-semibold rounded-lg transition-all">
+                                    Run Reconciliation
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Actuals Input -->
+                        <div class="mb-4">
+                            <div class="flex items-center justify-between mb-2">
+                                <label class="text-xs text-slate-400">Paste actual metric values (JSON) for the selected quarter:</label>
+                                <span class="text-xs text-slate-500">Quarter: <span id="bdReconcileQuarter" class="text-cyan-400">--</span></span>
+                            </div>
+                            <textarea id="bdActualsInput" rows="4" placeholder='{"revenue": 23.5, "arr": 21.2, "headcount": 245, "customer_count": 780, ...}'
+                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:border-rose-500 outline-none resize-none"></textarea>
+                        </div>
+
+                        <!-- Overall Accuracy Banner -->
+                        <div id="bdOverallAccuracy" class="hidden mb-4 p-4 rounded-xl text-center">
+                            <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Overall Accuracy</div>
+                            <div id="bdOverallAccuracyValue" class="text-4xl font-bold"></div>
+                            <div id="bdOverallAccuracyLabel" class="text-xs mt-1"></div>
+                        </div>
+
+                        <!-- Category Scorecards -->
+                        <div class="space-y-3" id="bdReconcileScorecard"></div>
                     </div>
                 </div>
 
@@ -1890,16 +1958,17 @@
         }
 
         async function generateScenario() {
-            const scale = document.getElementById('scenarioScale').value;
-            const seedInput = document.getElementById('scenarioSeed').value;
+            const scaleEl = document.getElementById('scenarioScale');
+            const scale = scaleEl ? scaleEl.value : 'medium';
+            const seedEl = document.getElementById('scenarioSeed');
+            const seedInput = seedEl ? seedEl.value : '';
             const seed = seedInput ? parseInt(seedInput) : null;
-            
+
             const body = { scale };
             if (seed) body.seed = seed;
-            
+
             const btn = document.getElementById('generateScenarioBtn');
-            btn.disabled = true;
-            btn.textContent = 'Generating...';
+            if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
             
             try {
                 const resp = await fetch('/api/scenarios/generate', {
@@ -1914,28 +1983,35 @@
                 showScenarioSections(true);
             } catch (e) {
                 console.error('Failed to generate scenario:', e);
-                document.getElementById('scenarioManifest').textContent = 'Error: ' + e.message;
-                document.getElementById('scenarioManifestContainer').classList.remove('hidden');
+                const smEl = document.getElementById('scenarioManifest');
+                if (smEl) smEl.textContent = 'Error: ' + e.message;
+                const smcEl = document.getElementById('scenarioManifestContainer');
+                if (smcEl) smcEl.classList.remove('hidden');
             } finally {
-                btn.disabled = false;
-                btn.textContent = 'Generate Scenario';
+                if (btn) { btn.disabled = false; btn.textContent = 'Generate Scenario'; }
             }
         }
 
         function showScenarioSections(show) {
+            // Legacy scenario containers (now replaced by business data ground truth UI)
             const containers = ['scenarioManifestContainer', 'scenarioMetricsContainer', 'scenarioStreamContainer', 'scenarioVerifyContainer'];
             containers.forEach(id => {
-                document.getElementById(id).classList.toggle('hidden', !show);
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('hidden', !show);
             });
         }
 
         function clearScenario() {
             currentScenario = null;
             showScenarioSections(false);
-            document.getElementById('scenarioManifest').textContent = '';
-            document.getElementById('sourceInvoiceResult').textContent = 'Enter an invoice ID to lookup...';
-            document.getElementById('verifyResult').textContent = 'Paste a repaired invoice and click Verify...';
-            document.getElementById('streamPreview').innerHTML = '<span class="text-slate-500">Generate a scenario to preview stream...</span>';
+            const smEl = document.getElementById('scenarioManifest');
+            if (smEl) smEl.textContent = '';
+            const siEl = document.getElementById('sourceInvoiceResult');
+            if (siEl) siEl.textContent = 'Enter an invoice ID to lookup...';
+            const vrEl = document.getElementById('verifyResult');
+            if (vrEl) vrEl.textContent = 'Paste a repaired invoice and click Verify...';
+            const spEl = document.getElementById('streamPreview');
+            if (spEl) spEl.innerHTML = '<span class="text-slate-500">Generate a scenario to preview stream...</span>';
         }
 
         async function loadScenarioMetrics(scenarioId) {
@@ -1958,12 +2034,11 @@
         }
 
         async function loadStreamPreview(scenarioId) {
+            const preview = document.getElementById('streamPreview');
+            if (!preview) return;
             try {
-                // Fetch chaos catalog to show available chaos types
                 const catalogResp = await fetch(`/api/scenarios/${scenarioId}/chaos-catalog`);
                 const catalog = await catalogResp.json();
-                
-                const preview = document.getElementById('streamPreview');
                 if (catalog.chaos_types && catalog.chaos_types.length > 0) {
                     preview.innerHTML = `
                         <div class="text-xs text-slate-400 mb-2">Available chaos types (${catalog.total_types}):</div>
@@ -1978,7 +2053,7 @@
                 }
             } catch (e) {
                 console.error('Failed to load chaos catalog:', e);
-                document.getElementById('streamPreview').innerHTML = '<span class="text-slate-500">Failed to load chaos info</span>';
+                preview.innerHTML = '<span class="text-slate-500">Failed to load chaos info</span>';
             }
         }
 
@@ -2058,29 +2133,32 @@
 
         function renderScenarioManifest(manifest) {
             const container = document.getElementById('scenarioManifest');
+            if (!container) return; // UI element removed — legacy function
             if (!manifest) {
                 container.textContent = 'No manifest data';
                 return;
             }
-            
+
             const formatted = typeof manifest === 'string' ? manifest : JSON.stringify(manifest, null, 2);
             container.textContent = formatted;
-            document.getElementById('scenarioManifestContainer').classList.remove('hidden');
+            const mc = document.getElementById('scenarioManifestContainer');
+            if (mc) mc.classList.remove('hidden');
         }
 
         function renderScenarioMetrics(revenue, mom, top, spend, health) {
-            // Total Revenue - API returns: { total_revenue, currency, period_start, period_end }
+            // Guard: these elements were removed when the NLQ tab was replaced
             const revenueEl = document.getElementById('metricRevenue');
+            if (!revenueEl) return;
+
             const revenuePeriodEl = document.getElementById('metricRevenuePeriod');
             revenueEl.textContent = formatCurrency(revenue.total_revenue || 0);
-            revenuePeriodEl.textContent = revenue.period_start && revenue.period_end 
-                ? `${revenue.period_start} to ${revenue.period_end}` 
+            if (revenuePeriodEl) revenuePeriodEl.textContent = revenue.period_start && revenue.period_end
+                ? `${revenue.period_start} to ${revenue.period_end}`
                 : '';
-            
-            // MoM Trend - API returns: { months: [{month, revenue, delta_pct, delta_abs}] }
+
             const momEl = document.getElementById('metricMoM');
             const momBreakdownEl = document.getElementById('metricMoMBreakdown');
-            if (mom.months && mom.months.length > 1) {
+            if (momEl && mom.months && mom.months.length > 1) {
                 const lastMonth = mom.months[mom.months.length - 1];
                 if (lastMonth.delta_pct !== null && lastMonth.delta_pct !== undefined) {
                     const trendSign = lastMonth.delta_pct >= 0 ? '+' : '';
@@ -2088,33 +2166,32 @@
                 } else {
                     momEl.textContent = '--';
                 }
-                momBreakdownEl.innerHTML = mom.months.map(m => 
+                if (momBreakdownEl) momBreakdownEl.innerHTML = mom.months.map(m =>
                     `<div class="text-xs">${m.month}: ${formatCurrency(m.revenue)}</div>`
                 ).join('');
-            } else {
-                momEl.textContent = '--';
             }
-            
-            // Top Customers - API returns: { customers: [{customer_id, name, revenue, percent_of_total}] }
+
             const topEl = document.getElementById('metricTopCustomers');
-            if (top.customers && top.customers.length > 0) {
-                topEl.innerHTML = top.customers.map((c, i) => 
-                    `<div class="flex justify-between text-xs"><span>${i+1}. ${c.name || c.customer_id}</span><span class="text-slate-400">${formatCurrency(c.revenue || 0)} (${(c.percent_of_total || 0).toFixed(1)}%)</span></div>`
-                ).join('');
-            } else {
-                topEl.innerHTML = '<span class="text-slate-500">No data</span>';
+            if (topEl) {
+                if (top.customers && top.customers.length > 0) {
+                    topEl.innerHTML = top.customers.map((c, i) =>
+                        `<div class="flex justify-between text-xs"><span>${i+1}. ${c.name || c.customer_id}</span><span class="text-slate-400">${formatCurrency(c.revenue || 0)} (${(c.percent_of_total || 0).toFixed(1)}%)</span></div>`
+                    ).join('');
+                } else {
+                    topEl.innerHTML = '<span class="text-slate-500">No data</span>';
+                }
             }
-            
-            // Vendor Spend - API returns: { vendors: [{vendor_id, name, total_spend, invoice_count}] }
+
             const vendorSpendEl = document.getElementById('metricVendorSpend');
             const vendorCountEl = document.getElementById('metricVendorCount');
-            const totalSpend = spend.vendors ? spend.vendors.reduce((sum, v) => sum + (v.total_spend || 0), 0) : 0;
-            vendorSpendEl.textContent = formatCurrency(totalSpend);
-            vendorCountEl.textContent = spend.vendors ? `${spend.vendors.length} vendors` : '';
-            
-            // Resource Health - API returns: { active_count, zombie_count, orphan_count, zombie_ids[], orphan_ids[] }
+            if (vendorSpendEl) {
+                const totalSpend = spend.vendors ? spend.vendors.reduce((sum, v) => sum + (v.total_spend || 0), 0) : 0;
+                vendorSpendEl.textContent = formatCurrency(totalSpend);
+                if (vendorCountEl) vendorCountEl.textContent = spend.vendors ? `${spend.vendors.length} vendors` : '';
+            }
+
             const healthEl = document.getElementById('metricResourceHealth');
-            healthEl.innerHTML = `
+            if (healthEl) healthEl.innerHTML = `
                 <span class="text-emerald-400">Active: ${health.active_count || 0}</span>
                 <span class="text-amber-400 ml-2">Zombie: ${health.zombie_count || 0}</span>
                 <span class="text-rose-400 ml-2">Orphan: ${health.orphan_count || 0}</span>
@@ -2150,10 +2227,475 @@
         function toggleNlqGuide() {
             const content = document.getElementById('nlqGuideContent');
             const chevron = document.getElementById('nlqGuideChevron');
-            content.classList.toggle('hidden');
-            chevron.classList.toggle('rotate-180');
+            if (content && chevron) {
+                content.classList.toggle('hidden');
+                chevron.classList.toggle('rotate-180');
+            }
         }
-        
+
+        // ═══════════════════════════════════════════════════════════════════
+        // Business Data Ground Truth Generator
+        // ═══════════════════════════════════════════════════════════════════
+
+        const BD_PRESETS = {
+            light:    { seed: 42, tiers: '1',     base_revenue: 10, growth_rate: 0.05, num_quarters: 5  },
+            standard: { seed: 42, tiers: '1,2',   base_revenue: 22, growth_rate: 0.15, num_quarters: 12 },
+            full:     { seed: 42, tiers: '1,2,3', base_revenue: 50, growth_rate: 0.30, num_quarters: 20 },
+        };
+
+        const BD_METRIC_CATEGORIES = {
+            'Financial': {
+                color: 'emerald',
+                metrics: ['revenue', 'arr', 'mrr', 'pipeline', 'gross_margin_pct', 'cogs', 'opex'],
+                labels:  { revenue: 'Revenue ($M)', arr: 'ARR ($M)', mrr: 'MRR ($M)', pipeline: 'Pipeline ($M)', gross_margin_pct: 'Gross Margin %', cogs: 'COGS ($M)', opex: 'OpEx ($M)' }
+            },
+            'Customer': {
+                color: 'cyan',
+                metrics: ['customer_count', 'new_customers', 'churned_customers', 'win_rate', 'nrr', 'gross_churn_pct'],
+                labels:  { customer_count: 'Total Customers', new_customers: 'New Customers', churned_customers: 'Churned', win_rate: 'Win Rate %', nrr: 'NRR %', gross_churn_pct: 'Gross Churn %' }
+            },
+            'People': {
+                color: 'purple',
+                metrics: ['headcount', 'new_hires', 'terminations', 'attrition_rate'],
+                labels:  { headcount: 'Headcount', new_hires: 'New Hires', terminations: 'Terminations', attrition_rate: 'Attrition %' }
+            },
+            'Operations': {
+                color: 'amber',
+                metrics: ['support_tickets', 'csat', 'sprint_velocity', 'cloud_spend', 'incident_count', 'mttr_hours'],
+                labels:  { support_tickets: 'Support Tickets', csat: 'CSAT (/ 5)', sprint_velocity: 'Sprint Velocity', cloud_spend: 'Cloud Spend ($M)', incident_count: 'Incidents', mttr_hours: 'MTTR (hrs)' }
+            }
+        };
+
+        let bdCurrentRun = null;       // { run_id, manifest, profile }
+        let bdCurrentPreset = 'standard';
+
+        function bdSelectPreset(preset) {
+            bdCurrentPreset = preset;
+            const cfg = BD_PRESETS[preset];
+
+            // Update advanced controls
+            document.getElementById('bdSeed').value = cfg.seed;
+            document.getElementById('bdTiers').value = cfg.tiers;
+            document.getElementById('bdBaseRevenue').value = cfg.base_revenue;
+            document.getElementById('bdGrowthRate').value = cfg.growth_rate;
+            document.getElementById('bdQuarters').value = cfg.num_quarters;
+
+            // Update preset button styles
+            const presets = { light: 'cyan', standard: 'emerald', full: 'purple' };
+            for (const [key, color] of Object.entries(presets)) {
+                const btn = document.getElementById(`bdPreset${key.charAt(0).toUpperCase() + key.slice(1)}`);
+                if (key === preset) {
+                    btn.className = `group relative p-4 rounded-xl border-2 border-${color}-500/50 bg-${color}-900/10 transition-all text-left ring-1 ring-${color}-500/20`;
+                } else {
+                    btn.className = 'group relative p-4 rounded-xl border-2 border-slate-700 hover:border-slate-600 bg-slate-900/40 transition-all text-left';
+                }
+            }
+        }
+
+        async function bdGenerate() {
+            const btn = document.getElementById('bdGenerateBtn');
+            const statusEl = document.getElementById('bdRunStatus');
+            btn.disabled = true;
+            btn.textContent = 'Generating...';
+            statusEl.className = 'px-3 py-1 rounded-lg text-xs font-mono bg-cyan-900/40 border border-cyan-700/30 text-cyan-300';
+            statusEl.textContent = 'Running...';
+            statusEl.classList.remove('hidden');
+
+            const body = {
+                seed: parseInt(document.getElementById('bdSeed').value) || 42,
+                tiers: document.getElementById('bdTiers').value,
+                base_revenue: parseFloat(document.getElementById('bdBaseRevenue').value) || 22,
+                growth_rate: parseFloat(document.getElementById('bdGrowthRate').value) || 0.15,
+                num_quarters: parseInt(document.getElementById('bdQuarters').value) || 12,
+                push_to_dcl: document.getElementById('bdPushDcl').checked,
+            };
+
+            try {
+                const resp = await fetch('/api/business-data/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.detail || `HTTP ${resp.status}`);
+                }
+                const result = await resp.json();
+                const runId = result.run_id;
+
+                // Fetch manifest and profile in parallel
+                const [manifestResp, profileResp] = await Promise.all([
+                    fetch(`/api/business-data/ground-truth/${runId}`),
+                    fetch(`/api/business-data/profile/${runId}`)
+                ]);
+                const manifest = await manifestResp.json();
+                const profile = await profileResp.json();
+
+                bdCurrentRun = { run_id: runId, result, manifest, profile };
+
+                statusEl.className = 'px-3 py-1 rounded-lg text-xs font-mono bg-emerald-900/40 border border-emerald-700/30 text-emerald-300';
+                statusEl.textContent = `${result.active_systems.length} systems | ${Object.values(result.record_counts).reduce((a,b) => a+b, 0).toLocaleString()} records`;
+
+                bdRenderSummary();
+                bdRenderGroundTruth();
+                bdShowSections(true);
+            } catch (e) {
+                console.error('Business data generation failed:', e);
+                statusEl.className = 'px-3 py-1 rounded-lg text-xs font-mono bg-red-900/40 border border-red-700/30 text-red-300';
+                statusEl.textContent = 'Error: ' + e.message;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Generate Ground Truth';
+            }
+        }
+
+        function bdClear() {
+            bdCurrentRun = null;
+            bdShowSections(false);
+            document.getElementById('bdRunStatus').classList.add('hidden');
+            document.getElementById('bdActualsInput').value = '';
+            document.getElementById('bdReconcileScorecard').innerHTML = '';
+            document.getElementById('bdOverallAccuracy').classList.add('hidden');
+        }
+
+        function bdShowSections(show) {
+            ['bdSummaryContainer', 'bdGroundTruthContainer', 'bdReconcileContainer'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.classList.toggle('hidden', !show);
+            });
+        }
+
+        function bdRenderSummary() {
+            if (!bdCurrentRun) return;
+            const { result, profile } = bdCurrentRun;
+
+            document.getElementById('bdRunId').textContent = bdCurrentRun.run_id;
+
+            // Source system cards
+            const systemInfo = {
+                salesforce: { label: 'Salesforce', color: 'cyan', tier: 1 },
+                netsuite:   { label: 'NetSuite', color: 'emerald', tier: 1 },
+                chargebee:  { label: 'Chargebee', color: 'purple', tier: 1 },
+                workday:    { label: 'Workday', color: 'blue', tier: 2 },
+                zendesk:    { label: 'Zendesk', color: 'amber', tier: 2 },
+                jira:       { label: 'Jira', color: 'indigo', tier: 3 },
+                datadog:    { label: 'Datadog', color: 'violet', tier: 3 },
+                aws_cost_explorer: { label: 'AWS Cost', color: 'orange', tier: 3 },
+            };
+
+            const cardsEl = document.getElementById('bdSystemCards');
+            cardsEl.innerHTML = result.active_systems.map(sys => {
+                const info = systemInfo[sys] || { label: sys, color: 'slate', tier: '?' };
+                const totalRecords = Object.entries(result.record_counts)
+                    .filter(([k]) => k.startsWith(sys))
+                    .reduce((sum, [, v]) => sum + v, 0);
+                return `
+                    <div class="bg-slate-900/50 rounded-lg p-3 border border-${info.color}-700/30">
+                        <div class="flex items-center justify-between mb-1">
+                            <span class="text-xs font-semibold text-${info.color}-400">${info.label}</span>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">T${info.tier}</span>
+                        </div>
+                        <div class="text-lg font-bold text-white">${totalRecords.toLocaleString()}</div>
+                        <div class="text-[10px] text-slate-500">records</div>
+                    </div>
+                `;
+            }).join('');
+
+            // Render trajectory with default metric
+            bdRenderTrajectory();
+        }
+
+        function bdRenderTrajectory() {
+            if (!bdCurrentRun || !bdCurrentRun.profile) return;
+            const metric = document.getElementById('bdTrajectoryMetric').value;
+            const quarters = bdCurrentRun.profile.quarters;
+
+            const values = quarters.map(q => q[metric] || 0);
+            const maxVal = Math.max(...values, 1);
+
+            const chartEl = document.getElementById('bdTrajectoryChart');
+            const labelsEl = document.getElementById('bdTrajectoryLabels');
+
+            chartEl.innerHTML = values.map((v, i) => {
+                const pct = (v / maxVal) * 100;
+                const q = quarters[i];
+                const isForecast = q.is_forecast;
+                const barColor = isForecast ? 'bg-slate-600' : 'bg-cyan-500/70';
+                const displayVal = v >= 1 ? v.toFixed(1) : v.toLocaleString();
+                return `<div class="flex-1 flex flex-col items-center justify-end h-full group cursor-default" title="${q.quarter}: ${displayVal}">
+                    <div class="text-[9px] text-slate-500 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">${displayVal}</div>
+                    <div class="${barColor} w-full rounded-t transition-all ${isForecast ? 'opacity-50' : ''}" style="height: ${Math.max(pct, 4)}%"></div>
+                </div>`;
+            }).join('');
+
+            labelsEl.innerHTML = quarters.map(q =>
+                `<div class="flex-1 text-center text-[8px] text-slate-600 truncate">${q.quarter.replace('20','')}</div>`
+            ).join('');
+        }
+
+        function bdRenderGroundTruth() {
+            if (!bdCurrentRun || !bdCurrentRun.manifest) return;
+            const manifest = bdCurrentRun.manifest;
+            const gt = manifest.ground_truth || {};
+
+            // Populate quarter selector
+            const quarterSelect = document.getElementById('bdQuarterSelect');
+            const quarters = Object.keys(gt).filter(k => k.match(/^\d{4}-Q\d$/)).sort();
+            const currentVal = quarterSelect.value;
+            quarterSelect.innerHTML = quarters.map(q =>
+                `<option value="${q}" ${q === currentVal ? 'selected' : ''}>${q}</option>`
+            ).join('');
+            if (!currentVal && quarters.length) quarterSelect.value = quarters[0];
+
+            const selectedQ = quarterSelect.value;
+            const qData = gt[selectedQ] || {};
+
+            // Update reconcile quarter display
+            const reconcileQ = document.getElementById('bdReconcileQuarter');
+            if (reconcileQ) reconcileQ.textContent = selectedQ;
+
+            // Render metric categories
+            const categoriesEl = document.getElementById('bdMetricCategories');
+            categoriesEl.innerHTML = Object.entries(BD_METRIC_CATEGORIES).map(([catName, cat]) => {
+                const metricsHtml = cat.metrics.map(m => {
+                    const mData = qData[m];
+                    if (!mData) return '';
+                    const val = mData.value;
+                    const displayVal = mData.unit === 'millions_usd' ? `$${val}M` :
+                                       mData.unit === 'percent' ? `${val}%` :
+                                       mData.unit === 'score_5' ? `${val}/5` :
+                                       mData.unit === 'hours' ? `${val}h` :
+                                       val.toLocaleString();
+                    return `
+                        <div class="flex items-center justify-between py-1.5 border-b border-slate-800/50 last:border-0">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs text-slate-400">${cat.labels[m] || m}</span>
+                                <span class="text-[9px] text-slate-600">${mData.primary_source}</span>
+                            </div>
+                            <span class="text-sm font-semibold text-${cat.color}-400 font-mono">${displayVal}</span>
+                        </div>
+                    `;
+                }).join('');
+
+                return `
+                    <div class="p-3 rounded-lg bg-${cat.color}-500/5 ring-1 ring-${cat.color}-500/20">
+                        <div class="font-medium text-${cat.color}-300 mb-2 text-sm">${catName}</div>
+                        ${metricsHtml}
+                    </div>
+                `;
+            }).join('');
+
+            // Render dimensional breakdowns
+            const dimEl = document.getElementById('bdDimensionalBreakdowns');
+            const dimTruth = gt.dimensional_truth || {};
+            const dimConfigs = [
+                { key: 'revenue_by_region', label: 'Revenue by Region', color: 'emerald', unit: '$M' },
+                { key: 'pipeline_by_stage', label: 'Pipeline by Stage', color: 'cyan', unit: '$M' },
+                { key: 'headcount_by_department', label: 'Headcount by Dept', color: 'purple', unit: '' },
+            ];
+
+            dimEl.innerHTML = dimConfigs.map(dim => {
+                const dimData = dimTruth[dim.key] || {};
+                const qDimData = dimData[selectedQ] || {};
+                const entries = Object.entries(qDimData).filter(([k]) => k !== 'source');
+                const maxDim = Math.max(...entries.map(([,v]) => v), 1);
+
+                return `
+                    <div class="p-3 rounded-lg bg-slate-900/40 ring-1 ring-slate-700">
+                        <div class="text-xs font-semibold text-${dim.color}-400 mb-2">${dim.label}</div>
+                        <div class="space-y-1.5">
+                            ${entries.map(([k, v]) => {
+                                const pct = (v / maxDim) * 100;
+                                const displayV = dim.unit === '$M' ? `$${v.toFixed(2)}M` : v.toLocaleString();
+                                return `
+                                    <div>
+                                        <div class="flex justify-between text-[10px] mb-0.5">
+                                            <span class="text-slate-400">${k}</span>
+                                            <span class="text-slate-300 font-mono">${displayV}</span>
+                                        </div>
+                                        <div class="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                                            <div class="h-full bg-${dim.color}-500/60 rounded-full" style="width: ${pct}%"></div>
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            // Render expected conflicts
+            const conflictsEl = document.getElementById('bdConflicts');
+            const conflicts = gt.expected_conflicts || [];
+            const qConflicts = conflicts.filter(c => c.period === selectedQ);
+            if (qConflicts.length === 0) {
+                conflictsEl.innerHTML = '<div class="text-xs text-slate-500">No conflicts expected for this quarter</div>';
+            } else {
+                conflictsEl.innerHTML = qConflicts.map(c => `
+                    <div class="p-3 rounded-lg bg-amber-500/5 ring-1 ring-amber-500/20 text-xs">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-amber-400 font-semibold">${c.metric}</span>
+                            <span class="text-slate-500">|</span>
+                            <span class="text-slate-400">${c.root_cause}</span>
+                        </div>
+                        <div class="text-slate-300">${c.explanation}</div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function bdLoadSampleActuals() {
+            if (!bdCurrentRun) return;
+            const selectedQ = document.getElementById('bdQuarterSelect').value;
+            const gt = bdCurrentRun.manifest.ground_truth || {};
+            const qData = gt[selectedQ] || {};
+
+            // Generate "actuals" with deliberate deviations from ground truth
+            const actuals = {};
+            const rng = (min, max) => min + Math.random() * (max - min);
+            for (const [metric, mData] of Object.entries(qData)) {
+                if (typeof mData !== 'object' || !('value' in mData)) continue;
+                const v = mData.value;
+                // Introduce 0-8% deviation for realism
+                const deviation = 1 + (rng(-0.08, 0.08));
+                if (mData.unit === 'count') {
+                    actuals[metric] = Math.round(v * deviation);
+                } else if (mData.unit === 'percent' || mData.unit === 'score_5') {
+                    actuals[metric] = parseFloat((v * deviation).toFixed(2));
+                } else {
+                    actuals[metric] = parseFloat((v * deviation).toFixed(2));
+                }
+            }
+
+            document.getElementById('bdActualsInput').value = JSON.stringify(actuals, null, 2);
+        }
+
+        function bdReconcile() {
+            if (!bdCurrentRun) return;
+            const selectedQ = document.getElementById('bdQuarterSelect').value;
+            const gt = bdCurrentRun.manifest.ground_truth || {};
+            const qData = gt[selectedQ] || {};
+
+            let actuals;
+            try {
+                actuals = JSON.parse(document.getElementById('bdActualsInput').value);
+            } catch (e) {
+                alert('Invalid JSON in actuals input: ' + e.message);
+                return;
+            }
+
+            // Compute per-metric accuracy
+            const results = [];
+            let totalAccuracy = 0;
+            let metricCount = 0;
+
+            for (const [catName, cat] of Object.entries(BD_METRIC_CATEGORIES)) {
+                const catResults = [];
+                for (const m of cat.metrics) {
+                    const mData = qData[m];
+                    if (!mData) continue;
+                    const expected = mData.value;
+                    const actual = actuals[m];
+                    if (actual === undefined || actual === null) {
+                        catResults.push({ metric: m, label: cat.labels[m], expected, actual: null, delta: null, accuracy: null, status: 'missing' });
+                        continue;
+                    }
+                    const delta = actual - expected;
+                    const deltaPct = expected !== 0 ? (Math.abs(delta) / Math.abs(expected)) * 100 : (actual === 0 ? 0 : 100);
+                    const accuracy = Math.max(0, 100 - deltaPct);
+                    catResults.push({
+                        metric: m, label: cat.labels[m], expected, actual, delta,
+                        deltaPct: deltaPct.toFixed(1),
+                        accuracy: accuracy.toFixed(1),
+                        unit: mData.unit,
+                        status: accuracy >= 95 ? 'pass' : accuracy >= 85 ? 'warn' : 'fail'
+                    });
+                    totalAccuracy += accuracy;
+                    metricCount++;
+                }
+                results.push({ category: catName, color: cat.color, metrics: catResults });
+            }
+
+            const overallAccuracy = metricCount > 0 ? (totalAccuracy / metricCount) : 0;
+
+            // Render overall accuracy banner
+            const overallEl = document.getElementById('bdOverallAccuracy');
+            const overallValEl = document.getElementById('bdOverallAccuracyValue');
+            const overallLabelEl = document.getElementById('bdOverallAccuracyLabel');
+            overallEl.classList.remove('hidden');
+
+            const overallColor = overallAccuracy >= 95 ? 'emerald' : overallAccuracy >= 85 ? 'amber' : 'red';
+            overallEl.className = `mb-4 p-4 rounded-xl text-center bg-${overallColor}-500/10 ring-1 ring-${overallColor}-500/30`;
+            overallValEl.className = `text-4xl font-bold text-${overallColor}-400`;
+            overallValEl.textContent = `${overallAccuracy.toFixed(1)}%`;
+            overallLabelEl.className = `text-xs mt-1 text-${overallColor}-300`;
+            overallLabelEl.textContent = `${metricCount} metrics compared across ${results.length} categories`;
+
+            // Render category scorecards
+            const scorecardEl = document.getElementById('bdReconcileScorecard');
+            scorecardEl.innerHTML = results.map(cat => {
+                const catMetrics = cat.metrics.filter(m => m.status !== 'missing');
+                const catMissing = cat.metrics.filter(m => m.status === 'missing');
+                const catAccuracy = catMetrics.length > 0
+                    ? catMetrics.reduce((s, m) => s + parseFloat(m.accuracy), 0) / catMetrics.length
+                    : 0;
+                const catColor = catAccuracy >= 95 ? 'emerald' : catAccuracy >= 85 ? 'amber' : 'red';
+                const catPass = catMetrics.filter(m => m.status === 'pass').length;
+                const catWarn = catMetrics.filter(m => m.status === 'warn').length;
+                const catFail = catMetrics.filter(m => m.status === 'fail').length;
+
+                return `
+                    <div class="p-3 rounded-lg bg-${cat.color}-500/5 ring-1 ring-${cat.color}-500/20">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="font-medium text-${cat.color}-300 text-sm">${cat.category}</div>
+                            <div class="flex items-center gap-3">
+                                <div class="flex items-center gap-1.5 text-[10px]">
+                                    <span class="text-emerald-400">${catPass} pass</span>
+                                    <span class="text-slate-600">|</span>
+                                    <span class="text-amber-400">${catWarn} warn</span>
+                                    <span class="text-slate-600">|</span>
+                                    <span class="text-red-400">${catFail} fail</span>
+                                    ${catMissing.length > 0 ? `<span class="text-slate-600">|</span><span class="text-slate-500">${catMissing.length} missing</span>` : ''}
+                                </div>
+                                <div class="text-lg font-bold text-${catColor}-400">${catAccuracy.toFixed(1)}%</div>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-6 gap-1 text-[10px] text-slate-500 mb-1 px-1">
+                            <div class="col-span-2">Metric</div>
+                            <div class="text-right">Expected</div>
+                            <div class="text-right">Actual</div>
+                            <div class="text-right">Delta</div>
+                            <div class="text-right">Accuracy</div>
+                        </div>
+                        ${catMetrics.map(m => {
+                            const statusColor = m.status === 'pass' ? 'emerald' : m.status === 'warn' ? 'amber' : 'red';
+                            const fmtVal = (v, unit) => unit === 'millions_usd' ? `$${v}M` : unit === 'percent' ? `${v}%` : unit === 'score_5' ? `${v}/5` : unit === 'hours' ? `${v}h` : typeof v === 'number' ? v.toLocaleString() : v;
+                            const fmtDelta = m.delta >= 0 ? `+${fmtVal(m.delta.toFixed(2), m.unit)}` : fmtVal(m.delta.toFixed(2), m.unit);
+                            return `
+                                <div class="grid grid-cols-6 gap-1 text-xs px-1 py-1 rounded hover:bg-slate-800/30 border-b border-slate-800/30 last:border-0">
+                                    <div class="col-span-2 flex items-center gap-1.5">
+                                        <div class="w-1.5 h-1.5 rounded-full bg-${statusColor}-400"></div>
+                                        <span class="text-slate-300 truncate">${m.label}</span>
+                                    </div>
+                                    <div class="text-right text-slate-400 font-mono">${fmtVal(m.expected, m.unit)}</div>
+                                    <div class="text-right text-white font-mono">${fmtVal(m.actual, m.unit)}</div>
+                                    <div class="text-right font-mono text-${m.delta >= 0 ? 'cyan' : 'rose'}-400">${fmtDelta}</div>
+                                    <div class="text-right font-bold text-${statusColor}-400">${m.accuracy}%</div>
+                                </div>
+                            `;
+                        }).join('')}
+                        ${catMissing.length > 0 ? `
+                            <div class="mt-2 text-[10px] text-slate-500">Missing: ${catMissing.map(m => m.label).join(', ')}</div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Initialize default preset
+        bdSelectPreset('standard');
+
+
         function toggleDclGuide() {
             const content = document.getElementById('dclGuideContent');
             const chevron = document.getElementById('dclGuideChevron');
