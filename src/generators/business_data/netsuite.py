@@ -9,7 +9,7 @@ how real ERP systems recognize revenue vs. CRM bookings.
 """
 
 from datetime import date, timedelta
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
 from src.generators.business_data.base import BaseBusinessGenerator
 from src.generators.business_data.profile import BusinessProfile
