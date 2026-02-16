@@ -227,6 +227,11 @@ class BusinessDataOrchestrator:
         """
         Push all generated data to DCL via POST {DCL_INGEST_URL}/api/dcl/ingest.
 
+        This is the SELF-DIRECTED push path (triggered by /api/business-data/generate).
+        Pipe IDs come from Farm's internal generator metadata and do NOT participate
+        in DCL's late-binding join with AAM's Export schemas. For joinable pushes,
+        use the manifest-driven path (POST /api/farm/manifest-intake) instead.
+
         Uses parallel HTTP requests (up to 5 concurrent) for speed.
 
         Follows the DCL ingest contract:
@@ -236,7 +241,7 @@ class BusinessDataOrchestrator:
           schema_version, row_count, rows
 
         Returns:
-            List of push results per pipe (status, pipe_id, response).
+            List of push results per pipe with full correlation keys.
         """
         import asyncio
 
@@ -261,8 +266,8 @@ class BusinessDataOrchestrator:
             base_headers["x-api-key"] = self.dcl_api_key
 
         logger.info(
-            f"Starting DCL push: run_id={dcl_run_id}, "
-            f"snapshot={snapshot_name}, url={self.dcl_ingest_url}"
+            f"Starting DCL push (self-directed, non-joinable): "
+            f"run_id={dcl_run_id}, snapshot={snapshot_name}, url={self.dcl_ingest_url}"
         )
 
         pipe_tasks = []
@@ -309,23 +314,75 @@ class BusinessDataOrchestrator:
                         timeout=30.0,
                     )
 
+                    # Base result with correlation keys
                     result = {
                         "pipe_id": pipe_id,
                         "source_system": source_system,
                         "status_code": response.status_code,
                         "success": response.status_code == 200,
                         "row_count": len(rows),
+                        # Correlation keys
+                        "run_id": dcl_run_id,
+                        "dcl_run_id": dcl_run_id,
+                        "farm_run_id": self.run_id,
                     }
 
+                    # --- Handle 422 NO_MATCHING_PIPE ---
+                    if response.status_code == 422:
+                        try:
+                            resp_data = response.json()
+                        except Exception:
+                            resp_data = {"error": response.text[:500]}
+
+                        if resp_data.get("error") == "NO_MATCHING_PIPE":
+                            logger.critical(
+                                f"NO_MATCHING_PIPE: DCL rejected pipe_id={pipe_id}. "
+                                f"No schema blueprint exists. This is expected in "
+                                f"self-directed mode (Farm-internal pipe_ids don't "
+                                f"participate in the late-binding join). "
+                                f"For joinable pushes, use manifest-driven mode. "
+                                f"Hint: {resp_data.get('hint', 'N/A')}"
+                            )
+                            result["error"] = resp_data.get("message", "NO_MATCHING_PIPE")
+                            result["error_type"] = "NO_MATCHING_PIPE"
+                            result["hint"] = resp_data.get("hint")
+                            result["available_pipes"] = resp_data.get("available_pipes")
+                            return result
+
+                        # Other 422 errors
+                        result["error"] = str(resp_data)[:500]
+                        result["error_type"] = "validation_error"
+                        logger.error(
+                            f"DCL returned 422 for {pipe_id}: {resp_data}"
+                        )
+                        return result
+
+                    # --- Handle 200 success ---
                     if response.status_code == 200:
                         resp_data = response.json()
                         result["rows_accepted"] = resp_data.get("rows_accepted", len(rows))
                         result["schema_drift"] = resp_data.get("schema_drift", False)
-                        if resp_data.get("drift_fields"):
-                            result["drift_fields"] = resp_data["drift_fields"]
-                        logger.info(f"  ✓ {pipe_id}: {result['rows_accepted']} rows accepted")
+                        result["matched_schema"] = resp_data.get("matched_schema")
+                        result["schema_fields"] = resp_data.get("schema_fields")
+                        if resp_data.get("dcl_run_id"):
+                            result["dcl_run_id"] = resp_data["dcl_run_id"]
+
+                        # Log schema_drift as WARNING
+                        if resp_data.get("schema_drift"):
+                            drift_fields = resp_data.get("drift_fields", [])
+                            result["drift_fields"] = drift_fields
+                            logger.warning(
+                                f"SCHEMA_DRIFT for pipe_id={pipe_id}: "
+                                f"drift_fields={drift_fields}. "
+                                f"Continuing but flagging for operator review."
+                            )
+                        logger.info(
+                            f"  OK {pipe_id}: {result['rows_accepted']} rows accepted"
+                        )
                     else:
+                        # --- Other HTTP errors ---
                         result["error"] = response.text[:500]
+                        result["error_type"] = "http_error"
                         logger.error(
                             f"DCL push failed for {pipe_id}: "
                             f"{response.status_code} - {response.text[:200]}"
@@ -334,10 +391,20 @@ class BusinessDataOrchestrator:
 
                 except httpx.TimeoutException:
                     logger.error(f"DCL push timeout for {pipe_id}")
-                    return {"pipe_id": pipe_id, "source_system": source_system, "success": False, "error": "timeout"}
+                    return {
+                        "pipe_id": pipe_id, "source_system": source_system,
+                        "success": False, "error": "timeout", "error_type": "timeout",
+                        "run_id": dcl_run_id, "dcl_run_id": dcl_run_id,
+                        "farm_run_id": self.run_id,
+                    }
                 except Exception as e:
                     logger.error(f"DCL push error for {pipe_id}: {e}")
-                    return {"pipe_id": pipe_id, "source_system": source_system, "success": False, "error": str(e)}
+                    return {
+                        "pipe_id": pipe_id, "source_system": source_system,
+                        "success": False, "error": str(e), "error_type": "unexpected_error",
+                        "run_id": dcl_run_id, "dcl_run_id": dcl_run_id,
+                        "farm_run_id": self.run_id,
+                    }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             results = await asyncio.gather(*[_push_one(client, t) for t in pipe_tasks])
@@ -346,8 +413,10 @@ class BusinessDataOrchestrator:
         self.push_results = results
         self.dcl_run_id = dcl_run_id
         succeeded = sum(1 for r in results if r.get("success"))
+        rejected = sum(1 for r in results if r.get("error_type") == "NO_MATCHING_PIPE")
         logger.info(
-            f"DCL push complete: {succeeded}/{len(results)} pipes succeeded "
+            f"DCL push complete: {succeeded}/{len(results)} succeeded, "
+            f"{rejected} rejected (NO_MATCHING_PIPE) "
             f"(dcl_run_id={dcl_run_id}, farm_run_id={self.run_id})"
         )
         return [{
@@ -356,6 +425,9 @@ class BusinessDataOrchestrator:
             "snapshot_name": snapshot_name,
             "pipes_pushed": len(results),
             "pipes_succeeded": succeeded,
+            "pipes_rejected": rejected,
+            "mode": "self_directed",
+            "joinable": False,
         }] + results
 
     def get_manifest(self) -> Optional[Dict[str, Any]]:
