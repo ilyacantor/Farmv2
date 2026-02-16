@@ -297,3 +297,65 @@ class BusinessProfile:
             prev_arr = arr
 
         return quarters
+
+    @classmethod
+    def from_model_quarters(cls, model_quarters, seed: int = 42):
+        """
+        Create a BusinessProfile from financial model Quarter objects.
+
+        This adapter lets existing generators consume the richer financial model
+        output through the same QuarterMetrics interface they already know.
+        """
+        profile = cls.__new__(cls)
+        profile.seed = seed
+        profile.base_revenue = model_quarters[0].revenue if model_quarters else 22.0
+        profile.yoy_growth_rate = 0.32
+        profile.num_quarters = len(model_quarters)
+        profile.base_arr = model_quarters[0].beginning_arr if model_quarters else 83.6
+        profile.base_customer_count = model_quarters[0].customer_count if model_quarters else 760
+        profile.base_headcount = model_quarters[0].headcount if model_quarters else 235
+
+        converted = []
+        for fmq in model_quarters:
+            qm = QuarterMetrics(
+                quarter=fmq.quarter,
+                is_forecast=fmq.is_forecast,
+                revenue=round(fmq.revenue, 2),
+                arr=round(fmq.ending_arr, 2),
+                mrr=round(fmq.mrr, 4),
+                pipeline=round(fmq.pipeline, 2),
+                new_pipeline=round(fmq.pipeline * 0.3, 2),
+                win_rate=round(fmq.win_rate, 1),
+                customer_count=fmq.customer_count,
+                new_customers=fmq.new_customers,
+                churned_customers=fmq.churned_customers,
+                nrr=round(fmq.nrr, 1),
+                gross_churn_pct=round(fmq.gross_churn_pct, 1),
+                headcount=fmq.headcount,
+                new_hires=fmq.hires,
+                terminations=fmq.terminations,
+                attrition_rate=round(fmq.attrition_rate, 1),
+                support_tickets=fmq.support_tickets,
+                csat=round(fmq.csat, 2),
+                sprint_velocity=round(fmq.sprint_velocity, 1),
+                sprints_in_quarter=6,
+                gross_margin_pct=round(fmq.gross_margin_pct, 1),
+                cogs=round(fmq.cogs, 2),
+                opex=round(fmq.total_opex, 2),
+                cloud_spend=round(fmq.cloud_spend, 2),
+                incident_count=fmq.p1_incidents + fmq.p2_incidents,
+                mttr_hours=round((fmq.mttr_p1_hours * fmq.p1_incidents + fmq.mttr_p2_hours * fmq.p2_incidents) / max(fmq.p1_incidents + fmq.p2_incidents, 1), 1),
+                revenue_by_region=dict(fmq.revenue_by_region),
+                headcount_by_dept=dict(fmq.headcount_by_department),
+                pipeline_by_stage=dict(fmq.pipeline_by_stage),
+            )
+            converted.append(qm)
+
+        profile._quarters = converted
+        profile._rng = None
+        return profile
+
+    @property
+    def quarter_labels(self) -> List[str]:
+        """All quarter labels in order."""
+        return [q.quarter for q in self.quarters]

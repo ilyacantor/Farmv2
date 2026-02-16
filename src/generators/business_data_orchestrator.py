@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from src.generators.business_data.profile import BusinessProfile
+from src.generators.financial_model import FinancialModel, Assumptions, Quarter, validate_model
 from src.generators.business_data.salesforce import SalesforceGenerator
 from src.generators.business_data.netsuite import NetSuiteGenerator
 from src.generators.business_data.chargebee import ChargebeeGenerator
@@ -82,6 +83,7 @@ class BusinessDataOrchestrator:
             self.active_systems = tiers
 
         self.profile: Optional[BusinessProfile] = None
+        self.model_quarters: Optional[List[Quarter]] = None
         self.generated_data: Dict[str, Dict[str, Any]] = {}
         self.manifest: Optional[Dict[str, Any]] = None
         self.push_results: List[Dict[str, Any]] = []
@@ -103,16 +105,35 @@ class BusinessDataOrchestrator:
 
         logger.info(f"Starting business data generation run: {run_id}")
 
-        # Step 1: Generate business profile
-        self.profile = BusinessProfile(
-            seed=self.seed,
-            base_revenue=self.base_revenue,
-            yoy_growth_rate=self.growth_rate,
-            num_quarters=self.num_quarters,
+        # Step 1: Run financial model → generate business profile
+        assumptions = Assumptions(
+            starting_arr=self.base_revenue * 4 * 0.95,  # approximate from base revenue
+            arr_growth_rate_annual=self.growth_rate * 2.1,  # scale to ARR growth
+        )
+        # Use default assumptions for richer model when using standard params
+        if self.base_revenue == 22.0 and self.growth_rate == 0.15:
+            assumptions = Assumptions()  # full spec defaults: ARR $83.6M, 32% growth
+
+        financial_model = FinancialModel(assumptions)
+        self.model_quarters = financial_model.generate()
+
+        # Validate model output
+        model_issues = validate_model(self.model_quarters)
+        if model_issues:
+            logger.warning(f"Financial model validation: {len(model_issues)} issues")
+            for issue in model_issues[:5]:
+                logger.warning(f"  - {issue}")
+        else:
+            logger.info("Financial model validated: 0 issues")
+
+        # Create backward-compatible BusinessProfile from model quarters
+        self.profile = BusinessProfile.from_model_quarters(
+            self.model_quarters, seed=self.seed
         )
         logger.info(
-            f"Generated business profile: {self.num_quarters} quarters, "
-            f"base revenue ${self.base_revenue}M, growth {self.growth_rate*100}%"
+            f"Generated financial model: {len(self.model_quarters)} quarters, "
+            f"starting ARR ${assumptions.starting_arr}M, "
+            f"growth {assumptions.arr_growth_rate_annual*100:.0f}%"
         )
 
         # Step 2: Generate data per source system
@@ -158,7 +179,8 @@ class BusinessDataOrchestrator:
         # Step 3: Compute ground truth manifest
         logger.info("Computing ground truth manifest...")
         self.manifest = compute_ground_truth(
-            self.profile, run_id, self.generated_data
+            self.profile, run_id, self.generated_data,
+            model_quarters=self.model_quarters,
         )
         validation_errors = validate_manifest_completeness(self.manifest)
         if validation_errors:

@@ -47,6 +47,7 @@ class GenerateResponse(BaseModel):
     """Response from business data generation."""
     run_id: str
     status: str
+    manifest_version: str = "2.0"
     active_systems: list
     record_counts: dict
     quarters_covered: list
@@ -98,9 +99,12 @@ async def generate_business_data(request: GenerateRequest):
     if request.push_to_dcl:
         push_results = await orchestrator.push_to_dcl()
 
+    manifest = orchestrator.get_manifest() or {}
+
     return GenerateResponse(
         run_id=run_id,
         status="completed",
+        manifest_version=manifest.get("manifest_version", "1.0"),
         active_systems=summary["active_systems"],
         record_counts=summary["record_counts"],
         quarters_covered=summary["quarters_covered"],
@@ -265,6 +269,7 @@ async def get_business_profile(run_id: str):
     Retrieve the business profile (truth spine) for a generation run.
 
     Shows the quarterly metrics trajectory that all generators derive from.
+    When a financial model was used, includes full P&L, BS, CF, and SaaS metrics.
     """
     run_data = _run_store.get(run_id)
     if not run_data:
@@ -274,6 +279,87 @@ async def get_business_profile(run_id: str):
     if not orchestrator or not orchestrator.profile:
         raise HTTPException(status_code=404, detail="Profile data not available")
 
+    # Use financial model quarters if available (richer data)
+    if orchestrator.model_quarters:
+        quarters = []
+        for fmq in orchestrator.model_quarters:
+            quarters.append({
+                "quarter": fmq.quarter,
+                "is_forecast": fmq.is_forecast,
+                # ARR Waterfall
+                "beginning_arr": round(fmq.beginning_arr, 2),
+                "new_arr": round(fmq.new_arr, 2),
+                "new_logo_arr": round(fmq.new_logo_arr, 2),
+                "expansion_arr": round(fmq.expansion_arr, 2),
+                "churned_arr": round(fmq.churned_arr, 2),
+                "ending_arr": round(fmq.ending_arr, 2),
+                "mrr": round(fmq.mrr, 4),
+                # Revenue
+                "revenue": round(fmq.revenue, 2),
+                "new_logo_revenue": round(fmq.new_logo_revenue, 2),
+                "expansion_revenue": round(fmq.expansion_revenue, 2),
+                "renewal_revenue": round(fmq.renewal_revenue, 2),
+                # P&L
+                "cogs": round(fmq.cogs, 2),
+                "gross_profit": round(fmq.gross_profit, 2),
+                "gross_margin_pct": round(fmq.gross_margin_pct, 1),
+                "sm_expense": round(fmq.sm_expense, 2),
+                "rd_expense": round(fmq.rd_expense, 2),
+                "ga_expense": round(fmq.ga_expense, 2),
+                "total_opex": round(fmq.total_opex, 2),
+                "ebitda": round(fmq.ebitda, 2),
+                "ebitda_margin_pct": round(fmq.ebitda_margin_pct, 1),
+                "net_income": round(fmq.net_income, 2),
+                "net_margin_pct": round(fmq.net_margin_pct, 1),
+                # Balance Sheet
+                "cash": round(fmq.cash, 2),
+                "ar": round(fmq.ar, 2),
+                "total_assets": round(fmq.total_assets, 2),
+                "deferred_revenue": round(fmq.deferred_revenue, 2),
+                "total_liabilities": round(fmq.total_liabilities, 2),
+                "stockholders_equity": round(fmq.stockholders_equity, 2),
+                # Cash Flow
+                "cfo": round(fmq.cfo, 2),
+                "fcf": round(fmq.fcf, 2),
+                # SaaS Metrics
+                "nrr": round(fmq.nrr, 1),
+                "gross_churn_pct": round(fmq.gross_churn_pct, 1),
+                "ltv_cac_ratio": round(fmq.ltv_cac_ratio, 1),
+                "magic_number": round(fmq.magic_number, 2),
+                "burn_multiple": round(fmq.burn_multiple, 2),
+                "rule_of_40": round(fmq.rule_of_40, 1),
+                # Pipeline
+                "pipeline": round(fmq.pipeline, 2),
+                "win_rate": round(fmq.win_rate, 1),
+                "avg_deal_size": round(fmq.avg_deal_size, 4),
+                # Customer & People
+                "customer_count": fmq.customer_count,
+                "new_customers": fmq.new_customers,
+                "churned_customers": fmq.churned_customers,
+                "headcount": fmq.headcount,
+                "hires": fmq.hires,
+                "terminations": fmq.terminations,
+                "attrition_rate": round(fmq.attrition_rate, 1),
+                # Support & Engineering
+                "support_tickets": fmq.support_tickets,
+                "csat": round(fmq.csat, 2),
+                "sprint_velocity": round(fmq.sprint_velocity, 1),
+                "features_shipped": fmq.features_shipped,
+                # Infrastructure
+                "cloud_spend": round(fmq.cloud_spend, 2),
+                "p1_incidents": fmq.p1_incidents,
+                "p2_incidents": fmq.p2_incidents,
+                "uptime_pct": round(fmq.uptime_pct, 2),
+            })
+
+        return JSONResponse(content={
+            "run_id": run_id,
+            "model_version": "2.0",
+            "seed": orchestrator.seed,
+            "quarters": quarters,
+        })
+
+    # Fallback: legacy BusinessProfile data
     profile = orchestrator.profile
     quarters = []
     for qm in profile.quarters:
@@ -299,6 +385,7 @@ async def get_business_profile(run_id: str):
 
     return JSONResponse(content={
         "run_id": run_id,
+        "model_version": "1.0",
         "seed": profile.seed,
         "base_revenue": profile.base_revenue,
         "yoy_growth_rate": profile.yoy_growth_rate,

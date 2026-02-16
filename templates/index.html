@@ -784,9 +784,9 @@
                                     <span class="text-sm font-semibold text-emerald-400">Standard</span>
                                 </div>
                                 <div class="space-y-1 text-xs text-slate-400">
-                                    <div>Volume: <span class="text-slate-300">12Q / $22M base</span></div>
-                                    <div>Complexity: <span class="text-slate-300">Tiers 1+2 (+ HCM, Support)</span></div>
-                                    <div>Drift: <span class="text-slate-300">15% YoY growth</span></div>
+                                    <div>Volume: <span class="text-slate-300">12Q / ARR $83.6M / Full P&L+BS+CF</span></div>
+                                    <div>Complexity: <span class="text-slate-300">All Tiers (131+ metrics/quarter)</span></div>
+                                    <div>Drift: <span class="text-slate-300">32% ARR growth, 6% deceleration</span></div>
                                 </div>
                             </button>
                             <button onclick="bdSelectPreset('full')" id="bdPresetFull"
@@ -820,8 +820,8 @@
                                 <label class="block text-xs font-medium text-slate-400 mb-1">Tiers</label>
                                 <select id="bdTiers" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
                                     <option value="1">Tier 1 (CRM/ERP/Billing)</option>
-                                    <option value="1,2" selected>Tiers 1+2 (+ HCM/Support)</option>
-                                    <option value="1,2,3">All Tiers (+ PM/Monitoring/Cloud)</option>
+                                    <option value="1,2">Tiers 1+2 (+ HCM/Support)</option>
+                                    <option value="1,2,3" selected>All Tiers (+ PM/Monitoring/Cloud)</option>
                                 </select>
                             </div>
                             <div>
@@ -883,11 +883,17 @@
                                 <h3 class="text-sm font-semibold text-slate-300">Business Trajectory</h3>
                                 <select id="bdTrajectoryMetric" onchange="bdRenderTrajectory()" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none">
                                     <option value="revenue">Revenue ($M)</option>
-                                    <option value="arr">ARR ($M)</option>
+                                    <option value="ending_arr">Ending ARR ($M)</option>
+                                    <option value="ebitda">EBITDA ($M)</option>
+                                    <option value="net_income">Net Income ($M)</option>
+                                    <option value="cash">Cash ($M)</option>
+                                    <option value="fcf">Free Cash Flow ($M)</option>
+                                    <option value="gross_margin_pct">Gross Margin %</option>
+                                    <option value="pipeline">Pipeline ($M)</option>
                                     <option value="headcount">Headcount</option>
                                     <option value="customer_count">Customers</option>
-                                    <option value="pipeline">Pipeline ($M)</option>
                                     <option value="cloud_spend">Cloud Spend ($M)</option>
+                                    <option value="rule_of_40">Rule of 40</option>
                                 </select>
                             </div>
                             <div id="bdTrajectoryChart" class="flex items-end gap-1 h-24 px-2"></div>
@@ -918,12 +924,12 @@
                         </div>
 
                         <!-- Metric Categories -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4" id="bdMetricCategories"></div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3" id="bdMetricCategories"></div>
 
                         <!-- Dimensional Breakdowns -->
                         <div class="border-t border-slate-700 pt-4 mt-4">
-                            <h3 class="text-sm font-semibold text-slate-300 mb-3">Dimensional Breakdowns</h3>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="bdDimensionalBreakdowns"></div>
+                            <h3 class="text-sm font-semibold text-slate-300 mb-3">Dimensional Breakdowns <span id="bdDimCount" class="text-slate-500 font-normal"></span></h3>
+                            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3" id="bdDimensionalBreakdowns"></div>
                         </div>
 
                         <!-- Expected Conflicts -->
@@ -2239,30 +2245,50 @@
 
         const BD_PRESETS = {
             light:    { seed: 42, tiers: '1',     base_revenue: 10, growth_rate: 0.05, num_quarters: 5  },
-            standard: { seed: 42, tiers: '1,2',   base_revenue: 22, growth_rate: 0.15, num_quarters: 12 },
+            standard: { seed: 42, tiers: '1,2,3', base_revenue: 22, growth_rate: 0.15, num_quarters: 12 },
             full:     { seed: 42, tiers: '1,2,3', base_revenue: 50, growth_rate: 0.30, num_quarters: 20 },
         };
 
         const BD_METRIC_CATEGORIES = {
-            'Financial': {
+            'ARR Waterfall': {
                 color: 'emerald',
-                metrics: ['revenue', 'arr', 'mrr', 'pipeline', 'gross_margin_pct', 'cogs', 'opex'],
-                labels:  { revenue: 'Revenue ($M)', arr: 'ARR ($M)', mrr: 'MRR ($M)', pipeline: 'Pipeline ($M)', gross_margin_pct: 'Gross Margin %', cogs: 'COGS ($M)', opex: 'OpEx ($M)' }
+                metrics: ['beginning_arr', 'new_arr', 'new_logo_arr', 'expansion_arr', 'churned_arr', 'arr', 'mrr'],
+                labels:  { beginning_arr: 'Beginning ARR ($M)', new_arr: 'New ARR ($M)', new_logo_arr: 'New Logo ARR ($M)', expansion_arr: 'Expansion ARR ($M)', churned_arr: 'Churned ARR ($M)', arr: 'Ending ARR ($M)', mrr: 'MRR ($M)' }
             },
-            'Customer': {
+            'Revenue & P&L': {
+                color: 'green',
+                metrics: ['revenue', 'new_logo_revenue', 'expansion_revenue', 'renewal_revenue', 'cogs', 'gross_profit', 'gross_margin_pct', 'opex', 'ebitda', 'ebitda_margin_pct', 'net_income', 'net_margin_pct'],
+                labels:  { revenue: 'Revenue ($M)', new_logo_revenue: 'New Logo Rev ($M)', expansion_revenue: 'Expansion Rev ($M)', renewal_revenue: 'Renewal Rev ($M)', cogs: 'COGS ($M)', gross_profit: 'Gross Profit ($M)', gross_margin_pct: 'Gross Margin %', opex: 'Total OpEx ($M)', ebitda: 'EBITDA ($M)', ebitda_margin_pct: 'EBITDA Margin %', net_income: 'Net Income ($M)', net_margin_pct: 'Net Margin %' }
+            },
+            'Balance Sheet': {
+                color: 'sky',
+                metrics: ['cash', 'ar', 'total_assets', 'deferred_revenue', 'total_liabilities', 'stockholders_equity', 'retained_earnings'],
+                labels:  { cash: 'Cash ($M)', ar: 'Accounts Receivable ($M)', total_assets: 'Total Assets ($M)', deferred_revenue: 'Deferred Revenue ($M)', total_liabilities: 'Total Liabilities ($M)', stockholders_equity: "Stockholders' Equity ($M)", retained_earnings: 'Retained Earnings ($M)' }
+            },
+            'Cash Flow & SaaS': {
+                color: 'teal',
+                metrics: ['cfo', 'capex', 'fcf', 'nrr', 'gross_churn_pct', 'ltv_cac_ratio', 'magic_number', 'burn_multiple', 'rule_of_40', 'revenue_per_employee', 'arr_per_employee'],
+                labels:  { cfo: 'Cash from Ops ($M)', capex: 'CapEx ($M)', fcf: 'Free Cash Flow ($M)', nrr: 'NRR %', gross_churn_pct: 'Gross Churn %', ltv_cac_ratio: 'LTV:CAC Ratio', magic_number: 'Magic Number', burn_multiple: 'Burn Multiple', rule_of_40: 'Rule of 40 %', revenue_per_employee: 'Rev/Employee ($M)', arr_per_employee: 'ARR/Employee ($M)' }
+            },
+            'Pipeline & Customers': {
                 color: 'cyan',
-                metrics: ['customer_count', 'new_customers', 'churned_customers', 'win_rate', 'nrr', 'gross_churn_pct'],
-                labels:  { customer_count: 'Total Customers', new_customers: 'New Customers', churned_customers: 'Churned', win_rate: 'Win Rate %', nrr: 'NRR %', gross_churn_pct: 'Gross Churn %' }
+                metrics: ['pipeline', 'win_rate', 'sales_cycle_days', 'avg_deal_size', 'quota_attainment', 'customer_count', 'new_customers', 'churned_customers', 'logo_churn_pct', 'acv'],
+                labels:  { pipeline: 'Pipeline ($M)', win_rate: 'Win Rate %', sales_cycle_days: 'Sales Cycle (days)', avg_deal_size: 'Avg Deal Size ($M)', quota_attainment: 'Quota Attainment %', customer_count: 'Total Customers', new_customers: 'New Customers', churned_customers: 'Churned Customers', logo_churn_pct: 'Logo Churn %', acv: 'ACV ($M)' }
             },
             'People': {
                 color: 'purple',
-                metrics: ['headcount', 'new_hires', 'terminations', 'attrition_rate'],
-                labels:  { headcount: 'Headcount', new_hires: 'New Hires', terminations: 'Terminations', attrition_rate: 'Attrition %' }
+                metrics: ['headcount', 'new_hires', 'terminations', 'attrition_rate', 'engineering_headcount', 'sales_headcount'],
+                labels:  { headcount: 'Headcount', new_hires: 'New Hires', terminations: 'Terminations', attrition_rate: 'Attrition %', engineering_headcount: 'Engineering HC', sales_headcount: 'Sales HC' }
             },
-            'Operations': {
+            'Support & Engineering': {
                 color: 'amber',
-                metrics: ['support_tickets', 'csat', 'sprint_velocity', 'cloud_spend', 'incident_count', 'mttr_hours'],
-                labels:  { support_tickets: 'Support Tickets', csat: 'CSAT (/ 5)', sprint_velocity: 'Sprint Velocity', cloud_spend: 'Cloud Spend ($M)', incident_count: 'Incidents', mttr_hours: 'MTTR (hrs)' }
+                metrics: ['support_tickets', 'csat', 'nps', 'first_response_hours', 'resolution_hours', 'sprint_velocity', 'story_points', 'features_shipped', 'tech_debt_pct'],
+                labels:  { support_tickets: 'Support Tickets', csat: 'CSAT (/ 5)', nps: 'NPS', first_response_hours: 'First Response (hrs)', resolution_hours: 'Resolution (hrs)', sprint_velocity: 'Sprint Velocity', story_points: 'Story Points', features_shipped: 'Features Shipped', tech_debt_pct: 'Tech Debt %' }
+            },
+            'Infrastructure': {
+                color: 'rose',
+                metrics: ['cloud_spend', 'cloud_spend_pct_revenue', 'p1_incidents', 'p2_incidents', 'incident_count', 'mttr_p1_hours', 'mttr_p2_hours', 'uptime_pct', 'downtime_hours'],
+                labels:  { cloud_spend: 'Cloud Spend ($M)', cloud_spend_pct_revenue: 'Cloud % Revenue', p1_incidents: 'P1 Incidents', p2_incidents: 'P2 Incidents', incident_count: 'Total Incidents', mttr_p1_hours: 'MTTR P1 (hrs)', mttr_p2_hours: 'MTTR P2 (hrs)', uptime_pct: 'Uptime %', downtime_hours: 'Downtime (hrs)' }
             }
         };
 
@@ -2456,16 +2482,24 @@
 
             // Render metric categories
             const categoriesEl = document.getElementById('bdMetricCategories');
+            const fmtMetricVal = (val, unit) => {
+                if (val === null || val === undefined) return '--';
+                if (unit === 'millions_usd') return `$${typeof val === 'number' ? val.toFixed(2) : val}M`;
+                if (unit === 'percent') return `${val}%`;
+                if (unit === 'score_5') return `${val}/5`;
+                if (unit === 'hours') return `${val}h`;
+                if (unit === 'days') return `${val}d`;
+                if (unit === 'ratio') return `${val}x`;
+                if (unit === 'score') return `${val}`;
+                if (unit === 'points') return `${val} pts`;
+                return typeof val === 'number' ? val.toLocaleString() : val;
+            };
             categoriesEl.innerHTML = Object.entries(BD_METRIC_CATEGORIES).map(([catName, cat]) => {
                 const metricsHtml = cat.metrics.map(m => {
                     const mData = qData[m];
-                    if (!mData) return '';
+                    if (!mData || typeof mData !== 'object' || !('value' in mData)) return '';
                     const val = mData.value;
-                    const displayVal = mData.unit === 'millions_usd' ? `$${val}M` :
-                                       mData.unit === 'percent' ? `${val}%` :
-                                       mData.unit === 'score_5' ? `${val}/5` :
-                                       mData.unit === 'hours' ? `${val}h` :
-                                       val.toLocaleString();
+                    const displayVal = fmtMetricVal(val, mData.unit);
                     return `
                         <div class="flex items-center justify-between py-1.5 border-b border-slate-800/50 last:border-0">
                             <div class="flex items-center gap-2">
@@ -2488,11 +2522,25 @@
             // Render dimensional breakdowns
             const dimEl = document.getElementById('bdDimensionalBreakdowns');
             const dimTruth = gt.dimensional_truth || {};
-            const dimConfigs = [
+            const allDimConfigs = [
                 { key: 'revenue_by_region', label: 'Revenue by Region', color: 'emerald', unit: '$M' },
+                { key: 'revenue_by_segment', label: 'Revenue by Segment', color: 'green', unit: '$M' },
+                { key: 'arr_by_region', label: 'ARR by Region', color: 'teal', unit: '$M' },
+                { key: 'arr_by_segment', label: 'ARR by Segment', color: 'sky', unit: '$M' },
                 { key: 'pipeline_by_stage', label: 'Pipeline by Stage', color: 'cyan', unit: '$M' },
+                { key: 'pipeline_by_region', label: 'Pipeline by Region', color: 'blue', unit: '$M' },
+                { key: 'customers_by_segment', label: 'Customers by Segment', color: 'indigo', unit: '' },
                 { key: 'headcount_by_department', label: 'Headcount by Dept', color: 'purple', unit: '' },
+                { key: 'cogs_breakdown', label: 'COGS Breakdown', color: 'rose', unit: '$M' },
+                { key: 'opex_breakdown', label: 'OpEx Breakdown', color: 'amber', unit: '$M' },
+                { key: 'bookings_by_segment', label: 'Bookings by Segment', color: 'orange', unit: '$M' },
+                { key: 'churn_by_segment', label: 'Churn by Segment', color: 'red', unit: '$M' },
+                { key: 'new_logo_revenue_by_region', label: 'New Logo Rev by Region', color: 'lime', unit: '$M' },
             ];
+            // Filter to only dims present in the manifest
+            const dimConfigs = allDimConfigs.filter(d => dimTruth[d.key]);
+            const dimCountEl = document.getElementById('bdDimCount');
+            if (dimCountEl) dimCountEl.textContent = `(${dimConfigs.length} dimensions)`;
 
             dimEl.innerHTML = dimConfigs.map(dim => {
                 const dimData = dimTruth[dim.key] || {};
@@ -2669,7 +2717,16 @@
                         </div>
                         ${catMetrics.map(m => {
                             const statusColor = m.status === 'pass' ? 'emerald' : m.status === 'warn' ? 'amber' : 'red';
-                            const fmtVal = (v, unit) => unit === 'millions_usd' ? `$${v}M` : unit === 'percent' ? `${v}%` : unit === 'score_5' ? `${v}/5` : unit === 'hours' ? `${v}h` : typeof v === 'number' ? v.toLocaleString() : v;
+                            const fmtVal = (v, unit) => {
+                                if (unit === 'millions_usd') return '$' + v + 'M';
+                                if (unit === 'percent') return v + '%';
+                                if (unit === 'score_5') return v + '/5';
+                                if (unit === 'hours') return v + 'h';
+                                if (unit === 'days') return v + 'd';
+                                if (unit === 'ratio') return v + 'x';
+                                if (unit === 'points') return v + ' pts';
+                                return typeof v === 'number' ? v.toLocaleString() : v;
+                            };
                             const fmtDelta = m.delta >= 0 ? `+${fmtVal(m.delta.toFixed(2), m.unit)}` : fmtVal(m.delta.toFixed(2), m.unit);
                             return `
                                 <div class="grid grid-cols-6 gap-1 text-xs px-1 py-1 rounded hover:bg-slate-800/30 border-b border-slate-800/30 last:border-0">
