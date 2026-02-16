@@ -51,10 +51,19 @@ The user interface is a single-page application (SPA) built with Vanilla JavaScr
 **System Design Choices:**
 The backend is a FastAPI application using Uvicorn, leveraging Pydantic for data models. Determinism is a core principle, ensuring identical output for the same seed and scale. The system includes extensive data generation logic (`generators/` directory) for various enterprise and business data types, a `verifier/` for test oracle logic, and `services/` for client interactions.
 
+**Trifecta Architecture (AAM ↔ Farm ↔ DCL):**
+Farm participates in the trifecta via four execution paths:
+-   **Path 2 (AAM → Farm):** `POST /api/farm/manifest-intake` receives single JobManifest; `POST /api/farm/manifest-intake/batch` receives batch of manifests with concurrency control.
+-   **Path 3 (Farm → DCL):** Farm generates data per manifest, pushes to DCL's `/ingest` using the manifest's `pipe_id` as `x-pipe-id` header. Handles DCL 422 `NO_MATCHING_PIPE` rejections as config errors (never retried).
+-   **Path 4 (Farm ↔ DCL):** Verification/recon path — inject ground truth, read back, compare.
+-   Manifest-driven mode uses AAM's `pipe_id` (production path); self-directed mode uses Farm's internal `pipe_id` (dev/demo path).
+
 **Project Structure Highlights:**
--   `src/api/`: Contains route handlers for AOD, AOA, Business Data, and DCL.
+-   `src/api/`: Contains route handlers for AOD, AOA, Business Data, DCL, and Manifest Intake.
+-   `src/api/manifest_intake.py`: Path 2/3 implementation — single + batch manifest intake, DCL push with correlation keys.
 -   `src/generators/`: Houses all data generation logic, including enterprise data, agent fleets, workflows, financial models, and ground truth computation.
 -   `src/models/`: Defines Pydantic data models for various entities.
+-   `src/models/manifest.py`: JobManifest, DCLPushResult, ManifestExecutionResult, BatchManifestRequest/Response models.
 -   `src/verifier/`: Core test oracle logic.
 
 ## External Dependencies

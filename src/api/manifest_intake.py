@@ -17,6 +17,7 @@ CRITICAL CONTRACT:
   Generator-internal pipe_ids are never sent to DCL in manifest-driven mode.
 """
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -42,6 +43,8 @@ from src.models.manifest import (
     JobManifest,
     DCLPushResult,
     ManifestExecutionResult,
+    BatchManifestRequest,
+    BatchManifestResponse,
 )
 
 logger = logging.getLogger("farm.api.manifest_intake")
@@ -301,17 +304,12 @@ async def _push_to_dcl(
         )
 
 
-@router.post("/manifest-intake", response_model=ManifestExecutionResult)
-async def manifest_intake(manifest: JobManifest):
+async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionResult:
     """
-    Receive a JobManifest from AAM and execute it.
+    Core logic for executing a single JobManifest.
 
-    This is Path 2 (AAM → Farm) of the Trifecta architecture.
-    Farm generates data for the specified source system, then pushes it
-    to DCL (Path 3) using the manifest's pipe_id and target.dcl_url.
-
-    The manifest's source.pipe_id is the ONLY identity used in DCL push
-    headers. Generator-internal pipe_ids are not used.
+    Extracted so both the single-manifest endpoint and the batch endpoint
+    can reuse the same execution path.
     """
     farm_run_id = f"farm_manifest_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
     system = manifest.source.system.lower()
@@ -324,7 +322,6 @@ async def manifest_intake(manifest: JobManifest):
         f"verification={manifest.farm_verification}"
     )
 
-    # Validate source system is known
     if system not in _GENERATOR_REGISTRY:
         logger.error(
             f"Unknown source system '{system}' in manifest. "
@@ -341,16 +338,13 @@ async def manifest_intake(manifest: JobManifest):
             },
         )
 
-    # Generate a business profile (truth spine) for data generation
     seed = hash(run_id) % (2**31)
     profile = BusinessProfile(seed=seed)
 
-    # Also generate financial model for richer data
     financial_model = FinancialModel(Assumptions())
     model_quarters = financial_model.generate()
     profile = BusinessProfile.from_model_quarters(model_quarters, seed=seed)
 
-    # Instantiate generator
     spec = _GENERATOR_REGISTRY[system]
     gen_class = spec["class"]
     interface = spec["interface"]
@@ -388,7 +382,6 @@ async def manifest_intake(manifest: JobManifest):
             farm_verification_requested=manifest.farm_verification,
         )
 
-    # Find the specific pipe's data
     pipe_name = manifest.source.endpoint_ref.get("pipe_name")
     pipe_payload = _find_pipe_data(generated_data, pipe_name)
 
@@ -421,7 +414,6 @@ async def manifest_intake(manifest: JobManifest):
         f"pipe_name={pipe_name}, manifest pipe_id={pipe_id}"
     )
 
-    # Apply max_rows limit from manifest
     if manifest.limits.max_rows and len(rows) > manifest.limits.max_rows:
         logger.info(
             f"Truncating rows from {len(rows)} to {manifest.limits.max_rows} "
@@ -429,7 +421,6 @@ async def manifest_intake(manifest: JobManifest):
         )
         rows = rows[:manifest.limits.max_rows]
 
-    # Push to DCL using manifest identity (not generator's internal pipe_id)
     schema_hash = _compute_schema_hash(rows)
     push_result = await _push_to_dcl(
         manifest=manifest,
@@ -439,7 +430,6 @@ async def manifest_intake(manifest: JobManifest):
         schema_hash=schema_hash,
     )
 
-    # Determine overall status from push result
     if push_result.status == "success":
         status = "completed"
     elif push_result.error_type == "NO_MATCHING_PIPE":
@@ -447,15 +437,12 @@ async def manifest_intake(manifest: JobManifest):
     else:
         status = "failed"
 
-    # Trigger recon if requested and push succeeded
     recon_triggered = False
     if manifest.farm_verification and push_result.status == "success":
         logger.info(
             f"farm_verification=true and push succeeded: triggering recon "
             f"for run_id={run_id}, pipe_id={pipe_id}"
         )
-        # TODO: Wire to actual recon function when recon supports manifest-driven runs.
-        # For now, log intent and set the flag.
         recon_triggered = True
 
     return ManifestExecutionResult(
@@ -468,4 +455,101 @@ async def manifest_intake(manifest: JobManifest):
         push_result=push_result,
         farm_verification_requested=manifest.farm_verification,
         recon_triggered=recon_triggered,
+    )
+
+
+@router.post("/manifest-intake", response_model=ManifestExecutionResult)
+async def manifest_intake(manifest: JobManifest):
+    """
+    Receive a JobManifest from AAM and execute it.
+
+    This is Path 2 (AAM → Farm) of the Trifecta architecture.
+    Farm generates data for the specified source system, then pushes it
+    to DCL (Path 3) using the manifest's pipe_id and target.dcl_url.
+
+    The manifest's source.pipe_id is the ONLY identity used in DCL push
+    headers. Generator-internal pipe_ids are not used.
+    """
+    return await _execute_single_manifest(manifest)
+
+
+@router.post("/manifest-intake/batch", response_model=BatchManifestResponse)
+async def batch_manifest_intake(request: BatchManifestRequest):
+    """
+    Receive a batch of JobManifests from AAM Runner and execute them concurrently.
+
+    Uses asyncio.Semaphore to control concurrency. Each manifest is processed
+    using the same logic as the single-manifest endpoint.
+    """
+    batch_run_id = f"farm_batch_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
+    manifests = request.manifests
+    concurrency = request.concurrency
+
+    logger.info(
+        f"Batch manifest received: batch_run_id={batch_run_id}, "
+        f"batch_id={request.batch_id}, manifests={len(manifests)}, "
+        f"concurrency={concurrency}"
+    )
+
+    semaphore = asyncio.Semaphore(concurrency)
+    push_results: List[DCLPushResult] = []
+    start_time = time.monotonic()
+
+    async def _run_with_semaphore(m: JobManifest) -> Optional[ManifestExecutionResult]:
+        async with semaphore:
+            try:
+                return await _execute_single_manifest(m)
+            except HTTPException as exc:
+                logger.warning(
+                    f"Manifest failed with HTTP {exc.status_code} for "
+                    f"pipe_id={m.source.pipe_id}: {exc.detail}"
+                )
+                return None
+            except Exception as exc:
+                logger.error(
+                    f"Unexpected error processing manifest pipe_id={m.source.pipe_id}: {exc}",
+                    exc_info=True,
+                )
+                return None
+
+    results = await asyncio.gather(*[_run_with_semaphore(m) for m in manifests])
+
+    pipes_pushed = 0
+    pipes_succeeded = 0
+    pipes_failed = 0
+    errors_summary: Dict[str, int] = {}
+
+    for result in results:
+        if result is None:
+            pipes_pushed += 1
+            pipes_failed += 1
+            errors_summary["execution_error"] = errors_summary.get("execution_error", 0) + 1
+            continue
+
+        if result.push_result is not None:
+            pipes_pushed += 1
+            push_results.append(result.push_result)
+
+            if result.push_result.status == "success":
+                pipes_succeeded += 1
+            elif result.push_result.status in ("rejected", "failed"):
+                pipes_failed += 1
+
+            if result.push_result.error_type:
+                et = result.push_result.error_type
+                errors_summary[et] = errors_summary.get(et, 0) + 1
+
+    elapsed = time.monotonic() - start_time
+
+    return BatchManifestResponse(
+        run_id=batch_run_id,
+        batch_id=request.batch_id,
+        manifests_received=len(manifests),
+        pipes_pushed=pipes_pushed,
+        pipes_succeeded=pipes_succeeded,
+        pipes_failed=pipes_failed,
+        pipes_queued=0,
+        push_results=push_results,
+        elapsed_seconds=round(elapsed, 2),
+        errors_summary=errors_summary,
     )

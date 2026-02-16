@@ -140,3 +140,29 @@ class ManifestExecutionResult(BaseModel):
     # Verification
     farm_verification_requested: bool = Field(default=False)
     recon_triggered: bool = Field(default=False)
+
+
+class BatchManifestRequest(BaseModel):
+    """Batch of manifests dispatched by AAM Runner."""
+    manifests: List[JobManifest]
+    batch_id: Optional[str] = Field(default=None, description="AAM batch correlation ID")
+    concurrency: int = Field(default=5, ge=1, le=20, description="Max concurrent pushes")
+
+
+class BatchManifestResponse(BaseModel):
+    """
+    Aggregate result of a batch manifest execution.
+
+    This is the Path 3 response — manifest-driven execution.
+    """
+    mode: str = Field(default="manifest_driven")
+    run_id: str = Field(..., description="Farm's batch run ID")
+    batch_id: Optional[str] = Field(default=None, description="AAM's batch correlation ID")
+    manifests_received: int
+    pipes_pushed: int = Field(default=0, description="Pipes where push was attempted")
+    pipes_succeeded: int = Field(default=0)
+    pipes_failed: int = Field(default=0)
+    pipes_queued: int = Field(default=0, description="Pipes still waiting (if async)")
+    push_results: List[DCLPushResult] = Field(default_factory=list)
+    elapsed_seconds: float = Field(default=0.0)
+    errors_summary: Dict[str, int] = Field(default_factory=dict, description="Error type -> count")
