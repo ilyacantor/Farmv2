@@ -856,6 +856,10 @@
                             <input type="checkbox" id="bdPushDcl" class="w-3.5 h-3.5 rounded">
                             Push to DCL on generate
                         </label>
+                        <span id="dclConnIndicator" class="flex items-center gap-1.5 text-xs text-slate-500 ml-2">
+                            <span id="dclConnDot" class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>
+                            <span id="dclConnLabel">checking...</span>
+                        </span>
                     </div>
                 </div>
 
@@ -2315,6 +2319,43 @@
                 } else {
                     btn.className = 'group relative p-4 rounded-xl border-2 border-slate-700 hover:border-slate-600 bg-slate-900/40 transition-all text-left';
                 }
+            }
+        }
+
+        async function checkDclConnectivity() {
+            const dot = document.getElementById('dclConnDot');
+            const label = document.getElementById('dclConnLabel');
+            const checkbox = document.getElementById('bdPushDcl');
+            try {
+                const resp = await fetch('/api/business-data/dcl-status');
+                const data = await resp.json();
+                if (data.connected) {
+                    dot.className = 'w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-sm shadow-emerald-400/50';
+                    label.textContent = 'DCL connected';
+                    label.className = '';
+                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-emerald-400 ml-2';
+                    checkbox.disabled = false;
+                } else if (data.status === 'not_configured') {
+                    dot.className = 'w-2 h-2 rounded-full bg-slate-500 inline-block';
+                    label.textContent = 'DCL not configured';
+                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-slate-500 ml-2';
+                    checkbox.disabled = true;
+                    checkbox.checked = false;
+                } else if (data.status === 'auth_error') {
+                    dot.className = 'w-2 h-2 rounded-full bg-amber-400 inline-block shadow-sm shadow-amber-400/50';
+                    label.textContent = data.message || 'DCL auth required';
+                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-amber-400 ml-2';
+                    checkbox.disabled = false;
+                } else {
+                    dot.className = 'w-2 h-2 rounded-full bg-red-400 inline-block shadow-sm shadow-red-400/50';
+                    label.textContent = data.message || 'DCL unreachable';
+                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-red-400 ml-2';
+                    checkbox.disabled = false;
+                }
+            } catch (e) {
+                dot.className = 'w-2 h-2 rounded-full bg-amber-400 inline-block';
+                label.textContent = 'status unknown';
+                document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-amber-400 ml-2';
             }
         }
 
@@ -6664,6 +6705,7 @@
             await loadAllDataSafely();
             switchMainTab('console');
             addLogEntry('Farm Console loaded', 'info');
+            checkDclConnectivity();
             
             // Ensure reconciliations are rendered after data loads
             const container = document.getElementById('reconciliationsList');
