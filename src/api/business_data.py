@@ -20,6 +20,7 @@ from src.generators.business_data_orchestrator import (
     TIER_2_GENERATORS,
     TIER_3_GENERATORS,
 )
+from src.farm.db import save_ground_truth_manifest, load_ground_truth_manifest, list_ground_truth_runs
 
 logger = logging.getLogger("farm.api.business_data")
 
@@ -93,7 +94,7 @@ async def generate_business_data(request: GenerateRequest):
 
     # Store run data
     run_id = summary["run_id"]
-    _store_run(run_id, orchestrator)
+    await _store_run(run_id, orchestrator)
 
     # Collect any generation errors (generators that threw exceptions)
     generation_errors = {}
@@ -132,10 +133,17 @@ async def get_ground_truth(run_id: str):
     """
     run_data = _run_store.get(run_id)
     if not run_data:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Run {run_id} not found. Available runs: {list(_run_store.keys())}",
-        )
+        try:
+            db_data = await load_ground_truth_manifest(run_id)
+        except Exception as e:
+            logger.warning(f"DB lookup failed for run {run_id}: {e}")
+            db_data = None
+        if not db_data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Run {run_id} not found in memory or database",
+            )
+        return JSONResponse(content=db_data["manifest"])
 
     manifest = run_data.get("manifest")
     if not manifest:
@@ -157,9 +165,16 @@ async def get_ground_truth_metric(
     """
     run_data = _run_store.get(run_id)
     if not run_data:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
-
-    manifest = run_data.get("manifest", {})
+        try:
+            db_data = await load_ground_truth_manifest(run_id)
+        except Exception as e:
+            logger.warning(f"DB lookup failed for run {run_id}: {e}")
+            db_data = None
+        if not db_data:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found in memory or database")
+        manifest = db_data["manifest"]
+    else:
+        manifest = run_data.get("manifest", {})
     ground_truth = manifest.get("ground_truth", {})
 
     if quarter:
@@ -194,9 +209,16 @@ async def get_dimensional_truth(run_id: str, dimension: str):
     """
     run_data = _run_store.get(run_id)
     if not run_data:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
-
-    manifest = run_data.get("manifest", {})
+        try:
+            db_data = await load_ground_truth_manifest(run_id)
+        except Exception as e:
+            logger.warning(f"DB lookup failed for run {run_id}: {e}")
+            db_data = None
+        if not db_data:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found in memory or database")
+        manifest = db_data["manifest"]
+    else:
+        manifest = run_data.get("manifest", {})
     dimensional = manifest.get("ground_truth", {}).get("dimensional_truth", {})
 
     if dimension not in dimensional:
@@ -217,9 +239,16 @@ async def get_expected_conflicts(run_id: str):
     """
     run_data = _run_store.get(run_id)
     if not run_data:
-        raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
-
-    manifest = run_data.get("manifest", {})
+        try:
+            db_data = await load_ground_truth_manifest(run_id)
+        except Exception as e:
+            logger.warning(f"DB lookup failed for run {run_id}: {e}")
+            db_data = None
+        if not db_data:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found in memory or database")
+        manifest = db_data["manifest"]
+    else:
+        manifest = run_data.get("manifest", {})
     conflicts = manifest.get("ground_truth", {}).get("expected_conflicts", [])
 
     return JSONResponse(content={"conflicts": conflicts, "count": len(conflicts)})
@@ -258,8 +287,9 @@ async def get_pipe_payload(run_id: str, pipe_id: str):
 
 @router.get("/runs")
 async def list_runs():
-    """List all stored generation runs."""
+    """List all stored generation runs, merging in-memory and DB."""
     runs = []
+    seen_ids = set()
     for run_id, data in _run_store.items():
         manifest = data.get("manifest", {})
         runs.append({
@@ -268,6 +298,21 @@ async def list_runs():
             "source_systems": manifest.get("source_systems", []),
             "record_counts": manifest.get("record_counts", {}),
         })
+        seen_ids.add(run_id)
+
+    try:
+        db_runs = await list_ground_truth_runs()
+        for db_run in db_runs:
+            if db_run["run_id"] not in seen_ids:
+                runs.append({
+                    "run_id": db_run["run_id"],
+                    "generated_at": db_run["created_at"],
+                    "source_systems": db_run["source_systems"],
+                    "record_counts": db_run["record_counts"],
+                })
+    except Exception as e:
+        logger.warning(f"Could not load runs from DB: {e}")
+
     return JSONResponse(content={"runs": runs})
 
 
@@ -472,13 +517,27 @@ async def dcl_status():
         })
 
 
-def _store_run(run_id: str, orchestrator: BusinessDataOrchestrator):
-    """Store run data for later retrieval. Evicts oldest if over limit."""
+async def _store_run(run_id: str, orchestrator: BusinessDataOrchestrator):
+    """Store run data in memory and persist manifest to DB."""
+    manifest = orchestrator.get_manifest()
     _run_store[run_id] = {
         "orchestrator": orchestrator,
-        "manifest": orchestrator.get_manifest(),
+        "manifest": manifest,
     }
-    # Evict oldest runs if over limit
     while len(_run_store) > _MAX_STORED_RUNS:
         oldest = next(iter(_run_store))
         del _run_store[oldest]
+
+    if manifest:
+        try:
+            await save_ground_truth_manifest(
+                run_id=run_id,
+                seed=orchestrator.seed,
+                created_at=manifest.get("generated_at", ""),
+                manifest=manifest,
+                source_systems=manifest.get("source_systems", []),
+                record_counts=manifest.get("record_counts", {}),
+            )
+            logger.info(f"Ground truth manifest persisted to DB for run {run_id}")
+        except Exception as e:
+            logger.error(f"Failed to persist ground truth manifest for run {run_id}: {e}")

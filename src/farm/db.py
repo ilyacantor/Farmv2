@@ -552,6 +552,19 @@ class DatabaseManager:
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_sim_agent_runs_started ON sim_agent_runs(started_at DESC)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_sim_agent_approvals_agent ON sim_agent_approvals(agent_id)")
                 
+                self._log("Creating ground_truth_manifests table...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS ground_truth_manifests (
+                        run_id TEXT PRIMARY KEY,
+                        seed INTEGER NOT NULL,
+                        created_at TEXT NOT NULL,
+                        manifest_json JSONB NOT NULL,
+                        source_systems JSONB NOT NULL DEFAULT '[]',
+                        record_counts JSONB NOT NULL DEFAULT '{}'
+                    )
+                """)
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_gt_manifests_created ON ground_truth_manifests(created_at DESC)")
+                
                 self._schema_initialized = True
                 self._log("Schema initialized")
     
@@ -711,3 +724,63 @@ async def insert_single_row(
     query = f"INSERT INTO {table} ({col_str}) VALUES ({placeholders})"
     
     await execute_with_retry(query, *values, statement_timeout_seconds=statement_timeout_seconds)
+
+
+async def save_ground_truth_manifest(
+    run_id: str,
+    seed: int,
+    created_at: str,
+    manifest: dict,
+    source_systems: list,
+    record_counts: dict,
+) -> None:
+    """Persist a ground truth manifest for later reconciliation."""
+    import json
+    async with connection() as conn:
+        await conn.execute("""
+            INSERT INTO ground_truth_manifests (run_id, seed, created_at, manifest_json, source_systems, record_counts)
+            VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb)
+            ON CONFLICT (run_id) DO UPDATE SET
+                manifest_json = EXCLUDED.manifest_json,
+                source_systems = EXCLUDED.source_systems,
+                record_counts = EXCLUDED.record_counts
+        """, run_id, seed, created_at, json.dumps(manifest), json.dumps(source_systems), json.dumps(record_counts))
+
+
+async def load_ground_truth_manifest(run_id: str) -> dict | None:
+    """Load a persisted ground truth manifest by run_id. Returns None if not found."""
+    import json
+    async with connection() as conn:
+        row = await conn.fetchrow(
+            "SELECT manifest_json, seed, created_at, source_systems, record_counts FROM ground_truth_manifests WHERE run_id = $1",
+            run_id,
+        )
+        if not row:
+            return None
+        return {
+            "manifest": json.loads(row["manifest_json"]) if isinstance(row["manifest_json"], str) else row["manifest_json"],
+            "seed": row["seed"],
+            "created_at": row["created_at"],
+            "source_systems": json.loads(row["source_systems"]) if isinstance(row["source_systems"], str) else row["source_systems"],
+            "record_counts": json.loads(row["record_counts"]) if isinstance(row["record_counts"], str) else row["record_counts"],
+        }
+
+
+async def list_ground_truth_runs(limit: int = 50) -> list[dict]:
+    """List recent ground truth manifest runs."""
+    import json
+    async with connection() as conn:
+        rows = await conn.fetch(
+            "SELECT run_id, seed, created_at, source_systems, record_counts FROM ground_truth_manifests ORDER BY created_at DESC LIMIT $1",
+            limit,
+        )
+        return [
+            {
+                "run_id": r["run_id"],
+                "seed": r["seed"],
+                "created_at": r["created_at"],
+                "source_systems": json.loads(r["source_systems"]) if isinstance(r["source_systems"], str) else r["source_systems"],
+                "record_counts": json.loads(r["record_counts"]) if isinstance(r["record_counts"], str) else r["record_counts"],
+            }
+            for r in rows
+        ]
