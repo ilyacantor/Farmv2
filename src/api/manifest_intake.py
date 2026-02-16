@@ -51,11 +51,6 @@ logger = logging.getLogger("farm.api.manifest_intake")
 
 router = APIRouter(prefix="/api/farm", tags=["manifest-intake"])
 
-# System name → generator factory + interface type
-# Interface types match the orchestrator's pattern:
-#   "generate_profile": generate(profile, run_id, run_timestamp)
-#   "init_profile":     __init__(profile, seed), generate(run_id, run_timestamp)
-#   "generate_profile_only": generate(profile)
 _GENERATOR_REGISTRY = {
     "salesforce": {"class": SalesforceGenerator, "interface": "generate_profile"},
     "netsuite": {"class": NetSuiteGenerator, "interface": "init_profile"},
@@ -66,6 +61,55 @@ _GENERATOR_REGISTRY = {
     "datadog": {"class": DatadogGenerator, "interface": "generate_profile_only"},
     "aws_cost_explorer": {"class": AWSCostGenerator, "interface": "generate_profile_only"},
 }
+
+_CATEGORY_TO_GENERATOR = {
+    "crm": "salesforce",
+    "erp": "netsuite",
+    "billing": "chargebee",
+    "hr": "workday",
+    "support": "zendesk",
+    "devops": "jira",
+    "observability": "datadog",
+    "infrastructure": "aws_cost_explorer",
+    "cloud": "aws_cost_explorer",
+    "cost": "aws_cost_explorer",
+}
+
+_FALLBACK_GENERATOR = "salesforce"
+
+
+def _resolve_generator_key(manifest: JobManifest) -> str:
+    """
+    Resolve which generator archetype to use for simulation.
+
+    Resolution order:
+      1. Direct system match (e.g. system="salesforce" → salesforce generator)
+      2. Category-based routing (e.g. category="crm" → salesforce generator)
+      3. Fallback to salesforce (generic enterprise data)
+
+    In production, this function won't be called — Farm will use
+    adapter + endpoint_ref + credentials_ref to connect to the real API.
+    """
+    system = manifest.source.system.lower().strip()
+    category = (manifest.source.category or "").lower().strip()
+
+    if system in _GENERATOR_REGISTRY:
+        return system
+
+    if category and category in _CATEGORY_TO_GENERATOR:
+        resolved = _CATEGORY_TO_GENERATOR[category]
+        logger.info(
+            f"Category routing: system='{manifest.source.system}' not in registry, "
+            f"category='{category}' → using '{resolved}' generator archetype"
+        )
+        return resolved
+
+    logger.warning(
+        f"Fallback routing: system='{manifest.source.system}', "
+        f"category='{category or 'none'}' — no match found, "
+        f"using '{_FALLBACK_GENERATOR}' generator as generic archetype"
+    )
+    return _FALLBACK_GENERATOR
 
 
 def _compute_schema_hash(rows: List[Dict]) -> str:
@@ -312,31 +356,19 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
     can reuse the same execution path.
     """
     farm_run_id = f"farm_manifest_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-    system = manifest.source.system.lower()
+    system = manifest.source.system.lower().strip()
+    category = (manifest.source.category or "").lower().strip()
     pipe_id = manifest.source.pipe_id
     run_id = manifest.run_id
 
+    generator_key = _resolve_generator_key(manifest)
+
     logger.info(
         f"Manifest received: run_id={run_id}, pipe_id={pipe_id}, "
-        f"system={system}, farm_run_id={farm_run_id}, "
+        f"system={system}, category={category or 'none'}, "
+        f"generator={generator_key}, farm_run_id={farm_run_id}, "
         f"verification={manifest.farm_verification}"
     )
-
-    if system not in _GENERATOR_REGISTRY:
-        logger.error(
-            f"Unknown source system '{system}' in manifest. "
-            f"Known systems: {list(_GENERATOR_REGISTRY.keys())}"
-        )
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "UNKNOWN_SOURCE_SYSTEM",
-                "system": system,
-                "available_systems": list(_GENERATOR_REGISTRY.keys()),
-                "run_id": run_id,
-                "farm_run_id": farm_run_id,
-            },
-        )
 
     seed = hash(run_id) % (2**31)
     profile = BusinessProfile(seed=seed)
@@ -345,7 +377,7 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
     model_quarters = financial_model.generate()
     profile = BusinessProfile.from_model_quarters(model_quarters, seed=seed)
 
-    spec = _GENERATOR_REGISTRY[system]
+    spec = _GENERATOR_REGISTRY[generator_key]
     gen_class = spec["class"]
     interface = spec["interface"]
     run_timestamp = manifest.provenance.get(
@@ -369,7 +401,8 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
             generated_data = generator.generate(profile, farm_run_id, run_timestamp)
     except Exception as e:
         logger.error(
-            f"Data generation failed for system={system}, run_id={run_id}: {e}",
+            f"Data generation failed for system={system} (generator={generator_key}), "
+            f"run_id={run_id}: {e}",
             exc_info=True,
         )
         return ManifestExecutionResult(
@@ -390,28 +423,32 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
             k for k, v in generated_data.items()
             if isinstance(v, dict) and "data" in v
         ]
-        logger.error(
-            f"No matching pipe data found for pipe_name={pipe_name} "
-            f"in system={system}. Available: {available_pipes}"
+        logger.warning(
+            f"No pipe_name match for pipe_name={pipe_name} in generator={generator_key}. "
+            f"Available: {available_pipes}. Using first available pipe."
         )
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "PIPE_NOT_FOUND_IN_GENERATOR",
-                "system": system,
-                "pipe_name": pipe_name,
-                "available_pipes": available_pipes,
-                "run_id": run_id,
-                "farm_run_id": farm_run_id,
-            },
-        )
+        pipe_payload = _find_pipe_data(generated_data, None)
+        if pipe_payload is None:
+            logger.error(
+                f"Generator {generator_key} produced no usable data for "
+                f"system={system}, run_id={run_id}"
+            )
+            return ManifestExecutionResult(
+                run_id=run_id,
+                pipe_id=pipe_id,
+                farm_run_id=farm_run_id,
+                status="failed",
+                source_system=system,
+                rows_generated=0,
+                farm_verification_requested=manifest.farm_verification,
+            )
 
     rows = pipe_payload.get("data", [])
     rows_generated = len(rows)
 
     logger.info(
-        f"Generated {rows_generated} rows for system={system}, "
-        f"pipe_name={pipe_name}, manifest pipe_id={pipe_id}"
+        f"Generated {rows_generated} rows for system={system} "
+        f"(generator={generator_key}), manifest pipe_id={pipe_id}"
     )
 
     if manifest.limits.max_rows and len(rows) > manifest.limits.max_rows:

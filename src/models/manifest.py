@@ -21,7 +21,12 @@ from pydantic import BaseModel, Field
 class SourceSpec(BaseModel):
     """What to extract and from where."""
     pipe_id: str = Field(..., description="THE canonical pipe ID — used as DCL join key")
-    system: str = Field(..., description="Source vendor: salesforce, netsuite, chargebee, etc.")
+    system: str = Field(..., description="Real vendor name: zoom, docusign, slack, etc. Stays truthful for IRL.")
+    category: Optional[str] = Field(
+        default=None,
+        description="Pipe category from AAM inference: crm|erp|billing|hr|support|devops|observability|infrastructure. "
+                    "Farm uses this for generator routing in simulation mode.",
+    )
     adapter: str = Field(
         default="rest_api",
         description="Transport: rest_api|jdbc|kafka|ipaas|webhook",

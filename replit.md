@@ -57,6 +57,7 @@ Farm participates in the trifecta via four execution paths:
 -   **Path 3 (Farm → DCL):** Farm generates data per manifest, pushes to DCL's `/ingest` using the manifest's `pipe_id` as `x-pipe-id` header. Handles DCL 422 `NO_MATCHING_PIPE` rejections as config errors (never retried).
 -   **Path 4 (Farm ↔ DCL):** Verification/recon path — inject ground truth, read back, compare.
 -   Manifest-driven mode uses AAM's `pipe_id` (production path); self-directed mode uses Farm's internal `pipe_id` (dev/demo path).
+-   **Category-based generator routing:** `source.system` stays truthful (real vendor name). `source.category` (crm, erp, billing, hr, support, devops, observability, infrastructure) routes to the appropriate generator archetype in simulation mode. Resolution: direct system match → category routing → fallback. When real adapters arrive, category routing is bypassed.
 
 **Project Structure Highlights:**
 -   `src/api/`: Contains route handlers for AOD, AOA, Business Data, DCL, and Manifest Intake.
