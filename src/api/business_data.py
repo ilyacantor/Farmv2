@@ -47,6 +47,7 @@ class GenerateRequest(BaseModel):
 class GenerateResponse(BaseModel):
     """Response from business data generation."""
     run_id: str
+    snapshot_name: str
     status: str
     manifest_version: str = "2.0"
     active_systems: list
@@ -117,6 +118,7 @@ async def generate_business_data(request: GenerateRequest):
 
     return GenerateResponse(
         run_id=run_id,
+        snapshot_name=summary.get("snapshot_name", f"cloudedge-{run_id[-4:]}"),
         status="completed",
         manifest_version=manifest.get("manifest_version", "1.0"),
         active_systems=summary["active_systems"],

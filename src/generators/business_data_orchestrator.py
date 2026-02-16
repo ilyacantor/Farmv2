@@ -99,6 +99,12 @@ class BusinessDataOrchestrator:
         self.push_results: List[Dict[str, Any]] = []
         self.run_id: Optional[str] = None
 
+    def generate_snapshot_name(self) -> str:
+        """Generate a deterministic cloudedge-xxxx snapshot name from the seed."""
+        import hashlib
+        h = hashlib.sha256(str(self.seed).encode()).hexdigest()[:4]
+        return f"cloudedge-{h}"
+
     def generate_run_id(self) -> str:
         """Generate a unique run ID."""
         ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
@@ -113,6 +119,7 @@ class BusinessDataOrchestrator:
         """
         run_id = self.generate_run_id()
         self.run_id = run_id
+        self.snapshot_name = self.generate_snapshot_name()
         run_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
         logger.info(f"Starting business data generation run: {run_id}")
@@ -207,6 +214,7 @@ class BusinessDataOrchestrator:
         # Build summary
         summary = {
             "run_id": run_id,
+            "snapshot_name": self.snapshot_name,
             "run_timestamp": run_timestamp,
             "profile_seed": self.seed,
             "active_systems": self.active_systems,
@@ -255,7 +263,7 @@ class BusinessDataOrchestrator:
 
         dcl_run_id = str(uuid.uuid4())
         run_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        snapshot_name = f"farm_v2_{dcl_run_id[:8]}"
+        snapshot_name = getattr(self, 'snapshot_name', None) or f"cloudedge-{dcl_run_id[:4]}"
         tenant_id = os.getenv("DCL_TENANT_ID", "aos-demo")
 
         base_headers = {

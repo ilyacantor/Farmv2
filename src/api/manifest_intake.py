@@ -188,7 +188,7 @@ async def _push_to_dcl(
     run_id = manifest.run_id
     dcl_url = manifest.target.dcl_url.rstrip("/")
     tenant_id = manifest.target.tenant_id or "aos-demo"
-    snapshot_name = manifest.target.snapshot_name or f"farm_manifest_{farm_run_id[:8]}"
+    snapshot_name = manifest.target.snapshot_name or f"cloudedge-{farm_run_id[:4]}"
     run_timestamp = manifest.provenance.get(
         "run_timestamp", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     )

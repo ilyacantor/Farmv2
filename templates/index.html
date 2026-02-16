@@ -874,7 +874,7 @@
                             </div>
                             <div>
                                 <h2 class="text-lg font-semibold text-white">Generation Summary</h2>
-                                <p class="text-slate-400 text-sm">Run <span id="bdRunId" class="text-cyan-400 font-mono">--</span></p>
+                                <p class="text-slate-400 text-sm">Run <span id="bdRunId" class="text-cyan-400 font-mono">--</span> <span class="text-slate-600 mx-1">|</span> Snapshot <span id="bdSnapshotName" class="text-emerald-400 font-mono">--</span></p>
                             </div>
                         </div>
 
@@ -2440,6 +2440,7 @@
             const { result, profile } = bdCurrentRun;
 
             document.getElementById('bdRunId').textContent = bdCurrentRun.run_id;
+            document.getElementById('bdSnapshotName').textContent = bdCurrentRun.result.snapshot_name || '--';
 
             // Source system cards
             const systemInfo = {
