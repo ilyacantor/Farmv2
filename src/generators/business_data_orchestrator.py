@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import time
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -59,10 +60,19 @@ class BusinessDataOrchestrator:
         num_quarters: int = 12,
     ):
         self.seed = seed
-        self.dcl_ingest_url = dcl_ingest_url or os.getenv(
-            "DCL_INGEST_URL", ""
+        dcl_base = dcl_ingest_url or os.getenv("DCL_INGEST_URL", "")
+        # Strip trailing slash so we can append paths cleanly
+        self.dcl_base_url = dcl_base.rstrip("/") if dcl_base else ""
+        # If the URL already includes the ingest path, use it as-is
+        if self.dcl_base_url.endswith("/api/dcl/ingest"):
+            self.dcl_ingest_url = self.dcl_base_url
+        else:
+            self.dcl_ingest_url = (
+                f"{self.dcl_base_url}/api/dcl/ingest" if self.dcl_base_url else ""
+            )
+        self.dcl_api_key = dcl_api_key or os.getenv(
+            "DCL_INGEST_KEY", os.getenv("DCL_API_KEY", "")
         )
-        self.dcl_api_key = dcl_api_key or os.getenv("DCL_API_KEY", "")
         self.base_revenue = base_revenue
         self.growth_rate = growth_rate
         self.num_quarters = num_quarters
@@ -87,6 +97,7 @@ class BusinessDataOrchestrator:
         self.generated_data: Dict[str, Dict[str, Any]] = {}
         self.manifest: Optional[Dict[str, Any]] = None
         self.push_results: List[Dict[str, Any]] = []
+        self.run_id: Optional[str] = None
 
     def generate_run_id(self) -> str:
         """Generate a unique run ID."""
@@ -101,6 +112,7 @@ class BusinessDataOrchestrator:
             Summary dict with run_id, record counts, manifest, and push results.
         """
         run_id = self.generate_run_id()
+        self.run_id = run_id
         run_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
 
         logger.info(f"Starting business data generation run: {run_id}")
@@ -213,7 +225,13 @@ class BusinessDataOrchestrator:
 
     async def push_to_dcl(self) -> List[Dict[str, Any]]:
         """
-        Push all generated data to DCL via POST /api/dcl/ingest.
+        Push all generated data to DCL via POST {DCL_INGEST_URL}/api/dcl/ingest.
+
+        Follows the DCL ingest contract:
+        - One UUID x-run-id shared across all 20 pipe pushes
+        - x-pipe-id header per push identifying the pipe
+        - Flat body: source_system, tenant_id, snapshot_name, run_timestamp,
+          schema_version, row_count, rows
 
         Returns:
             List of push results per pipe (status, pipe_id, response).
@@ -226,13 +244,26 @@ class BusinessDataOrchestrator:
             logger.warning("No generated data to push")
             return [{"status": "skipped", "reason": "no_data"}]
 
-        results = []
-        headers = {
-            "Content-Type": "application/json",
-            "x-api-key": self.dcl_api_key,
-        }
+        # Single UUID shared across all 20 pipe pushes in this generation run
+        dcl_run_id = str(uuid.uuid4())
+        run_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        snapshot_name = f"farm_v2_{dcl_run_id[:8]}"
+        tenant_id = os.getenv("DCL_TENANT_ID", "aos-demo")
 
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        results = []
+        base_headers = {
+            "Content-Type": "application/json",
+            "x-run-id": dcl_run_id,
+        }
+        if self.dcl_api_key:
+            base_headers["x-api-key"] = self.dcl_api_key
+
+        logger.info(
+            f"Starting DCL push: run_id={dcl_run_id}, "
+            f"snapshot={snapshot_name}, url={self.dcl_ingest_url}"
+        )
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
             for system_name, pipes in self.generated_data.items():
                 for pipe_name, payload in pipes.items():
                     if pipe_name.startswith("_"):
@@ -240,48 +271,74 @@ class BusinessDataOrchestrator:
                     if not isinstance(payload, dict) or "data" not in payload:
                         continue
 
-                    pipe_id = payload.get("meta", {}).get(
-                        "pipe_id", f"{system_name}_{pipe_name}"
-                    )
-                    run_id = payload.get("meta", {}).get("run_id", "unknown")
+                    meta = payload.get("meta", {})
+                    pipe_id = meta.get("pipe_id", f"{system_name}_{pipe_name}")
+                    source_system = meta.get("source_system", system_name)
+                    rows = payload.get("data", [])
+
+                    # Build DCL contract body
+                    dcl_body = {
+                        "source_system": source_system,
+                        "tenant_id": tenant_id,
+                        "snapshot_name": snapshot_name,
+                        "run_timestamp": run_timestamp,
+                        "schema_version": meta.get("schema_version", "1.0"),
+                        "row_count": len(rows),
+                        "rows": rows,
+                    }
 
                     push_headers = {
-                        **headers,
-                        "x-run-id": run_id,
+                        **base_headers,
+                        "x-pipe-id": pipe_id,
                     }
 
                     try:
                         logger.info(
-                            f"Pushing {pipe_id}: "
-                            f"{payload['meta'].get('record_count', '?')} records"
+                            f"Pushing {pipe_id}: {len(rows)} records "
+                            f"({source_system})"
                         )
                         response = await client.post(
                             self.dcl_ingest_url,
-                            json=payload,
+                            json=dcl_body,
                             headers=push_headers,
+                            timeout=30.0,
                         )
+
                         result = {
                             "pipe_id": pipe_id,
-                            "source_system": system_name,
+                            "source_system": source_system,
                             "status_code": response.status_code,
-                            "success": 200 <= response.status_code < 300,
-                            "record_count": payload["meta"].get("record_count", 0),
+                            "success": response.status_code == 200,
+                            "row_count": len(rows),
                         }
-                        if not result["success"]:
+
+                        if response.status_code == 200:
+                            resp_data = response.json()
+                            result["rows_accepted"] = resp_data.get(
+                                "rows_accepted", len(rows)
+                            )
+                            result["schema_drift"] = resp_data.get(
+                                "schema_drift", False
+                            )
+                            if resp_data.get("drift_fields"):
+                                result["drift_fields"] = resp_data["drift_fields"]
+                            logger.info(
+                                f"  ✓ {pipe_id}: "
+                                f"{result['rows_accepted']} rows accepted"
+                            )
+                        else:
                             result["error"] = response.text[:500]
                             logger.error(
                                 f"DCL push failed for {pipe_id}: "
                                 f"{response.status_code} - {response.text[:200]}"
                             )
-                        else:
-                            logger.info(f"DCL push OK for {pipe_id}")
 
                         results.append(result)
 
                     except httpx.TimeoutException:
                         results.append({
                             "pipe_id": pipe_id,
-                            "source_system": system_name,
+                            "source_system": source_system,
                             "success": False,
                             "error": "timeout",
                         })
@@ -289,16 +346,27 @@ class BusinessDataOrchestrator:
                     except Exception as e:
                         results.append({
                             "pipe_id": pipe_id,
-                            "source_system": system_name,
+                            "source_system": source_system,
                             "success": False,
                             "error": str(e),
                         })
                         logger.error(f"DCL push error for {pipe_id}: {e}")
 
         self.push_results = results
+        self.dcl_run_id = dcl_run_id
         succeeded = sum(1 for r in results if r.get("success"))
-        logger.info(f"DCL push complete: {succeeded}/{len(results)} pipes succeeded")
-        return results
+        logger.info(
+            f"DCL push complete: {succeeded}/{len(results)} pipes succeeded "
+            f"(dcl_run_id={dcl_run_id}, farm_run_id={self.run_id})"
+        )
+        # Prepend summary with dcl_run_id for traceability
+        return [{
+            "dcl_run_id": dcl_run_id,
+            "farm_run_id": self.run_id,
+            "snapshot_name": snapshot_name,
+            "pipes_pushed": len(results),
+            "pipes_succeeded": succeeded,
+        }] + results
 
     def get_manifest(self) -> Optional[Dict[str, Any]]:
         """Return the ground truth manifest."""
