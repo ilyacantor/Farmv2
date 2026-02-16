@@ -227,8 +227,10 @@ class BusinessDataOrchestrator:
         """
         Push all generated data to DCL via POST {DCL_INGEST_URL}/api/dcl/ingest.
 
+        Uses parallel HTTP requests (up to 5 concurrent) for speed.
+
         Follows the DCL ingest contract:
-        - One UUID x-run-id shared across all 20 pipe pushes
+        - One UUID x-run-id shared across all pipe pushes
         - x-pipe-id header per push identifying the pipe
         - Flat body: source_system, tenant_id, snapshot_name, run_timestamp,
           schema_version, row_count, rows
@@ -236,6 +238,8 @@ class BusinessDataOrchestrator:
         Returns:
             List of push results per pipe (status, pipe_id, response).
         """
+        import asyncio
+
         if not self.dcl_ingest_url:
             logger.warning("DCL_INGEST_URL not configured, skipping push")
             return [{"status": "skipped", "reason": "no_dcl_url"}]
@@ -244,13 +248,11 @@ class BusinessDataOrchestrator:
             logger.warning("No generated data to push")
             return [{"status": "skipped", "reason": "no_data"}]
 
-        # Single UUID shared across all 20 pipe pushes in this generation run
         dcl_run_id = str(uuid.uuid4())
         run_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         snapshot_name = f"farm_v2_{dcl_run_id[:8]}"
         tenant_id = os.getenv("DCL_TENANT_ID", "aos-demo")
 
-        results = []
         base_headers = {
             "Content-Type": "application/json",
             "x-run-id": dcl_run_id,
@@ -263,95 +265,84 @@ class BusinessDataOrchestrator:
             f"snapshot={snapshot_name}, url={self.dcl_ingest_url}"
         )
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            for system_name, pipes in self.generated_data.items():
-                for pipe_name, payload in pipes.items():
-                    if pipe_name.startswith("_"):
-                        continue
-                    if not isinstance(payload, dict) or "data" not in payload:
-                        continue
+        pipe_tasks = []
+        for system_name, pipes in self.generated_data.items():
+            for pipe_name, payload in pipes.items():
+                if pipe_name.startswith("_"):
+                    continue
+                if not isinstance(payload, dict) or "data" not in payload:
+                    continue
+                meta = payload.get("meta", {})
+                pipe_tasks.append({
+                    "pipe_id": meta.get("pipe_id", f"{system_name}_{pipe_name}"),
+                    "source_system": meta.get("source_system", system_name),
+                    "rows": payload.get("data", []),
+                    "schema_version": meta.get("schema_version", "1.0"),
+                })
 
-                    meta = payload.get("meta", {})
-                    pipe_id = meta.get("pipe_id", f"{system_name}_{pipe_name}")
-                    source_system = meta.get("source_system", system_name)
-                    rows = payload.get("data", [])
+        logger.info(f"Pushing {len(pipe_tasks)} pipes in parallel (max 5 concurrent)")
+        semaphore = asyncio.Semaphore(5)
 
-                    # Build DCL contract body
-                    dcl_body = {
+        async def _push_one(client: httpx.AsyncClient, task: dict) -> dict:
+            pipe_id = task["pipe_id"]
+            source_system = task["source_system"]
+            rows = task["rows"]
+
+            dcl_body = {
+                "source_system": source_system,
+                "tenant_id": tenant_id,
+                "snapshot_name": snapshot_name,
+                "run_timestamp": run_timestamp,
+                "schema_version": task["schema_version"],
+                "row_count": len(rows),
+                "rows": rows,
+            }
+            push_headers = {**base_headers, "x-pipe-id": pipe_id}
+
+            async with semaphore:
+                try:
+                    logger.info(f"Pushing {pipe_id}: {len(rows)} records ({source_system})")
+                    response = await client.post(
+                        self.dcl_ingest_url,
+                        json=dcl_body,
+                        headers=push_headers,
+                        timeout=30.0,
+                    )
+
+                    result = {
+                        "pipe_id": pipe_id,
                         "source_system": source_system,
-                        "tenant_id": tenant_id,
-                        "snapshot_name": snapshot_name,
-                        "run_timestamp": run_timestamp,
-                        "schema_version": meta.get("schema_version", "1.0"),
+                        "status_code": response.status_code,
+                        "success": response.status_code == 200,
                         "row_count": len(rows),
-                        "rows": rows,
                     }
 
-                    push_headers = {
-                        **base_headers,
-                        "x-pipe-id": pipe_id,
-                    }
-
-                    try:
-                        logger.info(
-                            f"Pushing {pipe_id}: {len(rows)} records "
-                            f"({source_system})"
+                    if response.status_code == 200:
+                        resp_data = response.json()
+                        result["rows_accepted"] = resp_data.get("rows_accepted", len(rows))
+                        result["schema_drift"] = resp_data.get("schema_drift", False)
+                        if resp_data.get("drift_fields"):
+                            result["drift_fields"] = resp_data["drift_fields"]
+                        logger.info(f"  ✓ {pipe_id}: {result['rows_accepted']} rows accepted")
+                    else:
+                        result["error"] = response.text[:500]
+                        logger.error(
+                            f"DCL push failed for {pipe_id}: "
+                            f"{response.status_code} - {response.text[:200]}"
                         )
-                        response = await client.post(
-                            self.dcl_ingest_url,
-                            json=dcl_body,
-                            headers=push_headers,
-                            timeout=30.0,
-                        )
+                    return result
 
-                        result = {
-                            "pipe_id": pipe_id,
-                            "source_system": source_system,
-                            "status_code": response.status_code,
-                            "success": response.status_code == 200,
-                            "row_count": len(rows),
-                        }
+                except httpx.TimeoutException:
+                    logger.error(f"DCL push timeout for {pipe_id}")
+                    return {"pipe_id": pipe_id, "source_system": source_system, "success": False, "error": "timeout"}
+                except Exception as e:
+                    logger.error(f"DCL push error for {pipe_id}: {e}")
+                    return {"pipe_id": pipe_id, "source_system": source_system, "success": False, "error": str(e)}
 
-                        if response.status_code == 200:
-                            resp_data = response.json()
-                            result["rows_accepted"] = resp_data.get(
-                                "rows_accepted", len(rows)
-                            )
-                            result["schema_drift"] = resp_data.get(
-                                "schema_drift", False
-                            )
-                            if resp_data.get("drift_fields"):
-                                result["drift_fields"] = resp_data["drift_fields"]
-                            logger.info(
-                                f"  ✓ {pipe_id}: "
-                                f"{result['rows_accepted']} rows accepted"
-                            )
-                        else:
-                            result["error"] = response.text[:500]
-                            logger.error(
-                                f"DCL push failed for {pipe_id}: "
-                                f"{response.status_code} - {response.text[:200]}"
-                            )
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            results = await asyncio.gather(*[_push_one(client, t) for t in pipe_tasks])
 
-                        results.append(result)
-
-                    except httpx.TimeoutException:
-                        results.append({
-                            "pipe_id": pipe_id,
-                            "source_system": source_system,
-                            "success": False,
-                            "error": "timeout",
-                        })
-                        logger.error(f"DCL push timeout for {pipe_id}")
-                    except Exception as e:
-                        results.append({
-                            "pipe_id": pipe_id,
-                            "source_system": source_system,
-                            "success": False,
-                            "error": str(e),
-                        })
-                        logger.error(f"DCL push error for {pipe_id}: {e}")
-
+        results = list(results)
         self.push_results = results
         self.dcl_run_id = dcl_run_id
         succeeded = sum(1 for r in results if r.get("success"))
@@ -359,7 +350,6 @@ class BusinessDataOrchestrator:
             f"DCL push complete: {succeeded}/{len(results)} pipes succeeded "
             f"(dcl_run_id={dcl_run_id}, farm_run_id={self.run_id})"
         )
-        # Prepend summary with dcl_run_id for traceability
         return [{
             "dcl_run_id": dcl_run_id,
             "farm_run_id": self.run_id,

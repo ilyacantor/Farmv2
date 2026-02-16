@@ -192,6 +192,7 @@ class BusinessProfile:
                 int(prev_customers * self.base_gross_churn / 100 / 4), 2
             )
             customer_count = prev_customers + new_customers - churned_customers
+            customer_count = min(customer_count, 2000)
 
             # Churn and retention
             gross_churn_pct = self._jitter(self.base_gross_churn, 0.05)
@@ -207,6 +208,7 @@ class BusinessProfile:
             # Support
             tickets_growth = 1 + (customer_count - self.base_customer_count) / self.base_customer_count * 0.8
             support_tickets = int(self._jitter(self.base_support_tickets * tickets_growth, 0.05))
+            support_tickets = min(support_tickets, 5000)
             csat = self._jitter(self.base_csat, 0.02)
             csat = min(max(csat, 3.5), 4.8)
 
@@ -326,7 +328,7 @@ class BusinessProfile:
                 pipeline=round(fmq.pipeline, 2),
                 new_pipeline=round(fmq.pipeline * 0.3, 2),
                 win_rate=round(fmq.win_rate, 1),
-                customer_count=fmq.customer_count,
+                customer_count=min(fmq.customer_count, 2000),
                 new_customers=fmq.new_customers,
                 churned_customers=fmq.churned_customers,
                 nrr=round(fmq.nrr, 1),
@@ -335,7 +337,7 @@ class BusinessProfile:
                 new_hires=fmq.hires,
                 terminations=fmq.terminations,
                 attrition_rate=round(fmq.attrition_rate, 1),
-                support_tickets=fmq.support_tickets,
+                support_tickets=min(fmq.support_tickets, 5000),
                 csat=round(fmq.csat, 2),
                 sprint_velocity=round(fmq.sprint_velocity, 1),
                 sprints_in_quarter=6,

@@ -42,6 +42,12 @@ The user interface is a single-page application (SPA) built with Vanilla JavaScr
 -   **Fabric Plane Configuration:** Includes endpoints to manage and generate fabric configurations based on industry verticals, applying weighted vendor selections.
 -   **Core Philosophy:** Adheres to "No 'Green-Test Theater'" by ensuring correct semantics, prohibiting silent fallbacks or optional-everything, requiring real proof of failure/success, and including negative tests. Emphasizes "Fail Loudly" with explicit error statuses (UPSTREAM_ERROR, INVALID_SNAPSHOT, INVALID_INPUT_CONTRACT).
 
+**Performance Caps (capability over capacity):**
+-   customer_count capped at 2,000 per quarter (both `_generate_trajectory` and `from_model_quarters`)
+-   support_tickets capped at 5,000 per quarter
+-   Zendesk org names use numeric suffix on collision (pool: 300 unique combos)
+-   Standard preset: ~121K records in ~2s; Full preset: ~198K records in ~3s
+
 **System Design Choices:**
 The backend is a FastAPI application using Uvicorn, leveraging Pydantic for data models. Determinism is a core principle, ensuring identical output for the same seed and scale. The system includes extensive data generation logic (`generators/` directory) for various enterprise and business data types, a `verifier/` for test oracle logic, and `services/` for client interactions.
 
