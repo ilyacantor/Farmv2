@@ -53,6 +53,7 @@ class GenerateResponse(BaseModel):
     quarters_covered: list
     manifest_valid: bool
     manifest_errors: list = []
+    generation_errors: dict = {}
     push_results: list = []
 
 
@@ -94,6 +95,12 @@ async def generate_business_data(request: GenerateRequest):
     run_id = summary["run_id"]
     _store_run(run_id, orchestrator)
 
+    # Collect any generation errors (generators that threw exceptions)
+    generation_errors = {}
+    for sys_name, pipes in orchestrator.get_payloads().items():
+        if "_error" in pipes:
+            generation_errors[sys_name] = pipes["_error"]
+
     # Optionally push to DCL
     push_results = []
     if request.push_to_dcl:
@@ -110,6 +117,7 @@ async def generate_business_data(request: GenerateRequest):
         quarters_covered=summary["quarters_covered"],
         manifest_valid=summary["manifest_valid"],
         manifest_errors=summary["manifest_errors"],
+        generation_errors=generation_errors,
         push_results=push_results,
     )
 
