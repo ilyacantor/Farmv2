@@ -565,6 +565,11 @@ class DatabaseManager:
                 """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_gt_manifests_created ON ground_truth_manifests(created_at DESC)")
                 
+                try:
+                    await conn.execute("ALTER TABLE ground_truth_manifests ADD COLUMN IF NOT EXISTS dcl_push_results JSONB DEFAULT '[]'")
+                except Exception:
+                    pass
+                
                 self._schema_initialized = True
                 self._log("Schema initialized")
     
@@ -764,6 +769,16 @@ async def load_ground_truth_manifest(run_id: str) -> dict | None:
             "source_systems": json.loads(row["source_systems"]) if isinstance(row["source_systems"], str) else row["source_systems"],
             "record_counts": json.loads(row["record_counts"]) if isinstance(row["record_counts"], str) else row["record_counts"],
         }
+
+
+async def update_manifest_push_results(run_id: str, push_results: list) -> None:
+    """Store DCL push correlation keys for a manifest run."""
+    import json
+    async with connection() as conn:
+        await conn.execute(
+            "UPDATE ground_truth_manifests SET dcl_push_results = $1::jsonb WHERE run_id = $2",
+            json.dumps(push_results), run_id,
+        )
 
 
 async def list_ground_truth_runs(limit: int = 50) -> list[dict]:

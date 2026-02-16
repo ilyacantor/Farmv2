@@ -963,7 +963,10 @@
                                 <button onclick="bdLoadSampleActuals()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs text-slate-300 rounded-lg transition-all">
                                     Load Sample Actuals
                                 </button>
-                                <button onclick="bdReconcile()" id="bdReconcileBtn" class="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-xs text-white font-semibold rounded-lg transition-all">
+                                <button onclick="bdVerifyDCL()" id="bdVerifyDclBtn" class="px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-xs text-white font-semibold rounded-lg transition-all">
+                                    Verify Against DCL
+                                </button>
+                                <button onclick="bdReconcileServer()" id="bdReconcileBtn" class="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-xs text-white font-semibold rounded-lg transition-all">
                                     Run Reconciliation
                                 </button>
                             </div>
@@ -2672,11 +2675,10 @@
             document.getElementById('bdActualsInput').value = JSON.stringify(actuals, null, 2);
         }
 
-        function bdReconcile() {
+        async function bdReconcileServer() {
             if (!bdCurrentRun) return;
             const selectedQ = document.getElementById('bdQuarterSelect').value;
-            const gt = bdCurrentRun.manifest.ground_truth || {};
-            const qData = gt[selectedQ] || {};
+            const runId = bdCurrentRun.run_id;
 
             let actuals;
             try {
@@ -2686,121 +2688,134 @@
                 return;
             }
 
-            // Compute per-metric accuracy
-            const results = [];
-            let totalAccuracy = 0;
-            let metricCount = 0;
+            const btn = document.getElementById('bdReconcileBtn');
+            btn.disabled = true;
+            btn.textContent = 'Verifying...';
 
-            for (const [catName, cat] of Object.entries(BD_METRIC_CATEGORIES)) {
-                const catResults = [];
-                for (const m of cat.metrics) {
-                    const mData = qData[m];
-                    if (!mData) continue;
-                    const expected = mData.value;
-                    const actual = actuals[m];
-                    if (actual === undefined || actual === null) {
-                        catResults.push({ metric: m, label: cat.labels[m], expected, actual: null, delta: null, accuracy: null, status: 'missing' });
-                        continue;
-                    }
-                    const delta = actual - expected;
-                    const deltaPct = expected !== 0 ? (Math.abs(delta) / Math.abs(expected)) * 100 : (actual === 0 ? 0 : 100);
-                    const accuracy = Math.max(0, 100 - deltaPct);
-                    catResults.push({
-                        metric: m, label: cat.labels[m], expected, actual, delta,
-                        deltaPct: deltaPct.toFixed(1),
-                        accuracy: accuracy.toFixed(1),
-                        unit: mData.unit,
-                        status: accuracy >= 95 ? 'pass' : accuracy >= 85 ? 'warn' : 'fail'
-                    });
-                    totalAccuracy += accuracy;
-                    metricCount++;
+            try {
+                const resp = await fetch(`/api/business-data/verify/${runId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ quarter: selectedQ, actuals: actuals, source: 'manual' }),
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    alert(`Verification failed: ${data.detail?.message || data.detail || resp.statusText}`);
+                    return;
                 }
-                results.push({ category: catName, color: cat.color, metrics: catResults });
+                bdRenderVerifyResults(data);
+            } catch (e) {
+                alert('Verification request failed: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Run Reconciliation';
             }
+        }
 
-            const overallAccuracy = metricCount > 0 ? (totalAccuracy / metricCount) : 0;
+        async function bdVerifyDCL() {
+            if (!bdCurrentRun) {
+                alert('Generate business data first');
+                return;
+            }
+            const runId = bdCurrentRun.run_id;
+            const selectedQ = document.getElementById('bdQuarterSelect').value;
+            const btn = document.getElementById('bdVerifyDclBtn');
+            btn.disabled = true;
+            btn.textContent = 'Reading DCL...';
 
-            // Render overall accuracy banner
+            try {
+                const resp = await fetch(`/api/business-data/verify/${runId}/dcl-readback?quarter=${selectedQ}`, {
+                    method: 'POST',
+                });
+                const data = await resp.json();
+                if (resp.status === 501) {
+                    alert(`DCL readback not yet wired: ${data.detail?.message || 'Provide DCL readback contract'}`);
+                    return;
+                }
+                if (!resp.ok) {
+                    alert(`DCL verification failed: ${data.detail?.message || data.detail || resp.statusText}`);
+                    return;
+                }
+                bdRenderVerifyResults(data);
+            } catch (e) {
+                alert('DCL readback request failed: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Verify Against DCL';
+            }
+        }
+
+        function bdRenderVerifyResults(data) {
             const overallEl = document.getElementById('bdOverallAccuracy');
             const overallValEl = document.getElementById('bdOverallAccuracyValue');
             const overallLabelEl = document.getElementById('bdOverallAccuracyLabel');
             overallEl.classList.remove('hidden');
 
+            const overallAccuracy = data.overall_accuracy;
             const overallColor = overallAccuracy >= 95 ? 'emerald' : overallAccuracy >= 85 ? 'amber' : 'red';
+            const verdictBadge = data.verdict === 'PASS' ? 'bg-emerald-500/20 text-emerald-400' :
+                                 data.verdict === 'DEGRADED' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400';
             overallEl.className = `mb-4 p-4 rounded-xl text-center bg-${overallColor}-500/10 ring-1 ring-${overallColor}-500/30`;
             overallValEl.className = `text-4xl font-bold text-${overallColor}-400`;
             overallValEl.textContent = `${overallAccuracy.toFixed(1)}%`;
             overallLabelEl.className = `text-xs mt-1 text-${overallColor}-300`;
-            overallLabelEl.textContent = `${metricCount} metrics compared across ${results.length} categories`;
+            overallLabelEl.innerHTML = `<span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold ${verdictBadge} mr-2">${data.verdict}</span>${data.metric_count} metrics | ${data.pass_count} pass | ${data.warn_count} warn | ${data.fail_count} fail | ${data.missing_count} missing | source: ${data.source}`;
 
-            // Render category scorecards
+            const compared = data.results.filter(m => m.status !== 'missing');
+            const missing = data.results.filter(m => m.status === 'missing');
+
+            const fmtVal = (v, unit) => {
+                if (v === null || v === undefined) return '--';
+                if (unit === 'millions_usd') return '$' + v + 'M';
+                if (unit === 'percent') return v + '%';
+                if (unit === 'score_5') return v + '/5';
+                if (unit === 'hours') return v + 'h';
+                if (unit === 'days') return v + 'd';
+                if (unit === 'ratio') return v + 'x';
+                if (unit === 'points') return v + ' pts';
+                return typeof v === 'number' ? v.toLocaleString() : v;
+            };
+
             const scorecardEl = document.getElementById('bdReconcileScorecard');
-            scorecardEl.innerHTML = results.map(cat => {
-                const catMetrics = cat.metrics.filter(m => m.status !== 'missing');
-                const catMissing = cat.metrics.filter(m => m.status === 'missing');
-                const catAccuracy = catMetrics.length > 0
-                    ? catMetrics.reduce((s, m) => s + parseFloat(m.accuracy), 0) / catMetrics.length
-                    : 0;
-                const catColor = catAccuracy >= 95 ? 'emerald' : catAccuracy >= 85 ? 'amber' : 'red';
-                const catPass = catMetrics.filter(m => m.status === 'pass').length;
-                const catWarn = catMetrics.filter(m => m.status === 'warn').length;
-                const catFail = catMetrics.filter(m => m.status === 'fail').length;
+            let html = '';
 
-                return `
-                    <div class="p-3 rounded-lg bg-${cat.color}-500/5 ring-1 ring-${cat.color}-500/20">
-                        <div class="flex items-center justify-between mb-3">
-                            <div class="font-medium text-${cat.color}-300 text-sm">${cat.category}</div>
-                            <div class="flex items-center gap-3">
-                                <div class="flex items-center gap-1.5 text-[10px]">
-                                    <span class="text-emerald-400">${catPass} pass</span>
-                                    <span class="text-slate-600">|</span>
-                                    <span class="text-amber-400">${catWarn} warn</span>
-                                    <span class="text-slate-600">|</span>
-                                    <span class="text-red-400">${catFail} fail</span>
-                                    ${catMissing.length > 0 ? `<span class="text-slate-600">|</span><span class="text-slate-500">${catMissing.length} missing</span>` : ''}
-                                </div>
-                                <div class="text-lg font-bold text-${catColor}-400">${catAccuracy.toFixed(1)}%</div>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-6 gap-1 text-[10px] text-slate-500 mb-1 px-1">
-                            <div class="col-span-2">Metric</div>
-                            <div class="text-right">Expected</div>
-                            <div class="text-right">Actual</div>
-                            <div class="text-right">Delta</div>
-                            <div class="text-right">Accuracy</div>
-                        </div>
-                        ${catMetrics.map(m => {
-                            const statusColor = m.status === 'pass' ? 'emerald' : m.status === 'warn' ? 'amber' : 'red';
-                            const fmtVal = (v, unit) => {
-                                if (unit === 'millions_usd') return '$' + v + 'M';
-                                if (unit === 'percent') return v + '%';
-                                if (unit === 'score_5') return v + '/5';
-                                if (unit === 'hours') return v + 'h';
-                                if (unit === 'days') return v + 'd';
-                                if (unit === 'ratio') return v + 'x';
-                                if (unit === 'points') return v + ' pts';
-                                return typeof v === 'number' ? v.toLocaleString() : v;
-                            };
-                            const fmtDelta = m.delta >= 0 ? `+${fmtVal(m.delta.toFixed(2), m.unit)}` : fmtVal(m.delta.toFixed(2), m.unit);
-                            return `
-                                <div class="grid grid-cols-6 gap-1 text-xs px-1 py-1 rounded hover:bg-slate-800/30 border-b border-slate-800/30 last:border-0">
-                                    <div class="col-span-2 flex items-center gap-1.5">
-                                        <div class="w-1.5 h-1.5 rounded-full bg-${statusColor}-400"></div>
-                                        <span class="text-slate-300 truncate">${m.label}</span>
-                                    </div>
-                                    <div class="text-right text-slate-400 font-mono">${fmtVal(m.expected, m.unit)}</div>
-                                    <div class="text-right text-white font-mono">${fmtVal(m.actual, m.unit)}</div>
-                                    <div class="text-right font-mono text-${m.delta >= 0 ? 'cyan' : 'rose'}-400">${fmtDelta}</div>
-                                    <div class="text-right font-bold text-${statusColor}-400">${m.accuracy}%</div>
-                                </div>
-                            `;
-                        }).join('')}
-                        ${catMissing.length > 0 ? `
-                            <div class="mt-2 text-[10px] text-slate-500">Missing: ${catMissing.map(m => m.label).join(', ')}</div>
-                        ` : ''}
+            if (compared.length > 0) {
+                html += `<div class="p-3 rounded-lg bg-slate-700/30 ring-1 ring-slate-600/30">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="font-medium text-slate-300 text-sm">Compared Metrics</div>
                     </div>
-                `;
-            }).join('');
+                    <div class="grid grid-cols-6 gap-1 text-[10px] text-slate-500 mb-1 px-1">
+                        <div class="col-span-2">Metric</div>
+                        <div class="text-right">Expected</div>
+                        <div class="text-right">Actual</div>
+                        <div class="text-right">Delta %</div>
+                        <div class="text-right">Accuracy</div>
+                    </div>
+                    ${compared.map(m => {
+                        const statusColor = m.status === 'pass' ? 'emerald' : m.status === 'warn' ? 'amber' : 'red';
+                        const deltaStr = m.delta !== null ? (m.delta >= 0 ? '+' : '') + fmtVal(m.delta.toFixed(2), m.unit) : '--';
+                        return `<div class="grid grid-cols-6 gap-1 text-xs px-1 py-1 rounded hover:bg-slate-800/30 border-b border-slate-800/30 last:border-0">
+                            <div class="col-span-2 flex items-center gap-1.5">
+                                <div class="w-1.5 h-1.5 rounded-full bg-${statusColor}-400"></div>
+                                <span class="text-slate-300 truncate">${m.metric}</span>
+                            </div>
+                            <div class="text-right text-slate-400 font-mono">${fmtVal(m.expected, m.unit)}</div>
+                            <div class="text-right text-white font-mono">${fmtVal(m.actual, m.unit)}</div>
+                            <div class="text-right font-mono text-slate-400">${m.delta_pct !== null ? m.delta_pct + '%' : '--'}</div>
+                            <div class="text-right font-bold text-${statusColor}-400">${m.accuracy !== null ? m.accuracy + '%' : '--'}</div>
+                        </div>`;
+                    }).join('')}
+                </div>`;
+            }
+
+            if (missing.length > 0) {
+                html += `<div class="p-3 rounded-lg bg-slate-800/30 ring-1 ring-slate-700/30 mt-2">
+                    <div class="text-xs text-slate-500 mb-1">Missing metrics (${missing.length}): not provided in actuals</div>
+                    <div class="flex flex-wrap gap-1">${missing.map(m => `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">${m.metric}</span>`).join('')}</div>
+                </div>`;
+            }
+
+            scorecardEl.innerHTML = html;
         }
 
         // Initialize default preset

@@ -8,7 +8,7 @@ and retrieve ground truth manifests for verification.
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -20,7 +20,7 @@ from src.generators.business_data_orchestrator import (
     TIER_2_GENERATORS,
     TIER_3_GENERATORS,
 )
-from src.farm.db import save_ground_truth_manifest, load_ground_truth_manifest, list_ground_truth_runs
+from src.farm.db import save_ground_truth_manifest, load_ground_truth_manifest, list_ground_truth_runs, update_manifest_push_results
 
 logger = logging.getLogger("farm.api.business_data")
 
@@ -106,6 +106,12 @@ async def generate_business_data(request: GenerateRequest):
     push_results = []
     if request.push_to_dcl:
         push_results = await orchestrator.push_to_dcl()
+        if push_results:
+            try:
+                await update_manifest_push_results(run_id, push_results)
+                logger.info(f"DCL push results persisted for run {run_id}")
+            except Exception as e:
+                logger.error(f"Failed to persist push results for {run_id}: {e}")
 
     manifest = orchestrator.get_manifest() or {}
 
@@ -515,6 +521,225 @@ async def dcl_status():
             "message": f"Cannot reach DCL: {type(e).__name__}",
             "url": base_url,
         })
+
+
+class VerifyRequest(BaseModel):
+    """Request body for ground truth verification."""
+    quarter: str = Field(..., description="Quarter to verify, e.g. '2024-Q1'")
+    actuals: Dict[str, Any] = Field(..., description="Actual metric values to compare against ground truth")
+    source: str = Field(default="manual", description="Source of actuals: 'manual', 'dcl_readback', etc.")
+
+
+class MetricResult(BaseModel):
+    metric: str
+    expected: Any
+    actual: Any
+    delta: Optional[float] = None
+    delta_pct: Optional[float] = None
+    accuracy: Optional[float] = None
+    unit: Optional[str] = None
+    status: str
+
+
+class VerifyResponse(BaseModel):
+    run_id: str
+    quarter: str
+    source: str
+    overall_accuracy: float
+    metric_count: int
+    pass_count: int
+    warn_count: int
+    fail_count: int
+    missing_count: int
+    results: List[Dict[str, Any]]
+    verdict: str
+
+
+@router.post("/verify/{run_id}")
+async def verify_ground_truth(run_id: str, request: VerifyRequest):
+    """
+    Verify actual values against the persisted ground truth manifest.
+    
+    This is the server-side scoring engine for Path 4 (Farm ↔ DCL) verification.
+    Computes per-metric accuracy and returns a structured verdict.
+    """
+    run_data = _run_store.get(run_id)
+    if run_data:
+        manifest = run_data.get("manifest", {})
+    else:
+        try:
+            db_data = await load_ground_truth_manifest(run_id)
+        except Exception as e:
+            logger.error(f"DB lookup failed for verification of run {run_id}: {e}")
+            db_data = None
+        if not db_data:
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "error": "RUN_NOT_FOUND",
+                    "message": f"Run {run_id} not found in memory or database",
+                    "run_id": run_id,
+                },
+            )
+        manifest = db_data["manifest"]
+
+    ground_truth = manifest.get("ground_truth", {})
+    quarter_data = ground_truth.get(request.quarter)
+    if not quarter_data or not isinstance(quarter_data, dict):
+        available = [k for k in ground_truth.keys() if k.startswith("20")]
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": "QUARTER_NOT_FOUND",
+                "message": f"Quarter '{request.quarter}' not found in ground truth",
+                "available_quarters": available,
+            },
+        )
+
+    results = []
+    total_accuracy = 0.0
+    metric_count = 0
+    pass_count = 0
+    warn_count = 0
+    fail_count = 0
+    missing_count = 0
+
+    for metric_name, metric_data in quarter_data.items():
+        if not isinstance(metric_data, dict) or "value" not in metric_data:
+            continue
+
+        expected = metric_data["value"]
+        unit = metric_data.get("unit", "unknown")
+        actual = request.actuals.get(metric_name)
+
+        if actual is None:
+            results.append({
+                "metric": metric_name,
+                "expected": expected,
+                "actual": None,
+                "delta": None,
+                "delta_pct": None,
+                "accuracy": None,
+                "unit": unit,
+                "status": "missing",
+            })
+            missing_count += 1
+            continue
+
+        try:
+            actual_num = float(actual)
+            expected_num = float(expected)
+        except (ValueError, TypeError):
+            results.append({
+                "metric": metric_name,
+                "expected": expected,
+                "actual": actual,
+                "delta": None,
+                "delta_pct": None,
+                "accuracy": None,
+                "unit": unit,
+                "status": "fail",
+                "error": "non_numeric_comparison",
+            })
+            fail_count += 1
+            continue
+
+        delta = actual_num - expected_num
+        if expected_num != 0:
+            delta_pct = abs(delta) / abs(expected_num) * 100
+        else:
+            delta_pct = 0.0 if actual_num == 0 else 100.0
+
+        accuracy = max(0.0, 100.0 - delta_pct)
+
+        if accuracy >= 95:
+            status = "pass"
+            pass_count += 1
+        elif accuracy >= 85:
+            status = "warn"
+            warn_count += 1
+        else:
+            status = "fail"
+            fail_count += 1
+
+        total_accuracy += accuracy
+        metric_count += 1
+
+        results.append({
+            "metric": metric_name,
+            "expected": expected_num,
+            "actual": actual_num,
+            "delta": round(delta, 4),
+            "delta_pct": round(delta_pct, 2),
+            "accuracy": round(accuracy, 2),
+            "unit": unit,
+            "status": status,
+        })
+
+    overall_accuracy = total_accuracy / metric_count if metric_count > 0 else 0.0
+
+    if overall_accuracy >= 95:
+        verdict = "PASS"
+    elif overall_accuracy >= 85:
+        verdict = "DEGRADED"
+    else:
+        verdict = "FAIL"
+
+    return JSONResponse(content={
+        "run_id": run_id,
+        "quarter": request.quarter,
+        "source": request.source,
+        "overall_accuracy": round(overall_accuracy, 2),
+        "metric_count": metric_count,
+        "pass_count": pass_count,
+        "warn_count": warn_count,
+        "fail_count": fail_count,
+        "missing_count": missing_count,
+        "verdict": verdict,
+        "results": sorted(results, key=lambda r: (r["status"] != "fail", r["status"] != "warn", r["status"] != "missing", r["metric"])),
+    })
+
+
+@router.post("/verify/{run_id}/dcl-readback")
+async def verify_dcl_readback(run_id: str, quarter: Optional[str] = Query(None)):
+    """
+    Trigger automatic DCL readback and verification.
+    
+    Reads back unified data from DCL using the stored push correlation keys,
+    then scores against the ground truth manifest.
+    
+    Requires: DCL readback endpoint contract (not yet available).
+    """
+    run_data = _run_store.get(run_id)
+    manifest = None
+    push_results = None
+
+    if run_data:
+        manifest = run_data.get("manifest", {})
+
+    try:
+        db_data = await load_ground_truth_manifest(run_id)
+        if db_data:
+            if not manifest:
+                manifest = db_data["manifest"]
+    except Exception as e:
+        logger.warning(f"DB lookup for DCL readback failed: {e}")
+
+    if not manifest:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": "RUN_NOT_FOUND", "message": f"Run {run_id} not found"},
+        )
+
+    raise HTTPException(
+        status_code=501,
+        detail={
+            "error": "DCL_READBACK_NOT_IMPLEMENTED",
+            "message": "DCL readback endpoint contract not yet configured. Use POST /verify/{run_id} with manual actuals, or provide the DCL readback contract.",
+            "run_id": run_id,
+            "manifest_available": bool(manifest),
+        },
+    )
 
 
 async def _store_run(run_id: str, orchestrator: BusinessDataOrchestrator):
