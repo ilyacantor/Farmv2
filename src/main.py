@@ -25,9 +25,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 
-# Configure startup logger
-logger = logging.getLogger("farm.main")
-if not logger.handlers:
+farm_root = logging.getLogger("farm")
+if not farm_root.handlers:
     handler = logging.StreamHandler()
     handler.setLevel(logging.INFO)
     formatter = logging.Formatter(
@@ -35,8 +34,9 @@ if not logger.handlers:
         datefmt="%Y-%m-%d %H:%M:%S"
     )
     handler.setFormatter(formatter)
-    logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+    farm_root.addHandler(handler)
+farm_root.setLevel(logging.INFO)
+logger = logging.getLogger("farm.main")
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
