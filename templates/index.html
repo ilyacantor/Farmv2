@@ -2409,11 +2409,24 @@
                 aws_cost_explorer: { label: 'AWS Cost', color: 'orange', tier: 3 },
             };
 
+            // Map system names to their pipe_id prefixes
+            const pipePrefixes = {
+                salesforce: ['sf_'],
+                netsuite: ['ns-', 'ns_'],
+                chargebee: ['cb_'],
+                workday: ['wd-', 'wd_'],
+                zendesk: ['zendesk_'],
+                jira: ['jira_'],
+                datadog: ['datadog_'],
+                aws_cost_explorer: ['aws_cost_'],
+            };
+
             const cardsEl = document.getElementById('bdSystemCards');
             cardsEl.innerHTML = result.active_systems.map(sys => {
                 const info = systemInfo[sys] || { label: sys, color: 'slate', tier: '?' };
+                const prefixes = pipePrefixes[sys] || [sys];
                 const totalRecords = Object.entries(result.record_counts)
-                    .filter(([k]) => k.startsWith(sys))
+                    .filter(([k]) => prefixes.some(p => k.startsWith(p)))
                     .reduce((sum, [, v]) => sum + v, 0);
                 return `
                     <div class="bg-slate-900/50 rounded-lg p-3 border border-${info.color}-700/30">
