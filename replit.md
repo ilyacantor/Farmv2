@@ -13,6 +13,9 @@ Farm is **Accountable/Responsible** for:
 
 ## User Preferences
 
+### Fundamental Coding Behavior Only
+No band-aids, no silent fallbacks, no "plausible-looking wrong answers." Every code path must be loud, structured, and diagnosable. If something is unknown, fail explicitly — never guess. Same philosophy as DCL's `NO_MATCHING_PIPE`: structured errors that tell the operator exactly what went wrong and who needs to fix it.
+
 ### Determinism is Critical
 Same seed + scale = identical output. This enables:
 - Reproducible bug reports
@@ -57,7 +60,7 @@ Farm participates in the trifecta via four execution paths:
 -   **Path 3 (Farm → DCL):** Farm generates data per manifest, pushes to DCL's `/ingest` using the manifest's `pipe_id` as `x-pipe-id` header. Handles DCL 422 `NO_MATCHING_PIPE` rejections as config errors (never retried).
 -   **Path 4 (Farm ↔ DCL):** Verification/recon path — inject ground truth, read back, compare.
 -   Manifest-driven mode uses AAM's `pipe_id` (production path); self-directed mode uses Farm's internal `pipe_id` (dev/demo path).
--   **Category-based generator routing:** `source.system` stays truthful (real vendor name). `source.category` (crm, erp, billing, hr, support, devops, observability, infrastructure) routes to the appropriate generator archetype in simulation mode. Resolution: direct system match → category routing → fallback. When real adapters arrive, category routing is bypassed.
+-   **Category-based generator routing:** `source.system` stays truthful (real vendor name). `source.category` (crm, erp, billing, hr, support, devops, observability, infrastructure) routes to the appropriate generator archetype in simulation mode. Resolution: direct system match → category routing → 422 NO_GENERATOR_ROUTE (no silent fallback). When real adapters arrive, category routing is bypassed.
 
 **Project Structure Highlights:**
 -   `src/api/`: Contains route handlers for AOD, AOA, Business Data, DCL, and Manifest Intake.

@@ -75,8 +75,6 @@ _CATEGORY_TO_GENERATOR = {
     "cost": "aws_cost_explorer",
 }
 
-_FALLBACK_GENERATOR = "salesforce"
-
 
 def _resolve_generator_key(manifest: JobManifest) -> str:
     """
@@ -85,7 +83,10 @@ def _resolve_generator_key(manifest: JobManifest) -> str:
     Resolution order:
       1. Direct system match (e.g. system="salesforce" → salesforce generator)
       2. Category-based routing (e.g. category="crm" → salesforce generator)
-      3. Fallback to salesforce (generic enterprise data)
+
+    If neither resolves, raises HTTPException with NO_GENERATOR_ROUTE.
+    No silent fallback — if AAM didn't provide a category for an unknown
+    system, that's a manifest completeness problem and AAM needs to fix it.
 
     In production, this function won't be called — Farm will use
     adapter + endpoint_ref + credentials_ref to connect to the real API.
@@ -104,12 +105,22 @@ def _resolve_generator_key(manifest: JobManifest) -> str:
         )
         return resolved
 
-    logger.warning(
-        f"Fallback routing: system='{manifest.source.system}', "
-        f"category='{category or 'none'}' — no match found, "
-        f"using '{_FALLBACK_GENERATOR}' generator as generic archetype"
+    logger.error(
+        f"NO_GENERATOR_ROUTE: system='{manifest.source.system}', "
+        f"category='{category or None}' — no direct match and no category for routing"
     )
-    return _FALLBACK_GENERATOR
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "error": "NO_GENERATOR_ROUTE",
+            "system": manifest.source.system,
+            "category": category or None,
+            "message": "No direct match and no category for routing.",
+            "hint": "AAM should include source.category in the manifest.",
+            "available_categories": list(_CATEGORY_TO_GENERATOR.keys()),
+            "available_systems": list(_GENERATOR_REGISTRY.keys()),
+        },
+    )
 
 
 def _compute_schema_hash(rows: List[Dict]) -> str:
