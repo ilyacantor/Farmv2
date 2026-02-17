@@ -41,7 +41,7 @@ class GenerateRequest(BaseModel):
     base_revenue: float = Field(default=22.0, description="Base quarterly revenue in millions USD")
     growth_rate: float = Field(default=0.15, description="Year-over-year growth rate (0.15 = 15%)")
     num_quarters: int = Field(default=12, ge=1, le=20, description="Number of quarters to generate")
-    push_to_dcl: bool = Field(default=False, description="Whether to push generated data to DCL")
+    push_to_dcl: bool = Field(default=True, description="Whether to push generated data to DCL")
 
 
 class GenerateResponse(BaseModel):
