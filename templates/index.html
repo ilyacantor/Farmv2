@@ -452,89 +452,173 @@
                 
                 <div id="agentGuideContent" class="hidden mt-5 space-y-4">
                     <div class="bg-slate-800/60 rounded-lg p-4">
-                        <h3 class="text-md font-semibold text-purple-400 mb-2">What is this?</h3>
+                        <h3 class="text-md font-semibold text-purple-400 mb-2">AOA Testing Capabilities (Implemented)</h3>
                         <p class="text-slate-300 text-sm leading-relaxed">
-                            This tool generates realistic test data for AI agent orchestration platforms. Instead of building fake test cases by hand, 
-                            you can create hundreds of synthetic agents and workflows with a single click. The generated data includes built-in 
-                            "chaos" events (simulated failures) to test how well your platform handles real-world problems.
+                            Farm generates synthetic agent fleets, task workflows, and stress scenarios for testing AI orchestration platforms (AOA).
+                            All generation is deterministic (same seed = same output). This module provides five capability groups: local data generation,
+                            external platform integration, DB-backed simulation, validation/verification, and persistent history.
                         </p>
                     </div>
-                    
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div class="bg-slate-800/60 rounded-lg p-4">
-                            <div class="flex items-center gap-2 mb-2">
-                                <div class="w-6 h-6 rounded bg-purple-600/50 flex items-center justify-center text-xs font-bold text-purple-300">1</div>
-                                <h4 class="font-semibold text-purple-400">Agent Fleet</h4>
+
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-semibold text-purple-300 uppercase tracking-wider">1. Data Generation (no external dependency)</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="bg-slate-800/60 rounded-lg p-3">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <div class="w-5 h-5 rounded bg-purple-600/50 flex items-center justify-center text-[10px] font-bold text-purple-300">F</div>
+                                    <h4 class="font-semibold text-purple-400 text-sm">Agent Fleet</h4>
+                                </div>
+                                <p class="text-slate-400 text-xs leading-relaxed">
+                                    Generates fleets of 10/50/100 agents across 6 types: <span class="text-purple-300">planner, worker, specialist, reviewer, approver, coordinator</span>.
+                                    Each agent has capability profiles, tool access, reliability tiers (rock_solid to unreliable), cost tiers, and policy templates (permissive/standard/restricted).
+                                </p>
+                                <code class="text-[10px] text-cyan-400/60 mt-1 block">GET /api/agents/fleet &bull; /api/agents/profile &bull; /api/agents/team</code>
                             </div>
-                            <p class="text-slate-400 text-sm">
-                                Creates a team of AI agents with different roles: <span class="text-purple-300">Planners</span> break down complex tasks, 
-                                <span class="text-cyan-300">Workers</span> execute them, <span class="text-orange-300">Specialists</span> handle specific domains, 
-                                and <span class="text-emerald-300">Reviewers/Approvers</span> validate work.
-                            </p>
-                        </div>
-                        
-                        <div class="bg-slate-800/60 rounded-lg p-4">
-                            <div class="flex items-center gap-2 mb-2">
-                                <div class="w-6 h-6 rounded bg-cyan-600/50 flex items-center justify-center text-xs font-bold text-cyan-300">2</div>
-                                <h4 class="font-semibold text-cyan-400">Workflows</h4>
+                            <div class="bg-slate-800/60 rounded-lg p-3">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <div class="w-5 h-5 rounded bg-cyan-600/50 flex items-center justify-center text-[10px] font-bold text-cyan-300">W</div>
+                                    <h4 class="font-semibold text-cyan-400 text-sm">Task Workflows</h4>
+                                </div>
+                                <p class="text-slate-400 text-xs leading-relaxed">
+                                    Generates task graphs: <span class="text-cyan-300">linear, DAG, parallel, cyclic, map_reduce, saga</span>.
+                                    9 task types (compute, IO, API, decision, approval, etc). Includes <span class="text-cyan-300">__expected__</span> blocks with execution order, duration ranges, and checkpoint counts.
+                                </p>
+                                <code class="text-[10px] text-cyan-400/60 mt-1 block">GET /api/agents/workflow &bull; /api/agents/workflow-batch</code>
                             </div>
-                            <p class="text-slate-400 text-sm">
-                                Creates task graphs that agents need to complete. <span class="text-cyan-300">Linear</span> = step-by-step, 
-                                <span class="text-cyan-300">DAG</span> = complex dependencies, <span class="text-cyan-300">Parallel</span> = many tasks at once, 
-                                <span class="text-cyan-300">Saga</span> = tasks with rollback capability.
-                            </p>
-                        </div>
-                        
-                        <div class="bg-slate-800/60 rounded-lg p-4">
-                            <div class="flex items-center gap-2 mb-2">
-                                <div class="w-6 h-6 rounded bg-orange-600/50 flex items-center justify-center text-xs font-bold text-orange-300">3</div>
-                                <h4 class="font-semibold text-orange-400">Stress Scenario</h4>
+                            <div class="bg-slate-800/60 rounded-lg p-3">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <div class="w-5 h-5 rounded bg-orange-600/50 flex items-center justify-center text-[10px] font-bold text-orange-300">S</div>
+                                    <h4 class="font-semibold text-orange-400 text-sm">Stress Scenario</h4>
+                                </div>
+                                <p class="text-slate-400 text-xs leading-relaxed">
+                                    Combines fleet + workflow batch into a complete test package with agent-to-task assignments (planners get decisions, workers get execution).
+                                    Returns summary with total tasks, chaos events, and expected outcomes.
+                                </p>
+                                <code class="text-[10px] text-cyan-400/60 mt-1 block">GET /api/agents/stress-scenario</code>
                             </div>
-                            <p class="text-slate-400 text-sm">
-                                Combines agents + workflows into a complete test package. Includes <span class="text-orange-300">expected results</span> 
-                                so you can automatically verify if your platform performed correctly. Great for integration testing.
-                            </p>
-                        </div>
-                        
-                        <div class="bg-slate-800/60 rounded-lg p-4">
-                            <div class="flex items-center gap-2 mb-2">
-                                <div class="w-6 h-6 rounded bg-rose-600/50 flex items-center justify-center text-xs font-bold text-rose-300">4</div>
-                                <h4 class="font-semibold text-rose-400">Run Against Platform</h4>
+                            <div class="bg-slate-800/60 rounded-lg p-3">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <div class="w-5 h-5 rounded bg-rose-600/50 flex items-center justify-center text-[10px] font-bold text-rose-300">C</div>
+                                    <h4 class="font-semibold text-rose-400 text-sm">Chaos Catalog & Stream</h4>
+                                </div>
+                                <p class="text-slate-400 text-xs leading-relaxed">
+                                    10 chaos types: <span class="text-rose-300">tool_timeout, tool_failure, agent_conflict, policy_violation, checkpoint_crash, memory_pressure, rate_limit, data_corruption, network_partition</span>.
+                                    NDJSON streaming endpoint for continuous workload generation at configurable rate.
+                                </p>
+                                <code class="text-[10px] text-cyan-400/60 mt-1 block">GET /api/agents/chaos-catalog &bull; /api/agents/stream</code>
                             </div>
-                            <p class="text-slate-400 text-sm">
-                                The power feature: sends test data directly to your platform, waits for results, and 
-                                <span class="text-rose-300">validates them automatically</span>. Shows you exactly which checks passed or failed.
-                            </p>
                         </div>
                     </div>
-                    
-                    <div class="bg-slate-800/60 rounded-lg p-4">
-                        <h3 class="text-md font-semibold text-emerald-400 mb-2">Quick Start</h3>
-                        <ol class="text-slate-300 text-sm space-y-2">
-                            <li class="flex items-start gap-2">
-                                <span class="text-emerald-400 font-bold">1.</span>
-                                <span><strong>Just exploring?</strong> Click "Generate Fleet" or "Generate Stress Scenario" to see example data.</span>
-                            </li>
-                            <li class="flex items-start gap-2">
-                                <span class="text-emerald-400 font-bold">2.</span>
-                                <span><strong>Testing your platform?</strong> Use "Run Against Platform" - enter your platform's URL and click run.</span>
-                            </li>
-                            <li class="flex items-start gap-2">
-                                <span class="text-emerald-400 font-bold">3.</span>
-                                <span><strong>Building an integration?</strong> See the technical docs at <code class="text-cyan-400 bg-slate-900 px-1 rounded">/docs/agent-orchestration-guide.md</code></span>
-                            </li>
-                        </ol>
+
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-semibold text-rose-300 uppercase tracking-wider">2. External Platform Integration (requires target URL)</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div class="bg-slate-800/60 rounded-lg p-3">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <div class="w-5 h-5 rounded bg-rose-600/50 flex items-center justify-center text-[10px] font-bold text-rose-300">R</div>
+                                    <h4 class="font-semibold text-rose-400 text-sm">Run Stress Test</h4>
+                                </div>
+                                <p class="text-slate-400 text-xs leading-relaxed">
+                                    End-to-end: generates fleet + scenario, POSTs fleet to <span class="text-slate-300">{url}/api/v1/stress-test/fleet</span>,
+                                    submits scenario, polls for results, validates against __expected__. Supports AOA client (structured validation, dashboard polling) or legacy OrchestrationClient.
+                                    Returns PASS/DEGRADED/FAIL verdict with operator-grade analysis.
+                                </p>
+                                <code class="text-[10px] text-cyan-400/60 mt-1 block">POST /api/agents/run-stress-test</code>
+                            </div>
+                            <div class="bg-slate-800/60 rounded-lg p-3">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <div class="w-5 h-5 rounded bg-amber-600/50 flex items-center justify-center text-[10px] font-bold text-amber-300">L</div>
+                                    <h4 class="font-semibold text-amber-400 text-sm">Streaming Load Test</h4>
+                                </div>
+                                <p class="text-slate-400 text-xs leading-relaxed">
+                                    Continuously streams workflows to AOA at configurable rate (1-100/sec) for a set duration.
+                                    Tracks execution IDs, success/failure rates, and actual throughput. Background task with status/stop/cleanup endpoints.
+                                </p>
+                                <code class="text-[10px] text-cyan-400/60 mt-1 block">POST /api/agents/stream-load-test &bull; GET .../status &bull; POST .../stop</code>
+                            </div>
+                            <div class="bg-slate-800/60 rounded-lg p-3">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <div class="w-5 h-5 rounded bg-indigo-600/50 flex items-center justify-center text-[10px] font-bold text-indigo-300">P</div>
+                                    <h4 class="font-semibold text-indigo-400 text-sm">Push Fleet / Workflow</h4>
+                                </div>
+                                <p class="text-slate-400 text-xs leading-relaxed">
+                                    Atomic push endpoints: send a generated fleet or single workflow directly to an external platform without running a full stress test.
+                                    Useful for incremental testing or seeding data.
+                                </p>
+                                <code class="text-[10px] text-cyan-400/60 mt-1 block">POST /api/agents/push-fleet &bull; POST /api/agents/push-workflow</code>
+                            </div>
+                            <div class="bg-slate-800/60 rounded-lg p-3">
+                                <div class="flex items-center gap-2 mb-1.5">
+                                    <div class="w-5 h-5 rounded bg-emerald-600/50 flex items-center justify-center text-[10px] font-bold text-emerald-300">V</div>
+                                    <h4 class="font-semibold text-emerald-400 text-sm">AOA Response Validation</h4>
+                                </div>
+                                <p class="text-slate-400 text-xs leading-relaxed">
+                                    Utility endpoints to validate any AOA response against FARM __expected__ values. Checks completion_rate, chaos_recovery, and task_completion.
+                                    Returns per-check pass/fail and verdict alignment.
+                                </p>
+                                <code class="text-[10px] text-cyan-400/60 mt-1 block">POST /api/agents/validate-aoa &bull; POST /api/agents/validate-aoa-response</code>
+                            </div>
+                        </div>
                     </div>
-                    
+
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-semibold text-emerald-300 uppercase tracking-wider">3. DB-Backed Simulation</h3>
+                        <div class="bg-slate-800/60 rounded-lg p-3">
+                            <p class="text-slate-400 text-xs leading-relaxed mb-2">
+                                Simulates agent orchestration activity in the database to populate AOA function metrics (Discover, Sense, Policy, Plan, Prioritize, Execute, Budget, Observe, Learn, Lifecycle).
+                                Initialize a fleet of named agents, generate runs/approvals, or start continuous live simulation that updates metrics in real time.
+                            </p>
+                            <div class="flex flex-wrap gap-2 text-[10px]">
+                                <code class="text-cyan-400/60">POST /api/agents/simulation/init</code>
+                                <code class="text-cyan-400/60">POST /api/agents/simulation/generate</code>
+                                <code class="text-cyan-400/60">POST /api/agents/simulation/start-live</code>
+                                <code class="text-cyan-400/60">POST /api/agents/simulation/stop-live</code>
+                                <code class="text-cyan-400/60">GET /api/agents/simulation/state</code>
+                                <code class="text-cyan-400/60">GET /api/agents/aoa-functions</code>
+                            </div>
+                            <p class="text-slate-500 text-[10px] mt-1.5">DB tables: sim_agents, sim_agent_runs, sim_agent_approvals</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-semibold text-cyan-300 uppercase tracking-wider">4. Verification & Analysis</h3>
+                        <div class="bg-slate-800/60 rounded-lg p-3">
+                            <p class="text-slate-400 text-xs leading-relaxed mb-2">
+                                Operator-grade stress test analysis answers: Is the platform reliable under chaos? Can it handle the load? Are SLAs met? Is performance regressing?
+                                Checks completion rate, chaos recovery, error rate, latency (avg/p99), throughput, circuit breaker triggers, and retry success rate.
+                                Verdicts: <span class="text-emerald-300">PASS</span> (completion &ge;95%, chaos recovery &ge;80%) |
+                                <span class="text-amber-300">DEGRADED</span> (completion &ge;80%, chaos recovery &ge;50%) |
+                                <span class="text-red-300">FAIL</span>.
+                                Historical comparison against previous runs at same target URL.
+                            </p>
+                            <p class="text-slate-500 text-[10px]">Implemented in: stress_analysis.py (recomputed on-the-fly from stored data so logic updates apply retroactively)</p>
+                        </div>
+                    </div>
+
+                    <div class="space-y-3">
+                        <h3 class="text-sm font-semibold text-blue-300 uppercase tracking-wider">5. Persistence</h3>
+                        <div class="bg-slate-800/60 rounded-lg p-3">
+                            <p class="text-slate-400 text-xs leading-relaxed mb-2">
+                                Stress test runs are persisted to <span class="text-blue-300">stress_test_runs</span> table with full execution results, fleet/scenario summaries, 
+                                expected values, AOA verdicts, comparative analysis, and dashboard metric snapshots. Analysis is recomputed on read so improvements to scoring logic apply to all historical runs.
+                                Streaming load test tracking is in-memory only (does not survive restart).
+                            </p>
+                            <div class="flex flex-wrap gap-2 text-[10px]">
+                                <code class="text-cyan-400/60">GET /api/agents/stress-test-runs</code>
+                                <code class="text-cyan-400/60">GET /api/agents/stress-test-runs/{run_id}</code>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="bg-amber-900/30 border border-amber-700/50 rounded-lg p-4">
                         <div class="flex items-start gap-2">
                             <svg class="w-5 h-5 text-amber-400 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                             <div>
-                                <h4 class="font-semibold text-amber-400 text-sm">What is "Chaos"?</h4>
-                                <p class="text-amber-200/80 text-sm">
-                                    Chaos is intentional failures injected into workflows. Your platform should handle these gracefully - 
-                                    retrying failed tasks, triggering compensations, or escalating to humans. The chaos rate controls how 
-                                    many tasks will have problems. Start with 10-20% for realistic testing.
+                                <h4 class="font-semibold text-amber-400 text-sm">Chaos Injection</h4>
+                                <p class="text-amber-200/80 text-xs">
+                                    10 chaos types injected into workflow tasks at a configurable rate (0-100%). Your platform should handle these gracefully:
+                                    retrying failed tasks, triggering saga compensations, or escalating to humans. Start with 10-20% for realistic testing.
+                                    Each chaos event has a defined recovery action and affected task types.
                                 </p>
                             </div>
                         </div>
