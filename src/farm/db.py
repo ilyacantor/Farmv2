@@ -560,17 +560,13 @@ class DatabaseManager:
                         created_at TEXT NOT NULL,
                         manifest_json JSONB NOT NULL,
                         source_systems JSONB NOT NULL DEFAULT '[]',
-                        record_counts JSONB NOT NULL DEFAULT '{}',
-                        snapshot_name TEXT,
-                        tenant_id TEXT
+                        record_counts JSONB NOT NULL DEFAULT '{}'
                     )
                 """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_gt_manifests_created ON ground_truth_manifests(created_at DESC)")
                 
                 try:
                     await conn.execute("ALTER TABLE ground_truth_manifests ADD COLUMN IF NOT EXISTS dcl_push_results JSONB DEFAULT '[]'")
-                    await conn.execute("ALTER TABLE ground_truth_manifests ADD COLUMN IF NOT EXISTS snapshot_name TEXT")
-                    await conn.execute("ALTER TABLE ground_truth_manifests ADD COLUMN IF NOT EXISTS tenant_id TEXT")
                 except Exception:
                     pass
                 
@@ -742,22 +738,18 @@ async def save_ground_truth_manifest(
     manifest: dict,
     source_systems: list,
     record_counts: dict,
-    snapshot_name: str = "",
-    tenant_id: str = "",
 ) -> None:
     """Persist a ground truth manifest for later reconciliation."""
     import json
     async with connection() as conn:
         await conn.execute("""
-            INSERT INTO ground_truth_manifests (run_id, seed, created_at, manifest_json, source_systems, record_counts, snapshot_name, tenant_id)
-            VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb, $7, $8)
+            INSERT INTO ground_truth_manifests (run_id, seed, created_at, manifest_json, source_systems, record_counts)
+            VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6::jsonb)
             ON CONFLICT (run_id) DO UPDATE SET
                 manifest_json = EXCLUDED.manifest_json,
                 source_systems = EXCLUDED.source_systems,
-                record_counts = EXCLUDED.record_counts,
-                snapshot_name = EXCLUDED.snapshot_name,
-                tenant_id = EXCLUDED.tenant_id
-        """, run_id, seed, created_at, json.dumps(manifest), json.dumps(source_systems), json.dumps(record_counts), snapshot_name, tenant_id)
+                record_counts = EXCLUDED.record_counts
+        """, run_id, seed, created_at, json.dumps(manifest), json.dumps(source_systems), json.dumps(record_counts))
 
 
 async def load_ground_truth_manifest(run_id: str) -> dict | None:
@@ -765,7 +757,7 @@ async def load_ground_truth_manifest(run_id: str) -> dict | None:
     import json
     async with connection() as conn:
         row = await conn.fetchrow(
-            "SELECT manifest_json, seed, created_at, source_systems, record_counts, dcl_push_results, snapshot_name, tenant_id FROM ground_truth_manifests WHERE run_id = $1",
+            "SELECT manifest_json, seed, created_at, source_systems, record_counts FROM ground_truth_manifests WHERE run_id = $1",
             run_id,
         )
         if not row:
@@ -776,9 +768,6 @@ async def load_ground_truth_manifest(run_id: str) -> dict | None:
             "created_at": row["created_at"],
             "source_systems": json.loads(row["source_systems"]) if isinstance(row["source_systems"], str) else row["source_systems"],
             "record_counts": json.loads(row["record_counts"]) if isinstance(row["record_counts"], str) else row["record_counts"],
-            "dcl_push_results": json.loads(row["dcl_push_results"]) if isinstance(row["dcl_push_results"], str) else row["dcl_push_results"] if row["dcl_push_results"] else None,
-            "snapshot_name": row["snapshot_name"] or "",
-            "tenant_id": row["tenant_id"] or "",
         }
 
 
@@ -797,7 +786,7 @@ async def list_ground_truth_runs(limit: int = 50) -> list[dict]:
     import json
     async with connection() as conn:
         rows = await conn.fetch(
-            "SELECT run_id, seed, created_at, source_systems, record_counts, dcl_push_results, snapshot_name, tenant_id FROM ground_truth_manifests ORDER BY created_at DESC LIMIT $1",
+            "SELECT run_id, seed, created_at, source_systems, record_counts FROM ground_truth_manifests ORDER BY created_at DESC LIMIT $1",
             limit,
         )
         return [
@@ -807,9 +796,6 @@ async def list_ground_truth_runs(limit: int = 50) -> list[dict]:
                 "created_at": r["created_at"],
                 "source_systems": json.loads(r["source_systems"]) if isinstance(r["source_systems"], str) else r["source_systems"],
                 "record_counts": json.loads(r["record_counts"]) if isinstance(r["record_counts"], str) else r["record_counts"],
-                "dcl_push_results": json.loads(r["dcl_push_results"]) if isinstance(r["dcl_push_results"], str) else r["dcl_push_results"] if r["dcl_push_results"] else None,
-                "snapshot_name": r["snapshot_name"] or "",
-                "tenant_id": r["tenant_id"] or "",
             }
             for r in rows
         ]

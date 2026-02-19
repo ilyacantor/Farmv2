@@ -58,7 +58,6 @@ class BusinessDataOrchestrator:
         base_revenue: float = 22.0,
         growth_rate: float = 0.15,
         num_quarters: int = 12,
-        snapshot_name: Optional[str] = None,
     ):
         self.seed = seed
         dcl_base = dcl_ingest_url or os.getenv("DCL_INGEST_URL", "")
@@ -99,17 +98,12 @@ class BusinessDataOrchestrator:
         self.manifest: Optional[Dict[str, Any]] = None
         self.push_results: List[Dict[str, Any]] = []
         self.run_id: Optional[str] = None
-        self._operator_snapshot_name: Optional[str] = snapshot_name
 
     def generate_snapshot_name(self) -> str:
-        """Return operator-provided snapshot name. Fails loudly if none was provided."""
-        if not self._operator_snapshot_name:
-            raise ValueError(
-                "MISSING_SNAPSHOT_NAME: snapshot_name is required. "
-                "Select a snapshot name before generating. "
-                "No silent fallback — every run must have an explicit identity."
-            )
-        return self._operator_snapshot_name
+        """Generate a deterministic cloudedge-xxxx snapshot name from the seed."""
+        import hashlib
+        h = hashlib.sha256(str(self.seed).encode()).hexdigest()[:4]
+        return f"cloudedge-{h}"
 
     def generate_run_id(self) -> str:
         """Generate a unique run ID."""
@@ -269,13 +263,7 @@ class BusinessDataOrchestrator:
 
         dcl_run_id = str(uuid.uuid4())
         run_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        snapshot_name = getattr(self, 'snapshot_name', None)
-        if not snapshot_name:
-            raise ValueError(
-                "MISSING_SNAPSHOT_NAME: Cannot push to DCL without a snapshot_name. "
-                "This should have been set during generate_all(). "
-                "If you see this, generate_all() was not called or snapshot_name was not provided."
-            )
+        snapshot_name = getattr(self, 'snapshot_name', None) or f"cloudedge-{dcl_run_id[:4]}"
         tenant_id = os.getenv("DCL_TENANT_ID", "aos-demo")
 
         base_headers = {
@@ -441,7 +429,6 @@ class BusinessDataOrchestrator:
         )
         return [{
             "dcl_run_id": dcl_run_id,
-            "dispatch_id": dcl_run_id,
             "farm_run_id": self.run_id,
             "snapshot_name": snapshot_name,
             "pipes_pushed": len(results),

@@ -235,10 +235,6 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle validation errors with JSON for /api/* routes."""
-    import logging as _logging
-    _logging.getLogger("farm.validation").warning(
-        f"Validation 422 on {request.method} {request.url.path}: {exc.errors()}"
-    )
     if request.url.path.startswith('/api'):
         return JSONResponse(
             status_code=422,
