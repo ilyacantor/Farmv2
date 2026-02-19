@@ -185,9 +185,14 @@ async def _push_to_dcl(
     """
     pipe_id = manifest.source.pipe_id
     run_id = manifest.run_id
-    dcl_url = manifest.target.dcl_url.rstrip("/")
     tenant_id = manifest.target.tenant_id
     snapshot_name = manifest.target.snapshot_name
+
+    # DCL_INGEST_URL env var overrides manifest.target.dcl_url when set.
+    # This lets ops point Farm at a different DCL without redeploying AAM manifests.
+    import os
+    dcl_url_env = os.environ.get("DCL_INGEST_URL", "").strip()
+    dcl_url = dcl_url_env if dcl_url_env else manifest.target.dcl_url.rstrip("/")
     run_timestamp = manifest.provenance.get(
         "run_timestamp", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     )
@@ -430,7 +435,7 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
                 error_type="generation_error", error_message=str(e)[:500],
             )
         except Exception as db_err:
-            logger.warning(f"Failed to persist manifest run {farm_run_id}: {db_err}")
+            logger.error(f"PERSISTENCE FAILURE: manifest run {farm_run_id} NOT saved: {db_err}", exc_info=True)
         return ManifestExecutionResult(
             run_id=run_id,
             pipe_id=pipe_id,
@@ -471,7 +476,7 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
                     error_message=f"Generator {generator_key} produced no usable data",
                 )
             except Exception as db_err:
-                logger.warning(f"Failed to persist manifest run {farm_run_id}: {db_err}")
+                logger.error(f"PERSISTENCE FAILURE: manifest run {farm_run_id} NOT saved: {db_err}", exc_info=True)
             return ManifestExecutionResult(
                 run_id=run_id,
                 pipe_id=pipe_id,

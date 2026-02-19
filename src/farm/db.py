@@ -853,6 +853,8 @@ async def save_manifest_run(
 ) -> None:
     """Persist a manifest-driven execution run with full provenance."""
     import json
+    # Lazy schema init — if DB was unavailable at boot, ensure table exists now
+    await db.ensure_schema()
     async with connection() as conn:
         await conn.execute("""
             INSERT INTO manifest_runs (

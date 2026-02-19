@@ -2631,7 +2631,7 @@
             const label = document.getElementById('dclConnLabel');
             const checkbox = document.getElementById('bdPushDcl');
             try {
-                const resp = await fetch('/api/business-data/dcl-status');
+                const resp = await fetch('/api/_diagnostics/dcl-status');
                 const data = await resp.json();
                 if (data.connected) {
                     dot.className = 'w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-sm shadow-emerald-400/50';
