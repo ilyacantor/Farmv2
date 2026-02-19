@@ -898,7 +898,19 @@
                         <div id="bdAdvanced" class="hidden mt-3 grid grid-cols-2 md:grid-cols-6 gap-3">
                             <div class="col-span-2">
                                 <label class="block text-xs font-medium text-slate-400 mb-1">Snapshot Name</label>
-                                <input type="text" id="bdSnapshotNameInput" placeholder="e.g. CloudEdge-Q4, AcmeCorp-demo" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none placeholder-slate-600">
+                                <select id="bdSnapshotNameInput" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
+                                    <option value="">(auto from seed)</option>
+                                    <option value="CloudEdge-Q4">CloudEdge-Q4</option>
+                                    <option value="CloudEdge-Annual">CloudEdge-Annual</option>
+                                    <option value="AcmeCorp-Demo">AcmeCorp-Demo</option>
+                                    <option value="AcmeCorp-Prod">AcmeCorp-Prod</option>
+                                    <option value="NovaTech-Pilot">NovaTech-Pilot</option>
+                                    <option value="NovaTech-Full">NovaTech-Full</option>
+                                    <option value="VeloSystems-UAT">VeloSystems-UAT</option>
+                                    <option value="TechHub-Staging">TechHub-Staging</option>
+                                    <option value="AeroFlow-CI">AeroFlow-CI</option>
+                                    <option value="Meridian-Recon">Meridian-Recon</option>
+                                </select>
                             </div>
                             <div>
                                 <label class="block text-xs font-medium text-slate-400 mb-1">Seed</label>
