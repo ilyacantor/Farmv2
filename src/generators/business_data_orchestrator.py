@@ -429,6 +429,7 @@ class BusinessDataOrchestrator:
         )
         return [{
             "dcl_run_id": dcl_run_id,
+            "dispatch_id": dcl_run_id,
             "farm_run_id": self.run_id,
             "snapshot_name": snapshot_name,
             "pipes_pushed": len(results),

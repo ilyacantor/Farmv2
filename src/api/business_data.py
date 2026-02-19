@@ -57,6 +57,9 @@ class GenerateResponse(BaseModel):
     manifest_errors: list = []
     generation_errors: dict = {}
     push_results: list = []
+    dcl_run_id: Optional[str] = None
+    dispatch_id: Optional[str] = None
+    pipe_ids: list = []
 
 
 @router.post("/generate", response_model=GenerateResponse)
@@ -114,6 +117,15 @@ async def generate_business_data(request: GenerateRequest):
             except Exception as e:
                 logger.error(f"Failed to persist push results for {run_id}: {e}")
 
+    dcl_run_id = None
+    dispatch_id = None
+    pipe_ids = []
+    if push_results and len(push_results) > 0:
+        summary_entry = push_results[0]
+        dcl_run_id = summary_entry.get("dcl_run_id")
+        dispatch_id = summary_entry.get("dispatch_id") or dcl_run_id
+        pipe_ids = [r["pipe_id"] for r in push_results[1:] if "pipe_id" in r]
+
     manifest = orchestrator.get_manifest() or {}
 
     return GenerateResponse(
@@ -128,6 +140,9 @@ async def generate_business_data(request: GenerateRequest):
         manifest_errors=summary["manifest_errors"],
         generation_errors=generation_errors,
         push_results=push_results,
+        dcl_run_id=dcl_run_id,
+        dispatch_id=dispatch_id,
+        pipe_ids=pipe_ids,
     )
 
 
