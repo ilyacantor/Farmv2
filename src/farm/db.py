@@ -564,12 +564,41 @@ class DatabaseManager:
                     )
                 """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_gt_manifests_created ON ground_truth_manifests(created_at DESC)")
-                
+
                 try:
                     await conn.execute("ALTER TABLE ground_truth_manifests ADD COLUMN IF NOT EXISTS dcl_push_results JSONB DEFAULT '[]'")
                 except Exception:
                     pass
-                
+
+                self._log("Creating manifest_runs table...")
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS manifest_runs (
+                        farm_run_id TEXT PRIMARY KEY,
+                        run_id TEXT NOT NULL,
+                        pipe_id TEXT NOT NULL,
+                        dcl_run_id TEXT,
+                        tenant_id TEXT NOT NULL,
+                        snapshot_name TEXT NOT NULL,
+                        source_system TEXT NOT NULL,
+                        category TEXT,
+                        generator_key TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        rows_generated INTEGER DEFAULT 0,
+                        rows_accepted INTEGER,
+                        dcl_status_code INTEGER,
+                        error_type TEXT,
+                        error_message TEXT,
+                        schema_drift BOOLEAN DEFAULT FALSE,
+                        created_at TEXT NOT NULL,
+                        elapsed_ms INTEGER,
+                        push_result_json JSONB
+                    )
+                """)
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_run_id ON manifest_runs(run_id)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_tenant_created ON manifest_runs(tenant_id, created_at DESC)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_status ON manifest_runs(status)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_pipe_id ON manifest_runs(pipe_id)")
+
                 self._schema_initialized = True
                 self._log("Schema initialized")
     
@@ -799,3 +828,117 @@ async def list_ground_truth_runs(limit: int = 50) -> list[dict]:
             }
             for r in rows
         ]
+
+
+async def save_manifest_run(
+    farm_run_id: str,
+    run_id: str,
+    pipe_id: str,
+    tenant_id: str,
+    snapshot_name: str,
+    source_system: str,
+    generator_key: str,
+    status: str,
+    created_at: str,
+    category: str | None = None,
+    dcl_run_id: str | None = None,
+    rows_generated: int = 0,
+    rows_accepted: int | None = None,
+    dcl_status_code: int | None = None,
+    error_type: str | None = None,
+    error_message: str | None = None,
+    schema_drift: bool = False,
+    elapsed_ms: int | None = None,
+    push_result_json: dict | None = None,
+) -> None:
+    """Persist a manifest-driven execution run with full provenance."""
+    import json
+    async with connection() as conn:
+        await conn.execute("""
+            INSERT INTO manifest_runs (
+                farm_run_id, run_id, pipe_id, dcl_run_id,
+                tenant_id, snapshot_name, source_system, category, generator_key,
+                status, rows_generated, rows_accepted, dcl_status_code,
+                error_type, error_message, schema_drift,
+                created_at, elapsed_ms, push_result_json
+            ) VALUES (
+                $1, $2, $3, $4,
+                $5, $6, $7, $8, $9,
+                $10, $11, $12, $13,
+                $14, $15, $16,
+                $17, $18, $19::jsonb
+            )
+            ON CONFLICT (farm_run_id) DO UPDATE SET
+                status = EXCLUDED.status,
+                dcl_run_id = EXCLUDED.dcl_run_id,
+                rows_accepted = EXCLUDED.rows_accepted,
+                dcl_status_code = EXCLUDED.dcl_status_code,
+                error_type = EXCLUDED.error_type,
+                error_message = EXCLUDED.error_message,
+                schema_drift = EXCLUDED.schema_drift,
+                elapsed_ms = EXCLUDED.elapsed_ms,
+                push_result_json = EXCLUDED.push_result_json
+        """,
+            farm_run_id, run_id, pipe_id, dcl_run_id,
+            tenant_id, snapshot_name, source_system, category, generator_key,
+            status, rows_generated, rows_accepted, dcl_status_code,
+            error_type, error_message, schema_drift,
+            created_at, elapsed_ms, json.dumps(push_result_json) if push_result_json else None,
+        )
+
+
+async def get_manifest_run(farm_run_id: str) -> dict | None:
+    """Load a single manifest run by farm_run_id."""
+    import json
+    async with connection() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM manifest_runs WHERE farm_run_id = $1",
+            farm_run_id,
+        )
+        if not row:
+            return None
+        result = dict(row)
+        if result.get("push_result_json") and isinstance(result["push_result_json"], str):
+            result["push_result_json"] = json.loads(result["push_result_json"])
+        return result
+
+
+async def list_manifest_runs(
+    tenant_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    """List manifest runs with optional filters, ordered by created_at DESC."""
+    import json
+    conditions = []
+    params: list = []
+    idx = 1
+
+    if tenant_id:
+        conditions.append(f"tenant_id = ${idx}")
+        params.append(tenant_id)
+        idx += 1
+    if status:
+        conditions.append(f"status = ${idx}")
+        params.append(status)
+        idx += 1
+
+    where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+    params.extend([limit, offset])
+
+    query = f"""
+        SELECT farm_run_id, run_id, pipe_id, dcl_run_id,
+               tenant_id, snapshot_name, source_system, category, generator_key,
+               status, rows_generated, rows_accepted, dcl_status_code,
+               error_type, error_message, schema_drift,
+               created_at, elapsed_ms
+        FROM manifest_runs
+        {where}
+        ORDER BY created_at DESC
+        LIMIT ${idx} OFFSET ${idx + 1}
+    """
+
+    async with connection() as conn:
+        rows = await conn.fetch(query, *params)
+        return [dict(r) for r in rows]

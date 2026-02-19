@@ -35,7 +35,6 @@ from src.api.manifest_intake import (
     _push_to_dcl,
     _GENERATOR_REGISTRY,
 )
-from src.generators.business_data_orchestrator import BusinessDataOrchestrator
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +140,7 @@ class TestJobManifestModel:
         with pytest.raises(ValidationError) as exc_info:
             JobManifest(
                 source={"pipe_id": "x", "system": "salesforce"},
-                target={"dcl_url": "http://localhost:8000"},
+                target={"dcl_url": "http://localhost:8000", "tenant_id": "t", "snapshot_name": "s"},
             )
         assert "run_id" in str(exc_info.value)
 
@@ -151,7 +150,7 @@ class TestJobManifestModel:
             JobManifest(
                 run_id="run-1",
                 source={"system": "salesforce"},
-                target={"dcl_url": "http://localhost:8000"},
+                target={"dcl_url": "http://localhost:8000", "tenant_id": "t", "snapshot_name": "s"},
             )
         assert "pipe_id" in str(exc_info.value)
 
@@ -161,7 +160,7 @@ class TestJobManifestModel:
             JobManifest(
                 run_id="run-1",
                 source={"pipe_id": "x"},
-                target={"dcl_url": "http://localhost:8000"},
+                target={"dcl_url": "http://localhost:8000", "tenant_id": "t", "snapshot_name": "s"},
             )
         assert "system" in str(exc_info.value)
 
@@ -171,23 +170,44 @@ class TestJobManifestModel:
             JobManifest(
                 run_id="run-1",
                 source={"pipe_id": "x", "system": "salesforce"},
-                target={},
+                target={"tenant_id": "t", "snapshot_name": "s"},
             )
         assert "dcl_url" in str(exc_info.value)
 
     def test_defaults_applied(self):
-        """Defaults should fill in optional fields."""
+        """Defaults should fill in optional fields (non-target)."""
         m = JobManifest(
             run_id="run-1",
             source={"pipe_id": "x", "system": "salesforce"},
-            target={"dcl_url": "http://localhost:8000"},
+            target={"dcl_url": "http://localhost:8000", "tenant_id": "test-tenant", "snapshot_name": "snap-001"},
         )
         assert m.manifest_version == "1.0"
         assert m.farm_verification is False
         assert m.limits.max_rows == 100000
         assert m.limits.timeout_seconds == 300
         assert m.limits.retry_count == 2
-        assert m.target.tenant_id == "aos-demo"
+        assert m.target.tenant_id == "test-tenant"
+        assert m.target.snapshot_name == "snap-001"
+
+    def test_missing_tenant_id_fails(self):
+        """tenant_id is required — no default, no fallback."""
+        with pytest.raises(ValidationError) as exc_info:
+            JobManifest(
+                run_id="run-1",
+                source={"pipe_id": "x", "system": "salesforce"},
+                target={"dcl_url": "http://localhost:8000", "snapshot_name": "snap-001"},
+            )
+        assert "tenant_id" in str(exc_info.value)
+
+    def test_missing_snapshot_name_fails(self):
+        """snapshot_name is required — no default, no fallback."""
+        with pytest.raises(ValidationError) as exc_info:
+            JobManifest(
+                run_id="run-1",
+                source={"pipe_id": "x", "system": "salesforce"},
+                target={"dcl_url": "http://localhost:8000", "tenant_id": "test-tenant"},
+            )
+        assert "snapshot_name" in str(exc_info.value)
 
     def test_transform_spec_optional(self):
         """transform is optional and defaults to None."""
@@ -738,8 +758,8 @@ class TestManifestIntegration:
         assert result.push_result.pipe_id == "aam-ns-inv-001"
 
     @pytest.mark.asyncio
-    async def test_unknown_system_returns_400(self):
-        """An unknown system should raise HTTPException 400."""
+    async def test_unknown_system_returns_422(self):
+        """An unknown system with no category should raise HTTPException 422 NO_GENERATOR_ROUTE."""
         manifest = _make_manifest(
             source={
                 "pipe_id": "unknown-pipe",
@@ -754,8 +774,8 @@ class TestManifestIntegration:
         with pytest.raises(HTTPException) as exc_info:
             await manifest_intake(manifest)
 
-        assert exc_info.value.status_code == 400
-        assert "UNKNOWN_SOURCE_SYSTEM" in str(exc_info.value.detail)
+        assert exc_info.value.status_code == 422
+        assert "NO_GENERATOR_ROUTE" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
     async def test_dcl_rejection_sets_rejected_status(self):
@@ -849,28 +869,3 @@ class TestManifestIntegration:
         assert len(pushed_body["rows"]) <= 5
 
 
-# ===================================================================
-# 8. Self-Directed Push Enhancement Tests
-# ===================================================================
-
-
-class TestSelfDirectedPushEnhancements:
-    """Verify that the orchestrator's push_to_dcl includes correlation keys
-    and proper 422 / schema_drift handling."""
-
-    def test_orchestrator_push_result_summary_has_mode(self):
-        """The push summary should indicate self_directed mode and joinable=False."""
-        # We can't easily test the async push without a real server,
-        # but we can verify the orchestrator structure.
-        orch = BusinessDataOrchestrator(seed=42, tiers=["salesforce"])
-        summary = orch.generate_all()
-        assert summary["manifest_valid"] is True
-        # The orchestrator should have data ready to push
-        assert len(orch.generated_data) > 0
-
-    def test_orchestrator_has_run_id(self):
-        """Orchestrator should generate a farm_run_id."""
-        orch = BusinessDataOrchestrator(seed=42, tiers=["salesforce"])
-        summary = orch.generate_all()
-        assert orch.run_id is not None
-        assert orch.run_id.startswith("farm_run_")

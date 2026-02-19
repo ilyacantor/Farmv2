@@ -1,20 +1,18 @@
 """
-Manifest intake endpoint for AAM → Farm dispatch (Path 2).
+Manifest intake endpoint for AAM → Farm dispatch.
 
-This is the manifest-driven execution path. AAM dispatches JobManifest payloads
-here, and Farm generates data + pushes to DCL using the manifest's identity
-(pipe_id) and delivery address (dcl_url).
+AAM dispatches JobManifest payloads here. Farm generates data and pushes to
+DCL using the manifest's identity (pipe_id) and delivery address (dcl_url).
 
-IMPORTANT DISTINCTION — Two Execution Modes:
-  - MANIFEST-DRIVEN (this endpoint): pipe_id comes from the manifest.
-    Data participates in DCL's late-binding join. This is the production path.
-  - SELF-DIRECTED (/api/business-data/generate): pipe_id comes from Farm's
-    internal generator metadata. Data does NOT participate in the late-binding
-    join. This is the demo/dev path only.
+Farm's only job: receive a JobManifest from AAM, route to the right generator
+by source.category, push to DCL with the manifest's pipe_id. No self-service
+generation, no seed data, no fallbacks. If there's no manifest, Farm does nothing.
 
 CRITICAL CONTRACT:
-  The manifest's source.pipe_id is the ONLY pipe_id used in DCL push headers.
-  Generator-internal pipe_ids are never sent to DCL in manifest-driven mode.
+  - manifest.source.pipe_id is the ONLY pipe_id used in DCL push headers.
+  - manifest.target.tenant_id is REQUIRED (no default).
+  - manifest.target.snapshot_name is REQUIRED (no default).
+  - manifest.run_id is the correlation key across all modules.
 """
 
 import asyncio
@@ -28,6 +26,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
+from src.farm.db import save_manifest_run
 
 from src.generators.business_data.profile import BusinessProfile
 from src.generators.business_data.salesforce import SalesforceGenerator
@@ -187,8 +186,8 @@ async def _push_to_dcl(
     pipe_id = manifest.source.pipe_id
     run_id = manifest.run_id
     dcl_url = manifest.target.dcl_url.rstrip("/")
-    tenant_id = manifest.target.tenant_id or "aos-demo"
-    snapshot_name = manifest.target.snapshot_name or f"cloudedge-{farm_run_id[:4]}"
+    tenant_id = manifest.target.tenant_id
+    snapshot_name = manifest.target.snapshot_name
     run_timestamp = manifest.provenance.get(
         "run_timestamp", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     )
@@ -366,11 +365,15 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
     Extracted so both the single-manifest endpoint and the batch endpoint
     can reuse the same execution path.
     """
+    start_time = time.monotonic()
+    created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     farm_run_id = f"farm_manifest_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
     system = manifest.source.system.lower().strip()
     category = (manifest.source.category or "").lower().strip()
     pipe_id = manifest.source.pipe_id
     run_id = manifest.run_id
+    tenant_id = manifest.target.tenant_id
+    snapshot_name = manifest.target.snapshot_name
 
     generator_key = _resolve_generator_key(manifest)
 
@@ -411,11 +414,23 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
             generator = gen_class(seed=seed)
             generated_data = generator.generate(profile, farm_run_id, run_timestamp)
     except Exception as e:
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
         logger.error(
             f"Data generation failed for system={system} (generator={generator_key}), "
             f"run_id={run_id}: {e}",
             exc_info=True,
         )
+        try:
+            await save_manifest_run(
+                farm_run_id=farm_run_id, run_id=run_id, pipe_id=pipe_id,
+                tenant_id=tenant_id, snapshot_name=snapshot_name,
+                source_system=system, category=category or None,
+                generator_key=generator_key, status="failed",
+                created_at=created_at, elapsed_ms=elapsed_ms,
+                error_type="generation_error", error_message=str(e)[:500],
+            )
+        except Exception as db_err:
+            logger.warning(f"Failed to persist manifest run {farm_run_id}: {db_err}")
         return ManifestExecutionResult(
             run_id=run_id,
             pipe_id=pipe_id,
@@ -440,10 +455,23 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
         )
         pipe_payload = _find_pipe_data(generated_data, None)
         if pipe_payload is None:
+            elapsed_ms = int((time.monotonic() - start_time) * 1000)
             logger.error(
                 f"Generator {generator_key} produced no usable data for "
                 f"system={system}, run_id={run_id}"
             )
+            try:
+                await save_manifest_run(
+                    farm_run_id=farm_run_id, run_id=run_id, pipe_id=pipe_id,
+                    tenant_id=tenant_id, snapshot_name=snapshot_name,
+                    source_system=system, category=category or None,
+                    generator_key=generator_key, status="failed",
+                    created_at=created_at, elapsed_ms=elapsed_ms,
+                    error_type="no_usable_data",
+                    error_message=f"Generator {generator_key} produced no usable data",
+                )
+            except Exception as db_err:
+                logger.warning(f"Failed to persist manifest run {farm_run_id}: {db_err}")
             return ManifestExecutionResult(
                 run_id=run_id,
                 pipe_id=pipe_id,
@@ -478,12 +506,45 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
         schema_hash=schema_hash,
     )
 
+    elapsed_ms = int((time.monotonic() - start_time) * 1000)
+
     if push_result.status == "success":
         status = "completed"
     elif push_result.error_type == "NO_MATCHING_PIPE":
         status = "rejected_by_dcl"
     else:
         status = "failed"
+
+    # Persist run with full provenance
+    try:
+        await save_manifest_run(
+            farm_run_id=farm_run_id,
+            run_id=run_id,
+            pipe_id=pipe_id,
+            dcl_run_id=push_result.dcl_run_id,
+            tenant_id=tenant_id,
+            snapshot_name=snapshot_name,
+            source_system=system,
+            category=category or None,
+            generator_key=generator_key,
+            status=status,
+            rows_generated=rows_generated,
+            rows_accepted=push_result.rows_accepted,
+            dcl_status_code=push_result.status_code,
+            error_type=push_result.error_type,
+            error_message=push_result.error[:500] if push_result.error else None,
+            schema_drift=push_result.schema_drift or False,
+            created_at=created_at,
+            elapsed_ms=elapsed_ms,
+            push_result_json=push_result.model_dump(),
+        )
+        logger.info(
+            f"Manifest run persisted: farm_run_id={farm_run_id}, "
+            f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
+            f"tenant_id={tenant_id}, snapshot_name={snapshot_name}"
+        )
+    except Exception as db_err:
+        logger.warning(f"Failed to persist manifest run {farm_run_id}: {db_err}")
 
     recon_triggered = False
     if manifest.farm_verification and push_result.status == "success":

@@ -60,8 +60,8 @@ class TargetSpec(BaseModel):
     """Where Farm delivers data (DCL's /ingest endpoint)."""
     dcl_url: str = Field(..., description="DCL's /ingest URL — where Farm pushes data")
     auth_token_ref: Optional[str] = Field(default=None)
-    tenant_id: Optional[str] = Field(default="aos-demo")
-    snapshot_name: Optional[str] = Field(default=None)
+    tenant_id: str = Field(..., description="Tenant identifier — required for provenance, no default")
+    snapshot_name: str = Field(..., description="Snapshot name — required for provenance, no default")
 
 
 class RunLimits(BaseModel):
