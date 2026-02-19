@@ -212,6 +212,7 @@
                         <button id="tabConsole" onclick="switchMainTab('console')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">AOD</button>
                         <button id="tabAgents" onclick="switchMainTab('agents')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">AOA</button>
                         <button id="tabScenarios" onclick="switchMainTab('scenarios')" class="px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors">NLQ</button>
+                        <button id="tabRunLog" onclick="switchMainTab('runlog')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Run Log</button>
                         <button id="tabDcl" onclick="switchMainTab('dcl')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">DCL</button>
                         <button id="tabGuide" onclick="switchMainTab('guide')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Guide</button>
                         <button id="tabTest" onclick="switchMainTab('test')" class="hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Test Lab</button>
@@ -1081,6 +1082,101 @@
             </div>
         </div>
 
+        <!-- Run Log Tab -->
+        <div id="runlogTab" class="hidden h-full overflow-auto" style="max-height: calc(100vh - 120px);">
+            <div class="p-4 space-y-4">
+                <!-- Header -->
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-lg font-semibold text-white">Manifest Run Log</h2>
+                        <p class="text-slate-400 text-sm">Every AAM → Farm → DCL execution with full provenance</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button onclick="rlRefresh()" id="rlRefreshBtn" class="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors">Refresh</button>
+                        <label class="flex items-center gap-1.5 text-xs text-slate-400">
+                            <input type="checkbox" id="rlAutoRefresh" onchange="rlToggleAutoRefresh()" class="rounded">
+                            Auto
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                    <div class="flex items-center gap-1.5">
+                        <label class="text-xs text-slate-400">Tenant:</label>
+                        <input id="rlFilterTenant" type="text" placeholder="all" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white w-32 focus:border-cyan-500 outline-none" onchange="rlRefresh()">
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <label class="text-xs text-slate-400">Status:</label>
+                        <select id="rlFilterStatus" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none" onchange="rlRefresh()">
+                            <option value="">all</option>
+                            <option value="completed">completed</option>
+                            <option value="failed">failed</option>
+                            <option value="rejected_by_dcl">rejected_by_dcl</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                        <label class="text-xs text-slate-400">Pipe ID:</label>
+                        <input id="rlFilterPipe" type="text" placeholder="all" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white w-48 focus:border-cyan-500 outline-none" onchange="rlRefresh()">
+                    </div>
+                    <div id="rlRunCount" class="ml-auto text-xs text-slate-500"></div>
+                </div>
+
+                <!-- Summary Stats -->
+                <div id="rlStats" class="grid grid-cols-4 gap-3">
+                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 text-center">
+                        <div id="rlStatTotal" class="text-xl font-bold text-white">--</div>
+                        <div class="text-xs text-slate-400">Total Runs</div>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3 border border-emerald-800/50 text-center">
+                        <div id="rlStatCompleted" class="text-xl font-bold text-emerald-400">--</div>
+                        <div class="text-xs text-slate-400">Completed</div>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3 border border-red-800/50 text-center">
+                        <div id="rlStatFailed" class="text-xl font-bold text-red-400">--</div>
+                        <div class="text-xs text-slate-400">Failed</div>
+                    </div>
+                    <div class="bg-slate-800/50 rounded-lg p-3 border border-amber-800/50 text-center">
+                        <div id="rlStatRejected" class="text-xl font-bold text-amber-400">--</div>
+                        <div class="text-xs text-slate-400">Rejected by DCL</div>
+                    </div>
+                </div>
+
+                <!-- Run Table -->
+                <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+                    <table class="w-full text-xs">
+                        <thead>
+                            <tr class="bg-slate-900/60 text-slate-400 border-b border-slate-700/50">
+                                <th class="px-3 py-2 text-left font-medium">Status</th>
+                                <th class="px-3 py-2 text-left font-medium">Farm Run ID</th>
+                                <th class="px-3 py-2 text-left font-medium">AAM Run ID</th>
+                                <th class="px-3 py-2 text-left font-medium">Pipe ID</th>
+                                <th class="px-3 py-2 text-left font-medium">DCL Run ID</th>
+                                <th class="px-3 py-2 text-left font-medium">Tenant</th>
+                                <th class="px-3 py-2 text-left font-medium">Snapshot</th>
+                                <th class="px-3 py-2 text-left font-medium">System</th>
+                                <th class="px-3 py-2 text-right font-medium">Rows</th>
+                                <th class="px-3 py-2 text-right font-medium">ms</th>
+                                <th class="px-3 py-2 text-left font-medium">Created</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rlTableBody" class="divide-y divide-slate-700/50">
+                            <tr><td colspan="11" class="px-3 py-8 text-center text-slate-500">No runs yet. Waiting for AAM to dispatch manifests.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Run Detail Drawer -->
+                <div id="rlDetail" class="hidden bg-slate-800/50 rounded-lg border border-cyan-700/50 p-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="text-sm font-semibold text-cyan-400">Run Detail</h3>
+                        <button onclick="document.getElementById('rlDetail').classList.add('hidden')" class="text-slate-400 hover:text-white text-xs">[close]</button>
+                    </div>
+                    <pre id="rlDetailJson" class="text-xs text-slate-300 bg-slate-900/60 rounded p-3 overflow-auto max-h-64 font-mono whitespace-pre-wrap"></pre>
+                </div>
+            </div>
+        </div>
+
         <!-- DCL Tab -->
         <div id="dclTab" class="hidden h-full overflow-hidden">
             <div class="space-y-6">
@@ -1857,6 +1953,7 @@
             const consoleTab = document.getElementById('consoleTab');
             const agentsTab = document.getElementById('agentsTab');
             const scenariosTab = document.getElementById('scenariosTab');
+            const runlogTab = document.getElementById('runlogTab');
             const dclTab = document.getElementById('dclTab');
             const guideTab = document.getElementById('guideTab');
             const testTab = document.getElementById('testTab');
@@ -1864,30 +1961,33 @@
             const tabConsole = document.getElementById('tabConsole');
             const tabAgents = document.getElementById('tabAgents');
             const tabScenarios = document.getElementById('tabScenarios');
+            const tabRunLog = document.getElementById('tabRunLog');
             const tabDcl = document.getElementById('tabDcl');
             const tabGuide = document.getElementById('tabGuide');
             const tabTest = document.getElementById('tabTest');
-            
+
             const activeClass = 'px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors';
             const inactiveClass = 'px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors';
             const hiddenInactiveClass = 'hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors';
-            
+
             overviewTab.classList.add('hidden');
             consoleTab.classList.add('hidden');
             agentsTab.classList.add('hidden');
             scenariosTab.classList.add('hidden');
+            runlogTab.classList.add('hidden');
             dclTab.classList.add('hidden');
             guideTab.classList.add('hidden');
             testTab.classList.add('hidden');
-            
+
             tabOverview.className = inactiveClass;
             tabConsole.className = inactiveClass;
             tabAgents.className = inactiveClass;
             tabScenarios.className = inactiveClass;
+            tabRunLog.className = inactiveClass;
             tabDcl.className = inactiveClass;
             tabGuide.className = inactiveClass;
             tabTest.className = hiddenInactiveClass;
-            
+
             if (tab === 'overview') {
                 overviewTab.classList.remove('hidden');
                 tabOverview.className = activeClass;
@@ -1901,6 +2001,10 @@
             } else if (tab === 'scenarios') {
                 scenariosTab.classList.remove('hidden');
                 tabScenarios.className = activeClass;
+            } else if (tab === 'runlog') {
+                runlogTab.classList.remove('hidden');
+                tabRunLog.className = activeClass;
+                rlRefresh();
             } else if (tab === 'dcl') {
                 dclTab.classList.remove('hidden');
                 tabDcl.className = activeClass;
@@ -1941,6 +2045,119 @@
                 guideLoaded = true;
             } catch (e) {
                 container.innerHTML = '<div class="text-red-400">Failed to load user guide: ' + e.message + '</div>';
+            }
+        }
+
+        // ========================================
+        // Run Log Tab Functions
+        // ========================================
+        let rlAutoRefreshTimer = null;
+
+        async function rlRefresh() {
+            const btn = document.getElementById('rlRefreshBtn');
+            btn.textContent = 'Loading...';
+            btn.disabled = true;
+            try {
+                const tenant = document.getElementById('rlFilterTenant').value.trim();
+                const status = document.getElementById('rlFilterStatus').value;
+                const pipeId = document.getElementById('rlFilterPipe').value.trim();
+                const params = new URLSearchParams();
+                if (tenant) params.set('tenant_id', tenant);
+                if (status) params.set('status', status);
+                if (pipeId) params.set('pipe_id', pipeId);
+                params.set('limit', '100');
+
+                const resp = await fetch('/api/runs?' + params.toString());
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    throw new Error(err.error || `HTTP ${resp.status}`);
+                }
+                const runs = await resp.json();
+                rlRenderTable(runs);
+                rlRenderStats(runs);
+            } catch (e) {
+                document.getElementById('rlTableBody').innerHTML =
+                    `<tr><td colspan="11" class="px-3 py-8 text-center text-red-400">Error: ${e.message}</td></tr>`;
+            } finally {
+                btn.textContent = 'Refresh';
+                btn.disabled = false;
+            }
+        }
+
+        function rlRenderStats(runs) {
+            const total = runs.length;
+            const completed = runs.filter(r => r.status === 'completed').length;
+            const failed = runs.filter(r => r.status === 'failed').length;
+            const rejected = runs.filter(r => r.status === 'rejected_by_dcl').length;
+            document.getElementById('rlStatTotal').textContent = total;
+            document.getElementById('rlStatCompleted').textContent = completed;
+            document.getElementById('rlStatFailed').textContent = failed;
+            document.getElementById('rlStatRejected').textContent = rejected;
+            document.getElementById('rlRunCount').textContent = `${total} runs`;
+        }
+
+        function rlStatusBadge(status) {
+            const colors = {
+                completed: 'bg-emerald-900/50 text-emerald-400 border-emerald-700/50',
+                failed: 'bg-red-900/50 text-red-400 border-red-700/50',
+                rejected_by_dcl: 'bg-amber-900/50 text-amber-400 border-amber-700/50',
+            };
+            const cls = colors[status] || 'bg-slate-700 text-slate-400 border-slate-600';
+            return `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium border ${cls}">${status}</span>`;
+        }
+
+        function rlTruncate(str, len) {
+            if (!str) return '<span class="text-slate-600">--</span>';
+            return str.length > len ? str.substring(0, len) + '...' : str;
+        }
+
+        function rlRenderTable(runs) {
+            const tbody = document.getElementById('rlTableBody');
+            if (!runs || runs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="11" class="px-3 py-8 text-center text-slate-500">No runs found. Waiting for AAM to dispatch manifests.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = runs.map(r => {
+                const drift = r.schema_drift ? ' <span class="text-amber-400" title="Schema drift detected">!</span>' : '';
+                const errorTitle = r.error_type ? ` title="${r.error_type}: ${(r.error_message || '').substring(0, 100)}"` : '';
+                return `<tr class="hover:bg-slate-700/30 cursor-pointer" onclick="rlShowDetail('${r.farm_run_id}')"${errorTitle}>
+                    <td class="px-3 py-2">${rlStatusBadge(r.status)}${drift}</td>
+                    <td class="px-3 py-2 font-mono text-cyan-400">${rlTruncate(r.farm_run_id, 28)}</td>
+                    <td class="px-3 py-2 font-mono text-slate-300">${rlTruncate(r.run_id, 16)}</td>
+                    <td class="px-3 py-2 font-mono text-violet-400">${rlTruncate(r.pipe_id, 24)}</td>
+                    <td class="px-3 py-2 font-mono text-slate-400">${rlTruncate(r.dcl_run_id, 12)}</td>
+                    <td class="px-3 py-2 text-slate-300">${r.tenant_id || '--'}</td>
+                    <td class="px-3 py-2 text-slate-400">${rlTruncate(r.snapshot_name, 16)}</td>
+                    <td class="px-3 py-2 text-slate-400">${r.source_system || '--'}</td>
+                    <td class="px-3 py-2 text-right text-slate-300">${r.rows_generated ?? '--'}${r.rows_accepted != null ? '/' + r.rows_accepted : ''}</td>
+                    <td class="px-3 py-2 text-right text-slate-500">${r.elapsed_ms ?? '--'}</td>
+                    <td class="px-3 py-2 text-slate-500">${r.created_at ? r.created_at.replace('T', ' ').substring(0, 19) : '--'}</td>
+                </tr>`;
+            }).join('');
+        }
+
+        async function rlShowDetail(farmRunId) {
+            const detail = document.getElementById('rlDetail');
+            const json = document.getElementById('rlDetailJson');
+            detail.classList.remove('hidden');
+            json.textContent = 'Loading...';
+            try {
+                const resp = await fetch(`/api/runs/${farmRunId}`);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                json.textContent = JSON.stringify(data, null, 2);
+            } catch (e) {
+                json.textContent = `Error loading detail: ${e.message}`;
+            }
+        }
+
+        function rlToggleAutoRefresh() {
+            const checked = document.getElementById('rlAutoRefresh').checked;
+            if (checked) {
+                rlAutoRefreshTimer = setInterval(rlRefresh, 5000);
+            } else {
+                clearInterval(rlAutoRefreshTimer);
+                rlAutoRefreshTimer = null;
             }
         }
 

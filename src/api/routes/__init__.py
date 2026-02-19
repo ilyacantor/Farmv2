@@ -18,6 +18,7 @@ from .reconciliation import router as reconciliation_router
 from .policy import router as policy_router
 from .admin import router as admin_router
 from .injection_tests import router as injection_tests_router
+from .run_log import router as run_log_router
 
 # Re-export compute_fingerprint for backwards compatibility with main.py seeding
 from .common import compute_fingerprint
@@ -31,6 +32,7 @@ router.include_router(reconciliation_router)
 router.include_router(policy_router)
 router.include_router(admin_router)
 router.include_router(injection_tests_router)
+router.include_router(run_log_router)
 
 __all__ = [
     "router",
@@ -40,4 +42,5 @@ __all__ = [
     "policy_router",
     "admin_router",
     "injection_tests_router",
+    "run_log_router",
 ]
