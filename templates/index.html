@@ -867,9 +867,12 @@
 
                 <!-- Run History -->
                 <div id="nlqRunHistory" class="hidden">
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700/50">
-                        <h3 class="text-sm font-semibold text-slate-300 mb-3">Recent Manifest Runs</h3>
-                        <div class="space-y-2" id="nlqRunList"></div>
+                    <div class="bg-slate-800/60 rounded-xl border border-slate-700/50 overflow-hidden">
+                        <div class="px-4 py-2.5 border-b border-slate-700/50 flex items-center justify-between">
+                            <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Manifest Run Log</h3>
+                            <span class="text-[10px] text-slate-500" id="nlqRunCount"></span>
+                        </div>
+                        <div class="divide-y divide-slate-700/30 max-h-[320px] overflow-y-auto" id="nlqRunList"></div>
                     </div>
                 </div>
 
@@ -2328,43 +2331,34 @@
 
         function nlqRenderRunList() {
             const listEl = document.getElementById('nlqRunList');
-            const systemInfo = {
-                salesforce: { label: 'SF', color: 'cyan' },
-                netsuite: { label: 'NS', color: 'emerald' },
-                chargebee: { label: 'CB', color: 'purple' },
-                workday: { label: 'WD', color: 'blue' },
-                zendesk: { label: 'ZD', color: 'amber' },
-                jira: { label: 'JR', color: 'indigo' },
-                datadog: { label: 'DD', color: 'violet' },
-                aws_cost_explorer: { label: 'AWS', color: 'orange' },
-            };
+            const countEl = document.getElementById('nlqRunCount');
+            if (countEl) countEl.textContent = `${nlqRunsList.length} runs`;
 
             listEl.innerHTML = nlqRunsList.map(run => {
                 const isSelected = nlqCurrentRun && nlqCurrentRun.run_id === run.run_id;
                 const totalRecords = run.record_counts ? Object.values(run.record_counts).reduce((a, b) => a + b, 0) : 0;
-                const systems = (run.source_systems || []).map(s => {
-                    const info = systemInfo[s] || { label: s.substring(0, 3).toUpperCase(), color: 'slate' };
-                    return `<span class="px-1.5 py-0.5 rounded text-[10px] bg-${info.color}-900/40 text-${info.color}-400">${info.label}</span>`;
-                }).join('');
-                const pushStatus = run.dcl_push_results ? run.dcl_push_results.map(p => {
-                    const color = p.status === 'success' ? 'emerald' : p.error_type === 'NO_MATCHING_PIPE' ? 'amber' : 'red';
-                    return `<span class="w-2 h-2 rounded-full bg-${color}-400 inline-block"></span>`;
-                }).join('') : '';
+                const systemCount = (run.source_systems || []).length;
+                const ts = run.created_at ? new Date(run.created_at).toLocaleString(undefined, { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' }) : '--';
+                const shortId = run.run_id.length > 12 ? run.run_id.substring(0, 12) + '…' : run.run_id;
 
-                return `
-                    <button onclick="nlqSelectRun('${run.run_id}')"
-                        class="w-full text-left p-3 rounded-lg ${isSelected ? 'bg-cyan-900/30 border border-cyan-700/50' : 'bg-slate-900/40 border border-slate-700/30 hover:border-slate-600'} transition-all">
-                        <div class="flex items-center justify-between mb-1">
-                            <span class="text-xs font-mono text-cyan-400 truncate max-w-[200px]">${run.run_id}</span>
-                            <span class="text-[10px] text-slate-500">${run.created_at || '--'}</span>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <div class="flex gap-1">${systems}</div>
-                            <span class="text-[10px] text-slate-500">${totalRecords.toLocaleString()} records</span>
-                            <div class="flex gap-0.5 ml-auto">${pushStatus}</div>
-                        </div>
-                    </button>
-                `;
+                let statusDot = 'bg-slate-500';
+                if (run.dcl_push_results && run.dcl_push_results.length > 0) {
+                    const hasFailure = run.dcl_push_results.some(p => p.status !== 'success' && p.error_type !== 'NO_MATCHING_PIPE');
+                    const hasReject = run.dcl_push_results.some(p => p.error_type === 'NO_MATCHING_PIPE');
+                    const allOk = run.dcl_push_results.every(p => p.status === 'success');
+                    if (allOk) statusDot = 'bg-emerald-400';
+                    else if (hasFailure) statusDot = 'bg-red-400';
+                    else if (hasReject) statusDot = 'bg-amber-400';
+                }
+
+                return `<button onclick="nlqSelectRun('${run.run_id}')"
+                    class="w-full text-left px-4 py-2 flex items-center gap-3 text-xs hover:bg-slate-700/30 transition-colors ${isSelected ? 'bg-cyan-900/20' : ''}">
+                    <span class="w-1.5 h-1.5 rounded-full ${statusDot} flex-shrink-0"></span>
+                    <span class="font-mono text-cyan-400 flex-shrink-0">${shortId}</span>
+                    <span class="text-slate-500 flex-shrink-0">${ts}</span>
+                    <span class="text-slate-400 flex-shrink-0">${systemCount} source${systemCount !== 1 ? 's' : ''}</span>
+                    <span class="text-slate-500 ml-auto flex-shrink-0">${totalRecords.toLocaleString()} rec</span>
+                </button>`;
             }).join('');
         }
 
