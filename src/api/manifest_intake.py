@@ -184,9 +184,16 @@ async def _push_to_dcl(
     dcl_url = manifest.target.dcl_url.rstrip("/")
     tenant_id = manifest.target.tenant_id or "aos-demo"
     if not manifest.target.snapshot_name:
-        raise ValueError(
-            f"MISSING_SNAPSHOT_NAME: manifest.target.snapshot_name is required for pipe_id={pipe_id}. "
-            f"AAM must provide snapshot_name in the JobManifest. No silent fallback."
+        from fastapi import HTTPException
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "MISSING_SNAPSHOT_NAME",
+                "message": f"manifest.target.snapshot_name is required for pipe_id={pipe_id}. "
+                           f"AAM must provide snapshot_name in the JobManifest.",
+                "pipe_id": pipe_id,
+                "run_id": run_id,
+            }
         )
     snapshot_name = manifest.target.snapshot_name
     run_timestamp = manifest.provenance.get(
