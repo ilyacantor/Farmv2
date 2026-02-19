@@ -101,13 +101,26 @@ class BusinessDataOrchestrator:
         self.run_id: Optional[str] = None
         self._operator_snapshot_name: Optional[str] = snapshot_name
 
+    _SNAPSHOT_PREFIXES = [
+        "CloudEdge", "NovaTech", "AcmeCorp", "VeloSystems", "TechHub",
+        "AeroFlow", "Meridian", "Quantum", "SynergyOps", "ApexData",
+        "IronBridge", "PulseNet", "ClearStack", "BlueStar", "OmniCore",
+    ]
+    _SNAPSHOT_SUFFIXES = [
+        "Q1", "Q2", "Q3", "Q4", "Annual", "Demo", "Pilot",
+        "UAT", "Staging", "CI", "Prod", "Recon", "Full", "Baseline", "Smoke",
+    ]
+
     def generate_snapshot_name(self) -> str:
         """Return operator-provided snapshot name, or generate a deterministic one from the seed."""
         if self._operator_snapshot_name:
             return self._operator_snapshot_name
         import hashlib
-        h = hashlib.sha256(str(self.seed).encode()).hexdigest()[:4]
-        return f"cloudedge-{h}"
+        h = int(hashlib.sha256(str(self.seed).encode()).hexdigest(), 16)
+        prefix = self._SNAPSHOT_PREFIXES[h % len(self._SNAPSHOT_PREFIXES)]
+        suffix = self._SNAPSHOT_SUFFIXES[(h >> 8) % len(self._SNAPSHOT_SUFFIXES)]
+        tag = hashlib.sha256(str(self.seed).encode()).hexdigest()[:4].upper()
+        return f"{prefix}-{suffix}-{tag}"
 
     def generate_run_id(self) -> str:
         """Generate a unique run ID."""
