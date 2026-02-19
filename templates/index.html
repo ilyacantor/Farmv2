@@ -827,9 +827,9 @@
         <div id="scenariosTab" class="hidden h-full overflow-auto" style="max-height: calc(100vh - 120px);">
             <div class="space-y-6">
 
-                <!-- Ground Truth Generator -->
+                <!-- Header with Refresh -->
                 <div class="bg-slate-800/60 rounded-xl p-5 border border-cyan-700/50">
-                    <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center justify-between mb-2">
                         <div class="flex items-center gap-3">
                             <div class="w-10 h-10 rounded-lg bg-cyan-600/30 flex items-center justify-center">
                                 <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -837,134 +837,45 @@
                                 </svg>
                             </div>
                             <div>
-                                <h2 class="text-lg font-semibold text-white">Ground Truth Generator</h2>
-                                <p class="text-slate-400 text-sm">Generate multi-system business data with deterministic ground truth</p>
+                                <h2 class="text-lg font-semibold text-white">NLQ Ground Truth Dashboard</h2>
+                                <p class="text-slate-400 text-sm">Read-only view of AAM-dispatched manifest runs</p>
                             </div>
                         </div>
-                        <div id="bdRunStatus" class="hidden px-3 py-1 rounded-lg text-xs font-mono"></div>
-                    </div>
-
-                    <!-- Preset Tiers -->
-                    <div class="mb-5">
-                        <label class="block text-xs font-medium text-slate-400 mb-3 uppercase tracking-wide">Preset Configuration</label>
-                        <div class="grid grid-cols-3 gap-3">
-                            <button onclick="bdSelectPreset('light')" id="bdPresetLight"
-                                class="group relative p-4 rounded-xl border-2 border-slate-700 hover:border-cyan-500/50 bg-slate-900/40 transition-all text-left">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-2 h-2 rounded-full bg-cyan-400"></div>
-                                    <span class="text-sm font-semibold text-cyan-400">Light</span>
-                                </div>
-                                <div class="space-y-1 text-xs text-slate-400">
-                                    <div>Volume: <span class="text-slate-300">5Q / $10M base</span></div>
-                                    <div>Complexity: <span class="text-slate-300">Tier 1 (CRM, ERP, Billing)</span></div>
-                                    <div>Drift: <span class="text-slate-300">5% YoY growth</span></div>
-                                </div>
-                            </button>
-                            <button onclick="bdSelectPreset('standard')" id="bdPresetStandard"
-                                class="group relative p-4 rounded-xl border-2 border-cyan-500/50 bg-cyan-900/10 transition-all text-left ring-1 ring-cyan-500/20">
-                                <div class="absolute -top-2 right-3 px-2 py-0.5 bg-cyan-600 text-[10px] font-bold text-white rounded-full">DEFAULT</div>
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
-                                    <span class="text-sm font-semibold text-emerald-400">Standard</span>
-                                </div>
-                                <div class="space-y-1 text-xs text-slate-400">
-                                    <div>Volume: <span class="text-slate-300">12Q / ARR $83.6M / Full P&L+BS+CF</span></div>
-                                    <div>Complexity: <span class="text-slate-300">All Tiers (131+ metrics/quarter)</span></div>
-                                    <div>Drift: <span class="text-slate-300">32% ARR growth, 6% deceleration</span></div>
-                                </div>
-                            </button>
-                            <button onclick="bdSelectPreset('full')" id="bdPresetFull"
-                                class="group relative p-4 rounded-xl border-2 border-slate-700 hover:border-purple-500/50 bg-slate-900/40 transition-all text-left">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-2 h-2 rounded-full bg-purple-400"></div>
-                                    <span class="text-sm font-semibold text-purple-400">Full</span>
-                                </div>
-                                <div class="space-y-1 text-xs text-slate-400">
-                                    <div>Volume: <span class="text-slate-300">20Q / $50M base</span></div>
-                                    <div>Complexity: <span class="text-slate-300">All Tiers (+ PM, Monitoring, Cloud)</span></div>
-                                    <div>Drift: <span class="text-slate-300">30% YoY growth</span></div>
-                                </div>
+                        <div class="flex items-center gap-3">
+                            <span id="nlqRunCount" class="text-xs text-slate-500 font-mono"></span>
+                            <button onclick="nlqRefreshDashboard()" id="nlqRefreshBtn"
+                                class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-slate-300 text-sm rounded-lg transition-all flex items-center gap-2">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                                Refresh
                             </button>
                         </div>
-                    </div>
-
-                    <!-- Advanced Controls (collapsible) -->
-                    <div class="mb-4">
-                        <button onclick="document.getElementById('bdAdvanced').classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180')"
-                            class="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
-                            <svg class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                            Advanced Configuration
-                        </button>
-                        <div id="bdAdvanced" class="hidden mt-3 grid grid-cols-2 md:grid-cols-6 gap-3">
-                            <div class="col-span-2">
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Snapshot Name</label>
-                                <select id="bdSnapshotNameInput" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="CloudEdge-Q4" selected>CloudEdge-Q4</option>
-                                    <option value="CloudEdge-Annual">CloudEdge-Annual</option>
-                                    <option value="AcmeCorp-Demo">AcmeCorp-Demo</option>
-                                    <option value="AcmeCorp-Prod">AcmeCorp-Prod</option>
-                                    <option value="NovaTech-Pilot">NovaTech-Pilot</option>
-                                    <option value="NovaTech-Full">NovaTech-Full</option>
-                                    <option value="VeloSystems-UAT">VeloSystems-UAT</option>
-                                    <option value="TechHub-Staging">TechHub-Staging</option>
-                                    <option value="AeroFlow-CI">AeroFlow-CI</option>
-                                    <option value="Meridian-Recon">Meridian-Recon</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Seed</label>
-                                <input type="number" id="bdSeed" value="42" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Tiers</label>
-                                <select id="bdTiers" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="1">Tier 1 (CRM/ERP/Billing)</option>
-                                    <option value="1,2">Tiers 1+2 (+ HCM/Support)</option>
-                                    <option value="1,2,3" selected>All Tiers (+ PM/Monitoring/Cloud)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Base Revenue ($M)</label>
-                                <input type="number" id="bdBaseRevenue" value="22" step="1" min="1" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">YoY Growth</label>
-                                <select id="bdGrowthRate" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="0.05">5% (Low drift)</option>
-                                    <option value="0.15" selected>15% (Medium drift)</option>
-                                    <option value="0.30">30% (High drift)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Quarters</label>
-                                <input type="number" id="bdQuarters" value="12" min="1" max="20" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Generate Button -->
-                    <div class="flex items-center gap-3">
-                        <button onclick="bdGenerate()" id="bdGenerateBtn"
-                            class="px-6 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-lg transition-all cyan-glow">
-                            Generate Ground Truth
-                        </button>
-                        <button onclick="bdClear()" class="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all">
-                            Clear
-                        </button>
-                        <label class="flex items-center gap-2 text-xs text-slate-400 ml-4">
-                            <input type="checkbox" id="bdPushDcl" class="w-3.5 h-3.5 rounded" checked>
-                            Push to DCL on generate
-                        </label>
-                        <span id="dclConnIndicator" class="flex items-center gap-1.5 text-xs text-slate-500 ml-2">
-                            <span id="dclConnDot" class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>
-                            <span id="dclConnLabel">checking...</span>
-                        </span>
                     </div>
                 </div>
 
-                <!-- Generation Summary (hidden until generated) -->
-                <div id="bdSummaryContainer" class="hidden">
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-emerald-700/50">
+                <!-- Empty State -->
+                <div id="nlqEmptyState" class="hidden">
+                    <div class="bg-slate-800/40 rounded-xl p-8 border border-slate-700/50 text-center">
+                        <div class="w-16 h-16 rounded-full bg-slate-700/50 flex items-center justify-center mx-auto mb-4">
+                            <svg class="w-8 h-8 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/>
+                            </svg>
+                        </div>
+                        <h3 class="text-lg font-semibold text-slate-300 mb-2">No AAM-Dispatched Runs Found</h3>
+                        <p class="text-slate-500 text-sm max-w-md mx-auto">Run the AAM pipeline to generate data. Farm will compute ground truth automatically when manifests arrive via <code class="text-cyan-400 text-xs">POST /api/farm/manifest-intake</code>.</p>
+                    </div>
+                </div>
+
+                <!-- Run History -->
+                <div id="nlqRunHistory" class="hidden">
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700/50">
+                        <h3 class="text-sm font-semibold text-slate-300 mb-3">Recent Manifest Runs</h3>
+                        <div class="space-y-2" id="nlqRunList"></div>
+                    </div>
+                </div>
+
+                <!-- Selected Run Detail -->
+                <div id="nlqRunDetail" class="hidden">
+                    <div class="bg-slate-800/60 rounded-xl p-5 border border-emerald-700/50 mb-6">
                         <div class="flex items-center gap-3 mb-4">
                             <div class="w-10 h-10 rounded-lg bg-emerald-600/30 flex items-center justify-center">
                                 <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -972,151 +883,108 @@
                                 </svg>
                             </div>
                             <div>
-                                <h2 class="text-lg font-semibold text-white">Generation Summary</h2>
-                                <p class="text-slate-400 text-sm">Run <span id="bdRunId" class="text-cyan-400 font-mono">--</span> <span class="text-slate-600 mx-1">|</span> Snapshot <span id="bdSnapshotName" class="text-emerald-400 font-mono">--</span></p>
+                                <h2 class="text-lg font-semibold text-white">Run Detail</h2>
+                                <p class="text-slate-400 text-sm">Run <span id="nlqDetailRunId" class="text-cyan-400 font-mono">--</span></p>
                             </div>
                         </div>
 
-                        <!-- Provenance Chain -->
-                        <div id="bdProvenanceBlock" class="hidden bg-slate-900/80 rounded-lg p-4 mb-4 border border-slate-700/50">
+                        <div class="bg-slate-900/80 rounded-lg p-4 mb-4 border border-slate-700/50">
                             <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Provenance Chain</h3>
-                            <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
                                 <div>
-                                    <span class="text-cyan-400 text-xs">Farm Run ID</span>
-                                    <p id="bdProvFarmRunId" class="text-white font-mono text-xs mt-0.5 break-all">--</p>
+                                    <span class="text-cyan-400 text-xs">AAM Run ID</span>
+                                    <p id="nlqProvRunId" class="text-white font-mono text-xs mt-0.5 break-all">--</p>
                                 </div>
                                 <div>
-                                    <span class="text-cyan-400 text-xs">DCL Run ID</span>
-                                    <p id="bdProvDclRunId" class="text-white font-mono text-xs mt-0.5 break-all">--</p>
+                                    <span class="text-cyan-400 text-xs">Seed</span>
+                                    <p id="nlqProvSeed" class="text-white font-mono text-xs mt-0.5">--</p>
                                 </div>
                                 <div>
-                                    <span class="text-cyan-400 text-xs">Snapshot Name</span>
-                                    <p id="bdProvSnapshotName" class="text-emerald-400 font-mono text-xs mt-0.5">--</p>
+                                    <span class="text-cyan-400 text-xs">Created At</span>
+                                    <p id="nlqProvCreatedAt" class="text-white font-mono text-xs mt-0.5">--</p>
                                 </div>
-                            </div>
-                            <div class="mt-3">
-                                <span class="text-cyan-400 text-xs">Dispatch ID</span>
-                                <p id="bdProvDispatchId" class="text-white font-mono text-xs mt-0.5 break-all">--</p>
-                            </div>
-                            <div id="bdProvPipeIds" class="mt-3 hidden">
-                                <span class="text-cyan-400 text-xs">Pipe IDs</span>
-                                <div id="bdProvPipeIdsList" class="mt-1 flex flex-wrap gap-1.5"></div>
+                                <div>
+                                    <span class="text-cyan-400 text-xs">Source Systems</span>
+                                    <p id="nlqProvSystems" class="text-white font-mono text-xs mt-0.5">--</p>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Source Systems + Record Counts -->
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4" id="bdSystemCards"></div>
+                        <div id="nlqPipeResults" class="hidden bg-slate-900/80 rounded-lg p-4 mb-4 border border-slate-700/50">
+                            <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">DCL Push Results</h3>
+                            <div id="nlqPipeResultsList" class="flex flex-wrap gap-2"></div>
+                        </div>
 
-                        <!-- Business Profile Trajectory -->
-                        <div class="border-t border-slate-700 pt-4 mt-2">
-                            <div class="flex items-center justify-between mb-3">
-                                <h3 class="text-sm font-semibold text-slate-300">Business Trajectory</h3>
-                                <select id="bdTrajectoryMetric" onchange="bdRenderTrajectory()" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none">
-                                    <option value="revenue">Revenue ($M)</option>
-                                    <option value="ending_arr">Ending ARR ($M)</option>
-                                    <option value="ebitda">EBITDA ($M)</option>
-                                    <option value="net_income">Net Income ($M)</option>
-                                    <option value="cash">Cash ($M)</option>
-                                    <option value="fcf">Free Cash Flow ($M)</option>
-                                    <option value="gross_margin_pct">Gross Margin %</option>
-                                    <option value="pipeline">Pipeline ($M)</option>
-                                    <option value="headcount">Headcount</option>
-                                    <option value="customer_count">Customers</option>
-                                    <option value="cloud_spend">Cloud Spend ($M)</option>
-                                    <option value="rule_of_40">Rule of 40</option>
-                                </select>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4" id="nlqSystemCards"></div>
+                    </div>
+
+                    <!-- Ground Truth Metrics -->
+                    <div id="nlqGroundTruthContainer" class="hidden">
+                        <div class="bg-slate-800/60 rounded-xl p-5 border border-purple-700/50 mb-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-purple-600/30 flex items-center justify-center">
+                                        <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h2 class="text-lg font-semibold text-white">Ground Truth Metrics</h2>
+                                        <p class="text-slate-400 text-sm">Authoritative values per quarter across all categories</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="text-xs text-slate-400">Quarter:</label>
+                                    <select id="nlqQuarterSelect" onchange="nlqRenderGroundTruth()" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none"></select>
+                                </div>
                             </div>
-                            <div id="bdTrajectoryChart" class="flex items-end gap-1 h-24 px-2"></div>
-                            <div id="bdTrajectoryLabels" class="flex gap-1 px-2 mt-1"></div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3" id="nlqMetricCategories"></div>
+                            <div class="border-t border-slate-700 pt-4 mt-4">
+                                <h3 class="text-sm font-semibold text-slate-300 mb-3">Dimensional Breakdowns <span id="nlqDimCount" class="text-slate-500 font-normal"></span></h3>
+                                <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3" id="nlqDimensionalBreakdowns"></div>
+                            </div>
+                            <div class="border-t border-slate-700 pt-4 mt-4">
+                                <h3 class="text-sm font-semibold text-slate-300 mb-3">Expected Cross-System Conflicts</h3>
+                                <div id="nlqConflicts" class="space-y-2"></div>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- Ground Truth Dashboard (hidden until generated) -->
-                <div id="bdGroundTruthContainer" class="hidden">
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-purple-700/50">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-lg bg-purple-600/30 flex items-center justify-center">
-                                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                                    </svg>
+                    <!-- Reconciliation Scorecard -->
+                    <div id="nlqReconcileContainer" class="hidden">
+                        <div class="bg-slate-800/60 rounded-xl p-5 border border-rose-700/50">
+                            <div class="flex items-center justify-between mb-4">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-lg bg-rose-600/30 flex items-center justify-center">
+                                        <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                        </svg>
+                                    </div>
+                                    <div>
+                                        <h2 class="text-lg font-semibold text-white">Reconciliation Scorecard</h2>
+                                        <p class="text-slate-400 text-sm">Compare submitted results against ground truth</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <h2 class="text-lg font-semibold text-white">Ground Truth Metrics</h2>
-                                    <p class="text-slate-400 text-sm">Authoritative values per quarter across all categories</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="text-xs text-slate-400">Quarter:</label>
-                                <select id="bdQuarterSelect" onchange="bdRenderGroundTruth()" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none"></select>
-                            </div>
-                        </div>
-
-                        <!-- Metric Categories -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3" id="bdMetricCategories"></div>
-
-                        <!-- Dimensional Breakdowns -->
-                        <div class="border-t border-slate-700 pt-4 mt-4">
-                            <h3 class="text-sm font-semibold text-slate-300 mb-3">Dimensional Breakdowns <span id="bdDimCount" class="text-slate-500 font-normal"></span></h3>
-                            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3" id="bdDimensionalBreakdowns"></div>
-                        </div>
-
-                        <!-- Expected Conflicts -->
-                        <div class="border-t border-slate-700 pt-4 mt-4">
-                            <h3 class="text-sm font-semibold text-slate-300 mb-3">Expected Cross-System Conflicts</h3>
-                            <div id="bdConflicts" class="space-y-2"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Reconciliation Scorecard (hidden until generated) -->
-                <div id="bdReconcileContainer" class="hidden">
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-rose-700/50">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-lg bg-rose-600/30 flex items-center justify-center">
-                                    <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h2 class="text-lg font-semibold text-white">Reconciliation Scorecard</h2>
-                                    <p class="text-slate-400 text-sm">Compare submitted results against ground truth</p>
+                                <div class="flex items-center gap-2">
+                                    <button onclick="nlqLoadSampleActuals()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs text-slate-300 rounded-lg transition-all">
+                                        Load Sample Actuals
+                                    </button>
+                                    <button onclick="nlqReconcileServer()" id="nlqReconcileBtn" class="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-xs text-white font-semibold rounded-lg transition-all">
+                                        Run Reconciliation
+                                    </button>
                                 </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <button onclick="bdLoadSampleActuals()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs text-slate-300 rounded-lg transition-all">
-                                    Load Sample Actuals
-                                </button>
-                                <button onclick="bdVerifyDCL()" id="bdVerifyDclBtn" class="px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-xs text-white font-semibold rounded-lg transition-all">
-                                    Verify Against DCL
-                                </button>
-                                <button onclick="bdReconcileServer()" id="bdReconcileBtn" class="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-xs text-white font-semibold rounded-lg transition-all">
-                                    Run Reconciliation
-                                </button>
+                            <div class="mb-4">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="text-xs text-slate-400">Paste actual metric values (JSON) for the selected quarter:</label>
+                                    <span class="text-xs text-slate-500">Quarter: <span id="nlqReconcileQuarter" class="text-cyan-400">--</span></span>
+                                </div>
+                                <textarea id="nlqActualsInput" rows="4" placeholder='{"revenue": 23.5, "arr": 21.2, "headcount": 245, "customer_count": 780, ...}'
+                                    class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:border-rose-500 outline-none resize-none"></textarea>
                             </div>
+                            <div id="nlqOverallAccuracy" class="hidden mb-4 p-4 rounded-xl text-center"></div>
+                            <div class="space-y-3" id="nlqReconcileScorecard"></div>
                         </div>
-
-                        <!-- Actuals Input -->
-                        <div class="mb-4">
-                            <div class="flex items-center justify-between mb-2">
-                                <label class="text-xs text-slate-400">Paste actual metric values (JSON) for the selected quarter:</label>
-                                <span class="text-xs text-slate-500">Quarter: <span id="bdReconcileQuarter" class="text-cyan-400">--</span></span>
-                            </div>
-                            <textarea id="bdActualsInput" rows="4" placeholder='{"revenue": 23.5, "arr": 21.2, "headcount": 245, "customer_count": 780, ...}'
-                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:border-rose-500 outline-none resize-none"></textarea>
-                        </div>
-
-                        <!-- Overall Accuracy Banner -->
-                        <div id="bdOverallAccuracy" class="hidden mb-4 p-4 rounded-xl text-center">
-                            <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Overall Accuracy</div>
-                            <div id="bdOverallAccuracyValue" class="text-4xl font-bold"></div>
-                            <div id="bdOverallAccuracyLabel" class="text-xs mt-1"></div>
-                        </div>
-
-                        <!-- Category Scorecards -->
-                        <div class="space-y-3" id="bdReconcileScorecard"></div>
                     </div>
                 </div>
 
@@ -1943,6 +1811,7 @@
             } else if (tab === 'scenarios') {
                 scenariosTab.classList.remove('hidden');
                 tabScenarios.className = activeClass;
+                nlqRefreshDashboard();
             } else if (tab === 'dcl') {
                 dclTab.classList.remove('hidden');
                 tabDcl.className = activeClass;
@@ -2373,16 +2242,10 @@
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // Business Data Ground Truth Generator
+        // NLQ Dashboard (Read-Only, Manifest-Driven)
         // ═══════════════════════════════════════════════════════════════════
 
-        const BD_PRESETS = {
-            light:    { seed: 42, tiers: '1',     base_revenue: 10, growth_rate: 0.05, num_quarters: 5  },
-            standard: { seed: 42, tiers: '1,2,3', base_revenue: 22, growth_rate: 0.15, num_quarters: 12 },
-            full:     { seed: 42, tiers: '1,2,3', base_revenue: 50, growth_rate: 0.30, num_quarters: 20 },
-        };
-
-        const BD_METRIC_CATEGORIES = {
+        const NLQ_METRIC_CATEGORIES = {
             'ARR Waterfall': {
                 color: 'emerald',
                 metrics: ['beginning_arr', 'new_arr', 'new_logo_arr', 'expansion_arr', 'churned_arr', 'arr', 'mrr'],
@@ -2425,267 +2288,192 @@
             }
         };
 
-        let bdCurrentRun = null;       // { run_id, manifest, profile }
-        let bdCurrentPreset = 'standard';
+        let nlqCurrentRun = null;
+        let nlqRunsList = [];
 
-        function bdSelectPreset(preset) {
-            bdCurrentPreset = preset;
-            const cfg = BD_PRESETS[preset];
-
-            // Update advanced controls
-            document.getElementById('bdSeed').value = cfg.seed;
-            document.getElementById('bdTiers').value = cfg.tiers;
-            document.getElementById('bdBaseRevenue').value = cfg.base_revenue;
-            document.getElementById('bdGrowthRate').value = cfg.growth_rate;
-            document.getElementById('bdQuarters').value = cfg.num_quarters;
-
-            // Update preset button styles
-            const presets = { light: 'cyan', standard: 'emerald', full: 'purple' };
-            for (const [key, color] of Object.entries(presets)) {
-                const btn = document.getElementById(`bdPreset${key.charAt(0).toUpperCase() + key.slice(1)}`);
-                if (key === preset) {
-                    btn.className = `group relative p-4 rounded-xl border-2 border-${color}-500/50 bg-${color}-900/10 transition-all text-left ring-1 ring-${color}-500/20`;
-                } else {
-                    btn.className = 'group relative p-4 rounded-xl border-2 border-slate-700 hover:border-slate-600 bg-slate-900/40 transition-all text-left';
-                }
-            }
-        }
-
-        async function checkDclConnectivity() {
-            const dot = document.getElementById('dclConnDot');
-            const label = document.getElementById('dclConnLabel');
-            const checkbox = document.getElementById('bdPushDcl');
-            try {
-                const resp = await fetch('/api/business-data/dcl-status');
-                const data = await resp.json();
-                if (data.connected) {
-                    dot.className = 'w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-sm shadow-emerald-400/50';
-                    label.textContent = 'DCL connected';
-                    label.className = '';
-                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-emerald-400 ml-2';
-                    checkbox.disabled = false;
-                } else if (data.status === 'not_configured') {
-                    dot.className = 'w-2 h-2 rounded-full bg-slate-500 inline-block';
-                    label.textContent = 'DCL not configured';
-                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-slate-500 ml-2';
-                    checkbox.disabled = true;
-                    checkbox.checked = false;
-                } else if (data.status === 'auth_error') {
-                    dot.className = 'w-2 h-2 rounded-full bg-amber-400 inline-block shadow-sm shadow-amber-400/50';
-                    label.textContent = data.message || 'DCL auth required';
-                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-amber-400 ml-2';
-                    checkbox.disabled = false;
-                } else {
-                    dot.className = 'w-2 h-2 rounded-full bg-red-400 inline-block shadow-sm shadow-red-400/50';
-                    label.textContent = data.message || 'DCL unreachable';
-                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-red-400 ml-2';
-                    checkbox.disabled = false;
-                }
-            } catch (e) {
-                dot.className = 'w-2 h-2 rounded-full bg-amber-400 inline-block';
-                label.textContent = 'status unknown';
-                document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-amber-400 ml-2';
-            }
-        }
-
-        async function bdGenerate() {
-            const btn = document.getElementById('bdGenerateBtn');
-            const statusEl = document.getElementById('bdRunStatus');
+        async function nlqRefreshDashboard() {
+            const btn = document.getElementById('nlqRefreshBtn');
             btn.disabled = true;
-            btn.textContent = 'Generating...';
-            statusEl.className = 'px-3 py-1 rounded-lg text-xs font-mono bg-cyan-900/40 border border-cyan-700/30 text-cyan-300';
-            statusEl.textContent = 'Running...';
-            statusEl.classList.remove('hidden');
-
-            const body = {
-                seed: parseInt(document.getElementById('bdSeed').value) || 42,
-                tiers: document.getElementById('bdTiers').value,
-                snapshot_name: document.getElementById('bdSnapshotNameInput').value,
-                base_revenue: parseFloat(document.getElementById('bdBaseRevenue').value) || 22,
-                growth_rate: parseFloat(document.getElementById('bdGrowthRate').value) || 0.15,
-                num_quarters: parseInt(document.getElementById('bdQuarters').value) || 12,
-                push_to_dcl: document.getElementById('bdPushDcl').checked,
-            };
+            const svgEl = btn.querySelector('svg');
+            if (svgEl) svgEl.classList.add('animate-spin');
 
             try {
-                const resp = await fetch('/api/business-data/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    throw new Error(err.detail || `HTTP ${resp.status}`);
+                const resp = await fetch('/api/business-data/manifest-runs?limit=50');
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                nlqRunsList = data.runs || [];
+
+                document.getElementById('nlqRunCount').textContent = `${nlqRunsList.length} run${nlqRunsList.length !== 1 ? 's' : ''}`;
+
+                if (nlqRunsList.length === 0) {
+                    document.getElementById('nlqEmptyState').classList.remove('hidden');
+                    document.getElementById('nlqRunHistory').classList.add('hidden');
+                    document.getElementById('nlqRunDetail').classList.add('hidden');
+                } else {
+                    document.getElementById('nlqEmptyState').classList.add('hidden');
+                    document.getElementById('nlqRunHistory').classList.remove('hidden');
+                    nlqRenderRunList();
+                    if (!nlqCurrentRun) {
+                        nlqSelectRun(nlqRunsList[0].run_id);
+                    }
                 }
-                const result = await resp.json();
-                const runId = result.run_id;
-
-                // Fetch manifest and profile in parallel
-                const [manifestResp, profileResp] = await Promise.all([
-                    fetch(`/api/business-data/ground-truth/${runId}`),
-                    fetch(`/api/business-data/profile/${runId}`)
-                ]);
-                const manifest = await manifestResp.json();
-                const profile = await profileResp.json();
-
-                bdCurrentRun = { run_id: runId, result, manifest, profile };
-
-                statusEl.className = 'px-3 py-1 rounded-lg text-xs font-mono bg-emerald-900/40 border border-emerald-700/30 text-emerald-300';
-                statusEl.textContent = `${result.active_systems.length} systems | ${Object.values(result.record_counts).reduce((a,b) => a+b, 0).toLocaleString()} records`;
-
-                bdRenderSummary();
-                bdRenderGroundTruth();
-                bdShowSections(true);
             } catch (e) {
-                console.error('Business data generation failed:', e);
-                statusEl.className = 'px-3 py-1 rounded-lg text-xs font-mono bg-red-900/40 border border-red-700/30 text-red-300';
-                statusEl.textContent = 'Error: ' + e.message;
+                console.error('Failed to fetch manifest runs:', e);
+                document.getElementById('nlqRunCount').textContent = 'Error loading runs';
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Generate Ground Truth';
+                if (svgEl) svgEl.classList.remove('animate-spin');
             }
         }
 
-        function bdClear() {
-            bdCurrentRun = null;
-            bdShowSections(false);
-            document.getElementById('bdRunStatus').classList.add('hidden');
-            document.getElementById('bdActualsInput').value = '';
-            document.getElementById('bdReconcileScorecard').innerHTML = '';
-            document.getElementById('bdOverallAccuracy').classList.add('hidden');
-        }
-
-        function bdShowSections(show) {
-            ['bdSummaryContainer', 'bdGroundTruthContainer', 'bdReconcileContainer'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.classList.toggle('hidden', !show);
-            });
-        }
-
-        function bdRenderSummary() {
-            if (!bdCurrentRun) return;
-            const { result, profile } = bdCurrentRun;
-
-            document.getElementById('bdRunId').textContent = bdCurrentRun.run_id;
-            document.getElementById('bdSnapshotName').textContent = bdCurrentRun.result.snapshot_name || '--';
-
-            const provBlock = document.getElementById('bdProvenanceBlock');
-            document.getElementById('bdProvFarmRunId').textContent = bdCurrentRun.run_id || '--';
-            document.getElementById('bdProvSnapshotName').textContent = result.snapshot_name || '--';
-            document.getElementById('bdProvDclRunId').textContent = result.dcl_run_id || '(no push)';
-            document.getElementById('bdProvDispatchId').textContent = result.dispatch_id || '(no push)';
-
-            provBlock.classList.remove('hidden');
-
-            const pipeIdsContainer = document.getElementById('bdProvPipeIds');
-            const pipeIdsList = document.getElementById('bdProvPipeIdsList');
-            if (result.pipe_ids && result.pipe_ids.length > 0) {
-                pipeIdsContainer.classList.remove('hidden');
-                const pushResults = result.push_results || [];
-                pipeIdsList.innerHTML = result.pipe_ids.map(pid => {
-                    const pipeResult = pushResults.find(r => r.pipe_id === pid);
-                    let statusColor = 'bg-slate-700 text-slate-300';
-                    let statusIcon = '';
-                    if (pipeResult) {
-                        if (pipeResult.success) {
-                            statusColor = 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50';
-                            statusIcon = '\u2713 ';
-                        } else if (pipeResult.error_type === 'NO_MATCHING_PIPE') {
-                            statusColor = 'bg-amber-900/60 text-amber-300 border border-amber-700/50';
-                            statusIcon = '\u26A0 ';
-                        } else {
-                            statusColor = 'bg-red-900/60 text-red-300 border border-red-700/50';
-                            statusIcon = '\u2717 ';
-                        }
-                    }
-                    return `<span class="inline-block px-2 py-0.5 rounded text-[11px] font-mono ${statusColor}">${statusIcon}${pid}</span>`;
-                }).join('');
-            } else {
-                pipeIdsContainer.classList.add('hidden');
-            }
-
-            // Source system cards
+        function nlqRenderRunList() {
+            const listEl = document.getElementById('nlqRunList');
             const systemInfo = {
-                salesforce: { label: 'Salesforce', color: 'cyan', tier: 1 },
-                netsuite:   { label: 'NetSuite', color: 'emerald', tier: 1 },
-                chargebee:  { label: 'Chargebee', color: 'purple', tier: 1 },
-                workday:    { label: 'Workday', color: 'blue', tier: 2 },
-                zendesk:    { label: 'Zendesk', color: 'amber', tier: 2 },
-                jira:       { label: 'Jira', color: 'indigo', tier: 3 },
-                datadog:    { label: 'Datadog', color: 'violet', tier: 3 },
-                aws_cost_explorer: { label: 'AWS Cost', color: 'orange', tier: 3 },
+                salesforce: { label: 'SF', color: 'cyan' },
+                netsuite: { label: 'NS', color: 'emerald' },
+                chargebee: { label: 'CB', color: 'purple' },
+                workday: { label: 'WD', color: 'blue' },
+                zendesk: { label: 'ZD', color: 'amber' },
+                jira: { label: 'JR', color: 'indigo' },
+                datadog: { label: 'DD', color: 'violet' },
+                aws_cost_explorer: { label: 'AWS', color: 'orange' },
             };
 
-            // Map system names to their pipe_id prefixes
-            const pipePrefixes = {
-                salesforce: ['sf_'],
-                netsuite: ['ns-', 'ns_'],
-                chargebee: ['cb_'],
-                workday: ['wd-', 'wd_'],
-                zendesk: ['zendesk_'],
-                jira: ['jira_'],
-                datadog: ['datadog_'],
-                aws_cost_explorer: ['aws_cost_'],
-            };
+            listEl.innerHTML = nlqRunsList.map(run => {
+                const isSelected = nlqCurrentRun && nlqCurrentRun.run_id === run.run_id;
+                const totalRecords = run.record_counts ? Object.values(run.record_counts).reduce((a, b) => a + b, 0) : 0;
+                const systems = (run.source_systems || []).map(s => {
+                    const info = systemInfo[s] || { label: s.substring(0, 3).toUpperCase(), color: 'slate' };
+                    return `<span class="px-1.5 py-0.5 rounded text-[10px] bg-${info.color}-900/40 text-${info.color}-400">${info.label}</span>`;
+                }).join('');
+                const pushStatus = run.dcl_push_results ? run.dcl_push_results.map(p => {
+                    const color = p.status === 'success' ? 'emerald' : p.error_type === 'NO_MATCHING_PIPE' ? 'amber' : 'red';
+                    return `<span class="w-2 h-2 rounded-full bg-${color}-400 inline-block"></span>`;
+                }).join('') : '';
 
-            const cardsEl = document.getElementById('bdSystemCards');
-            cardsEl.innerHTML = result.active_systems.map(sys => {
-                const info = systemInfo[sys] || { label: sys, color: 'slate', tier: '?' };
-                const prefixes = pipePrefixes[sys] || [sys];
-                const totalRecords = Object.entries(result.record_counts)
-                    .filter(([k]) => prefixes.some(p => k.startsWith(p)))
-                    .reduce((sum, [, v]) => sum + v, 0);
                 return `
-                    <div class="bg-slate-900/50 rounded-lg p-3 border border-${info.color}-700/30">
+                    <button onclick="nlqSelectRun('${run.run_id}')"
+                        class="w-full text-left p-3 rounded-lg ${isSelected ? 'bg-cyan-900/30 border border-cyan-700/50' : 'bg-slate-900/40 border border-slate-700/30 hover:border-slate-600'} transition-all">
                         <div class="flex items-center justify-between mb-1">
-                            <span class="text-xs font-semibold text-${info.color}-400">${info.label}</span>
-                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">T${info.tier}</span>
+                            <span class="text-xs font-mono text-cyan-400 truncate max-w-[200px]">${run.run_id}</span>
+                            <span class="text-[10px] text-slate-500">${run.created_at || '--'}</span>
                         </div>
-                        <div class="text-lg font-bold text-white">${totalRecords.toLocaleString()}</div>
-                        <div class="text-[10px] text-slate-500">records</div>
-                    </div>
+                        <div class="flex items-center gap-2">
+                            <div class="flex gap-1">${systems}</div>
+                            <span class="text-[10px] text-slate-500">${totalRecords.toLocaleString()} records</span>
+                            <div class="flex gap-0.5 ml-auto">${pushStatus}</div>
+                        </div>
+                    </button>
                 `;
             }).join('');
-
-            // Render trajectory with default metric
-            bdRenderTrajectory();
         }
 
-        function bdRenderTrajectory() {
-            if (!bdCurrentRun || !bdCurrentRun.profile) return;
-            const metric = document.getElementById('bdTrajectoryMetric').value;
-            const quarters = bdCurrentRun.profile.quarters;
+        async function nlqSelectRun(runId) {
+            try {
+                const resp = await fetch(`/api/business-data/manifest-runs/${runId}`);
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
 
-            const values = quarters.map(q => q[metric] || 0);
-            const maxVal = Math.max(...values, 1);
+                nlqCurrentRun = {
+                    run_id: runId,
+                    manifest: data.manifest,
+                    seed: data.seed,
+                    created_at: data.created_at,
+                    source_systems: data.source_systems,
+                    record_counts: data.record_counts,
+                    dcl_push_results: data.dcl_push_results,
+                };
 
-            const chartEl = document.getElementById('bdTrajectoryChart');
-            const labelsEl = document.getElementById('bdTrajectoryLabels');
-
-            chartEl.innerHTML = values.map((v, i) => {
-                const pct = (v / maxVal) * 100;
-                const q = quarters[i];
-                const isForecast = q.is_forecast;
-                const barColor = isForecast ? 'bg-slate-600' : 'bg-cyan-500/70';
-                const displayVal = v >= 1 ? v.toFixed(1) : v.toLocaleString();
-                return `<div class="flex-1 flex flex-col items-center justify-end h-full group cursor-default" title="${q.quarter}: ${displayVal}">
-                    <div class="text-[9px] text-slate-500 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">${displayVal}</div>
-                    <div class="${barColor} w-full rounded-t transition-all ${isForecast ? 'opacity-50' : ''}" style="height: ${Math.max(pct, 4)}%"></div>
-                </div>`;
-            }).join('');
-
-            labelsEl.innerHTML = quarters.map(q =>
-                `<div class="flex-1 text-center text-[8px] text-slate-600 truncate">${q.quarter.replace('20','')}</div>`
-            ).join('');
+                nlqRenderRunList();
+                nlqRenderDetail();
+            } catch (e) {
+                console.error('Failed to load run detail:', e);
+            }
         }
 
-        function bdRenderGroundTruth() {
-            if (!bdCurrentRun || !bdCurrentRun.manifest) return;
-            const manifest = bdCurrentRun.manifest;
+        function nlqRenderDetail() {
+            if (!nlqCurrentRun) return;
+            const detail = document.getElementById('nlqRunDetail');
+            detail.classList.remove('hidden');
+
+            document.getElementById('nlqDetailRunId').textContent = nlqCurrentRun.run_id;
+            document.getElementById('nlqProvRunId').textContent = nlqCurrentRun.run_id;
+            document.getElementById('nlqProvSeed').textContent = nlqCurrentRun.seed || '--';
+            document.getElementById('nlqProvCreatedAt').textContent = nlqCurrentRun.created_at || '--';
+            document.getElementById('nlqProvSystems').textContent = (nlqCurrentRun.source_systems || []).join(', ') || '--';
+
+            const pipeResults = nlqCurrentRun.dcl_push_results || [];
+            const pipeBlock = document.getElementById('nlqPipeResults');
+            const pipeList = document.getElementById('nlqPipeResultsList');
+            if (pipeResults.length > 0) {
+                pipeBlock.classList.remove('hidden');
+                pipeList.innerHTML = pipeResults.map(p => {
+                    let statusColor, statusIcon;
+                    if (p.status === 'success') {
+                        statusColor = 'bg-emerald-900/60 text-emerald-300 border border-emerald-700/50';
+                        statusIcon = '\u2713 ';
+                    } else if (p.error_type === 'NO_MATCHING_PIPE') {
+                        statusColor = 'bg-amber-900/60 text-amber-300 border border-amber-700/50';
+                        statusIcon = '\u26A0 ';
+                    } else {
+                        statusColor = 'bg-red-900/60 text-red-300 border border-red-700/50';
+                        statusIcon = '\u2717 ';
+                    }
+                    const pipeId = p.pipe_id || 'unknown';
+                    return `<span class="inline-block px-2 py-0.5 rounded text-[11px] font-mono ${statusColor}" title="Status: ${p.status}, Rows: ${p.rows_pushed || 0}">${statusIcon}${pipeId}</span>`;
+                }).join('');
+            } else {
+                pipeBlock.classList.add('hidden');
+            }
+
+            const systemInfo = {
+                salesforce: { label: 'Salesforce', color: 'cyan' },
+                netsuite: { label: 'NetSuite', color: 'emerald' },
+                chargebee: { label: 'Chargebee', color: 'purple' },
+                workday: { label: 'Workday', color: 'blue' },
+                zendesk: { label: 'Zendesk', color: 'amber' },
+                jira: { label: 'Jira', color: 'indigo' },
+                datadog: { label: 'Datadog', color: 'violet' },
+                aws_cost_explorer: { label: 'AWS Cost', color: 'orange' },
+            };
+
+            const cardsEl = document.getElementById('nlqSystemCards');
+            const rc = nlqCurrentRun.record_counts || {};
+            const systems = nlqCurrentRun.source_systems || Object.keys(rc);
+            if (systems.length > 0) {
+                cardsEl.innerHTML = systems.map(sys => {
+                    const info = systemInfo[sys] || { label: sys, color: 'slate' };
+                    const count = rc[sys] || Object.entries(rc).filter(([k]) => k.startsWith(sys.substring(0, 2))).reduce((s, [, v]) => s + v, 0);
+                    return `
+                        <div class="bg-slate-900/50 rounded-lg p-3 border border-${info.color}-700/30">
+                            <div class="flex items-center justify-between mb-1">
+                                <span class="text-xs font-semibold text-${info.color}-400">${info.label}</span>
+                            </div>
+                            <div class="text-lg font-bold text-white">${count.toLocaleString()}</div>
+                            <div class="text-[10px] text-slate-500">records</div>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                cardsEl.innerHTML = '<div class="col-span-4 text-xs text-slate-500">No source system data</div>';
+            }
+
+            if (nlqCurrentRun.manifest && nlqCurrentRun.manifest.ground_truth) {
+                document.getElementById('nlqGroundTruthContainer').classList.remove('hidden');
+                document.getElementById('nlqReconcileContainer').classList.remove('hidden');
+                nlqRenderGroundTruth();
+            } else {
+                document.getElementById('nlqGroundTruthContainer').classList.add('hidden');
+                document.getElementById('nlqReconcileContainer').classList.add('hidden');
+            }
+        }
+
+        function nlqRenderGroundTruth() {
+            if (!nlqCurrentRun || !nlqCurrentRun.manifest) return;
+            const manifest = nlqCurrentRun.manifest;
             const gt = manifest.ground_truth || {};
 
-            // Populate quarter selector
-            const quarterSelect = document.getElementById('bdQuarterSelect');
+            const quarterSelect = document.getElementById('nlqQuarterSelect');
             const quarters = Object.keys(gt).filter(k => k.match(/^\d{4}-Q\d$/)).sort();
             const currentVal = quarterSelect.value;
             quarterSelect.innerHTML = quarters.map(q =>
@@ -2696,12 +2484,9 @@
             const selectedQ = quarterSelect.value;
             const qData = gt[selectedQ] || {};
 
-            // Update reconcile quarter display
-            const reconcileQ = document.getElementById('bdReconcileQuarter');
+            const reconcileQ = document.getElementById('nlqReconcileQuarter');
             if (reconcileQ) reconcileQ.textContent = selectedQ;
 
-            // Render metric categories
-            const categoriesEl = document.getElementById('bdMetricCategories');
             const fmtMetricVal = (val, unit) => {
                 if (val === null || val === undefined) return '--';
                 if (unit === 'millions_usd') return `$${typeof val === 'number' ? val.toFixed(2) : val}M`;
@@ -2714,7 +2499,9 @@
                 if (unit === 'points') return `${val} pts`;
                 return typeof val === 'number' ? val.toLocaleString() : val;
             };
-            categoriesEl.innerHTML = Object.entries(BD_METRIC_CATEGORIES).map(([catName, cat]) => {
+
+            const categoriesEl = document.getElementById('nlqMetricCategories');
+            categoriesEl.innerHTML = Object.entries(NLQ_METRIC_CATEGORIES).map(([catName, cat]) => {
                 const metricsHtml = cat.metrics.map(m => {
                     const mData = qData[m];
                     if (!mData || typeof mData !== 'object' || !('value' in mData)) return '';
@@ -2724,13 +2511,12 @@
                         <div class="flex items-center justify-between py-1.5 border-b border-slate-800/50 last:border-0">
                             <div class="flex items-center gap-2">
                                 <span class="text-xs text-slate-400">${cat.labels[m] || m}</span>
-                                <span class="text-[9px] text-slate-600">${mData.primary_source}</span>
+                                <span class="text-[9px] text-slate-600">${mData.primary_source || ''}</span>
                             </div>
                             <span class="text-sm font-semibold text-${cat.color}-400 font-mono">${displayVal}</span>
                         </div>
                     `;
                 }).join('');
-
                 return `
                     <div class="p-3 rounded-lg bg-${cat.color}-500/5 ring-1 ring-${cat.color}-500/20">
                         <div class="font-medium text-${cat.color}-300 mb-2 text-sm">${catName}</div>
@@ -2739,8 +2525,7 @@
                 `;
             }).join('');
 
-            // Render dimensional breakdowns
-            const dimEl = document.getElementById('bdDimensionalBreakdowns');
+            const dimEl = document.getElementById('nlqDimensionalBreakdowns');
             const dimTruth = gt.dimensional_truth || {};
             const allDimConfigs = [
                 { key: 'revenue_by_region', label: 'Revenue by Region', color: 'emerald', unit: '$M' },
@@ -2757,9 +2542,8 @@
                 { key: 'churn_by_segment', label: 'Churn by Segment', color: 'red', unit: '$M' },
                 { key: 'new_logo_revenue_by_region', label: 'New Logo Rev by Region', color: 'lime', unit: '$M' },
             ];
-            // Filter to only dims present in the manifest
             const dimConfigs = allDimConfigs.filter(d => dimTruth[d.key]);
-            const dimCountEl = document.getElementById('bdDimCount');
+            const dimCountEl = document.getElementById('nlqDimCount');
             if (dimCountEl) dimCountEl.textContent = `(${dimConfigs.length} dimensions)`;
 
             dimEl.innerHTML = dimConfigs.map(dim => {
@@ -2767,7 +2551,6 @@
                 const qDimData = dimData[selectedQ] || {};
                 const entries = Object.entries(qDimData).filter(([k]) => k !== 'source');
                 const maxDim = Math.max(...entries.map(([,v]) => v), 1);
-
                 return `
                     <div class="p-3 rounded-lg bg-slate-900/40 ring-1 ring-slate-700">
                         <div class="text-xs font-semibold text-${dim.color}-400 mb-2">${dim.label}</div>
@@ -2792,8 +2575,7 @@
                 `;
             }).join('');
 
-            // Render expected conflicts
-            const conflictsEl = document.getElementById('bdConflicts');
+            const conflictsEl = document.getElementById('nlqConflicts');
             const conflicts = gt.expected_conflicts || [];
             const qConflicts = conflicts.filter(c => c.period === selectedQ);
             if (qConflicts.length === 0) {
@@ -2812,46 +2594,40 @@
             }
         }
 
-        function bdLoadSampleActuals() {
-            if (!bdCurrentRun) return;
-            const selectedQ = document.getElementById('bdQuarterSelect').value;
-            const gt = bdCurrentRun.manifest.ground_truth || {};
+        function nlqLoadSampleActuals() {
+            if (!nlqCurrentRun || !nlqCurrentRun.manifest) return;
+            const selectedQ = document.getElementById('nlqQuarterSelect').value;
+            const gt = nlqCurrentRun.manifest.ground_truth || {};
             const qData = gt[selectedQ] || {};
-
-            // Generate "actuals" with deliberate deviations from ground truth
             const actuals = {};
             const rng = (min, max) => min + Math.random() * (max - min);
             for (const [metric, mData] of Object.entries(qData)) {
                 if (typeof mData !== 'object' || !('value' in mData)) continue;
                 const v = mData.value;
-                // Introduce 0-8% deviation for realism
                 const deviation = 1 + (rng(-0.08, 0.08));
                 if (mData.unit === 'count') {
                     actuals[metric] = Math.round(v * deviation);
-                } else if (mData.unit === 'percent' || mData.unit === 'score_5') {
-                    actuals[metric] = parseFloat((v * deviation).toFixed(2));
                 } else {
                     actuals[metric] = parseFloat((v * deviation).toFixed(2));
                 }
             }
-
-            document.getElementById('bdActualsInput').value = JSON.stringify(actuals, null, 2);
+            document.getElementById('nlqActualsInput').value = JSON.stringify(actuals, null, 2);
         }
 
-        async function bdReconcileServer() {
-            if (!bdCurrentRun) return;
-            const selectedQ = document.getElementById('bdQuarterSelect').value;
-            const runId = bdCurrentRun.run_id;
+        async function nlqReconcileServer() {
+            if (!nlqCurrentRun) return;
+            const selectedQ = document.getElementById('nlqQuarterSelect').value;
+            const runId = nlqCurrentRun.run_id;
 
             let actuals;
             try {
-                actuals = JSON.parse(document.getElementById('bdActualsInput').value);
+                actuals = JSON.parse(document.getElementById('nlqActualsInput').value);
             } catch (e) {
                 alert('Invalid JSON in actuals input: ' + e.message);
                 return;
             }
 
-            const btn = document.getElementById('bdReconcileBtn');
+            const btn = document.getElementById('nlqReconcileBtn');
             btn.disabled = true;
             btn.textContent = 'Verifying...';
 
@@ -2866,7 +2642,7 @@
                     alert(`Verification failed: ${data.detail?.message || data.detail || resp.statusText}`);
                     return;
                 }
-                bdRenderVerifyResults(data);
+                nlqRenderVerifyResults(data);
             } catch (e) {
                 alert('Verification request failed: ' + e.message);
             } finally {
@@ -2875,43 +2651,8 @@
             }
         }
 
-        async function bdVerifyDCL() {
-            if (!bdCurrentRun) {
-                alert('Generate business data first');
-                return;
-            }
-            const runId = bdCurrentRun.run_id;
-            const selectedQ = document.getElementById('bdQuarterSelect').value;
-            const btn = document.getElementById('bdVerifyDclBtn');
-            btn.disabled = true;
-            btn.textContent = 'Reading DCL...';
-
-            try {
-                const resp = await fetch(`/api/business-data/verify/${runId}/dcl-readback?quarter=${selectedQ}`, {
-                    method: 'POST',
-                });
-                const data = await resp.json();
-                if (resp.status === 501) {
-                    alert(`DCL readback not yet wired: ${data.detail?.message || 'Provide DCL readback contract'}`);
-                    return;
-                }
-                if (!resp.ok) {
-                    alert(`DCL verification failed: ${data.detail?.message || data.detail || resp.statusText}`);
-                    return;
-                }
-                bdRenderVerifyResults(data);
-            } catch (e) {
-                alert('DCL readback request failed: ' + e.message);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Verify Against DCL';
-            }
-        }
-
-        function bdRenderVerifyResults(data) {
-            const overallEl = document.getElementById('bdOverallAccuracy');
-            const overallValEl = document.getElementById('bdOverallAccuracyValue');
-            const overallLabelEl = document.getElementById('bdOverallAccuracyLabel');
+        function nlqRenderVerifyResults(data) {
+            const overallEl = document.getElementById('nlqOverallAccuracy');
             overallEl.classList.remove('hidden');
 
             const overallAccuracy = data.overall_accuracy;
@@ -2919,10 +2660,14 @@
             const verdictBadge = data.verdict === 'PASS' ? 'bg-emerald-500/20 text-emerald-400' :
                                  data.verdict === 'DEGRADED' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400';
             overallEl.className = `mb-4 p-4 rounded-xl text-center bg-${overallColor}-500/10 ring-1 ring-${overallColor}-500/30`;
-            overallValEl.className = `text-4xl font-bold text-${overallColor}-400`;
-            overallValEl.textContent = `${overallAccuracy.toFixed(1)}%`;
-            overallLabelEl.className = `text-xs mt-1 text-${overallColor}-300`;
-            overallLabelEl.innerHTML = `<span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold ${verdictBadge} mr-2">${data.verdict}</span>${data.metric_count} metrics | ${data.pass_count} pass | ${data.warn_count} warn | ${data.fail_count} fail | ${data.missing_count} missing | source: ${data.source}`;
+            overallEl.innerHTML = `
+                <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Overall Accuracy</div>
+                <div class="text-4xl font-bold text-${overallColor}-400">${overallAccuracy.toFixed(1)}%</div>
+                <div class="text-xs mt-1 text-${overallColor}-300">
+                    <span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold ${verdictBadge} mr-2">${data.verdict}</span>
+                    ${data.metric_count} metrics | ${data.pass_count} pass | ${data.warn_count} warn | ${data.fail_count} fail | ${data.missing_count} missing | source: ${data.source}
+                </div>
+            `;
 
             const compared = data.results.filter(m => m.status !== 'missing');
             const missing = data.results.filter(m => m.status === 'missing');
@@ -2939,7 +2684,7 @@
                 return typeof v === 'number' ? v.toLocaleString() : v;
             };
 
-            const scorecardEl = document.getElementById('bdReconcileScorecard');
+            const scorecardEl = document.getElementById('nlqReconcileScorecard');
             let html = '';
 
             if (compared.length > 0) {
@@ -2981,8 +2726,6 @@
             scorecardEl.innerHTML = html;
         }
 
-        // Initialize default preset
-        bdSelectPreset('standard');
 
 
         function toggleDclGuide() {
@@ -6883,7 +6626,6 @@
             await loadAllDataSafely();
             switchMainTab('console');
             addLogEntry('Farm Console loaded', 'info');
-            checkDclConnectivity();
             
             // Ensure reconciliations are rendered after data loads
             const container = document.getElementById('reconciliationsList');

@@ -5,13 +5,6 @@ This is the manifest-driven execution path. AAM dispatches JobManifest payloads
 here, and Farm generates data + pushes to DCL using the manifest's identity
 (pipe_id) and delivery address (dcl_url).
 
-IMPORTANT DISTINCTION — Two Execution Modes:
-  - MANIFEST-DRIVEN (this endpoint): pipe_id comes from the manifest.
-    Data participates in DCL's late-binding join. This is the production path.
-  - SELF-DIRECTED (/api/business-data/generate): pipe_id comes from Farm's
-    internal generator metadata. Data does NOT participate in the late-binding
-    join. This is the demo/dev path only.
-
 CRITICAL CONTRACT:
   The manifest's source.pipe_id is the ONLY pipe_id used in DCL push headers.
   Generator-internal pipe_ids are never sent to DCL in manifest-driven mode.
@@ -39,6 +32,8 @@ from src.generators.business_data.jira_gen import JiraGenerator
 from src.generators.business_data.datadog_gen import DatadogGenerator
 from src.generators.business_data.aws_cost import AWSCostGenerator
 from src.generators.financial_model import FinancialModel, Assumptions
+from src.generators.ground_truth import compute_ground_truth, validate_manifest_completeness
+from src.farm.db import save_ground_truth_manifest, update_manifest_push_results
 from src.models.manifest import (
     JobManifest,
     DCLPushResult,
@@ -467,6 +462,29 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
         f"(generator={generator_key}), manifest pipe_id={pipe_id}"
     )
 
+    try:
+        generated_data_for_gt = {generator_key: generated_data}
+        gt_manifest = compute_ground_truth(
+            profile, farm_run_id, generated_data_for_gt,
+            model_quarters=model_quarters,
+        )
+        gt_validation = validate_manifest_completeness(gt_manifest)
+        if gt_validation:
+            logger.warning(f"Ground truth validation issues: {len(gt_validation)} errors")
+
+        record_counts = gt_manifest.get("record_counts", {})
+        await save_ground_truth_manifest(
+            run_id=run_id,
+            seed=seed,
+            created_at=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            manifest=gt_manifest,
+            source_systems=[system],
+            record_counts=record_counts,
+        )
+        logger.info(f"Ground truth persisted for manifest run_id={run_id}")
+    except Exception as e:
+        logger.error(f"Ground truth computation failed for run_id={run_id}: {e}", exc_info=True)
+
     if manifest.limits.max_rows and len(rows) > manifest.limits.max_rows:
         logger.info(
             f"Truncating rows from {len(rows)} to {manifest.limits.max_rows} "
@@ -497,6 +515,12 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
             f"for run_id={run_id}, pipe_id={pipe_id}"
         )
         recon_triggered = True
+
+    try:
+        push_results_data = [push_result.dict()] if push_result else []
+        await update_manifest_push_results(run_id, push_results_data)
+    except Exception as e:
+        logger.error(f"Failed to persist push results: {e}")
 
     return ManifestExecutionResult(
         run_id=run_id,

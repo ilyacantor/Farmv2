@@ -757,7 +757,7 @@ async def load_ground_truth_manifest(run_id: str) -> dict | None:
     import json
     async with connection() as conn:
         row = await conn.fetchrow(
-            "SELECT manifest_json, seed, created_at, source_systems, record_counts FROM ground_truth_manifests WHERE run_id = $1",
+            "SELECT manifest_json, seed, created_at, source_systems, record_counts, dcl_push_results FROM ground_truth_manifests WHERE run_id = $1",
             run_id,
         )
         if not row:
@@ -768,6 +768,7 @@ async def load_ground_truth_manifest(run_id: str) -> dict | None:
             "created_at": row["created_at"],
             "source_systems": json.loads(row["source_systems"]) if isinstance(row["source_systems"], str) else row["source_systems"],
             "record_counts": json.loads(row["record_counts"]) if isinstance(row["record_counts"], str) else row["record_counts"],
+            "dcl_push_results": json.loads(row["dcl_push_results"]) if isinstance(row["dcl_push_results"], str) else row["dcl_push_results"] if row["dcl_push_results"] else None,
         }
 
 
@@ -786,7 +787,7 @@ async def list_ground_truth_runs(limit: int = 50) -> list[dict]:
     import json
     async with connection() as conn:
         rows = await conn.fetch(
-            "SELECT run_id, seed, created_at, source_systems, record_counts FROM ground_truth_manifests ORDER BY created_at DESC LIMIT $1",
+            "SELECT run_id, seed, created_at, source_systems, record_counts, dcl_push_results FROM ground_truth_manifests ORDER BY created_at DESC LIMIT $1",
             limit,
         )
         return [
@@ -796,6 +797,7 @@ async def list_ground_truth_runs(limit: int = 50) -> list[dict]:
                 "created_at": r["created_at"],
                 "source_systems": json.loads(r["source_systems"]) if isinstance(r["source_systems"], str) else r["source_systems"],
                 "record_counts": json.loads(r["record_counts"]) if isinstance(r["record_counts"], str) else r["record_counts"],
+                "dcl_push_results": json.loads(r["dcl_push_results"]) if isinstance(r["dcl_push_results"], str) else r["dcl_push_results"] if r["dcl_push_results"] else None,
             }
             for r in rows
         ]
