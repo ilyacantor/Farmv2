@@ -895,7 +895,11 @@
                             <svg class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
                             Advanced Configuration
                         </button>
-                        <div id="bdAdvanced" class="hidden mt-3 grid grid-cols-2 md:grid-cols-5 gap-3">
+                        <div id="bdAdvanced" class="hidden mt-3 grid grid-cols-2 md:grid-cols-6 gap-3">
+                            <div class="col-span-2">
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Snapshot Name</label>
+                                <input type="text" id="bdSnapshotNameInput" placeholder="e.g. CloudEdge-Q4, AcmeCorp-demo" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none placeholder-slate-600">
+                            </div>
                             <div>
                                 <label class="block text-xs font-medium text-slate-400 mb-1">Seed</label>
                                 <input type="number" id="bdSeed" value="42" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
@@ -2485,6 +2489,7 @@
             const body = {
                 seed: parseInt(document.getElementById('bdSeed').value) || 42,
                 tiers: document.getElementById('bdTiers').value,
+                snapshot_name: document.getElementById('bdSnapshotNameInput').value.trim() || undefined,
                 base_revenue: parseFloat(document.getElementById('bdBaseRevenue').value) || 22,
                 growth_rate: parseFloat(document.getElementById('bdGrowthRate').value) || 0.15,
                 num_quarters: parseInt(document.getElementById('bdQuarters').value) || 12,

@@ -42,6 +42,7 @@ class GenerateRequest(BaseModel):
     growth_rate: float = Field(default=0.15, description="Year-over-year growth rate (0.15 = 15%)")
     num_quarters: int = Field(default=12, ge=1, le=20, description="Number of quarters to generate")
     push_to_dcl: bool = Field(default=True, description="Whether to push generated data to DCL")
+    snapshot_name: Optional[str] = Field(default=None, description="Operator-assigned snapshot name. If omitted, a deterministic name is generated from the seed.")
 
 
 class GenerateResponse(BaseModel):
@@ -91,6 +92,7 @@ async def generate_business_data(request: GenerateRequest):
         base_revenue=request.base_revenue,
         growth_rate=request.growth_rate,
         num_quarters=request.num_quarters,
+        snapshot_name=request.snapshot_name,
     )
 
     # Generate data

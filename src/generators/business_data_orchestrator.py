@@ -58,6 +58,7 @@ class BusinessDataOrchestrator:
         base_revenue: float = 22.0,
         growth_rate: float = 0.15,
         num_quarters: int = 12,
+        snapshot_name: Optional[str] = None,
     ):
         self.seed = seed
         dcl_base = dcl_ingest_url or os.getenv("DCL_INGEST_URL", "")
@@ -98,9 +99,12 @@ class BusinessDataOrchestrator:
         self.manifest: Optional[Dict[str, Any]] = None
         self.push_results: List[Dict[str, Any]] = []
         self.run_id: Optional[str] = None
+        self._operator_snapshot_name: Optional[str] = snapshot_name
 
     def generate_snapshot_name(self) -> str:
-        """Generate a deterministic cloudedge-xxxx snapshot name from the seed."""
+        """Return operator-provided snapshot name, or generate a deterministic one from the seed."""
+        if self._operator_snapshot_name:
+            return self._operator_snapshot_name
         import hashlib
         h = hashlib.sha256(str(self.seed).encode()).hexdigest()[:4]
         return f"cloudedge-{h}"
