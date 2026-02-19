@@ -899,8 +899,7 @@
                             <div class="col-span-2">
                                 <label class="block text-xs font-medium text-slate-400 mb-1">Snapshot Name</label>
                                 <select id="bdSnapshotNameInput" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="">(auto from seed)</option>
-                                    <option value="CloudEdge-Q4">CloudEdge-Q4</option>
+                                    <option value="CloudEdge-Q4" selected>CloudEdge-Q4</option>
                                     <option value="CloudEdge-Annual">CloudEdge-Annual</option>
                                     <option value="AcmeCorp-Demo">AcmeCorp-Demo</option>
                                     <option value="AcmeCorp-Prod">AcmeCorp-Prod</option>
@@ -2501,7 +2500,7 @@
             const body = {
                 seed: parseInt(document.getElementById('bdSeed').value) || 42,
                 tiers: document.getElementById('bdTiers').value,
-                snapshot_name: document.getElementById('bdSnapshotNameInput').value.trim() || undefined,
+                snapshot_name: document.getElementById('bdSnapshotNameInput').value,
                 base_revenue: parseFloat(document.getElementById('bdBaseRevenue').value) || 22,
                 growth_rate: parseFloat(document.getElementById('bdGrowthRate').value) || 0.15,
                 num_quarters: parseInt(document.getElementById('bdQuarters').value) || 12,

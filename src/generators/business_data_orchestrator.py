@@ -101,26 +101,15 @@ class BusinessDataOrchestrator:
         self.run_id: Optional[str] = None
         self._operator_snapshot_name: Optional[str] = snapshot_name
 
-    _SNAPSHOT_PREFIXES = [
-        "CloudEdge", "NovaTech", "AcmeCorp", "VeloSystems", "TechHub",
-        "AeroFlow", "Meridian", "Quantum", "SynergyOps", "ApexData",
-        "IronBridge", "PulseNet", "ClearStack", "BlueStar", "OmniCore",
-    ]
-    _SNAPSHOT_SUFFIXES = [
-        "Q1", "Q2", "Q3", "Q4", "Annual", "Demo", "Pilot",
-        "UAT", "Staging", "CI", "Prod", "Recon", "Full", "Baseline", "Smoke",
-    ]
-
     def generate_snapshot_name(self) -> str:
-        """Return operator-provided snapshot name, or generate a deterministic one from the seed."""
-        if self._operator_snapshot_name:
-            return self._operator_snapshot_name
-        import hashlib
-        h = int(hashlib.sha256(str(self.seed).encode()).hexdigest(), 16)
-        prefix = self._SNAPSHOT_PREFIXES[h % len(self._SNAPSHOT_PREFIXES)]
-        suffix = self._SNAPSHOT_SUFFIXES[(h >> 8) % len(self._SNAPSHOT_SUFFIXES)]
-        tag = hashlib.sha256(str(self.seed).encode()).hexdigest()[:4].upper()
-        return f"{prefix}-{suffix}-{tag}"
+        """Return operator-provided snapshot name. Fails loudly if none was provided."""
+        if not self._operator_snapshot_name:
+            raise ValueError(
+                "MISSING_SNAPSHOT_NAME: snapshot_name is required. "
+                "Select a snapshot name before generating. "
+                "No silent fallback — every run must have an explicit identity."
+            )
+        return self._operator_snapshot_name
 
     def generate_run_id(self) -> str:
         """Generate a unique run ID."""
@@ -280,7 +269,13 @@ class BusinessDataOrchestrator:
 
         dcl_run_id = str(uuid.uuid4())
         run_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        snapshot_name = getattr(self, 'snapshot_name', None) or f"cloudedge-{dcl_run_id[:4]}"
+        snapshot_name = getattr(self, 'snapshot_name', None)
+        if not snapshot_name:
+            raise ValueError(
+                "MISSING_SNAPSHOT_NAME: Cannot push to DCL without a snapshot_name. "
+                "This should have been set during generate_all(). "
+                "If you see this, generate_all() was not called or snapshot_name was not provided."
+            )
         tenant_id = os.getenv("DCL_TENANT_ID", "aos-demo")
 
         base_headers = {

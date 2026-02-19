@@ -188,7 +188,12 @@ async def _push_to_dcl(
     run_id = manifest.run_id
     dcl_url = manifest.target.dcl_url.rstrip("/")
     tenant_id = manifest.target.tenant_id or "aos-demo"
-    snapshot_name = manifest.target.snapshot_name or f"cloudedge-{farm_run_id[:4]}"
+    if not manifest.target.snapshot_name:
+        raise ValueError(
+            f"MISSING_SNAPSHOT_NAME: manifest.target.snapshot_name is required for pipe_id={pipe_id}. "
+            f"AAM must provide snapshot_name in the JobManifest. No silent fallback."
+        )
+    snapshot_name = manifest.target.snapshot_name
     run_timestamp = manifest.provenance.get(
         "run_timestamp", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     )

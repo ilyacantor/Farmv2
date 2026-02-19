@@ -42,7 +42,7 @@ class GenerateRequest(BaseModel):
     growth_rate: float = Field(default=0.15, description="Year-over-year growth rate (0.15 = 15%)")
     num_quarters: int = Field(default=12, ge=1, le=20, description="Number of quarters to generate")
     push_to_dcl: bool = Field(default=True, description="Whether to push generated data to DCL")
-    snapshot_name: Optional[str] = Field(default=None, description="Operator-assigned snapshot name. If omitted, a deterministic name is generated from the seed.")
+    snapshot_name: str = Field(..., description="Operator-assigned snapshot name. Required — every run must have an explicit identity.")
 
 
 class GenerateResponse(BaseModel):
@@ -132,7 +132,7 @@ async def generate_business_data(request: GenerateRequest):
 
     return GenerateResponse(
         run_id=run_id,
-        snapshot_name=summary.get("snapshot_name", f"cloudedge-{run_id[-4:]}"),
+        snapshot_name=summary["snapshot_name"],
         status="completed",
         manifest_version=manifest.get("manifest_version", "1.0"),
         active_systems=summary["active_systems"],
