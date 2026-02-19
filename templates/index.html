@@ -828,256 +828,52 @@
         <div id="scenariosTab" class="hidden h-full overflow-auto" style="max-height: calc(100vh - 120px);">
             <div class="space-y-6">
 
-                <!-- Ground Truth Generator -->
+                <!-- Manifest-Driven Flow Notice -->
                 <div class="bg-slate-800/60 rounded-xl p-5 border border-cyan-700/50">
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-lg bg-cyan-600/30 flex items-center justify-center">
-                                <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"/>
-                                </svg>
-                            </div>
-                            <div>
-                                <h2 class="text-lg font-semibold text-white">Ground Truth Generator</h2>
-                                <p class="text-slate-400 text-sm">Generate multi-system business data with deterministic ground truth</p>
-                            </div>
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="w-10 h-10 rounded-lg bg-cyan-600/30 flex items-center justify-center">
+                            <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
                         </div>
-                        <div id="bdRunStatus" class="hidden px-3 py-1 rounded-lg text-xs font-mono"></div>
-                    </div>
-
-                    <!-- Preset Tiers -->
-                    <div class="mb-5">
-                        <label class="block text-xs font-medium text-slate-400 mb-3 uppercase tracking-wide">Preset Configuration</label>
-                        <div class="grid grid-cols-3 gap-3">
-                            <button onclick="bdSelectPreset('light')" id="bdPresetLight"
-                                class="group relative p-4 rounded-xl border-2 border-slate-700 hover:border-cyan-500/50 bg-slate-900/40 transition-all text-left">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-2 h-2 rounded-full bg-cyan-400"></div>
-                                    <span class="text-sm font-semibold text-cyan-400">Light</span>
-                                </div>
-                                <div class="space-y-1 text-xs text-slate-400">
-                                    <div>Volume: <span class="text-slate-300">5Q / $10M base</span></div>
-                                    <div>Complexity: <span class="text-slate-300">Tier 1 (CRM, ERP, Billing)</span></div>
-                                    <div>Drift: <span class="text-slate-300">5% YoY growth</span></div>
-                                </div>
-                            </button>
-                            <button onclick="bdSelectPreset('standard')" id="bdPresetStandard"
-                                class="group relative p-4 rounded-xl border-2 border-cyan-500/50 bg-cyan-900/10 transition-all text-left ring-1 ring-cyan-500/20">
-                                <div class="absolute -top-2 right-3 px-2 py-0.5 bg-cyan-600 text-[10px] font-bold text-white rounded-full">DEFAULT</div>
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-2 h-2 rounded-full bg-emerald-400"></div>
-                                    <span class="text-sm font-semibold text-emerald-400">Standard</span>
-                                </div>
-                                <div class="space-y-1 text-xs text-slate-400">
-                                    <div>Volume: <span class="text-slate-300">12Q / ARR $83.6M / Full P&L+BS+CF</span></div>
-                                    <div>Complexity: <span class="text-slate-300">All Tiers (131+ metrics/quarter)</span></div>
-                                    <div>Drift: <span class="text-slate-300">32% ARR growth, 6% deceleration</span></div>
-                                </div>
-                            </button>
-                            <button onclick="bdSelectPreset('full')" id="bdPresetFull"
-                                class="group relative p-4 rounded-xl border-2 border-slate-700 hover:border-purple-500/50 bg-slate-900/40 transition-all text-left">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-2 h-2 rounded-full bg-purple-400"></div>
-                                    <span class="text-sm font-semibold text-purple-400">Full</span>
-                                </div>
-                                <div class="space-y-1 text-xs text-slate-400">
-                                    <div>Volume: <span class="text-slate-300">20Q / $50M base</span></div>
-                                    <div>Complexity: <span class="text-slate-300">All Tiers (+ PM, Monitoring, Cloud)</span></div>
-                                    <div>Drift: <span class="text-slate-300">30% YoY growth</span></div>
-                                </div>
-                            </button>
+                        <div>
+                            <h2 class="text-lg font-semibold text-white">Manifest-Driven Generation</h2>
+                            <p class="text-slate-400 text-sm">Farm generates data only when AAM dispatches a JobManifest</p>
                         </div>
-                    </div>
-
-                    <!-- Advanced Controls (collapsible) -->
-                    <div class="mb-4">
-                        <button onclick="document.getElementById('bdAdvanced').classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180')"
-                            class="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors">
-                            <svg class="w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                            Advanced Configuration
-                        </button>
-                        <div id="bdAdvanced" class="hidden mt-3 grid grid-cols-2 md:grid-cols-5 gap-3">
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Seed</label>
-                                <input type="number" id="bdSeed" value="42" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Tiers</label>
-                                <select id="bdTiers" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="1">Tier 1 (CRM/ERP/Billing)</option>
-                                    <option value="1,2">Tiers 1+2 (+ HCM/Support)</option>
-                                    <option value="1,2,3" selected>All Tiers (+ PM/Monitoring/Cloud)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Base Revenue ($M)</label>
-                                <input type="number" id="bdBaseRevenue" value="22" step="1" min="1" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">YoY Growth</label>
-                                <select id="bdGrowthRate" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                                    <option value="0.05">5% (Low drift)</option>
-                                    <option value="0.15" selected>15% (Medium drift)</option>
-                                    <option value="0.30">30% (High drift)</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label class="block text-xs font-medium text-slate-400 mb-1">Quarters</label>
-                                <input type="number" id="bdQuarters" value="12" min="1" max="20" class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:border-cyan-500 outline-none">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Generate Button -->
-                    <div class="flex items-center gap-3">
-                        <button onclick="bdGenerate()" id="bdGenerateBtn"
-                            class="px-6 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold rounded-lg transition-all cyan-glow">
-                            Generate Ground Truth
-                        </button>
-                        <button onclick="bdClear()" class="px-4 py-2.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-lg transition-all">
-                            Clear
-                        </button>
-                        <label class="flex items-center gap-2 text-xs text-slate-400 ml-4">
-                            <input type="checkbox" id="bdPushDcl" class="w-3.5 h-3.5 rounded" checked>
-                            Push to DCL on generate
-                        </label>
-                        <span id="dclConnIndicator" class="flex items-center gap-1.5 text-xs text-slate-500 ml-2">
+                        <span id="dclConnIndicator" class="flex items-center gap-1.5 text-xs text-slate-500 ml-auto">
                             <span id="dclConnDot" class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>
                             <span id="dclConnLabel">checking...</span>
                         </span>
                     </div>
-                </div>
-
-                <!-- Generation Summary (hidden until generated) -->
-                <div id="bdSummaryContainer" class="hidden">
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-emerald-700/50">
-                        <div class="flex items-center gap-3 mb-4">
-                            <div class="w-10 h-10 rounded-lg bg-emerald-600/30 flex items-center justify-center">
-                                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                                </svg>
-                            </div>
-                            <div>
-                                <h2 class="text-lg font-semibold text-white">Generation Summary</h2>
-                                <p class="text-slate-400 text-sm">Run <span id="bdRunId" class="text-cyan-400 font-mono">--</span> <span class="text-slate-600 mx-1">|</span> Snapshot <span id="bdSnapshotName" class="text-emerald-400 font-mono">--</span></p>
-                            </div>
+                    <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-700/50 space-y-3">
+                        <div class="text-sm text-slate-300">
+                            <span class="text-cyan-400 font-medium">How it works:</span>
+                            AAM exports pipe definitions to DCL (structure), then dispatches JobManifests to Farm (content).
+                            Farm generates source-shaped data and pushes it to DCL using the manifest's pipe_id, tenant_id, and snapshot_name.
                         </div>
-
-                        <!-- Source Systems + Record Counts -->
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4" id="bdSystemCards"></div>
-
-                        <!-- Business Profile Trajectory -->
-                        <div class="border-t border-slate-700 pt-4 mt-2">
-                            <div class="flex items-center justify-between mb-3">
-                                <h3 class="text-sm font-semibold text-slate-300">Business Trajectory</h3>
-                                <select id="bdTrajectoryMetric" onchange="bdRenderTrajectory()" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none">
-                                    <option value="revenue">Revenue ($M)</option>
-                                    <option value="ending_arr">Ending ARR ($M)</option>
-                                    <option value="ebitda">EBITDA ($M)</option>
-                                    <option value="net_income">Net Income ($M)</option>
-                                    <option value="cash">Cash ($M)</option>
-                                    <option value="fcf">Free Cash Flow ($M)</option>
-                                    <option value="gross_margin_pct">Gross Margin %</option>
-                                    <option value="pipeline">Pipeline ($M)</option>
-                                    <option value="headcount">Headcount</option>
-                                    <option value="customer_count">Customers</option>
-                                    <option value="cloud_spend">Cloud Spend ($M)</option>
-                                    <option value="rule_of_40">Rule of 40</option>
-                                </select>
-                            </div>
-                            <div id="bdTrajectoryChart" class="flex items-end gap-1 h-24 px-2"></div>
-                            <div id="bdTrajectoryLabels" class="flex gap-1 px-2 mt-1"></div>
+                        <div class="text-sm text-slate-300">
+                            <span class="text-cyan-400 font-medium">Data flow:</span>
+                            <span class="font-mono text-xs text-slate-400">AAM</span>
+                            <span class="text-slate-500 mx-1">&rarr;</span>
+                            <span class="font-mono text-xs text-cyan-400">POST /api/farm/manifest-intake</span>
+                            <span class="text-slate-500 mx-1">&rarr;</span>
+                            <span class="font-mono text-xs text-slate-400">Farm generates</span>
+                            <span class="text-slate-500 mx-1">&rarr;</span>
+                            <span class="font-mono text-xs text-emerald-400">DCL /api/dcl/ingest</span>
+                        </div>
+                        <div class="flex items-center gap-3 pt-1">
+                            <button onclick="switchMainTab('runlog')" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-all">
+                                View Run Log
+                            </button>
+                            <span class="text-xs text-slate-500">All manifest executions (success, failure, rejection) are visible in the Run Log tab.</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Ground Truth Dashboard (hidden until generated) -->
-                <div id="bdGroundTruthContainer" class="hidden">
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-purple-700/50">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-lg bg-purple-600/30 flex items-center justify-center">
-                                    <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h2 class="text-lg font-semibold text-white">Ground Truth Metrics</h2>
-                                    <p class="text-slate-400 text-sm">Authoritative values per quarter across all categories</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="text-xs text-slate-400">Quarter:</label>
-                                <select id="bdQuarterSelect" onchange="bdRenderGroundTruth()" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none"></select>
-                            </div>
-                        </div>
-
-                        <!-- Metric Categories -->
-                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3" id="bdMetricCategories"></div>
-
-                        <!-- Dimensional Breakdowns -->
-                        <div class="border-t border-slate-700 pt-4 mt-4">
-                            <h3 class="text-sm font-semibold text-slate-300 mb-3">Dimensional Breakdowns <span id="bdDimCount" class="text-slate-500 font-normal"></span></h3>
-                            <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-3" id="bdDimensionalBreakdowns"></div>
-                        </div>
-
-                        <!-- Expected Conflicts -->
-                        <div class="border-t border-slate-700 pt-4 mt-4">
-                            <h3 class="text-sm font-semibold text-slate-300 mb-3">Expected Cross-System Conflicts</h3>
-                            <div id="bdConflicts" class="space-y-2"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Reconciliation Scorecard (hidden until generated) -->
-                <div id="bdReconcileContainer" class="hidden">
-                    <div class="bg-slate-800/60 rounded-xl p-5 border border-rose-700/50">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-lg bg-rose-600/30 flex items-center justify-center">
-                                    <svg class="w-5 h-5 text-rose-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                                    </svg>
-                                </div>
-                                <div>
-                                    <h2 class="text-lg font-semibold text-white">Reconciliation Scorecard</h2>
-                                    <p class="text-slate-400 text-sm">Compare submitted results against ground truth</p>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <button onclick="bdLoadSampleActuals()" class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-xs text-slate-300 rounded-lg transition-all">
-                                    Load Sample Actuals
-                                </button>
-                                <button onclick="bdVerifyDCL()" id="bdVerifyDclBtn" class="px-3 py-1.5 bg-cyan-700 hover:bg-cyan-600 text-xs text-white font-semibold rounded-lg transition-all">
-                                    Verify Against DCL
-                                </button>
-                                <button onclick="bdReconcileServer()" id="bdReconcileBtn" class="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-xs text-white font-semibold rounded-lg transition-all">
-                                    Run Reconciliation
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Actuals Input -->
-                        <div class="mb-4">
-                            <div class="flex items-center justify-between mb-2">
-                                <label class="text-xs text-slate-400">Paste actual metric values (JSON) for the selected quarter:</label>
-                                <span class="text-xs text-slate-500">Quarter: <span id="bdReconcileQuarter" class="text-cyan-400">--</span></span>
-                            </div>
-                            <textarea id="bdActualsInput" rows="4" placeholder='{"revenue": 23.5, "arr": 21.2, "headcount": 245, "customer_count": 780, ...}'
-                                class="w-full bg-slate-900/60 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:border-rose-500 outline-none resize-none"></textarea>
-                        </div>
-
-                        <!-- Overall Accuracy Banner -->
-                        <div id="bdOverallAccuracy" class="hidden mb-4 p-4 rounded-xl text-center">
-                            <div class="text-xs text-slate-400 uppercase tracking-wide mb-1">Overall Accuracy</div>
-                            <div id="bdOverallAccuracyValue" class="text-4xl font-bold"></div>
-                            <div id="bdOverallAccuracyLabel" class="text-xs mt-1"></div>
-                        </div>
-
-                        <!-- Category Scorecards -->
-                        <div class="space-y-3" id="bdReconcileScorecard"></div>
-                    </div>
-                </div>
+                <!-- Stub elements for legacy JS references (never shown) -->
+                <div id="bdSummaryContainer" class="hidden"></div>
+                <div id="bdGroundTruthContainer" class="hidden"></div>
+                <div id="bdReconcileContainer" class="hidden"></div>
 
             </div>
         </div>
