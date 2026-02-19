@@ -889,37 +889,43 @@
                     </div>
                 </div>
 
-                <!-- Run Table -->
+                <!-- Run Table (5 visible rows, scrollable) -->
                 <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
                     <table class="w-full text-xs">
                         <thead>
                             <tr class="bg-slate-900/60 text-slate-400 border-b border-slate-700/50">
                                 <th class="px-3 py-2 text-left font-medium">Status</th>
-                                <th class="px-3 py-2 text-left font-medium">Farm Run ID</th>
-                                <th class="px-3 py-2 text-left font-medium">AAM Run ID</th>
                                 <th class="px-3 py-2 text-left font-medium">Pipe ID</th>
-                                <th class="px-3 py-2 text-left font-medium">DCL Run ID</th>
                                 <th class="px-3 py-2 text-left font-medium">Tenant</th>
-                                <th class="px-3 py-2 text-left font-medium">Snapshot</th>
                                 <th class="px-3 py-2 text-left font-medium">System</th>
                                 <th class="px-3 py-2 text-right font-medium">Rows</th>
                                 <th class="px-3 py-2 text-right font-medium">ms</th>
                                 <th class="px-3 py-2 text-left font-medium">Created</th>
                             </tr>
                         </thead>
-                        <tbody id="rlTableBody" class="divide-y divide-slate-700/50">
-                            <tr><td colspan="11" class="px-3 py-8 text-center text-slate-500">No runs yet. Waiting for AAM to dispatch manifests.</td></tr>
-                        </tbody>
                     </table>
+                    <div style="max-height: 175px; overflow-y: auto;">
+                        <table class="w-full text-xs">
+                            <tbody id="rlTableBody" class="divide-y divide-slate-700/50">
+                                <tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No runs yet. Waiting for AAM to dispatch manifests.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
-                <!-- Run Detail Drawer -->
-                <div id="rlDetail" class="hidden bg-slate-800/50 rounded-lg border border-cyan-700/50 p-4">
-                    <div class="flex items-center justify-between mb-3">
-                        <h3 class="text-sm font-semibold text-cyan-400">Run Detail</h3>
-                        <button onclick="document.getElementById('rlDetail').classList.add('hidden')" class="text-slate-400 hover:text-white text-xs">[close]</button>
+                <!-- Run Detail Drill-Through -->
+                <div id="rlDetail" class="hidden bg-slate-800/50 rounded-lg border border-cyan-700/50 overflow-hidden">
+                    <!-- Detail Header -->
+                    <div class="flex items-center justify-between px-4 py-3 bg-slate-900/60 border-b border-cyan-700/30">
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-sm font-semibold text-cyan-400">Run Detail</h3>
+                            <span id="rlDetailStatus" class="text-xs"></span>
+                        </div>
+                        <button onclick="rlCloseDetail()" class="text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-700/50">[close]</button>
                     </div>
-                    <pre id="rlDetailJson" class="text-xs text-slate-300 bg-slate-900/60 rounded p-3 overflow-auto max-h-64 font-mono whitespace-pre-wrap"></pre>
+                    <div id="rlDetailBody" class="p-4 space-y-4 max-h-96 overflow-y-auto">
+                        <div class="text-slate-500 text-sm text-center py-4">Loading...</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1794,7 +1800,7 @@
                 rlRenderStats(runs);
             } catch (e) {
                 document.getElementById('rlTableBody').innerHTML =
-                    `<tr><td colspan="11" class="px-3 py-8 text-center text-red-400">Error: ${e.message}</td></tr>`;
+                    `<tr><td colspan="7" class="px-3 py-8 text-center text-red-400">Error: ${e.message}</td></tr>`;
             } finally {
                 btn.textContent = 'Refresh';
                 btn.disabled = false;
@@ -1831,20 +1837,18 @@
         function rlRenderTable(runs) {
             const tbody = document.getElementById('rlTableBody');
             if (!runs || runs.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="11" class="px-3 py-8 text-center text-slate-500">No runs found. Waiting for AAM to dispatch manifests.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No runs found. Waiting for AAM to dispatch manifests.</td></tr>';
                 return;
             }
+            // stash for detail lookup without extra fetch on list fields
+            window._rlRuns = runs;
             tbody.innerHTML = runs.map(r => {
                 const drift = r.schema_drift ? ' <span class="text-amber-400" title="Schema drift detected">!</span>' : '';
-                const errorTitle = r.error_type ? ` title="${r.error_type}: ${(r.error_message || '').substring(0, 100)}"` : '';
-                return `<tr class="hover:bg-slate-700/30 cursor-pointer" onclick="rlShowDetail('${r.farm_run_id}')"${errorTitle}>
+                const sel = (window._rlSelectedRunId === r.farm_run_id) ? 'bg-cyan-900/30' : '';
+                return `<tr class="hover:bg-slate-700/30 cursor-pointer ${sel}" onclick="rlShowDetail('${r.farm_run_id}')">
                     <td class="px-3 py-2">${rlStatusBadge(r.status)}${drift}</td>
-                    <td class="px-3 py-2 font-mono text-cyan-400">${rlTruncate(r.farm_run_id, 28)}</td>
-                    <td class="px-3 py-2 font-mono text-slate-300">${rlTruncate(r.run_id, 16)}</td>
-                    <td class="px-3 py-2 font-mono text-violet-400">${rlTruncate(r.pipe_id, 24)}</td>
-                    <td class="px-3 py-2 font-mono text-slate-400">${rlTruncate(r.dcl_run_id, 12)}</td>
+                    <td class="px-3 py-2 font-mono text-violet-400">${rlTruncate(r.pipe_id, 28)}</td>
                     <td class="px-3 py-2 text-slate-300">${r.tenant_id || '--'}</td>
-                    <td class="px-3 py-2 text-slate-400">${rlTruncate(r.snapshot_name, 16)}</td>
                     <td class="px-3 py-2 text-slate-400">${r.source_system || '--'}</td>
                     <td class="px-3 py-2 text-right text-slate-300">${r.rows_generated ?? '--'}${r.rows_accepted != null ? '/' + r.rows_accepted : ''}</td>
                     <td class="px-3 py-2 text-right text-slate-500">${r.elapsed_ms ?? '--'}</td>
@@ -1853,18 +1857,114 @@
             }).join('');
         }
 
+        function rlCloseDetail() {
+            document.getElementById('rlDetail').classList.add('hidden');
+            window._rlSelectedRunId = null;
+            // re-render to remove highlight
+            if (window._rlRuns) rlRenderTable(window._rlRuns);
+        }
+
+        function rlDetailField(label, value, cls) {
+            const v = value != null && value !== '' ? value : '--';
+            return `<div>
+                <div class="text-[10px] text-slate-500 uppercase tracking-wider">${label}</div>
+                <div class="text-xs ${cls || 'text-slate-300'} font-mono mt-0.5 break-all">${v}</div>
+            </div>`;
+        }
+
         async function rlShowDetail(farmRunId) {
+            window._rlSelectedRunId = farmRunId;
+            // re-render table to show selected row highlight
+            if (window._rlRuns) rlRenderTable(window._rlRuns);
+
             const detail = document.getElementById('rlDetail');
-            const json = document.getElementById('rlDetailJson');
+            const body = document.getElementById('rlDetailBody');
+            const statusEl = document.getElementById('rlDetailStatus');
             detail.classList.remove('hidden');
-            json.textContent = 'Loading...';
+            body.innerHTML = '<div class="text-slate-500 text-sm text-center py-4">Loading...</div>';
+            statusEl.innerHTML = '';
+
             try {
                 const resp = await fetch(`/api/runs/${farmRunId}`);
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                const data = await resp.json();
-                json.textContent = JSON.stringify(data, null, 2);
+                const d = await resp.json();
+
+                statusEl.innerHTML = rlStatusBadge(d.status);
+
+                // --- Correlation IDs ---
+                let html = `<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    ${rlDetailField('Farm Run ID', d.farm_run_id, 'text-cyan-400')}
+                    ${rlDetailField('AAM Run ID', d.run_id)}
+                    ${rlDetailField('Pipe ID', d.pipe_id, 'text-violet-400')}
+                    ${rlDetailField('DCL Run ID', d.dcl_run_id)}
+                </div>`;
+
+                // --- Execution Info ---
+                html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    ${rlDetailField('Tenant', d.tenant_id)}
+                    ${rlDetailField('Snapshot', d.snapshot_name)}
+                    ${rlDetailField('Source System', d.source_system)}
+                    ${rlDetailField('Generator', d.generator_key)}
+                </div>`;
+
+                // --- Metrics ---
+                html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    ${rlDetailField('Rows Generated', d.rows_generated)}
+                    ${rlDetailField('Rows Accepted', d.rows_accepted)}
+                    ${rlDetailField('Elapsed', d.elapsed_ms != null ? d.elapsed_ms + ' ms' : null)}
+                    ${rlDetailField('DCL Status Code', d.dcl_status_code)}
+                </div>`;
+
+                // --- Schema Drift ---
+                if (d.schema_drift) {
+                    const prj = d.push_result_json;
+                    const driftFields = prj?.drift_fields?.length ? prj.drift_fields.join(', ') : 'unknown';
+                    html += `<div class="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3">
+                        <div class="text-xs text-amber-400 font-semibold mb-1">Schema Drift Detected</div>
+                        <div class="text-xs text-amber-300/80 font-mono">${driftFields}</div>
+                    </div>`;
+                }
+
+                // --- Error Block ---
+                if (d.error_type || d.error_message) {
+                    html += `<div class="bg-red-900/20 border border-red-700/40 rounded-lg p-3">
+                        <div class="text-xs text-red-400 font-semibold mb-1">${d.error_type || 'Error'}</div>
+                        <div class="text-xs text-red-300/80">${d.error_message || '--'}</div>
+                    </div>`;
+                }
+
+                // --- Push Result (what actually shipped) ---
+                if (d.push_result_json) {
+                    const prj = d.push_result_json;
+                    html += `<div class="bg-slate-900/60 rounded-lg border border-slate-700/50">
+                        <button onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180')"
+                                class="w-full flex items-center justify-between px-3 py-2 text-xs text-slate-400 hover:text-white">
+                            <span class="font-medium">DCL Push Result (shipped payload detail)</span>
+                            <svg class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+                        <div class="hidden px-3 pb-3">
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
+                                ${rlDetailField('Push Status', prj.status, prj.status === 'success' ? 'text-emerald-400' : 'text-red-400')}
+                                ${rlDetailField('HTTP Code', prj.status_code)}
+                                ${rlDetailField('Rows Pushed', prj.rows_pushed)}
+                                ${rlDetailField('Schema Match', prj.matched_schema != null ? (prj.matched_schema ? 'Yes' : 'No') : null)}
+                            </div>
+                            ${prj.schema_fields?.length ? `<div class="mb-2">${rlDetailField('Schema Fields', prj.schema_fields.join(', '))}</div>` : ''}
+                            ${prj.hint ? `<div class="mb-2">${rlDetailField('Hint', prj.hint, 'text-amber-300')}</div>` : ''}
+                            <pre class="text-[10px] text-slate-500 bg-slate-950/50 rounded p-2 overflow-auto max-h-40 font-mono whitespace-pre-wrap">${JSON.stringify(prj, null, 2)}</pre>
+                        </div>
+                    </div>`;
+                }
+
+                // --- Timestamps ---
+                html += `<div class="flex items-center gap-4 text-[10px] text-slate-600 pt-1 border-t border-slate-700/30">
+                    <span>Created: ${d.created_at || '--'}</span>
+                    ${d.category ? `<span>Category: ${d.category}</span>` : ''}
+                </div>`;
+
+                body.innerHTML = html;
             } catch (e) {
-                json.textContent = `Error loading detail: ${e.message}`;
+                body.innerHTML = `<div class="text-red-400 text-sm text-center py-4">Error loading detail: ${e.message}</div>`;
             }
         }
 
