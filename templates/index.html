@@ -211,8 +211,7 @@
                         <button id="tabOverview" onclick="switchMainTab('overview')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Overview</button>
                         <button id="tabConsole" onclick="switchMainTab('console')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">AOD</button>
                         <button id="tabAgents" onclick="switchMainTab('agents')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">AOA</button>
-                        <button id="tabScenarios" onclick="switchMainTab('scenarios')" class="px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors">NLQ</button>
-                        <button id="tabRunLog" onclick="switchMainTab('runlog')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Run Log</button>
+                        <button id="tabRunLog" onclick="switchMainTab('runlog')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">NLQ</button>
                         <button id="tabDcl" onclick="switchMainTab('dcl')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">DCL</button>
                         <button id="tabGuide" onclick="switchMainTab('guide')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Guide</button>
                         <button id="tabTest" onclick="switchMainTab('test')" class="hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Test Lab</button>
@@ -825,60 +824,7 @@
             </div>
         </div>
 
-        <div id="scenariosTab" class="hidden h-full overflow-auto" style="max-height: calc(100vh - 120px);">
-            <div class="space-y-6">
-
-                <!-- Manifest-Driven Flow Notice -->
-                <div class="bg-slate-800/60 rounded-xl p-5 border border-cyan-700/50">
-                    <div class="flex items-center gap-3 mb-3">
-                        <div class="w-10 h-10 rounded-lg bg-cyan-600/30 flex items-center justify-center">
-                            <svg class="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                            </svg>
-                        </div>
-                        <div>
-                            <h2 class="text-lg font-semibold text-white">Manifest-Driven Generation</h2>
-                            <p class="text-slate-400 text-sm">Farm generates data only when AAM dispatches a JobManifest</p>
-                        </div>
-                        <span id="dclConnIndicator" class="flex items-center gap-1.5 text-xs text-slate-500 ml-auto">
-                            <span id="dclConnDot" class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>
-                            <span id="dclConnLabel">checking...</span>
-                        </span>
-                    </div>
-                    <div class="bg-slate-900/50 rounded-lg p-4 border border-slate-700/50 space-y-3">
-                        <div class="text-sm text-slate-300">
-                            <span class="text-cyan-400 font-medium">How it works:</span>
-                            AAM exports pipe definitions to DCL (structure), then dispatches JobManifests to Farm (content).
-                            Farm generates source-shaped data and pushes it to DCL using the manifest's pipe_id, tenant_id, and snapshot_name.
-                        </div>
-                        <div class="text-sm text-slate-300">
-                            <span class="text-cyan-400 font-medium">Data flow:</span>
-                            <span class="font-mono text-xs text-slate-400">AAM</span>
-                            <span class="text-slate-500 mx-1">&rarr;</span>
-                            <span class="font-mono text-xs text-cyan-400">POST /api/farm/manifest-intake</span>
-                            <span class="text-slate-500 mx-1">&rarr;</span>
-                            <span class="font-mono text-xs text-slate-400">Farm generates</span>
-                            <span class="text-slate-500 mx-1">&rarr;</span>
-                            <span class="font-mono text-xs text-emerald-400">DCL /api/dcl/ingest</span>
-                        </div>
-                        <div class="flex items-center gap-3 pt-1">
-                            <button onclick="switchMainTab('runlog')" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-sm font-semibold rounded-lg transition-all">
-                                View Run Log
-                            </button>
-                            <span class="text-xs text-slate-500">All manifest executions (success, failure, rejection) are visible in the Run Log tab.</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Stub elements for legacy JS references (never shown) -->
-                <div id="bdSummaryContainer" class="hidden"></div>
-                <div id="bdGroundTruthContainer" class="hidden"></div>
-                <div id="bdReconcileContainer" class="hidden"></div>
-
-            </div>
-        </div>
-
-        <!-- Run Log Tab -->
+        <!-- NLQ Tab (manifest run log) -->
         <div id="runlogTab" class="hidden h-full overflow-auto" style="max-height: calc(100vh - 120px);">
             <div class="p-4 space-y-4">
                 <!-- Header -->
@@ -887,7 +833,11 @@
                         <h2 class="text-lg font-semibold text-white">Manifest Run Log</h2>
                         <p class="text-slate-400 text-sm">Every AAM → Farm → DCL execution with full provenance</p>
                     </div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-3">
+                        <span id="dclConnIndicator" class="flex items-center gap-1.5 text-xs text-slate-500">
+                            <span id="dclConnDot" class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>
+                            <span id="dclConnLabel">checking...</span>
+                        </span>
                         <button onclick="rlSelfTest()" id="rlSelfTestBtn" class="px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors">Self-Test</button>
                         <button onclick="rlRefresh()" id="rlRefreshBtn" class="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors">Refresh</button>
                         <label class="flex items-center gap-1.5 text-xs text-slate-400">
@@ -1746,75 +1696,45 @@
         }
 
         function switchMainTab(tab) {
-            const overviewTab = document.getElementById('overviewTab');
-            const consoleTab = document.getElementById('consoleTab');
-            const agentsTab = document.getElementById('agentsTab');
-            const scenariosTab = document.getElementById('scenariosTab');
-            const runlogTab = document.getElementById('runlogTab');
-            const dclTab = document.getElementById('dclTab');
-            const guideTab = document.getElementById('guideTab');
-            const testTab = document.getElementById('testTab');
-            const tabOverview = document.getElementById('tabOverview');
-            const tabConsole = document.getElementById('tabConsole');
-            const tabAgents = document.getElementById('tabAgents');
-            const tabScenarios = document.getElementById('tabScenarios');
-            const tabRunLog = document.getElementById('tabRunLog');
-            const tabDcl = document.getElementById('tabDcl');
-            const tabGuide = document.getElementById('tabGuide');
-            const tabTest = document.getElementById('tabTest');
+            const panels = {
+                overview: document.getElementById('overviewTab'),
+                console: document.getElementById('consoleTab'),
+                agents: document.getElementById('agentsTab'),
+                runlog: document.getElementById('runlogTab'),
+                dcl: document.getElementById('dclTab'),
+                guide: document.getElementById('guideTab'),
+                test: document.getElementById('testTab'),
+            };
+            const buttons = {
+                overview: document.getElementById('tabOverview'),
+                console: document.getElementById('tabConsole'),
+                agents: document.getElementById('tabAgents'),
+                runlog: document.getElementById('tabRunLog'),
+                dcl: document.getElementById('tabDcl'),
+                guide: document.getElementById('tabGuide'),
+                test: document.getElementById('tabTest'),
+            };
 
             const activeClass = 'px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors';
             const inactiveClass = 'px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors';
             const hiddenInactiveClass = 'hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors';
 
-            overviewTab.classList.add('hidden');
-            consoleTab.classList.add('hidden');
-            agentsTab.classList.add('hidden');
-            scenariosTab.classList.add('hidden');
-            runlogTab.classList.add('hidden');
-            dclTab.classList.add('hidden');
-            guideTab.classList.add('hidden');
-            testTab.classList.add('hidden');
-
-            tabOverview.className = inactiveClass;
-            tabConsole.className = inactiveClass;
-            tabAgents.className = inactiveClass;
-            tabScenarios.className = inactiveClass;
-            tabRunLog.className = inactiveClass;
-            tabDcl.className = inactiveClass;
-            tabGuide.className = inactiveClass;
-            tabTest.className = hiddenInactiveClass;
-
-            if (tab === 'overview') {
-                overviewTab.classList.remove('hidden');
-                tabOverview.className = activeClass;
-            } else if (tab === 'console') {
-                consoleTab.classList.remove('hidden');
-                tabConsole.className = activeClass;
-            } else if (tab === 'agents') {
-                agentsTab.classList.remove('hidden');
-                tabAgents.className = activeClass;
-                refreshAOAMetrics();
-            } else if (tab === 'scenarios') {
-                scenariosTab.classList.remove('hidden');
-                tabScenarios.className = activeClass;
-            } else if (tab === 'runlog') {
-                runlogTab.classList.remove('hidden');
-                tabRunLog.className = activeClass;
-                rlRefresh();
-            } else if (tab === 'dcl') {
-                dclTab.classList.remove('hidden');
-                tabDcl.className = activeClass;
-                updateDclScenarioStatus();
-            } else if (tab === 'guide') {
-                guideTab.classList.remove('hidden');
-                tabGuide.className = activeClass;
-                loadUserGuide();
-            } else if (tab === 'test') {
-                testTab.classList.remove('hidden');
-                tabTest.className = activeClass;
-                populateTestSnapshotSelect();
+            // Hide all panels, deactivate all buttons
+            for (const p of Object.values(panels)) if (p) p.classList.add('hidden');
+            for (const [key, b] of Object.entries(buttons)) {
+                if (b) b.className = key === 'test' ? hiddenInactiveClass : inactiveClass;
             }
+
+            // Show selected
+            if (panels[tab]) panels[tab].classList.remove('hidden');
+            if (buttons[tab]) buttons[tab].className = activeClass;
+
+            // Tab-specific init
+            if (tab === 'agents') refreshAOAMetrics();
+            if (tab === 'runlog') rlRefresh();
+            if (tab === 'dcl') updateDclScenarioStatus();
+            if (tab === 'guide') loadUserGuide();
+            if (tab === 'test') populateTestSnapshotSelect();
         }
 
         function populateTestSnapshotSelect() {
@@ -2369,582 +2289,7 @@
             }
         }
 
-        // ═══════════════════════════════════════════════════════════════════
-        // Business Data Ground Truth Generator
-        // ═══════════════════════════════════════════════════════════════════
-
-        const BD_PRESETS = {
-            light:    { seed: 42, tiers: '1',     base_revenue: 10, growth_rate: 0.05, num_quarters: 5  },
-            standard: { seed: 42, tiers: '1,2,3', base_revenue: 22, growth_rate: 0.15, num_quarters: 12 },
-            full:     { seed: 42, tiers: '1,2,3', base_revenue: 50, growth_rate: 0.30, num_quarters: 20 },
-        };
-
-        const BD_METRIC_CATEGORIES = {
-            'ARR Waterfall': {
-                color: 'emerald',
-                metrics: ['beginning_arr', 'new_arr', 'new_logo_arr', 'expansion_arr', 'churned_arr', 'arr', 'mrr'],
-                labels:  { beginning_arr: 'Beginning ARR ($M)', new_arr: 'New ARR ($M)', new_logo_arr: 'New Logo ARR ($M)', expansion_arr: 'Expansion ARR ($M)', churned_arr: 'Churned ARR ($M)', arr: 'Ending ARR ($M)', mrr: 'MRR ($M)' }
-            },
-            'Revenue & P&L': {
-                color: 'green',
-                metrics: ['revenue', 'new_logo_revenue', 'expansion_revenue', 'renewal_revenue', 'cogs', 'gross_profit', 'gross_margin_pct', 'opex', 'ebitda', 'ebitda_margin_pct', 'net_income', 'net_margin_pct'],
-                labels:  { revenue: 'Revenue ($M)', new_logo_revenue: 'New Logo Rev ($M)', expansion_revenue: 'Expansion Rev ($M)', renewal_revenue: 'Renewal Rev ($M)', cogs: 'COGS ($M)', gross_profit: 'Gross Profit ($M)', gross_margin_pct: 'Gross Margin %', opex: 'Total OpEx ($M)', ebitda: 'EBITDA ($M)', ebitda_margin_pct: 'EBITDA Margin %', net_income: 'Net Income ($M)', net_margin_pct: 'Net Margin %' }
-            },
-            'Balance Sheet': {
-                color: 'sky',
-                metrics: ['cash', 'ar', 'total_assets', 'deferred_revenue', 'total_liabilities', 'stockholders_equity', 'retained_earnings'],
-                labels:  { cash: 'Cash ($M)', ar: 'Accounts Receivable ($M)', total_assets: 'Total Assets ($M)', deferred_revenue: 'Deferred Revenue ($M)', total_liabilities: 'Total Liabilities ($M)', stockholders_equity: "Stockholders' Equity ($M)", retained_earnings: 'Retained Earnings ($M)' }
-            },
-            'Cash Flow & SaaS': {
-                color: 'teal',
-                metrics: ['cfo', 'capex', 'fcf', 'nrr', 'gross_churn_pct', 'ltv_cac_ratio', 'magic_number', 'burn_multiple', 'rule_of_40', 'revenue_per_employee', 'arr_per_employee'],
-                labels:  { cfo: 'Cash from Ops ($M)', capex: 'CapEx ($M)', fcf: 'Free Cash Flow ($M)', nrr: 'NRR %', gross_churn_pct: 'Gross Churn %', ltv_cac_ratio: 'LTV:CAC Ratio', magic_number: 'Magic Number', burn_multiple: 'Burn Multiple', rule_of_40: 'Rule of 40 %', revenue_per_employee: 'Rev/Employee ($M)', arr_per_employee: 'ARR/Employee ($M)' }
-            },
-            'Pipeline & Customers': {
-                color: 'cyan',
-                metrics: ['pipeline', 'win_rate', 'sales_cycle_days', 'avg_deal_size', 'quota_attainment', 'customer_count', 'new_customers', 'churned_customers', 'logo_churn_pct', 'acv'],
-                labels:  { pipeline: 'Pipeline ($M)', win_rate: 'Win Rate %', sales_cycle_days: 'Sales Cycle (days)', avg_deal_size: 'Avg Deal Size ($M)', quota_attainment: 'Quota Attainment %', customer_count: 'Total Customers', new_customers: 'New Customers', churned_customers: 'Churned Customers', logo_churn_pct: 'Logo Churn %', acv: 'ACV ($M)' }
-            },
-            'People': {
-                color: 'purple',
-                metrics: ['headcount', 'new_hires', 'terminations', 'attrition_rate', 'engineering_headcount', 'sales_headcount'],
-                labels:  { headcount: 'Headcount', new_hires: 'New Hires', terminations: 'Terminations', attrition_rate: 'Attrition %', engineering_headcount: 'Engineering HC', sales_headcount: 'Sales HC' }
-            },
-            'Support & Engineering': {
-                color: 'amber',
-                metrics: ['support_tickets', 'csat', 'nps', 'first_response_hours', 'resolution_hours', 'sprint_velocity', 'story_points', 'features_shipped', 'tech_debt_pct'],
-                labels:  { support_tickets: 'Support Tickets', csat: 'CSAT (/ 5)', nps: 'NPS', first_response_hours: 'First Response (hrs)', resolution_hours: 'Resolution (hrs)', sprint_velocity: 'Sprint Velocity', story_points: 'Story Points', features_shipped: 'Features Shipped', tech_debt_pct: 'Tech Debt %' }
-            },
-            'Infrastructure': {
-                color: 'rose',
-                metrics: ['cloud_spend', 'cloud_spend_pct_revenue', 'p1_incidents', 'p2_incidents', 'incident_count', 'mttr_p1_hours', 'mttr_p2_hours', 'uptime_pct', 'downtime_hours'],
-                labels:  { cloud_spend: 'Cloud Spend ($M)', cloud_spend_pct_revenue: 'Cloud % Revenue', p1_incidents: 'P1 Incidents', p2_incidents: 'P2 Incidents', incident_count: 'Total Incidents', mttr_p1_hours: 'MTTR P1 (hrs)', mttr_p2_hours: 'MTTR P2 (hrs)', uptime_pct: 'Uptime %', downtime_hours: 'Downtime (hrs)' }
-            }
-        };
-
-        let bdCurrentRun = null;       // { run_id, manifest, profile }
-        let bdCurrentPreset = 'standard';
-
-        function bdSelectPreset(preset) {
-            bdCurrentPreset = preset;
-            const cfg = BD_PRESETS[preset];
-
-            // Update advanced controls
-            document.getElementById('bdSeed').value = cfg.seed;
-            document.getElementById('bdTiers').value = cfg.tiers;
-            document.getElementById('bdBaseRevenue').value = cfg.base_revenue;
-            document.getElementById('bdGrowthRate').value = cfg.growth_rate;
-            document.getElementById('bdQuarters').value = cfg.num_quarters;
-
-            // Update preset button styles
-            const presets = { light: 'cyan', standard: 'emerald', full: 'purple' };
-            for (const [key, color] of Object.entries(presets)) {
-                const btn = document.getElementById(`bdPreset${key.charAt(0).toUpperCase() + key.slice(1)}`);
-                if (key === preset) {
-                    btn.className = `group relative p-4 rounded-xl border-2 border-${color}-500/50 bg-${color}-900/10 transition-all text-left ring-1 ring-${color}-500/20`;
-                } else {
-                    btn.className = 'group relative p-4 rounded-xl border-2 border-slate-700 hover:border-slate-600 bg-slate-900/40 transition-all text-left';
-                }
-            }
-        }
-
-        async function checkDclConnectivity() {
-            const dot = document.getElementById('dclConnDot');
-            const label = document.getElementById('dclConnLabel');
-            const checkbox = document.getElementById('bdPushDcl');
-            try {
-                const resp = await fetch('/api/_diagnostics/dcl-status');
-                const data = await resp.json();
-                if (data.connected) {
-                    dot.className = 'w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-sm shadow-emerald-400/50';
-                    label.textContent = 'DCL connected';
-                    label.className = '';
-                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-emerald-400 ml-2';
-                    checkbox.disabled = false;
-                } else if (data.status === 'not_configured') {
-                    dot.className = 'w-2 h-2 rounded-full bg-slate-500 inline-block';
-                    label.textContent = 'DCL not configured';
-                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-slate-500 ml-2';
-                    checkbox.disabled = true;
-                    checkbox.checked = false;
-                } else if (data.status === 'auth_error') {
-                    dot.className = 'w-2 h-2 rounded-full bg-amber-400 inline-block shadow-sm shadow-amber-400/50';
-                    label.textContent = data.message || 'DCL auth required';
-                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-amber-400 ml-2';
-                    checkbox.disabled = false;
-                } else {
-                    dot.className = 'w-2 h-2 rounded-full bg-red-400 inline-block shadow-sm shadow-red-400/50';
-                    label.textContent = data.message || 'DCL unreachable';
-                    document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-red-400 ml-2';
-                    checkbox.disabled = false;
-                }
-            } catch (e) {
-                dot.className = 'w-2 h-2 rounded-full bg-amber-400 inline-block';
-                label.textContent = 'status unknown';
-                document.getElementById('dclConnIndicator').className = 'flex items-center gap-1.5 text-xs text-amber-400 ml-2';
-            }
-        }
-
-        async function bdGenerate() {
-            const btn = document.getElementById('bdGenerateBtn');
-            const statusEl = document.getElementById('bdRunStatus');
-            btn.disabled = true;
-            btn.textContent = 'Generating...';
-            statusEl.className = 'px-3 py-1 rounded-lg text-xs font-mono bg-cyan-900/40 border border-cyan-700/30 text-cyan-300';
-            statusEl.textContent = 'Running...';
-            statusEl.classList.remove('hidden');
-
-            const body = {
-                seed: parseInt(document.getElementById('bdSeed').value) || 42,
-                tiers: document.getElementById('bdTiers').value,
-                base_revenue: parseFloat(document.getElementById('bdBaseRevenue').value) || 22,
-                growth_rate: parseFloat(document.getElementById('bdGrowthRate').value) || 0.15,
-                num_quarters: parseInt(document.getElementById('bdQuarters').value) || 12,
-                push_to_dcl: document.getElementById('bdPushDcl').checked,
-            };
-
-            try {
-                const resp = await fetch('/api/business-data/generate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
-                });
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    throw new Error(err.detail || `HTTP ${resp.status}`);
-                }
-                const result = await resp.json();
-                const runId = result.run_id;
-
-                // Fetch manifest and profile in parallel
-                const [manifestResp, profileResp] = await Promise.all([
-                    fetch(`/api/business-data/ground-truth/${runId}`),
-                    fetch(`/api/business-data/profile/${runId}`)
-                ]);
-                const manifest = await manifestResp.json();
-                const profile = await profileResp.json();
-
-                bdCurrentRun = { run_id: runId, result, manifest, profile };
-
-                statusEl.className = 'px-3 py-1 rounded-lg text-xs font-mono bg-emerald-900/40 border border-emerald-700/30 text-emerald-300';
-                statusEl.textContent = `${result.active_systems.length} systems | ${Object.values(result.record_counts).reduce((a,b) => a+b, 0).toLocaleString()} records`;
-
-                bdRenderSummary();
-                bdRenderGroundTruth();
-                bdShowSections(true);
-            } catch (e) {
-                console.error('Business data generation failed:', e);
-                statusEl.className = 'px-3 py-1 rounded-lg text-xs font-mono bg-red-900/40 border border-red-700/30 text-red-300';
-                statusEl.textContent = 'Error: ' + e.message;
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Generate Ground Truth';
-            }
-        }
-
-        function bdClear() {
-            bdCurrentRun = null;
-            bdShowSections(false);
-            document.getElementById('bdRunStatus').classList.add('hidden');
-            document.getElementById('bdActualsInput').value = '';
-            document.getElementById('bdReconcileScorecard').innerHTML = '';
-            document.getElementById('bdOverallAccuracy').classList.add('hidden');
-        }
-
-        function bdShowSections(show) {
-            ['bdSummaryContainer', 'bdGroundTruthContainer', 'bdReconcileContainer'].forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.classList.toggle('hidden', !show);
-            });
-        }
-
-        function bdRenderSummary() {
-            if (!bdCurrentRun) return;
-            const { result, profile } = bdCurrentRun;
-
-            document.getElementById('bdRunId').textContent = bdCurrentRun.run_id;
-            document.getElementById('bdSnapshotName').textContent = bdCurrentRun.result.snapshot_name || '--';
-
-            // Source system cards
-            const systemInfo = {
-                salesforce: { label: 'Salesforce', color: 'cyan', tier: 1 },
-                netsuite:   { label: 'NetSuite', color: 'emerald', tier: 1 },
-                chargebee:  { label: 'Chargebee', color: 'purple', tier: 1 },
-                workday:    { label: 'Workday', color: 'blue', tier: 2 },
-                zendesk:    { label: 'Zendesk', color: 'amber', tier: 2 },
-                jira:       { label: 'Jira', color: 'indigo', tier: 3 },
-                datadog:    { label: 'Datadog', color: 'violet', tier: 3 },
-                aws_cost_explorer: { label: 'AWS Cost', color: 'orange', tier: 3 },
-            };
-
-            // Map system names to their pipe_id prefixes
-            const pipePrefixes = {
-                salesforce: ['sf_'],
-                netsuite: ['ns-', 'ns_'],
-                chargebee: ['cb_'],
-                workday: ['wd-', 'wd_'],
-                zendesk: ['zendesk_'],
-                jira: ['jira_'],
-                datadog: ['datadog_'],
-                aws_cost_explorer: ['aws_cost_'],
-            };
-
-            const cardsEl = document.getElementById('bdSystemCards');
-            cardsEl.innerHTML = result.active_systems.map(sys => {
-                const info = systemInfo[sys] || { label: sys, color: 'slate', tier: '?' };
-                const prefixes = pipePrefixes[sys] || [sys];
-                const totalRecords = Object.entries(result.record_counts)
-                    .filter(([k]) => prefixes.some(p => k.startsWith(p)))
-                    .reduce((sum, [, v]) => sum + v, 0);
-                return `
-                    <div class="bg-slate-900/50 rounded-lg p-3 border border-${info.color}-700/30">
-                        <div class="flex items-center justify-between mb-1">
-                            <span class="text-xs font-semibold text-${info.color}-400">${info.label}</span>
-                            <span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">T${info.tier}</span>
-                        </div>
-                        <div class="text-lg font-bold text-white">${totalRecords.toLocaleString()}</div>
-                        <div class="text-[10px] text-slate-500">records</div>
-                    </div>
-                `;
-            }).join('');
-
-            // Render trajectory with default metric
-            bdRenderTrajectory();
-        }
-
-        function bdRenderTrajectory() {
-            if (!bdCurrentRun || !bdCurrentRun.profile) return;
-            const metric = document.getElementById('bdTrajectoryMetric').value;
-            const quarters = bdCurrentRun.profile.quarters;
-
-            const values = quarters.map(q => q[metric] || 0);
-            const maxVal = Math.max(...values, 1);
-
-            const chartEl = document.getElementById('bdTrajectoryChart');
-            const labelsEl = document.getElementById('bdTrajectoryLabels');
-
-            chartEl.innerHTML = values.map((v, i) => {
-                const pct = (v / maxVal) * 100;
-                const q = quarters[i];
-                const isForecast = q.is_forecast;
-                const barColor = isForecast ? 'bg-slate-600' : 'bg-cyan-500/70';
-                const displayVal = v >= 1 ? v.toFixed(1) : v.toLocaleString();
-                return `<div class="flex-1 flex flex-col items-center justify-end h-full group cursor-default" title="${q.quarter}: ${displayVal}">
-                    <div class="text-[9px] text-slate-500 mb-1 opacity-0 group-hover:opacity-100 transition-opacity">${displayVal}</div>
-                    <div class="${barColor} w-full rounded-t transition-all ${isForecast ? 'opacity-50' : ''}" style="height: ${Math.max(pct, 4)}%"></div>
-                </div>`;
-            }).join('');
-
-            labelsEl.innerHTML = quarters.map(q =>
-                `<div class="flex-1 text-center text-[8px] text-slate-600 truncate">${q.quarter.replace('20','')}</div>`
-            ).join('');
-        }
-
-        function bdRenderGroundTruth() {
-            if (!bdCurrentRun || !bdCurrentRun.manifest) return;
-            const manifest = bdCurrentRun.manifest;
-            const gt = manifest.ground_truth || {};
-
-            // Populate quarter selector
-            const quarterSelect = document.getElementById('bdQuarterSelect');
-            const quarters = Object.keys(gt).filter(k => k.match(/^\d{4}-Q\d$/)).sort();
-            const currentVal = quarterSelect.value;
-            quarterSelect.innerHTML = quarters.map(q =>
-                `<option value="${q}" ${q === currentVal ? 'selected' : ''}>${q}</option>`
-            ).join('');
-            if (!currentVal && quarters.length) quarterSelect.value = quarters[0];
-
-            const selectedQ = quarterSelect.value;
-            const qData = gt[selectedQ] || {};
-
-            // Update reconcile quarter display
-            const reconcileQ = document.getElementById('bdReconcileQuarter');
-            if (reconcileQ) reconcileQ.textContent = selectedQ;
-
-            // Render metric categories
-            const categoriesEl = document.getElementById('bdMetricCategories');
-            const fmtMetricVal = (val, unit) => {
-                if (val === null || val === undefined) return '--';
-                if (unit === 'millions_usd') return `$${typeof val === 'number' ? val.toFixed(2) : val}M`;
-                if (unit === 'percent') return `${val}%`;
-                if (unit === 'score_5') return `${val}/5`;
-                if (unit === 'hours') return `${val}h`;
-                if (unit === 'days') return `${val}d`;
-                if (unit === 'ratio') return `${val}x`;
-                if (unit === 'score') return `${val}`;
-                if (unit === 'points') return `${val} pts`;
-                return typeof val === 'number' ? val.toLocaleString() : val;
-            };
-            categoriesEl.innerHTML = Object.entries(BD_METRIC_CATEGORIES).map(([catName, cat]) => {
-                const metricsHtml = cat.metrics.map(m => {
-                    const mData = qData[m];
-                    if (!mData || typeof mData !== 'object' || !('value' in mData)) return '';
-                    const val = mData.value;
-                    const displayVal = fmtMetricVal(val, mData.unit);
-                    return `
-                        <div class="flex items-center justify-between py-1.5 border-b border-slate-800/50 last:border-0">
-                            <div class="flex items-center gap-2">
-                                <span class="text-xs text-slate-400">${cat.labels[m] || m}</span>
-                                <span class="text-[9px] text-slate-600">${mData.primary_source}</span>
-                            </div>
-                            <span class="text-sm font-semibold text-${cat.color}-400 font-mono">${displayVal}</span>
-                        </div>
-                    `;
-                }).join('');
-
-                return `
-                    <div class="p-3 rounded-lg bg-${cat.color}-500/5 ring-1 ring-${cat.color}-500/20">
-                        <div class="font-medium text-${cat.color}-300 mb-2 text-sm">${catName}</div>
-                        ${metricsHtml}
-                    </div>
-                `;
-            }).join('');
-
-            // Render dimensional breakdowns
-            const dimEl = document.getElementById('bdDimensionalBreakdowns');
-            const dimTruth = gt.dimensional_truth || {};
-            const allDimConfigs = [
-                { key: 'revenue_by_region', label: 'Revenue by Region', color: 'emerald', unit: '$M' },
-                { key: 'revenue_by_segment', label: 'Revenue by Segment', color: 'green', unit: '$M' },
-                { key: 'arr_by_region', label: 'ARR by Region', color: 'teal', unit: '$M' },
-                { key: 'arr_by_segment', label: 'ARR by Segment', color: 'sky', unit: '$M' },
-                { key: 'pipeline_by_stage', label: 'Pipeline by Stage', color: 'cyan', unit: '$M' },
-                { key: 'pipeline_by_region', label: 'Pipeline by Region', color: 'blue', unit: '$M' },
-                { key: 'customers_by_segment', label: 'Customers by Segment', color: 'indigo', unit: '' },
-                { key: 'headcount_by_department', label: 'Headcount by Dept', color: 'purple', unit: '' },
-                { key: 'cogs_breakdown', label: 'COGS Breakdown', color: 'rose', unit: '$M' },
-                { key: 'opex_breakdown', label: 'OpEx Breakdown', color: 'amber', unit: '$M' },
-                { key: 'bookings_by_segment', label: 'Bookings by Segment', color: 'orange', unit: '$M' },
-                { key: 'churn_by_segment', label: 'Churn by Segment', color: 'red', unit: '$M' },
-                { key: 'new_logo_revenue_by_region', label: 'New Logo Rev by Region', color: 'lime', unit: '$M' },
-            ];
-            // Filter to only dims present in the manifest
-            const dimConfigs = allDimConfigs.filter(d => dimTruth[d.key]);
-            const dimCountEl = document.getElementById('bdDimCount');
-            if (dimCountEl) dimCountEl.textContent = `(${dimConfigs.length} dimensions)`;
-
-            dimEl.innerHTML = dimConfigs.map(dim => {
-                const dimData = dimTruth[dim.key] || {};
-                const qDimData = dimData[selectedQ] || {};
-                const entries = Object.entries(qDimData).filter(([k]) => k !== 'source');
-                const maxDim = Math.max(...entries.map(([,v]) => v), 1);
-
-                return `
-                    <div class="p-3 rounded-lg bg-slate-900/40 ring-1 ring-slate-700">
-                        <div class="text-xs font-semibold text-${dim.color}-400 mb-2">${dim.label}</div>
-                        <div class="space-y-1.5">
-                            ${entries.map(([k, v]) => {
-                                const pct = (v / maxDim) * 100;
-                                const displayV = dim.unit === '$M' ? `$${v.toFixed(2)}M` : v.toLocaleString();
-                                return `
-                                    <div>
-                                        <div class="flex justify-between text-[10px] mb-0.5">
-                                            <span class="text-slate-400">${k}</span>
-                                            <span class="text-slate-300 font-mono">${displayV}</span>
-                                        </div>
-                                        <div class="h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                                            <div class="h-full bg-${dim.color}-500/60 rounded-full" style="width: ${pct}%"></div>
-                                        </div>
-                                    </div>
-                                `;
-                            }).join('')}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            // Render expected conflicts
-            const conflictsEl = document.getElementById('bdConflicts');
-            const conflicts = gt.expected_conflicts || [];
-            const qConflicts = conflicts.filter(c => c.period === selectedQ);
-            if (qConflicts.length === 0) {
-                conflictsEl.innerHTML = '<div class="text-xs text-slate-500">No conflicts expected for this quarter</div>';
-            } else {
-                conflictsEl.innerHTML = qConflicts.map(c => `
-                    <div class="p-3 rounded-lg bg-amber-500/5 ring-1 ring-amber-500/20 text-xs">
-                        <div class="flex items-center gap-2 mb-1">
-                            <span class="text-amber-400 font-semibold">${c.metric}</span>
-                            <span class="text-slate-500">|</span>
-                            <span class="text-slate-400">${c.root_cause}</span>
-                        </div>
-                        <div class="text-slate-300">${c.explanation}</div>
-                    </div>
-                `).join('');
-            }
-        }
-
-        function bdLoadSampleActuals() {
-            if (!bdCurrentRun) return;
-            const selectedQ = document.getElementById('bdQuarterSelect').value;
-            const gt = bdCurrentRun.manifest.ground_truth || {};
-            const qData = gt[selectedQ] || {};
-
-            // Generate "actuals" with deliberate deviations from ground truth
-            const actuals = {};
-            const rng = (min, max) => min + Math.random() * (max - min);
-            for (const [metric, mData] of Object.entries(qData)) {
-                if (typeof mData !== 'object' || !('value' in mData)) continue;
-                const v = mData.value;
-                // Introduce 0-8% deviation for realism
-                const deviation = 1 + (rng(-0.08, 0.08));
-                if (mData.unit === 'count') {
-                    actuals[metric] = Math.round(v * deviation);
-                } else if (mData.unit === 'percent' || mData.unit === 'score_5') {
-                    actuals[metric] = parseFloat((v * deviation).toFixed(2));
-                } else {
-                    actuals[metric] = parseFloat((v * deviation).toFixed(2));
-                }
-            }
-
-            document.getElementById('bdActualsInput').value = JSON.stringify(actuals, null, 2);
-        }
-
-        async function bdReconcileServer() {
-            if (!bdCurrentRun) return;
-            const selectedQ = document.getElementById('bdQuarterSelect').value;
-            const runId = bdCurrentRun.run_id;
-
-            let actuals;
-            try {
-                actuals = JSON.parse(document.getElementById('bdActualsInput').value);
-            } catch (e) {
-                alert('Invalid JSON in actuals input: ' + e.message);
-                return;
-            }
-
-            const btn = document.getElementById('bdReconcileBtn');
-            btn.disabled = true;
-            btn.textContent = 'Verifying...';
-
-            try {
-                const resp = await fetch(`/api/business-data/verify/${runId}`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ quarter: selectedQ, actuals: actuals, source: 'manual' }),
-                });
-                const data = await resp.json();
-                if (!resp.ok) {
-                    alert(`Verification failed: ${data.detail?.message || data.detail || resp.statusText}`);
-                    return;
-                }
-                bdRenderVerifyResults(data);
-            } catch (e) {
-                alert('Verification request failed: ' + e.message);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Run Reconciliation';
-            }
-        }
-
-        async function bdVerifyDCL() {
-            if (!bdCurrentRun) {
-                alert('Generate business data first');
-                return;
-            }
-            const runId = bdCurrentRun.run_id;
-            const selectedQ = document.getElementById('bdQuarterSelect').value;
-            const btn = document.getElementById('bdVerifyDclBtn');
-            btn.disabled = true;
-            btn.textContent = 'Reading DCL...';
-
-            try {
-                const resp = await fetch(`/api/business-data/verify/${runId}/dcl-readback?quarter=${selectedQ}`, {
-                    method: 'POST',
-                });
-                const data = await resp.json();
-                if (resp.status === 501) {
-                    alert(`DCL readback not yet wired: ${data.detail?.message || 'Provide DCL readback contract'}`);
-                    return;
-                }
-                if (!resp.ok) {
-                    alert(`DCL verification failed: ${data.detail?.message || data.detail || resp.statusText}`);
-                    return;
-                }
-                bdRenderVerifyResults(data);
-            } catch (e) {
-                alert('DCL readback request failed: ' + e.message);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Verify Against DCL';
-            }
-        }
-
-        function bdRenderVerifyResults(data) {
-            const overallEl = document.getElementById('bdOverallAccuracy');
-            const overallValEl = document.getElementById('bdOverallAccuracyValue');
-            const overallLabelEl = document.getElementById('bdOverallAccuracyLabel');
-            overallEl.classList.remove('hidden');
-
-            const overallAccuracy = data.overall_accuracy;
-            const overallColor = overallAccuracy >= 95 ? 'emerald' : overallAccuracy >= 85 ? 'amber' : 'red';
-            const verdictBadge = data.verdict === 'PASS' ? 'bg-emerald-500/20 text-emerald-400' :
-                                 data.verdict === 'DEGRADED' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400';
-            overallEl.className = `mb-4 p-4 rounded-xl text-center bg-${overallColor}-500/10 ring-1 ring-${overallColor}-500/30`;
-            overallValEl.className = `text-4xl font-bold text-${overallColor}-400`;
-            overallValEl.textContent = `${overallAccuracy.toFixed(1)}%`;
-            overallLabelEl.className = `text-xs mt-1 text-${overallColor}-300`;
-            overallLabelEl.innerHTML = `<span class="inline-block px-2 py-0.5 rounded text-[10px] font-bold ${verdictBadge} mr-2">${data.verdict}</span>${data.metric_count} metrics | ${data.pass_count} pass | ${data.warn_count} warn | ${data.fail_count} fail | ${data.missing_count} missing | source: ${data.source}`;
-
-            const compared = data.results.filter(m => m.status !== 'missing');
-            const missing = data.results.filter(m => m.status === 'missing');
-
-            const fmtVal = (v, unit) => {
-                if (v === null || v === undefined) return '--';
-                if (unit === 'millions_usd') return '$' + v + 'M';
-                if (unit === 'percent') return v + '%';
-                if (unit === 'score_5') return v + '/5';
-                if (unit === 'hours') return v + 'h';
-                if (unit === 'days') return v + 'd';
-                if (unit === 'ratio') return v + 'x';
-                if (unit === 'points') return v + ' pts';
-                return typeof v === 'number' ? v.toLocaleString() : v;
-            };
-
-            const scorecardEl = document.getElementById('bdReconcileScorecard');
-            let html = '';
-
-            if (compared.length > 0) {
-                html += `<div class="p-3 rounded-lg bg-slate-700/30 ring-1 ring-slate-600/30">
-                    <div class="flex items-center justify-between mb-3">
-                        <div class="font-medium text-slate-300 text-sm">Compared Metrics</div>
-                    </div>
-                    <div class="grid grid-cols-6 gap-1 text-[10px] text-slate-500 mb-1 px-1">
-                        <div class="col-span-2">Metric</div>
-                        <div class="text-right">Expected</div>
-                        <div class="text-right">Actual</div>
-                        <div class="text-right">Delta %</div>
-                        <div class="text-right">Accuracy</div>
-                    </div>
-                    ${compared.map(m => {
-                        const statusColor = m.status === 'pass' ? 'emerald' : m.status === 'warn' ? 'amber' : 'red';
-                        const deltaStr = m.delta !== null ? (m.delta >= 0 ? '+' : '') + fmtVal(m.delta.toFixed(2), m.unit) : '--';
-                        return `<div class="grid grid-cols-6 gap-1 text-xs px-1 py-1 rounded hover:bg-slate-800/30 border-b border-slate-800/30 last:border-0">
-                            <div class="col-span-2 flex items-center gap-1.5">
-                                <div class="w-1.5 h-1.5 rounded-full bg-${statusColor}-400"></div>
-                                <span class="text-slate-300 truncate">${m.metric}</span>
-                            </div>
-                            <div class="text-right text-slate-400 font-mono">${fmtVal(m.expected, m.unit)}</div>
-                            <div class="text-right text-white font-mono">${fmtVal(m.actual, m.unit)}</div>
-                            <div class="text-right font-mono text-slate-400">${m.delta_pct !== null ? m.delta_pct + '%' : '--'}</div>
-                            <div class="text-right font-bold text-${statusColor}-400">${m.accuracy !== null ? m.accuracy + '%' : '--'}</div>
-                        </div>`;
-                    }).join('')}
-                </div>`;
-            }
-
-            if (missing.length > 0) {
-                html += `<div class="p-3 rounded-lg bg-slate-800/30 ring-1 ring-slate-700/30 mt-2">
-                    <div class="text-xs text-slate-500 mb-1">Missing metrics (${missing.length}): not provided in actuals</div>
-                    <div class="flex flex-wrap gap-1">${missing.map(m => `<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-400">${m.metric}</span>`).join('')}</div>
-                </div>`;
-            }
-
-            scorecardEl.innerHTML = html;
-        }
-
-        // Initialize default preset
-        bdSelectPreset('standard');
-
+        // (Business Data Ground Truth Generator removed — manifest-driven flow only)
 
         function toggleDclGuide() {
             const content = document.getElementById('dclGuideContent');
@@ -6842,7 +6187,7 @@
             await loadPlatformConfig();
             await loadStressTestHistory();
             await loadAllDataSafely();
-            switchMainTab('scenarios');
+            switchMainTab('runlog');
             addLogEntry('Farm Console loaded', 'info');
             checkDclConnectivity();
             
