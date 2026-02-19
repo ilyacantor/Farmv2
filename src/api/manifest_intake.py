@@ -480,6 +480,8 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
             manifest=gt_manifest,
             source_systems=[system],
             record_counts=record_counts,
+            snapshot_name=manifest.target.snapshot_name or "",
+            tenant_id=manifest.target.tenant_id or "",
         )
         logger.info(f"Ground truth persisted for manifest run_id={run_id}")
     except Exception as e:

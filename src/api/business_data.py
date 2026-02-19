@@ -143,6 +143,8 @@ async def list_runs():
             "generated_at": db_run["created_at"],
             "source_systems": db_run["source_systems"],
             "record_counts": db_run["record_counts"],
+            "snapshot_name": db_run.get("snapshot_name", ""),
+            "tenant_id": db_run.get("tenant_id", ""),
         }
         for db_run in db_runs
     ]
