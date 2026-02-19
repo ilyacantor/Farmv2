@@ -66,6 +66,7 @@ class APIJSONErrorMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             
             if response.status_code == 404:
+                logger.warning(f"404 NOT FOUND: {request.method} {request.url.path} (request_id={request_id})")
                 return JSONResponse(
                     status_code=404,
                     content={
@@ -209,6 +210,34 @@ app.include_router(agents_router)
 app.include_router(scenarios_router)
 app.include_router(fabric_router)
 app.include_router(manifest_intake_router)
+
+# ---------------------------------------------------------------------------
+# Route aliases — common paths AAM implementations may call
+# The canonical endpoint is POST /api/farm/manifest-intake but AAM runners
+# have been observed calling shorter paths. These aliases forward to the
+# real handler rather than returning a confusing 404.
+# ---------------------------------------------------------------------------
+from src.api.manifest_intake import _execute_single_manifest
+from src.models.manifest import JobManifest, ManifestExecutionResult
+
+@app.post("/api/manifest-intake", response_model=ManifestExecutionResult, tags=["manifest-intake-alias"])
+async def manifest_intake_alias(manifest: JobManifest):
+    """Alias: forwards to /api/farm/manifest-intake."""
+    logger.info(f"Manifest received via alias /api/manifest-intake, forwarding (run_id={manifest.run_id})")
+    return await _execute_single_manifest(manifest)
+
+@app.post("/api/manifest/execute", response_model=ManifestExecutionResult, tags=["manifest-intake-alias"])
+async def manifest_execute_alias(manifest: JobManifest):
+    """Alias: forwards to /api/farm/manifest-intake."""
+    logger.info(f"Manifest received via alias /api/manifest/execute, forwarding (run_id={manifest.run_id})")
+    return await _execute_single_manifest(manifest)
+
+@app.post("/api/ingest", response_model=ManifestExecutionResult, tags=["manifest-intake-alias"])
+async def ingest_alias(manifest: JobManifest):
+    """Alias: forwards to /api/farm/manifest-intake."""
+    logger.info(f"Manifest received via alias /api/ingest, forwarding (run_id={manifest.run_id})")
+    return await _execute_single_manifest(manifest)
+
 
 @app.get("/api/health")
 async def health_check():
