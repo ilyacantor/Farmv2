@@ -51,17 +51,21 @@ from src.farm.db import DBUnavailable, close_pool, ensure_schema, is_healthy
 
 class APIJSONErrorMiddleware(BaseHTTPMiddleware):
     """Middleware to guarantee JSON responses for all /api/* routes.
-    
+
     Catches any exception under /api/* and returns a structured JSON error
     with request_id for tracing. Never returns HTML for API routes.
     """
-    
+
     async def dispatch(self, request: Request, call_next):
         if not request.url.path.startswith('/api'):
             return await call_next(request)
-        
+
         request_id = str(uuid_mod.uuid4())[:8]
-        
+
+        # Log every inbound API request so we can trace what's arriving
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            logger.info(f">>> {request.method} {request.url.path} (request_id={request_id}, client={request.client.host if request.client else 'unknown'})")
+
         try:
             response = await call_next(request)
             
@@ -151,12 +155,17 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle validation errors with JSON for /api/* routes."""
+    request_id = str(uuid_mod.uuid4())[:8]
+    logger.warning(
+        f"VALIDATION 422: {request.method} {request.url.path} "
+        f"(request_id={request_id}) errors={exc.errors()}"
+    )
     if request.url.path.startswith('/api'):
         return JSONResponse(
             status_code=422,
             content={
                 "error": "Validation error",
-                "request_id": str(uuid_mod.uuid4())[:8],
+                "request_id": request_id,
                 "path": request.url.path,
                 "details": exc.errors()
             }
@@ -237,6 +246,27 @@ async def ingest_alias(manifest: JobManifest):
     """Alias: forwards to /api/farm/manifest-intake."""
     logger.info(f"Manifest received via alias /api/ingest, forwarding (run_id={manifest.run_id})")
     return await _execute_single_manifest(manifest)
+
+
+@app.get("/api/farm/manifest-intake/ready")
+async def manifest_intake_ready():
+    """Diagnostic: confirm Farm's manifest-intake endpoint is reachable.
+
+    AAM or ops can GET this to verify connectivity before dispatching.
+    Returns the canonical POST path and all aliases.
+    """
+    healthy, db_status = is_healthy()
+    return {
+        "ready": True,
+        "db": db_status,
+        "canonical": "POST /api/farm/manifest-intake",
+        "aliases": [
+            "POST /api/manifest-intake",
+            "POST /api/manifest/execute",
+            "POST /api/ingest",
+        ],
+        "batch": "POST /api/farm/manifest-intake/batch",
+    }
 
 
 @app.get("/api/health")
