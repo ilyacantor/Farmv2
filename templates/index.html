@@ -888,6 +888,7 @@
                         <p class="text-slate-400 text-sm">Every AAM → Farm → DCL execution with full provenance</p>
                     </div>
                     <div class="flex items-center gap-2">
+                        <button onclick="rlSelfTest()" id="rlSelfTestBtn" class="px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors">Self-Test</button>
                         <button onclick="rlRefresh()" id="rlRefreshBtn" class="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors">Refresh</button>
                         <label class="flex items-center gap-1.5 text-xs text-slate-400">
                             <input type="checkbox" id="rlAutoRefresh" onchange="rlToggleAutoRefresh()" class="rounded">
@@ -1954,6 +1955,31 @@
             } else {
                 clearInterval(rlAutoRefreshTimer);
                 rlAutoRefreshTimer = null;
+            }
+        }
+
+        async function rlSelfTest() {
+            const btn = document.getElementById('rlSelfTestBtn');
+            btn.textContent = 'Running...';
+            btn.disabled = true;
+            const detail = document.getElementById('rlDetail');
+            const json = document.getElementById('rlDetailJson');
+            detail.classList.remove('hidden');
+            json.textContent = 'Dispatching self-test manifest through full pipeline...';
+            try {
+                const resp = await fetch('/api/farm/self-test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                });
+                const data = await resp.json();
+                json.textContent = JSON.stringify(data, null, 2);
+                // Auto-refresh the table to show the new run
+                setTimeout(rlRefresh, 500);
+            } catch (e) {
+                json.textContent = `Self-test failed: ${e.message}\n\nThis means Farm's own pipeline is broken.`;
+            } finally {
+                btn.textContent = 'Self-Test';
+                btn.disabled = false;
             }
         }
 

@@ -269,6 +269,41 @@ async def manifest_intake_ready():
     }
 
 
+@app.post("/api/farm/self-test")
+async def manifest_self_test(
+    tenant_id: str = "self-test",
+    system: str = "salesforce",
+):
+    """Fire a real manifest through the entire pipeline.
+
+    Proves: Farm intake → generator → DCL push → persistence.
+    If this works and AAM dispatches don't, the issue is on AAM's side.
+    """
+    from datetime import datetime as dt
+    import uuid as uuid_lib
+    dcl_url = os.getenv("DCL_INGEST_URL", "http://localhost:8000")
+    test_manifest = JobManifest(
+        run_id=f"self-test-{uuid_lib.uuid4().hex[:8]}",
+        source={
+            "pipe_id": f"self-test-{system}-pipe",
+            "system": system,
+            "category": "crm" if system == "salesforce" else system,
+        },
+        target={
+            "dcl_url": dcl_url,
+            "tenant_id": tenant_id,
+            "snapshot_name": f"self-test-{dt.utcnow().strftime('%Y%m%d-%H%M%S')}",
+        },
+    )
+    logger.info(f"SELF-TEST: dispatching test manifest run_id={test_manifest.run_id}")
+    result = await _execute_single_manifest(test_manifest)
+    return {
+        "self_test": True,
+        "result": result.model_dump() if hasattr(result, "model_dump") else result,
+        "hint": "If status=completed, the pipeline works. If status=failed with connection_error, DCL_INGEST_URL is wrong or DCL is down.",
+    }
+
+
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint with DB status."""
