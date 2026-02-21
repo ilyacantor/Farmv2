@@ -210,8 +210,9 @@ async def _push_to_dcl(
         "x-pipe-id": pipe_id,
         "x-schema-hash": schema_hash,
     }
-    if manifest.target.auth_token_ref:
-        headers["x-api-key"] = manifest.target.auth_token_ref
+    api_key = manifest.target.auth_token_ref or os.environ.get("DCL_INGEST_KEY", "")
+    if api_key:
+        headers["x-api-key"] = api_key
 
     body = {
         "source_system": source_system,

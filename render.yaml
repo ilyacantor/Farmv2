@@ -24,9 +24,9 @@ services:
       - key: AOD_SHARED_SECRET
         sync: false          # Auth token sent to AOD in x-shared-secret header
       - key: DCL_INGEST_URL
-        sync: false          # DCL ingest endpoint — where Farm pushes generated data
+        value: "https://aos-dclv2.onrender.com/api/dcl/ingest"
       - key: DCL_HEALTH_URL
-        sync: false          # DCL health endpoint for pre-push checks
+        value: "https://aos-dclv2.onrender.com/api/health"
       - key: DCL_INGEST_KEY
         sync: false          # Auth key sent to DCL ingest (x-api-key header)
       - key: PLATFORM_URL
