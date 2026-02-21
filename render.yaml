@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: aos-farm
+    runtime: python
+    region: oregon
+    plan: starter
+    branch: dev
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+
+      # --- Database (required — service will not start without one of these) ---
+      - key: DATABASE_URL
+        sync: false          # Use this OR SUPABASE_DB_URL — Farm accepts either
+      - key: SUPABASE_DB_URL
+        sync: false
+
+      # --- AOS Service URLs ---
+      - key: AOD_BASE_URL
+        sync: false          # AOD service URL — used for reconciliation callbacks
+      - key: AOD_SHARED_SECRET
+        sync: false          # Auth token sent to AOD in x-shared-secret header
+      - key: DCL_INGEST_URL
+        sync: false          # DCL ingest endpoint — where Farm pushes generated data
+      - key: DCL_HEALTH_URL
+        sync: false          # DCL health endpoint for pre-push checks
+      - key: DCL_INGEST_KEY
+        sync: false          # Auth key sent to DCL ingest (x-api-key header)
+      - key: PLATFORM_URL
+        sync: false          # Platform service URL for agent dispatch
+
+      # --- Farm identity ---
+      - key: FARM_URL
+        value: "https://autonomos.farm"   # Farm's own public URL (for self-reference)
+      - key: DCL_TENANT_ID
+        value: "aos-demo"
+
+      # --- Feature flags ---
+      - key: BUSINESS_DATA_ENABLED
+        value: "true"
+      - key: BUSINESS_DATA_TIERS
+        value: "1,2,3"
+
+      # --- CORS ---
+      - key: CORS_ORIGINS
+        sync: false
