@@ -210,9 +210,19 @@ async def _push_to_dcl(
         "x-pipe-id": pipe_id,
         "x-schema-hash": schema_hash,
     }
-    api_key = manifest.target.auth_token_ref or os.environ.get("DCL_INGEST_KEY", "")
-    if api_key:
-        headers["x-api-key"] = api_key
+    if manifest.target.auth_token_ref:
+        headers["x-api-key"] = manifest.target.auth_token_ref
+    elif os.environ.get("DCL_INGEST_KEY"):
+        logger.warning(
+            f"manifest.target.auth_token_ref is null for pipe_id={pipe_id} — "
+            f"using DCL_INGEST_KEY env var. AAM must populate auth_token_ref in manifests."
+        )
+        headers["x-api-key"] = os.environ["DCL_INGEST_KEY"]
+    else:
+        raise ValueError(
+            f"No auth token for DCL push: manifest.target.auth_token_ref is null "
+            f"and DCL_INGEST_KEY env var is not set. Cannot push pipe_id={pipe_id}."
+        )
 
     body = {
         "source_system": source_system,
