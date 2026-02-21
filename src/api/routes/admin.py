@@ -318,3 +318,38 @@ async def get_analysis_version_stats():
                 "stale_requiring_recompute": stats_row["unversioned"] + stats_row["outdated"],
             }
         }
+
+
+@router.get("/api/_diagnostics/dcl-status")
+async def dcl_status():
+    """Check DCL connectivity. Replaces the removed /api/business-data/dcl-status."""
+    dcl_url = os.environ.get("DCL_INGEST_URL", "")
+    if not dcl_url:
+        return {
+            "connected": False,
+            "status": "not_configured",
+            "message": "DCL_INGEST_URL not set",
+            "url": None,
+        }
+
+    base_url = dcl_url.rstrip("/")
+    health_base = os.environ.get("DCL_HEALTH_URL", "")
+    if not health_base:
+        health_base = base_url.split("/api/dcl")[0] if "/api/dcl" in base_url else base_url
+    health_url = health_base.rstrip("/") + "/health"
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(health_url)
+            if 200 <= resp.status_code < 300:
+                return {"connected": True, "status": "connected", "message": f"DCL reachable (HTTP {resp.status_code})", "url": base_url}
+            elif resp.status_code in (401, 403):
+                return {"connected": False, "status": "auth_error", "message": f"DCL requires authentication (HTTP {resp.status_code})", "url": base_url}
+            else:
+                return {"connected": False, "status": "error", "message": f"DCL returned HTTP {resp.status_code}", "url": base_url}
+    except httpx.TimeoutException:
+        return {"connected": False, "status": "timeout", "message": "DCL connection timed out", "url": base_url}
+    except httpx.ConnectError:
+        return {"connected": False, "status": "unreachable", "message": "DCL connection refused", "url": base_url}
+    except Exception as e:
+        return {"connected": False, "status": "error", "message": str(e)[:200], "url": base_url}

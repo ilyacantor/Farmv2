@@ -17,10 +17,8 @@ What Farm does NOT do (belongs to other components):
 
 Farm must be independently deployable as a watchdog, not a manager.
 """
-import json
 import logging
 import uuid as uuid_mod
-import traceback
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -43,32 +41,36 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from src.api.routes import router, compute_fingerprint
+from src.api.routes import router
 from src.api.stream import router as stream_router
 from src.api.agents import router as agents_router
 from src.api.scenarios import router as scenarios_router, fabric_router
-from src.api.business_data import router as business_data_router
 from src.api.manifest_intake import router as manifest_intake_router
-from src.farm.db import DBUnavailable, close_pool, ensure_schema, connection as db_connection, is_healthy
+from src.farm.db import DBUnavailable, close_pool, ensure_schema, is_healthy
 
 
 class APIJSONErrorMiddleware(BaseHTTPMiddleware):
     """Middleware to guarantee JSON responses for all /api/* routes.
-    
+
     Catches any exception under /api/* and returns a structured JSON error
     with request_id for tracing. Never returns HTML for API routes.
     """
-    
+
     async def dispatch(self, request: Request, call_next):
         if not request.url.path.startswith('/api'):
             return await call_next(request)
-        
+
         request_id = str(uuid_mod.uuid4())[:8]
-        
+
+        # Log every inbound API request so we can trace what's arriving
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            logger.info(f">>> {request.method} {request.url.path} (request_id={request_id}, client={request.client.host if request.client else 'unknown'})")
+
         try:
             response = await call_next(request)
             
             if response.status_code == 404:
+                logger.warning(f"404 NOT FOUND: {request.method} {request.url.path} (request_id={request_id})")
                 return JSONResponse(
                     status_code=404,
                     content={
@@ -91,94 +93,12 @@ class APIJSONErrorMiddleware(BaseHTTPMiddleware):
                     "type": type(e).__name__
                 }
             )
-from src.generators.enterprise import EnterpriseGenerator
-from src.models.planes import (
-    ScaleEnum,
-    EnterpriseProfileEnum,
-    RealismProfileEnum,
-    SCHEMA_VERSION,
-)
-import uuid
-
-SEED_SNAPSHOTS = [
-    {"tenant_id": "Acme Corp", "seed": 1001, "scale": ScaleEnum.small, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.clean},
-    {"tenant_id": "Acme Corp", "seed": 1002, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.typical},
-    {"tenant_id": "Acme Corp", "seed": 1003, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.messy},
-    {"tenant_id": "Acme Corp", "seed": 1004, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.typical},
-    {"tenant_id": "GlobalBank", "seed": 2001, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.clean},
-    {"tenant_id": "GlobalBank", "seed": 2002, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.typical},
-    {"tenant_id": "GlobalBank", "seed": 2003, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.messy},
-    {"tenant_id": "GlobalBank", "seed": 2004, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.typical},
-    {"tenant_id": "MedCare Health", "seed": 3001, "scale": ScaleEnum.small, "enterprise_profile": EnterpriseProfileEnum.healthcare_provider, "realism_profile": RealismProfileEnum.clean},
-    {"tenant_id": "MedCare Health", "seed": 3002, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.healthcare_provider, "realism_profile": RealismProfileEnum.typical},
-    {"tenant_id": "MedCare Health", "seed": 3003, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.healthcare_provider, "realism_profile": RealismProfileEnum.messy},
-    {"tenant_id": "MedCare Health", "seed": 3004, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.healthcare_provider, "realism_profile": RealismProfileEnum.clean},
-    {"tenant_id": "Industrial Dynamics", "seed": 4001, "scale": ScaleEnum.small, "enterprise_profile": EnterpriseProfileEnum.global_manufacturing, "realism_profile": RealismProfileEnum.typical},
-    {"tenant_id": "Industrial Dynamics", "seed": 4002, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.global_manufacturing, "realism_profile": RealismProfileEnum.messy},
-    {"tenant_id": "Industrial Dynamics", "seed": 4003, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.global_manufacturing, "realism_profile": RealismProfileEnum.typical},
-    {"tenant_id": "Industrial Dynamics", "seed": 4004, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.global_manufacturing, "realism_profile": RealismProfileEnum.clean},
-    {"tenant_id": "TechStart Inc", "seed": 5001, "scale": ScaleEnum.small, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.clean},
-    {"tenant_id": "TechStart Inc", "seed": 5002, "scale": ScaleEnum.medium, "enterprise_profile": EnterpriseProfileEnum.modern_saas, "realism_profile": RealismProfileEnum.messy},
-    {"tenant_id": "Pinnacle Financial", "seed": 6001, "scale": ScaleEnum.large, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.typical},
-    {"tenant_id": "Pinnacle Financial", "seed": 6002, "scale": ScaleEnum.enterprise, "enterprise_profile": EnterpriseProfileEnum.regulated_finance, "realism_profile": RealismProfileEnum.messy},
-]
-
-
-async def seed_initial_snapshots():
-    """Seed initial snapshots with run-first workflow."""
-    from datetime import datetime
-    
-    async with db_connection() as conn:
-        count = await conn.fetchval("SELECT COUNT(*) FROM snapshots")
-        if count and count > 0:
-            return
-    
-    for config in SEED_SNAPSHOTS:
-        generator = EnterpriseGenerator(
-            tenant_id=config["tenant_id"],
-            seed=config["seed"],
-            scale=config["scale"],
-            enterprise_profile=config["enterprise_profile"],
-            realism_profile=config["realism_profile"],
-        )
-        snapshot = generator.generate()
-        snapshot_dict = snapshot.model_dump()
-        
-        run_id = str(uuid.uuid4())
-        snapshot_id = str(uuid.uuid4())
-        created_at = datetime.utcnow().isoformat() + "Z"
-        fingerprint = compute_fingerprint(
-            config["tenant_id"],
-            config["seed"],
-            config["scale"].value,
-            config["enterprise_profile"].value,
-            config["realism_profile"].value,
-        )
-        
-        async with db_connection() as conn:
-            async with conn.transaction():
-                await conn.execute("""
-                    INSERT INTO runs (run_id, run_fingerprint, created_at, seed, schema_version, enterprise_profile, realism_profile, scale, tenant_id)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    ON CONFLICT (run_id) DO NOTHING
-                """, run_id, fingerprint, created_at, config["seed"], SCHEMA_VERSION,
-                    config["enterprise_profile"].value, config["realism_profile"].value, config["scale"].value, config["tenant_id"])
-                
-                await conn.execute("""
-                    INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                    ON CONFLICT (snapshot_id) DO NOTHING
-                """, snapshot_id, run_id, 0, fingerprint,
-                    snapshot.meta.tenant_id, snapshot.meta.seed, snapshot.meta.scale.value,
-                    snapshot.meta.enterprise_profile.value, snapshot.meta.realism_profile.value,
-                    snapshot.meta.created_at, SCHEMA_VERSION, json.dumps(snapshot_dict))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         await ensure_schema()
-        await seed_initial_snapshots()
         logger.info("DB initialized successfully")
     except DBUnavailable as e:
         logger.warning(f"DB unavailable, running in degraded mode: {e.message}")
@@ -235,12 +155,17 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Handle validation errors with JSON for /api/* routes."""
+    request_id = str(uuid_mod.uuid4())[:8]
+    logger.warning(
+        f"VALIDATION 422: {request.method} {request.url.path} "
+        f"(request_id={request_id}) errors={exc.errors()}"
+    )
     if request.url.path.startswith('/api'):
         return JSONResponse(
             status_code=422,
             content={
                 "error": "Validation error",
-                "request_id": str(uuid_mod.uuid4())[:8],
+                "request_id": request_id,
                 "path": request.url.path,
                 "details": exc.errors()
             }
@@ -293,8 +218,91 @@ app.include_router(stream_router)
 app.include_router(agents_router)
 app.include_router(scenarios_router)
 app.include_router(fabric_router)
-app.include_router(business_data_router)
 app.include_router(manifest_intake_router)
+
+# ---------------------------------------------------------------------------
+# Route aliases — common paths AAM implementations may call
+# The canonical endpoint is POST /api/farm/manifest-intake but AAM runners
+# have been observed calling shorter paths. These aliases forward to the
+# real handler rather than returning a confusing 404.
+# ---------------------------------------------------------------------------
+from src.api.manifest_intake import _execute_single_manifest
+from src.models.manifest import JobManifest, ManifestExecutionResult
+
+@app.post("/api/manifest-intake", response_model=ManifestExecutionResult, tags=["manifest-intake-alias"])
+async def manifest_intake_alias(manifest: JobManifest):
+    """Alias: forwards to /api/farm/manifest-intake."""
+    logger.info(f"Manifest received via alias /api/manifest-intake, forwarding (run_id={manifest.run_id})")
+    return await _execute_single_manifest(manifest)
+
+@app.post("/api/manifest/execute", response_model=ManifestExecutionResult, tags=["manifest-intake-alias"])
+async def manifest_execute_alias(manifest: JobManifest):
+    """Alias: forwards to /api/farm/manifest-intake."""
+    logger.info(f"Manifest received via alias /api/manifest/execute, forwarding (run_id={manifest.run_id})")
+    return await _execute_single_manifest(manifest)
+
+@app.post("/api/ingest", response_model=ManifestExecutionResult, tags=["manifest-intake-alias"])
+async def ingest_alias(manifest: JobManifest):
+    """Alias: forwards to /api/farm/manifest-intake."""
+    logger.info(f"Manifest received via alias /api/ingest, forwarding (run_id={manifest.run_id})")
+    return await _execute_single_manifest(manifest)
+
+
+@app.get("/api/farm/manifest-intake/ready")
+async def manifest_intake_ready():
+    """Diagnostic: confirm Farm's manifest-intake endpoint is reachable.
+
+    AAM or ops can GET this to verify connectivity before dispatching.
+    Returns the canonical POST path and all aliases.
+    """
+    healthy, db_status = is_healthy()
+    return {
+        "ready": True,
+        "db": db_status,
+        "canonical": "POST /api/farm/manifest-intake",
+        "aliases": [
+            "POST /api/manifest-intake",
+            "POST /api/manifest/execute",
+            "POST /api/ingest",
+        ],
+        "batch": "POST /api/farm/manifest-intake/batch",
+    }
+
+
+@app.post("/api/farm/self-test")
+async def manifest_self_test(
+    tenant_id: str = "self-test",
+    system: str = "salesforce",
+):
+    """Fire a real manifest through the entire pipeline.
+
+    Proves: Farm intake → generator → DCL push → persistence.
+    If this works and AAM dispatches don't, the issue is on AAM's side.
+    """
+    from datetime import datetime as dt
+    import uuid as uuid_lib
+    dcl_url = os.getenv("DCL_INGEST_URL", "http://localhost:8000")
+    test_manifest = JobManifest(
+        run_id=f"self-test-{uuid_lib.uuid4().hex[:8]}",
+        source={
+            "pipe_id": f"self-test-{system}-pipe",
+            "system": system,
+            "category": "crm" if system == "salesforce" else system,
+        },
+        target={
+            "dcl_url": dcl_url,
+            "tenant_id": tenant_id,
+            "snapshot_name": f"self-test-{dt.utcnow().strftime('%Y%m%d-%H%M%S')}",
+        },
+    )
+    logger.info(f"SELF-TEST: dispatching test manifest run_id={test_manifest.run_id}")
+    result = await _execute_single_manifest(test_manifest)
+    return {
+        "self_test": True,
+        "result": result.model_dump() if hasattr(result, "model_dump") else result,
+        "hint": "If status=completed, the pipeline works. If status=failed with connection_error, DCL_INGEST_URL is wrong or DCL is down.",
+    }
+
 
 @app.get("/api/health")
 async def health_check():
