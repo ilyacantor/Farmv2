@@ -24,9 +24,9 @@ services:
       - key: AOD_SHARED_SECRET
         sync: false          # Auth token sent to AOD in x-shared-secret header
       - key: DCL_INGEST_URL
-        value: "https://aos-dclv2.onrender.com/api/dcl/ingest"
+        sync: false          # Was hardcoded prod URL; set per-environment in Render dashboard
       - key: DCL_HEALTH_URL
-        value: "https://aos-dclv2.onrender.com/api/health"
+        sync: false          # Was hardcoded prod URL; set per-environment in Render dashboard
       - key: DCL_INGEST_KEY
         sync: false          # Auth key sent to DCL ingest (x-api-key header)
       - key: PLATFORM_URL
@@ -43,6 +43,20 @@ services:
         value: "true"
       - key: BUSINESS_DATA_TIERS
         value: "1,2,3"
+
+      # --- AOD discover URL ---
+      - key: AOD_DISCOVER_URL
+        sync: false          # Defaults to https://discover.autonomos.software if unset
+
+      # --- DB pool tunables (optional; sensible defaults in code) ---
+      - key: DB_POOL_MIN
+        sync: false
+      - key: DB_POOL_MAX
+        sync: false
+      - key: DB_CONNECT_TIMEOUT
+        sync: false
+      - key: DB_SIMULATE_DOWN
+        value: "false"       # Safety: explicit false prevents accidental activation in prod
 
       # --- CORS ---
       - key: CORS_ORIGINS
