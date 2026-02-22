@@ -281,7 +281,9 @@ async def manifest_self_test(
     """
     from datetime import datetime as dt
     import uuid as uuid_lib
-    dcl_url = os.getenv("DCL_INGEST_URL", "http://localhost:8000")
+    dcl_url = os.environ.get("DCL_INGEST_URL")
+    if not dcl_url:
+        raise ValueError("DCL_INGEST_URL env var is not set")
     test_manifest = JobManifest(
         run_id=f"self-test-{uuid_lib.uuid4().hex[:8]}",
         source={
