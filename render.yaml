@@ -46,7 +46,7 @@ services:
 
       # --- AOD discover URL ---
       - key: AOD_DISCOVER_URL
-        sync: false          # Defaults to https://discover.autonomos.software if unset
+        sync: false          # Defaults to https://aodv3-1.onrender.com if unset
 
       # --- DB pool tunables (optional; sensible defaults in code) ---
       - key: DB_POOL_MIN
