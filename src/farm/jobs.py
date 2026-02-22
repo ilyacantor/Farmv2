@@ -114,8 +114,8 @@ class JobManager:
                     INSERT INTO jobs (job_id, job_type, status, created_at, input_params_json)
                     VALUES ($1, $2, 'pending', $3, $4)
                 """, job_id, job_type, created_at, json.dumps(input_params) if input_params else None)
-        except DBUnavailable:
-            pass
+        except DBUnavailable as e:
+            logger.debug("DB unavailable when persisting job creation for %s: %s", job_id, e)
         
         return job_id
     
@@ -127,8 +127,8 @@ class JobManager:
                 await conn.execute("""
                     UPDATE jobs SET status = 'running', started_at = $1 WHERE job_id = $2
                 """, started_at, job_id)
-        except DBUnavailable:
-            pass
+        except DBUnavailable as e:
+            logger.debug("DB unavailable when marking job %s as started: %s", job_id, e)
     
     async def update_progress(
         self,
@@ -152,8 +152,8 @@ class JobManager:
                 await conn.execute("""
                     UPDATE jobs SET progress_json = $1 WHERE job_id = $2
                 """, json.dumps(progress), job_id)
-        except DBUnavailable:
-            pass
+        except DBUnavailable as e:
+            logger.debug("DB unavailable when updating progress for job %s: %s", job_id, e)
     
     async def complete_job(self, job_id: str, result: Optional[dict] = None) -> None:
         """Mark job as completed with optional result."""
@@ -168,8 +168,8 @@ class JobManager:
                         progress_json = '{"percent": 100, "current_step": "done", "message": "Complete"}'
                     WHERE job_id = $3
                 """, completed_at, json.dumps(result) if result else None, job_id)
-        except DBUnavailable:
-            pass
+        except DBUnavailable as e:
+            logger.debug("DB unavailable when marking job %s as completed: %s", job_id, e)
         
         if job_id in self._active_jobs:
             del self._active_jobs[job_id]
@@ -186,8 +186,8 @@ class JobManager:
                         error = $2
                     WHERE job_id = $3
                 """, completed_at, error, job_id)
-        except DBUnavailable:
-            pass
+        except DBUnavailable as e:
+            logger.debug("DB unavailable when marking job %s as failed: %s", job_id, e)
         
         if job_id in self._active_jobs:
             del self._active_jobs[job_id]

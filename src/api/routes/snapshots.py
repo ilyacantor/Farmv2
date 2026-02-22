@@ -566,6 +566,6 @@ def _parse_delete_count(result: str) -> int:
             parts = result.split()
             if len(parts) >= 2:
                 return int(parts[-1])
-    except (ValueError, IndexError):
-        pass
+    except (ValueError, IndexError) as e:
+        logger.debug("Failed to parse DELETE result string %r: %s", result, e)
     return 0

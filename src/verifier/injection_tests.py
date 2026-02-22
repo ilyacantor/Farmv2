@@ -28,6 +28,7 @@ Enterprise Presets:
 """
 import asyncio
 import hashlib
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -45,6 +46,9 @@ from src.models.fabric import (
     CanaryRecord,
     CanaryVerificationResult,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class InjectionTestStatus(str, Enum):
@@ -98,8 +102,8 @@ def map_system_to_plane(system: str) -> FabricPlaneType:
     """Map system/vendor names to Fabric Plane types."""
     try:
         return FabricPlaneType(system.lower())
-    except ValueError:
-        pass
+    except ValueError as e:
+        logger.debug("Unknown FabricPlaneType %r; falling back to mapping lookup: %s", system, e)
     
     mapping = {
         "mulesoft": FabricPlaneType.IPAAS,
@@ -420,8 +424,8 @@ async def run_e2e_injection_test(
                 actual_payload = await poll_fn(destination_system, fingerprint)
                 if actual_payload:
                     break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Poll attempt failed during injection test: %s", e)
             await asyncio.sleep(0.5)
     else:
         await asyncio.sleep(0.1)

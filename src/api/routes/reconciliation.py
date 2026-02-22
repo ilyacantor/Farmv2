@@ -326,8 +326,8 @@ async def get_reconciliation_analysis(reconciliation_id: str, force_recompute: b
         if not force and not version_stale:
             try:
                 cached_analysis = rec_row["analysis_json"]
-            except (KeyError, TypeError):
-                pass
+            except (KeyError, TypeError) as e:
+                logger.warning("Failed to read analysis_json from reconciliation cache row; treating as cache miss: %s", e)
 
         if cached_analysis:
             analysis = json.loads(cached_analysis)

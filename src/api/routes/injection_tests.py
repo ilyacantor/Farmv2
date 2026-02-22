@@ -90,8 +90,8 @@ async def generate_test_payload(
     if preset:
         try:
             effective_preset = EnterprisePreset(preset)
-        except ValueError:
-            pass
+        except ValueError as e:
+            logger.debug("Failed to parse test count integer: %s", e)
     
     fingerprint, payload = create_injection_payload(
         source_system=source_system,
@@ -131,8 +131,8 @@ async def run_injection_test(request: InjectionTestRequest):
     if request.preset:
         try:
             effective_preset = EnterprisePreset(request.preset)
-        except ValueError:
-            pass
+        except ValueError as e:
+            logger.debug("Failed to parse test count integer: %s", e)
     
     result = await run_e2e_injection_test(
         source_system=request.source_system,
@@ -237,8 +237,8 @@ async def list_test_paths(
         try:
             filter_preset = EnterprisePreset(preset)
             paths = [p for p in paths if p.preset == filter_preset]
-        except ValueError:
-            pass
+        except ValueError as e:
+            logger.debug("Failed to parse test count integer: %s", e)
     
     return {
         "test_paths": [

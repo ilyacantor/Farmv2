@@ -476,9 +476,8 @@ class DatabaseManager:
                             ALTER TABLE stress_test_runs
                             ADD COLUMN IF NOT EXISTS {column} {coltype}{default_clause}
                         """)
-                    except Exception:
-                        # Column already exists or other benign error
-                        pass
+                    except Exception as e:
+                        logger.debug("ADD COLUMN %s on stress_test_runs skipped (likely already exists): %s", column, e)
                 
                 self._log("Creating sim_agents table (AOA simulation)...")
                 await conn.execute("""
@@ -567,8 +566,8 @@ class DatabaseManager:
 
                 try:
                     await conn.execute("ALTER TABLE ground_truth_manifests ADD COLUMN IF NOT EXISTS dcl_push_results JSONB DEFAULT '[]'")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("ADD COLUMN dcl_push_results on ground_truth_manifests skipped (likely already exists): %s", e)
 
                 self._log("Creating manifest_runs table...")
                 await conn.execute("""

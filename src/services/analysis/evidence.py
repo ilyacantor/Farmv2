@@ -4,8 +4,11 @@ Evidence extraction and key matching utilities.
 These functions extract domain references from AOD payloads and
 check if Farm-expected keys appear in AOD evidence.
 """
+import logging
 import re
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 
 def extract_aod_evidence_domains(aod_payload: dict) -> set:
@@ -31,8 +34,8 @@ def extract_aod_evidence_domains(aod_payload: dict) -> set:
                 parsed = urlparse(s)
                 if parsed.netloc:
                     domains.add(parsed.netloc)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to extract domain from %r: %s", s, e)
         if '.' in s and not s.startswith('http'):
             domains.add(s)
 
