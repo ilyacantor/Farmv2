@@ -34,7 +34,7 @@ services:
 
       # --- Farm identity ---
       - key: FARM_URL
-        value: "https://autonomos.farm"   # Farm's own public URL (for self-reference)
+        value: "https://farmv2.onrender.com"   # Farm's own public URL (for self-reference)
       - key: DCL_TENANT_ID
         value: "aos-demo"
 
