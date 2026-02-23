@@ -144,31 +144,15 @@ class DatabaseManager:
     def _get_db_url(self) -> str:
         if self._db_url is not None:
             return self._db_url
-        
-        ignore_replit = os.environ.get("IGNORE_REPLIT_DB", "").lower() == "true"
-        supabase_url = os.environ.get("SUPABASE_DB_URL", "")
-        database_url = os.environ.get("DATABASE_URL", "")
-        
-        url = None
-        if supabase_url:
-            url = supabase_url
-            self._log("Using SUPABASE_DB_URL")
-        elif database_url:
-            if ignore_replit and "replit" in database_url.lower():
-                raise RuntimeError(
-                    "FATAL: IGNORE_REPLIT_DB=true but only Replit DATABASE_URL found. "
-                    "Set SUPABASE_DB_URL or unset IGNORE_REPLIT_DB."
-                )
-            url = database_url
-            self._log("Using DATABASE_URL")
-        else:
-            raise RuntimeError("FATAL: No database URL configured. Set SUPABASE_DB_URL or DATABASE_URL.")
-        
-        if "supabase" in url.lower() and "pgbouncer=true" not in url.lower():
-            separator = "&" if "?" in url else "?"
-            url = f"{url}{separator}pgbouncer=true"
-            self._log("Added pgbouncer=true for transaction pooling")
-        
+
+        url = os.environ.get("SUPABASE_DB_URL", "").strip()
+        if not url:
+            raise RuntimeError(
+                "FATAL: SUPABASE_DB_URL must be set. "
+                "Farm requires a Supabase PostgreSQL connection string."
+            )
+        self._log("Using SUPABASE_DB_URL")
+
         self._db_url = url
         return url
     

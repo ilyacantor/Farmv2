@@ -12,9 +12,7 @@ services:
       - key: PYTHON_VERSION
         value: "3.11"
 
-      # --- Database (required — service will not start without one of these) ---
-      - key: DATABASE_URL
-        sync: false          # Use this OR SUPABASE_DB_URL — Farm accepts either
+      # --- Database (required — service will not start without this) ---
       - key: SUPABASE_DB_URL
         sync: false
 
