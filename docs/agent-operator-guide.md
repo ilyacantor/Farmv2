@@ -195,7 +195,7 @@ For continuous load testing, use the Stream feature. It generates workflows cont
 
 **Use the streaming URL** (`/api/agents/stream`) with tools like:
 ```bash
-curl -N "https://your-farm.replit.app/api/agents/stream?rate=10&chaos_rate=0.1"
+curl -N "https://your-farm-url.com/api/agents/stream?rate=10&chaos_rate=0.1"
 ```
 
 Each line is a complete workflow in NDJSON format.

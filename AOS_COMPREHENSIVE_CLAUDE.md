@@ -121,36 +121,46 @@ Every feature must satisfy ALL four criteria:
 ### 2.5 User Interaction
 - Main user / developer (Ilya) is the CEO and co-founder.
 - Ilya is not a developer, but he knows enough about software development to be dangerous and mess up the codebase - keep him away from code.
-- His IDE is Replit which he uses because its an integrated env - chat - see - debug - deploy - repeat.
-- DO NOT alter the build/run configuration which has been set to deploy from Replit.
-- He vowed never to set up a terminal and work in CLI env as he hates that setup, and he works from as many as 4 different machines.  So far it's working well - the entire AOS Suite has been developed via remote. 
-- Now with addition of Claude Code for Web, things are proceeding much better / faster.
+- Development environment: Claude Code CLI for local development and iteration
 - Bottom line is that he hates shortcuts, bandaids, tech debt, overhead, janky code and monoliths. If you the developer avoid these things, you will be rewarded handsomely.
 
-## Environment: Replit
+## Environment: Local Development
 
-This project uses Replit as IDE. Key differences from local dev:
+This project is developed locally using Claude Code CLI.
 
 ### Port Configuration
-- **Backend runs on port 5000** (Replit standard)
-- Vite proxy in `vite.config.ts` must target `localhost:5000`
+- **Backend runs on port 5000** (FastAPI with uvicorn)
+- Frontend (if separate) typically on port 5000 (served by backend)
 - Never assume port 8000 for backend
 
 ### Common Issues
-- If frontend API calls fail with 404/connection refused, check vite.config.ts proxy target
-- Replit uses port 5000 for the main exposed service
+- If API calls fail with 404/connection refused, ensure the backend is running on port 5000
+- Check that all environment variables are properly configured
 
-### Dev Preferences
-- No local environment setup — everything runs in Replit
-- Use Replit's built-in shell and deployment tools
-- Avoid solutions requiring local CLI tools or Docker
+### Dev Setup
+- Python 3.11+ required
+- Dependencies managed via `requirements.txt` or `pyproject.toml`
+- Database: PostgreSQL (via Supabase or local)
 
-### Environment Variables in Replit
+### Environment Variables
 
-- Replit uses Secrets (not .env files) for environment variables
-- Secrets are accessed via os.environ or os.getenv() in Python, but are stored securely in Replit's Secrets tab, not in any file in the codebase
-- Never create .env files — they would expose secrets in version control
-- When documentation or code references .env, translate that to adding the variable in Replit's Secrets panel instead
+- Use `.env` file for local development (see `.env.example`)
+- Environment variables are accessed via `os.environ` or `os.getenv()` in Python
+- **Never commit `.env` files** — they contain secrets
+- Copy `.env.example` to `.env` and fill in your credentials
+
+### Running Locally
+
+```bash
+# Install dependencies
+pip install -r requirements.txt
+
+# Start the server
+python -m uvicorn src.main:app --host 0.0.0.0 --port 5000
+
+# Alternative: direct uvicorn command
+uvicorn src.main:app --host 0.0.0.0 --port 5000
+```
 ---
 
 ## 3. Architecture Overview
@@ -1230,4 +1240,4 @@ module/
 
 ---
 
-*This document serves as the canonical technical reference for the AutonomOS platform. For module-specific details, refer to each module's individual replit.md file.*
+*This document serves as the canonical technical reference for the AutonomOS platform. For module-specific details, refer to each module's documentation.*
