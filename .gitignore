@@ -19,3 +19,6 @@ data/
 .coverage
 htmlcov/
 .mypy_cache/
+.env
+*.Zone.Identifier
+CLAUDE.md:Zone.Identifier
