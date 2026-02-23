@@ -47,7 +47,7 @@ logger.setLevel(logging.DEBUG)
 
 T = TypeVar('T')
 
-DB_POOL_MIN = int(os.environ.get("DB_POOL_MIN", "1"))
+DB_POOL_MIN = int(os.environ.get("DB_POOL_MIN", "2"))
 DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "5"))
 DB_CONNECT_TIMEOUT = float(os.environ.get("DB_CONNECT_TIMEOUT", "30"))
 DB_COMMAND_TIMEOUT = float(os.environ.get("DB_COMMAND_TIMEOUT", "30"))
