@@ -62,6 +62,7 @@ class TargetSpec(BaseModel):
     auth_token_ref: Optional[str] = Field(default=None)
     tenant_id: str = Field(..., description="Tenant identifier — required for provenance, no default")
     snapshot_name: str = Field(..., description="Snapshot name — required for provenance, no default")
+    callback_url: Optional[str] = Field(default=None, description="AAM callback base URL — Farm appends /{run_id}")
 
 
 class RunLimits(BaseModel):

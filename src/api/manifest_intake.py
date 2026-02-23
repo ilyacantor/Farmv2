@@ -604,6 +604,39 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
         f"elapsed_ms={elapsed_ms}, farm_run_id={farm_run_id}"
     )
 
+    # --- AAM callback: notify dispatcher that this manifest is done ---
+    callback_url = manifest.target.callback_url
+    if callback_url:
+        # Map Farm status → AAM RunnerJobStatus (AAM has no "rejected_by_dcl")
+        aam_status = "completed" if status == "completed" else "failed"
+        callback_payload = {
+            "status": aam_status,
+            "rows_transferred": push_result.rows_accepted or 0,
+            "error_message": push_result.error[:500] if push_result.error else None,
+            "dcl_response": {
+                "status_code": push_result.status_code,
+                "rows_accepted": push_result.rows_accepted,
+                "dcl_run_id": push_result.dcl_run_id,
+                "error_type": push_result.error_type,
+                "schema_drift": push_result.schema_drift or False,
+            },
+        }
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                cb_resp = await client.put(
+                    f"{callback_url}/{run_id}",
+                    json=callback_payload,
+                )
+            logger.info(
+                f"AAM callback sent: run_id={run_id}, status={aam_status}, "
+                f"http={cb_resp.status_code}"
+            )
+        except Exception as cb_err:
+            logger.warning(
+                f"AAM callback failed (non-fatal): run_id={run_id}, "
+                f"url={callback_url}/{run_id}, error={cb_err}"
+            )
+
     recon_triggered = False
     if manifest.farm_verification and push_result.status == "success":
         logger.info(
