@@ -830,15 +830,14 @@
                 <!-- Header -->
                 <div class="flex items-center justify-between">
                     <div>
-                        <h2 class="text-lg font-semibold text-white">Manifest Run Log</h2>
-                        <p class="text-slate-400 text-sm">Every AAM → Farm → DCL execution with full provenance</p>
+                        <h2 class="text-lg font-semibold text-white">Manifest Run Log - Current Run</h2>
+                        <p class="text-slate-400 text-sm">Showing most recent AAM → Farm → DCL execution batch</p>
                     </div>
                     <div class="flex items-center gap-3">
                         <span id="dclConnIndicator" class="flex items-center gap-1.5 text-xs text-slate-500">
                             <span id="dclConnDot" class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>
                             <span id="dclConnLabel">checking...</span>
                         </span>
-                        <button onclick="rlSelfTest()" id="rlSelfTestBtn" class="px-3 py-1.5 text-sm bg-amber-600 hover:bg-amber-500 text-white rounded-lg transition-colors">Self-Test</button>
                         <button onclick="rlRefresh()" id="rlRefreshBtn" class="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors">Refresh</button>
                         <label class="flex items-center gap-1.5 text-xs text-slate-400">
                             <input type="checkbox" id="rlAutoRefresh" onchange="rlToggleAutoRefresh()" class="rounded">
@@ -847,84 +846,82 @@
                     </div>
                 </div>
 
-                <!-- Filters -->
-                <div class="flex items-center gap-3 bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-                    <div class="flex items-center gap-1.5">
-                        <label class="text-xs text-slate-400">Tenant:</label>
-                        <input id="rlFilterTenant" type="text" placeholder="all" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white w-32 focus:border-cyan-500 outline-none" onchange="rlRefresh()">
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                        <label class="text-xs text-slate-400">Status:</label>
-                        <select id="rlFilterStatus" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:border-cyan-500 outline-none" onchange="rlRefresh()">
-                            <option value="">all</option>
-                            <option value="completed">completed</option>
-                            <option value="failed">failed</option>
-                            <option value="rejected_by_dcl">rejected_by_dcl</option>
-                        </select>
-                    </div>
-                    <div class="flex items-center gap-1.5">
-                        <label class="text-xs text-slate-400">Pipe ID:</label>
-                        <input id="rlFilterPipe" type="text" placeholder="all" class="bg-slate-900/60 border border-slate-700 rounded px-2 py-1 text-xs text-white w-48 focus:border-cyan-500 outline-none" onchange="rlRefresh()">
-                    </div>
-                    <div id="rlRunCount" class="ml-auto text-xs text-slate-500"></div>
+                <!-- Current Run Not Loaded -->
+                <div id="rlNoRun" class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center">
+                    <div class="text-slate-400">No runs yet. Waiting for AAM to dispatch manifests.</div>
                 </div>
 
-                <!-- Summary Stats -->
-                <div id="rlStats" class="grid grid-cols-4 gap-3">
-                    <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 text-center">
-                        <div id="rlStatTotal" class="text-xl font-bold text-white">--</div>
-                        <div class="text-xs text-slate-400">Total Runs</div>
-                    </div>
-                    <div class="bg-slate-800/50 rounded-lg p-3 border border-emerald-800/50 text-center">
-                        <div id="rlStatCompleted" class="text-xl font-bold text-emerald-400">--</div>
-                        <div class="text-xs text-slate-400">Completed</div>
-                    </div>
-                    <div class="bg-slate-800/50 rounded-lg p-3 border border-red-800/50 text-center">
-                        <div id="rlStatFailed" class="text-xl font-bold text-red-400">--</div>
-                        <div class="text-xs text-slate-400">Failed</div>
-                    </div>
-                    <div class="bg-slate-800/50 rounded-lg p-3 border border-amber-800/50 text-center">
-                        <div id="rlStatRejected" class="text-xl font-bold text-amber-400">--</div>
-                        <div class="text-xs text-slate-400">Rejected by DCL</div>
-                    </div>
-                </div>
+                <!-- Current Run View -->
+                <div id="rlCurrentRun" class="hidden space-y-4">
+                    <!-- KPI Boxes -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                        <!-- Row 1: Core IDs -->
+                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">AOD Run ID</div>
+                            <div id="rlKpiAodRun" class="text-sm text-slate-400 font-mono">N/A</div>
+                        </div>
+                        <div class="bg-slate-800/50 rounded-lg p-3 border border-cyan-800/50">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">AAM Run ID</div>
+                            <div id="rlKpiAamRun" class="text-sm text-cyan-400 font-mono break-all">--</div>
+                        </div>
+                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Pipe ID</div>
+                            <div id="rlKpiPipeId" class="text-sm text-slate-400 font-mono">Run-Level</div>
+                        </div>
+                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Tenant</div>
+                            <div id="rlKpiTenant" class="text-sm text-slate-300 break-all">--</div>
+                        </div>
+                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Snapshot</div>
+                            <div id="rlKpiSnapshot" class="text-sm text-slate-300 break-all">--</div>
+                        </div>
 
-                <!-- Run Table (5 visible rows, scrollable) -->
-                <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
-                    <table class="w-full text-xs">
-                        <thead>
-                            <tr class="bg-slate-900/60 text-slate-400 border-b border-slate-700/50">
-                                <th class="px-3 py-2 text-left font-medium">Status</th>
-                                <th class="px-3 py-2 text-left font-medium">Pipe ID</th>
-                                <th class="px-3 py-2 text-left font-medium">Tenant</th>
-                                <th class="px-3 py-2 text-left font-medium">System</th>
-                                <th class="px-3 py-2 text-right font-medium">Rows</th>
-                                <th class="px-3 py-2 text-right font-medium">ms</th>
-                                <th class="px-3 py-2 text-left font-medium">Created</th>
-                            </tr>
-                        </thead>
-                    </table>
-                    <div style="max-height: 175px; overflow-y: auto;">
+                        <!-- Row 2: Counts -->
+                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Total Pipes</div>
+                            <div id="rlKpiTotal" class="text-xl font-bold text-white">--</div>
+                        </div>
+                        <div class="bg-slate-800/50 rounded-lg p-3 border border-red-800/50">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Failed</div>
+                            <div id="rlKpiFailed" class="text-xl font-bold text-red-400">--</div>
+                        </div>
+                        <div class="bg-slate-800/50 rounded-lg p-3 border border-emerald-800/50">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Dispatched</div>
+                            <div id="rlKpiDispatched" class="text-xl font-bold text-emerald-400">--</div>
+                        </div>
+                        <div class="bg-slate-800/50 rounded-lg p-3 border border-violet-800/50">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">SOR Count</div>
+                            <div id="rlKpiSorCount" class="text-xl font-bold text-violet-400">--</div>
+                            <div id="rlKpiSorList" class="text-[10px] text-slate-500 mt-1">--</div>
+                        </div>
+                        <div class="bg-slate-800/50 rounded-lg p-3 border border-orange-800/50">
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Fabric Count</div>
+                            <div id="rlKpiFabricCount" class="text-xl font-bold text-orange-400">--</div>
+                            <div id="rlKpiFabricList" class="text-[10px] text-slate-500 mt-1">--</div>
+                        </div>
+                    </div>
+
+                    <!-- Transactional Table - One row per source system, expandable -->
+                    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
+                        <div class="px-4 py-2 bg-slate-900/60 border-b border-slate-700/50">
+                            <h3 class="text-sm font-semibold text-white">Pipes by Source System</h3>
+                        </div>
                         <table class="w-full text-xs">
-                            <tbody id="rlTableBody" class="divide-y divide-slate-700/50">
-                                <tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No runs yet. Waiting for AAM to dispatch manifests.</td></tr>
+                            <thead>
+                                <tr class="bg-slate-900/40 text-slate-400 border-b border-slate-700/50">
+                                    <th class="px-3 py-2 text-left font-medium w-8"></th>
+                                    <th class="px-3 py-2 text-left font-medium">Source System</th>
+                                    <th class="px-3 py-2 text-center font-medium">Total Pipes</th>
+                                    <th class="px-3 py-2 text-center font-medium">Failed</th>
+                                    <th class="px-3 py-2 text-center font-medium">Dispatched</th>
+                                    <th class="px-3 py-2 text-center font-medium">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="rlSystemTable" class="divide-y divide-slate-700/50">
+                                <tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">Loading...</td></tr>
                             </tbody>
                         </table>
-                    </div>
-                </div>
-
-                <!-- Run Detail Drill-Through -->
-                <div id="rlDetail" class="hidden bg-slate-800/50 rounded-lg border border-cyan-700/50 overflow-hidden">
-                    <!-- Detail Header -->
-                    <div class="flex items-center justify-between px-4 py-3 bg-slate-900/60 border-b border-cyan-700/30">
-                        <div class="flex items-center gap-2">
-                            <h3 class="text-sm font-semibold text-cyan-400">Run Detail</h3>
-                            <span id="rlDetailStatus" class="text-xs"></span>
-                        </div>
-                        <button onclick="rlCloseDetail()" class="text-slate-400 hover:text-white text-xs px-2 py-1 rounded hover:bg-slate-700/50">[close]</button>
-                    </div>
-                    <div id="rlDetailBody" class="p-4 space-y-4 max-h-96 overflow-y-auto">
-                        <div class="text-slate-500 text-sm text-center py-4">Loading...</div>
                     </div>
                 </div>
             </div>
@@ -1775,196 +1772,254 @@
         // Run Log Tab Functions
         // ========================================
         let rlAutoRefreshTimer = null;
+        let rlCurrentRunData = null;
 
         async function rlRefresh() {
             const btn = document.getElementById('rlRefreshBtn');
             btn.textContent = 'Loading...';
             btn.disabled = true;
             try {
-                const tenant = document.getElementById('rlFilterTenant').value.trim();
-                const status = document.getElementById('rlFilterStatus').value;
-                const pipeId = document.getElementById('rlFilterPipe').value.trim();
-                const params = new URLSearchParams();
-                if (tenant) params.set('tenant_id', tenant);
-                if (status) params.set('status', status);
-                if (pipeId) params.set('pipe_id', pipeId);
-                params.set('limit', '100');
-
-                const resp = await fetch('/api/runs?' + params.toString());
+                // First, get the most recent run to find the latest aam_run_id
+                const resp = await fetch('/api/runs?limit=1');
                 if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    throw new Error(err.error || `HTTP ${resp.status}`);
+                    throw new Error(`HTTP ${resp.status}`);
                 }
                 const runs = await resp.json();
-                rlRenderTable(runs);
-                rlRenderStats(runs);
+
+                if (!runs || runs.length === 0) {
+                    // No runs yet
+                    document.getElementById('rlNoRun').classList.remove('hidden');
+                    document.getElementById('rlCurrentRun').classList.add('hidden');
+                    return;
+                }
+
+                // Get the most recent aam_run_id
+                const latestRunId = runs[0].run_id;
+
+                // Fetch aggregated data for this run
+                const aggResp = await fetch(`/api/runs/by-aam-run/${latestRunId}`);
+                if (!aggResp.ok) {
+                    throw new Error(`HTTP ${aggResp.status}`);
+                }
+                const aggData = await aggResp.json();
+
+                rlCurrentRunData = aggData;
+                rlRenderCurrentRun(aggData);
+
             } catch (e) {
-                document.getElementById('rlTableBody').innerHTML =
-                    `<tr><td colspan="7" class="px-3 py-8 text-center text-red-400">Error: ${e.message}</td></tr>`;
+                console.error('Error loading run data:', e);
+                document.getElementById('rlNoRun').innerHTML =
+                    `<div class="text-red-400">Error: ${e.message}</div>`;
+                document.getElementById('rlNoRun').classList.remove('hidden');
+                document.getElementById('rlCurrentRun').classList.add('hidden');
             } finally {
                 btn.textContent = 'Refresh';
                 btn.disabled = false;
             }
         }
 
-        function rlRenderStats(runs) {
-            const total = runs.length;
-            const completed = runs.filter(r => r.status === 'completed').length;
-            const failed = runs.filter(r => r.status === 'failed').length;
-            const rejected = runs.filter(r => r.status === 'rejected_by_dcl').length;
-            document.getElementById('rlStatTotal').textContent = total;
-            document.getElementById('rlStatCompleted').textContent = completed;
-            document.getElementById('rlStatFailed').textContent = failed;
-            document.getElementById('rlStatRejected').textContent = rejected;
-            document.getElementById('rlRunCount').textContent = `${total} runs`;
+        function rlRenderCurrentRun(data) {
+            const { summary, runs } = data;
+
+            // Show the current run view
+            document.getElementById('rlNoRun').classList.add('hidden');
+            document.getElementById('rlCurrentRun').classList.remove('hidden');
+
+            // Get first run for common fields
+            const firstRun = runs[0] || {};
+
+            // Render KPI boxes
+            document.getElementById('rlKpiAodRun').textContent = 'N/A';
+            document.getElementById('rlKpiAamRun').textContent = summary.run_id || '--';
+            document.getElementById('rlKpiPipeId').textContent = 'Run-Level';
+            document.getElementById('rlKpiTenant').textContent = firstRun.tenant_id || '--';
+            document.getElementById('rlKpiSnapshot').textContent = firstRun.snapshot_name || '--';
+
+            document.getElementById('rlKpiTotal').textContent = summary.total || 0;
+            document.getElementById('rlKpiFailed').textContent = (summary.failed || 0) + (summary.rejected_by_dcl || 0);
+            document.getElementById('rlKpiDispatched').textContent = summary.completed || 0;
+
+            // SOR Count - count unique source systems
+            const systems = Object.keys(summary.per_system || {});
+            const sorSystems = systems.filter(s => ['salesforce', 'netsuite', 'workday', 'chargebee'].includes(s.toLowerCase()));
+            document.getElementById('rlKpiSorCount').textContent = sorSystems.length;
+            document.getElementById('rlKpiSorList').textContent = sorSystems.join(', ') || 'None';
+
+            // Fabric Count - placeholder (data not available in current structure)
+            document.getElementById('rlKpiFabricCount').textContent = 'N/A';
+            document.getElementById('rlKpiFabricList').textContent = 'Not tracked';
+
+            // Render transactional table
+            rlRenderSystemTable(summary, runs);
         }
 
-        function rlStatusBadge(status) {
-            const colors = {
-                completed: 'bg-emerald-900/50 text-emerald-400 border-emerald-700/50',
-                failed: 'bg-red-900/50 text-red-400 border-red-700/50',
-                rejected_by_dcl: 'bg-amber-900/50 text-amber-400 border-amber-700/50',
-            };
-            const cls = colors[status] || 'bg-slate-700 text-slate-400 border-slate-600';
-            return `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium border ${cls}">${status}</span>`;
-        }
+        function rlRenderSystemTable(summary, runs) {
+            const tbody = document.getElementById('rlSystemTable');
+            const perSystem = summary.per_system || {};
 
-        function rlTruncate(str, len) {
-            if (!str) return '<span class="text-slate-600">--</span>';
-            return str.length > len ? str.substring(0, len) + '...' : str;
-        }
-
-        function rlRenderTable(runs) {
-            const tbody = document.getElementById('rlTableBody');
-            if (!runs || runs.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="px-3 py-8 text-center text-slate-500">No runs found. Waiting for AAM to dispatch manifests.</td></tr>';
+            if (Object.keys(perSystem).length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No pipe data</td></tr>';
                 return;
             }
-            // stash for detail lookup without extra fetch on list fields
-            window._rlRuns = runs;
-            tbody.innerHTML = runs.map(r => {
-                const drift = r.schema_drift ? ' <span class="text-amber-400" title="Schema drift detected">!</span>' : '';
-                const sel = (window._rlSelectedRunId === r.farm_run_id) ? 'bg-cyan-900/30' : '';
-                return `<tr class="hover:bg-slate-700/30 cursor-pointer ${sel}" onclick="rlShowDetail('${r.farm_run_id}')">
-                    <td class="px-3 py-2">${rlStatusBadge(r.status)}${drift}</td>
-                    <td class="px-3 py-2 font-mono text-violet-400">${rlTruncate(r.pipe_id, 28)}</td>
-                    <td class="px-3 py-2 text-slate-300">${r.tenant_id || '--'}</td>
-                    <td class="px-3 py-2 text-slate-400">${r.source_system || '--'}</td>
-                    <td class="px-3 py-2 text-right text-slate-300">${r.rows_generated ?? '--'}${r.rows_accepted != null ? '/' + r.rows_accepted : ''}</td>
-                    <td class="px-3 py-2 text-right text-slate-500">${r.elapsed_ms ?? '--'}</td>
-                    <td class="px-3 py-2 text-slate-500">${r.created_at ? r.created_at.replace('T', ' ').substring(0, 19) : '--'}</td>
+
+            let html = '';
+            for (const [system, counts] of Object.entries(perSystem)) {
+                const total = (counts.completed || 0) + (counts.failed || 0) + (counts.rejected_by_dcl || 0);
+                const failed = (counts.failed || 0) + (counts.rejected_by_dcl || 0);
+                const dispatched = counts.completed || 0;
+
+                const statusColor = failed > 0 ? 'text-red-400' : 'text-emerald-400';
+                const statusText = failed > 0 ? 'Has Failures' : 'All Dispatched';
+
+                // Get pipes for this system
+                const systemRuns = runs.filter(r => r.source_system === system);
+                const rowId = `rlSystem_${system.replace(/[^a-zA-Z0-9]/g, '_')}`;
+
+                html += `
+                <tr class="hover:bg-slate-700/30 cursor-pointer" onclick="rlToggleSystemDetail('${system}')">
+                    <td class="px-3 py-2">
+                        <svg id="${rowId}_chevron" class="w-4 h-4 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                        </svg>
+                    </td>
+                    <td class="px-3 py-2 text-slate-300 font-medium">${system}</td>
+                    <td class="px-3 py-2 text-center text-white">${total}</td>
+                    <td class="px-3 py-2 text-center text-red-400">${failed}</td>
+                    <td class="px-3 py-2 text-center text-emerald-400">${dispatched}</td>
+                    <td class="px-3 py-2 text-center ${statusColor}">${statusText}</td>
+                </tr>
+                <tr id="${rowId}_detail" class="hidden">
+                    <td colspan="6" class="px-6 py-3 bg-slate-900/40">
+                        ${rlRenderPipeDetails(systemRuns)}
+                    </td>
                 </tr>`;
-            }).join('');
+            }
+
+            tbody.innerHTML = html;
         }
 
-        function rlCloseDetail() {
-            document.getElementById('rlDetail').classList.add('hidden');
-            window._rlSelectedRunId = null;
-            // re-render to remove highlight
-            if (window._rlRuns) rlRenderTable(window._rlRuns);
+        function rlRenderPipeDetails(pipes) {
+            if (!pipes || pipes.length === 0) {
+                return '<div class="text-slate-500 text-xs">No pipe details</div>';
+            }
+
+            let html = '<div class="space-y-2">';
+
+            for (const pipe of pipes) {
+                const statusColor = pipe.status === 'completed' ? 'emerald' : 'red';
+                const failureReason = rlGetFailureReason(pipe);
+
+                html += `
+                <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
+                    <div class="grid grid-cols-4 gap-3 mb-2">
+                        <div>
+                            <div class="text-[10px] text-slate-500 uppercase">Pipe ID</div>
+                            <div class="text-xs text-violet-400 font-mono break-all">${pipe.pipe_id || '--'}</div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] text-slate-500 uppercase">Status</div>
+                            <div class="text-xs text-${statusColor}-400">${pipe.status}</div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] text-slate-500 uppercase">Rows</div>
+                            <div class="text-xs text-slate-300">${pipe.rows_generated || 0} → ${pipe.rows_accepted || 0}</div>
+                        </div>
+                        <div>
+                            <div class="text-[10px] text-slate-500 uppercase">Elapsed</div>
+                            <div class="text-xs text-slate-300">${pipe.elapsed_ms || '--'} ms</div>
+                        </div>
+                    </div>
+
+                    ${failureReason ? `<div class="bg-red-900/20 border border-red-700/40 rounded p-2 mt-2">
+                        <div class="text-xs text-red-400 font-semibold mb-1">Failure Reason</div>
+                        <div class="text-xs text-red-300/80">${failureReason}</div>
+                    </div>` : ''}
+
+                    ${pipe.status !== 'failed' && pipe.status !== 'rejected_by_dcl' ? rlRenderDCLPayload(pipe) : ''}
+                </div>`;
+            }
+
+            html += '</div>';
+            return html;
         }
 
-        function rlDetailField(label, value, cls) {
-            const v = value != null && value !== '' ? value : '--';
-            return `<div>
-                <div class="text-[10px] text-slate-500 uppercase tracking-wider">${label}</div>
-                <div class="text-xs ${cls || 'text-slate-300'} font-mono mt-0.5 break-all">${v}</div>
+        function rlGetFailureReason(pipe) {
+            if (pipe.status === 'completed') return null;
+
+            const statusCode = pipe.dcl_status_code;
+            const errorType = pipe.error_type;
+            const prj = pipe.push_result_json || {};
+
+            // Plain-English failure mapping
+            if (statusCode === 422 && errorType === 'NO_MATCHING_PIPE') {
+                return 'DCL rejected this pipe — AAM schema blueprint was not found. Run Export to DCL before dispatching.';
+            }
+
+            if (prj.matched_schema === false) {
+                return 'Data arrived at DCL but could not be joined to a schema. pipe_id mismatch between AAM export and Farm manifest.';
+            }
+
+            if (pipe.schema_drift && prj.drift_fields?.length) {
+                return `Warning: field structure has changed since last run. Affected fields: ${prj.drift_fields.join(', ')}`;
+            }
+
+            if (pipe.rows_accepted < pipe.rows_generated) {
+                const lost = pipe.rows_generated - pipe.rows_accepted;
+                return `DCL accepted fewer rows than Farm generated. ${lost} rows lost in transit.`;
+            }
+
+            if (statusCode >= 500) {
+                return 'DCL ingest endpoint error. Service may be unavailable.';
+            }
+
+            if (errorType === 'connection_error') {
+                return `Connection error: ${pipe.error_message || 'DCL endpoint unreachable'}`;
+            }
+
+            return pipe.error_message || 'Unknown failure';
+        }
+
+        function rlRenderDCLPayload(pipe) {
+            const prj = pipe.push_result_json || {};
+
+            return `
+            <div class="mt-2 pt-2 border-t border-slate-700/50">
+                <div class="text-[10px] text-slate-500 uppercase mb-2">DCL Payload Context</div>
+                <div class="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase mb-1">Outbound (Farm → DCL)</div>
+                        <div class="space-y-1">
+                            <div><span class="text-slate-500">pipe_id:</span> <span class="text-violet-400 font-mono">${pipe.pipe_id}</span></div>
+                            <div><span class="text-slate-500">source_system:</span> <span class="text-slate-300">${pipe.source_system}</span></div>
+                            <div><span class="text-slate-500">tenant_id:</span> <span class="text-slate-300">${pipe.tenant_id}</span></div>
+                            <div><span class="text-slate-500">snapshot:</span> <span class="text-slate-300">${pipe.snapshot_name}</span></div>
+                            <div><span class="text-slate-500">row_count:</span> <span class="text-slate-300">${pipe.rows_generated}</span></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-[10px] text-slate-500 uppercase mb-1">Inbound (DCL → Farm)</div>
+                        <div class="space-y-1">
+                            <div><span class="text-slate-500">dcl_run_id:</span> <span class="text-cyan-400 font-mono">${pipe.dcl_run_id || 'N/A'}</span></div>
+                            <div><span class="text-slate-500">rows_accepted:</span> <span class="text-slate-300">${pipe.rows_accepted || 0}</span></div>
+                            <div><span class="text-slate-500">schema_drift:</span> <span class="text-${pipe.schema_drift ? 'amber' : 'emerald'}-400">${pipe.schema_drift ? 'Yes' : 'No'}</span></div>
+                            <div><span class="text-slate-500">matched_schema:</span> <span class="text-${prj.matched_schema ? 'emerald' : 'red'}-400">${prj.matched_schema != null ? (prj.matched_schema ? 'Yes' : 'No') : 'N/A'}</span></div>
+                            <div><span class="text-slate-500">dcl_status_code:</span> <span class="text-slate-300">${pipe.dcl_status_code || 'N/A'}</span></div>
+                        </div>
+                    </div>
+                </div>
             </div>`;
         }
 
-        async function rlShowDetail(farmRunId) {
-            window._rlSelectedRunId = farmRunId;
-            // re-render table to show selected row highlight
-            if (window._rlRuns) rlRenderTable(window._rlRuns);
+        function rlToggleSystemDetail(system) {
+            const rowId = `rlSystem_${system.replace(/[^a-zA-Z0-9]/g, '_')}`;
+            const detailRow = document.getElementById(`${rowId}_detail`);
+            const chevron = document.getElementById(`${rowId}_chevron`);
 
-            const detail = document.getElementById('rlDetail');
-            const body = document.getElementById('rlDetailBody');
-            const statusEl = document.getElementById('rlDetailStatus');
-            detail.classList.remove('hidden');
-            body.innerHTML = '<div class="text-slate-500 text-sm text-center py-4">Loading...</div>';
-            statusEl.innerHTML = '';
-
-            try {
-                const resp = await fetch(`/api/runs/${farmRunId}`);
-                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                const d = await resp.json();
-
-                statusEl.innerHTML = rlStatusBadge(d.status);
-
-                // --- Correlation IDs ---
-                let html = `<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    ${rlDetailField('Farm Run ID', d.farm_run_id, 'text-cyan-400')}
-                    ${rlDetailField('AAM Run ID', d.run_id)}
-                    ${rlDetailField('Pipe ID', d.pipe_id, 'text-violet-400')}
-                    ${rlDetailField('DCL Run ID', d.dcl_run_id)}
-                </div>`;
-
-                // --- Execution Info ---
-                html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    ${rlDetailField('Tenant', d.tenant_id)}
-                    ${rlDetailField('Snapshot', d.snapshot_name)}
-                    ${rlDetailField('Source System', d.source_system)}
-                    ${rlDetailField('Generator', d.generator_key)}
-                </div>`;
-
-                // --- Metrics ---
-                html += `<div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    ${rlDetailField('Rows Generated', d.rows_generated)}
-                    ${rlDetailField('Rows Accepted', d.rows_accepted)}
-                    ${rlDetailField('Elapsed', d.elapsed_ms != null ? d.elapsed_ms + ' ms' : null)}
-                    ${rlDetailField('DCL Status Code', d.dcl_status_code)}
-                </div>`;
-
-                // --- Schema Drift ---
-                if (d.schema_drift) {
-                    const prj = d.push_result_json;
-                    const driftFields = prj?.drift_fields?.length ? prj.drift_fields.join(', ') : 'unknown';
-                    html += `<div class="bg-amber-900/20 border border-amber-700/40 rounded-lg p-3">
-                        <div class="text-xs text-amber-400 font-semibold mb-1">Schema Drift Detected</div>
-                        <div class="text-xs text-amber-300/80 font-mono">${driftFields}</div>
-                    </div>`;
-                }
-
-                // --- Error Block ---
-                if (d.error_type || d.error_message) {
-                    html += `<div class="bg-red-900/20 border border-red-700/40 rounded-lg p-3">
-                        <div class="text-xs text-red-400 font-semibold mb-1">${d.error_type || 'Error'}</div>
-                        <div class="text-xs text-red-300/80">${d.error_message || '--'}</div>
-                    </div>`;
-                }
-
-                // --- Push Result (what actually shipped) ---
-                if (d.push_result_json) {
-                    const prj = d.push_result_json;
-                    html += `<div class="bg-slate-900/60 rounded-lg border border-slate-700/50">
-                        <button onclick="this.nextElementSibling.classList.toggle('hidden'); this.querySelector('svg').classList.toggle('rotate-180')"
-                                class="w-full flex items-center justify-between px-3 py-2 text-xs text-slate-400 hover:text-white">
-                            <span class="font-medium">DCL Push Result (shipped payload detail)</span>
-                            <svg class="w-3 h-3 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-                        </button>
-                        <div class="hidden px-3 pb-3">
-                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-                                ${rlDetailField('Push Status', prj.status, prj.status === 'success' ? 'text-emerald-400' : 'text-red-400')}
-                                ${rlDetailField('HTTP Code', prj.status_code)}
-                                ${rlDetailField('Rows Pushed', prj.rows_pushed)}
-                                ${rlDetailField('Schema Match', prj.matched_schema != null ? (prj.matched_schema ? 'Yes' : 'No') : null)}
-                            </div>
-                            ${prj.schema_fields?.length ? `<div class="mb-2">${rlDetailField('Schema Fields', prj.schema_fields.join(', '))}</div>` : ''}
-                            ${prj.hint ? `<div class="mb-2">${rlDetailField('Hint', prj.hint, 'text-amber-300')}</div>` : ''}
-                            <pre class="text-[10px] text-slate-500 bg-slate-950/50 rounded p-2 overflow-auto max-h-40 font-mono whitespace-pre-wrap">${JSON.stringify(prj, null, 2)}</pre>
-                        </div>
-                    </div>`;
-                }
-
-                // --- Timestamps ---
-                html += `<div class="flex items-center gap-4 text-[10px] text-slate-600 pt-1 border-t border-slate-700/30">
-                    <span>Created: ${d.created_at || '--'}</span>
-                    ${d.category ? `<span>Category: ${d.category}</span>` : ''}
-                </div>`;
-
-                body.innerHTML = html;
-            } catch (e) {
-                body.innerHTML = `<div class="text-red-400 text-sm text-center py-4">Error loading detail: ${e.message}</div>`;
+            if (detailRow) {
+                detailRow.classList.toggle('hidden');
+            }
+            if (chevron) {
+                chevron.classList.toggle('rotate-90');
             }
         }
 
@@ -1975,31 +2030,6 @@
             } else {
                 clearInterval(rlAutoRefreshTimer);
                 rlAutoRefreshTimer = null;
-            }
-        }
-
-        async function rlSelfTest() {
-            const btn = document.getElementById('rlSelfTestBtn');
-            btn.textContent = 'Running...';
-            btn.disabled = true;
-            const detail = document.getElementById('rlDetail');
-            const json = document.getElementById('rlDetailJson');
-            detail.classList.remove('hidden');
-            json.textContent = 'Dispatching self-test manifest through full pipeline...';
-            try {
-                const resp = await fetch('/api/farm/self-test', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                });
-                const data = await resp.json();
-                json.textContent = JSON.stringify(data, null, 2);
-                // Auto-refresh the table to show the new run
-                setTimeout(rlRefresh, 500);
-            } catch (e) {
-                json.textContent = `Self-test failed: ${e.message}\n\nThis means Farm's own pipeline is broken.`;
-            } finally {
-                btn.textContent = 'Self-Test';
-                btn.disabled = false;
             }
         }
 
