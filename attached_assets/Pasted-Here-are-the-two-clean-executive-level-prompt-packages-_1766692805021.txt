@@ -1,0 +1,80 @@
+Here are the two clean, executive-level prompt packages. Paste them into their respective agents.
+
+### Prompt Package 1: AOD Agent (The Fix)
+
+**Copy/Paste into AOD Replit:**
+
+```markdown
+# Urgent Engineering Order: Architecture Hardening & DB Reset
+
+**Context:**
+Our latest validation run exposed critical data integrity issues. AOD is currently suffering from "Identity Schizophrenia" (aliasing Product Names vs. Domains), "Leaking Infrastructure" (failing to exclude root domains), and "Signal Inflation" (counting 50 DNS hits as 50 sources).
+
+**Your Mission:**
+Refactor the `Admission` and `EntityResolution` logic to enforce strict "Domain-First" identity and "Distinct Plane" scoring.
+
+## Step 1: The Database Wipe
+You must TRUNCATE the `Assets`, `Findings`, and `Observation` tables. We have poisoned the catalog with duplicate keys (e.g., `zendesk` AND `zendesk.com`). We cannot migrate; we must restart.
+
+## Step 2: Code Changes (Admission.py)
+
+1.  **Enforce Domain Identity:**
+    * Disable "Product Name" aliasing for admission. The `primary_key` for an asset must **ALWAYS** be the `canonical_domain` (e.g., `salesforce.com`).
+    * If a Finance record provides "Salesforce" but cannot be resolved to a domain via existing evidence, it does **not** become an admitted asset. It stays in a holding state.
+
+2.  **Fix Exclusion Logic (The Kill List):**
+    * Currently, `www.redis.com` is bypassing the exclusion for `redis.com` because of string inequality.
+    * **Fix:** You must apply `tldextract` to strip subdomains *before* checking the `config.exclusions` or `infrastructure_seeds`.
+
+3.  **Fix Signal Inflation (Noise Floor):**
+    * Currently, 50 DNS queries count as "50 Sources," causing `fast.io` to be admitted.
+    * **Fix:** `source_count` must calculate **Distinct Planes** only.
+    * *Logic:* `count = len(unique([obs.plane for obs in observations]))`.
+    * *Example:* 100 DNS logs + 10 Proxy logs = **2 Sources** (Network, Discovery).
+
+## Step 3: Config Update
+Update `policy_config.json` to explicitly exclude the noise we found:
+```json
+"exclusions": [
+  "fast.io", "plus.net", "cloud.net", "tech.net", "services.io"
+]
+
+```
+
+**Execute these changes and confirm when the server is ready for a new simulation.**
+
+```
+
+---
+
+### Prompt Package 2: Farm Agent (The Grading Fix)
+
+**Copy/Paste into Farm Replit:**
+
+```markdown
+# Urgent Engineering Order: Reconciliation Alignment
+
+**Context:**
+AOD has moved to a strict "Domain-First" identity model using `tldextract` (PSL). Farm is currently failing validation because it expects keys based on raw traffic (e.g., `docs.google.com`) while AOD correctly catalogs them as root domains (`google.com`).
+
+**Your Mission:**
+Update the **Reconciliation Logic** to use the same ruler as the student.
+
+## Constraint: NO CHEATING
+* **Do NOT** change the `Generator`. You must continue to generate messy traffic, subdomains, and noise. Real life is messy.
+* **ONLY** change the `Reconciliation` (Grading) logic.
+
+## Code Changes (reconciliation.py)
+
+1.  **Normalize Expectations:**
+    * In `compute_expected_block()`, you currently generate a list of expected asset keys based on the raw `target_domain`.
+    * **Update:** You must import and use `tldextract` to convert that target domain to its `registered_domain` *before* adding it to the `expected_assets` set.
+    * *Example:* If Generator produces `api.stripe.com`, Reconciliation expectation must be `stripe.com`.
+
+2.  **Align with AOD Identity:**
+    * Ensure your expectation logic matches AOD's new "Distinct Plane" counting.
+    * If you generated 50 DNS hits for `fast.io`, your reconciliation logic should now calculate that as **1 Source**, and correctly expect it to be **Rejected** (since Noise Floor is 2).
+
+**Execute this update so that Farm correctly grades AOD's normalized catalog.**
+
+```

@@ -1,0 +1,185 @@
+# Synthetic Data Generation
+
+> **Plain English:** This document explains how Farm creates fake-but-realistic IT environments to test whether AOD can correctly identify shadow IT, zombie apps, and unmanaged assets. Think of it like a flight simulator for IT discovery—we generate messy, conflicted data that mirrors what you'd find in a real enterprise, then see if AOD can navigate it correctly.
+
+## Overview
+
+AOS Farm generates synthetic enterprise IT environments for testing Asset Observability & Discovery (AOD) systems. The generator creates realistic, conflicted datasets that simulate the complexity of real enterprise environments—not "happy path" demo data.
+
+## Core Concepts
+
+### Data Planes
+
+Farm generates 7 independent data planes that correlate only via realistic keys:
+
+| Plane | Description | Key Fields |
+|-------|-------------|------------|
+| **Discovery** | Raw observations from network sources | domain, source, timestamp |
+| **IdP** | Identity provider records | email, app_name, last_login |
+| **CMDB** | Configuration management database | name, domain, environment |
+| **Cloud** | Cloud provider inventory | account_id, service, region |
+| **Endpoint** | Device/agent telemetry | hostname, agent_version |
+| **Network** | DNS/proxy/firewall logs | domain, action, bytes |
+| **Finance** | Spend and billing data | vendor, amount, contract_status |
+
+### Coupled Evidence Generation
+
+Assets receive observations from multiple distinct sources to pass AOD's noise floor (default: 2 sources required for admission). The **corroboration rate** controls what percentage of assets get multi-source evidence.
+
+| Asset Tier | Source Count | Governed? | Result |
+|------------|--------------|-----------|--------|
+| **Core Stack** (first 25 SaaS) | 3+ distinct sources | Per governance rate | Admitted |
+| **Departmental** (remaining SaaS) | 2 distinct sources | Per governance rate | Admitted |
+| **Shadow apps** | 2 sources | No (by design) | Admitted as shadows |
+| **Zombie apps** | 2 sources (stale) | Yes (stale) | Admitted as zombies |
+| **Junk/noise domains** | 1 source | No | Correctly rejected |
+| **Near collisions** | 1 source | No | Correctly rejected |
+
+Admission rates vary by realism profile (see below). Messy profiles have high admission but high shadow count.
+
+## Configuration Parameters
+
+### Scale
+
+Controls volume via internal multiplier. Larger scales produce more assets:
+
+| Scale | Multiplier | Admitted (clean) | Admitted (messy) |
+|-------|------------|------------------|------------------|
+| small | 1x | ~16 | ~9 |
+| medium | 4x | ~74 | ~21 |
+| large | 12x | ~396 | ~198 |
+| enterprise | 50x | ~1,500 | ~700 |
+
+When exceeding static app lists, synthetic assets are generated with realistic domains (e.g., `cloudify.io`, `smartbase.com`).
+
+### Enterprise Profile
+
+Simulates different industry IT landscapes:
+
+| Profile | Characteristics |
+|---------|-----------------|
+| **modern_saas** | Cloud-heavy, API-first, minimal legacy |
+| **regulated_finance** | Legacy systems, compliance overhead, on-prem |
+| **hybrid_enterprise** | Mix of cloud and traditional infrastructure |
+
+### Realism Profile
+
+Controls data quality by decoupling **evidence strength** from **governance coverage**:
+
+| Profile | Corroboration | Governance | Result |
+|---------|---------------|------------|--------|
+| **clean** | 90% | 95% | High admission, low shadow (Green Lane) |
+| **typical** | 80% | 60% | Medium admission, medium shadow |
+| **messy** | 80% | 15% | High admission, **HIGH shadow** (Red Lane!) |
+
+**Corroboration rate** controls multi-source evidence (determines admission):
+- Higher rate = more assets pass noise floor = higher admission
+
+**Governance rate** controls IdP/CMDB presence (determines classification):
+- Higher rate = more assets have governance = classified as Clean
+- Lower rate = more assets lack governance = classified as **Shadow**
+
+The key insight: "Messy" doesn't mean weak signals (rejected), it means **ungoverned** signals (quarantined as shadow IT).
+
+### Data Preset (Challenge Level)
+
+Pre-configured difficulty levels:
+
+| Preset | Domain Coverage | Conflict Rate | Junk Domains | Near Collisions | Aliasing |
+|--------|-----------------|---------------|--------------|-----------------|----------|
+| **clean_baseline** | High | Low | Few | None | None |
+| **enterprise_mess** | Medium | Medium | Some | Some | Some |
+| **adversarial** | Variable | High | Many | Many | High |
+
+## Stress Test Scenarios
+
+Every snapshot includes 4 deterministic stress tests:
+
+### 1. Split Brain (Monday.com)
+- **Setup**: Finance vendor (name-only) + Network DNS/Proxy (domain-based)
+- **Tests**: AOD's merge logic for multi-signal assets
+
+### 2. Toxic Asset (Trello)
+- **Setup**: CMDB=yes, IdP=no
+- **Tests**: Identity gap detection
+
+### 3. Banned Asset (TikTok)
+- **Setup**: Discovery observations for blocked domain
+- **Tests**: Banned domain detection
+
+### 4. Zombie Asset (Zoom Legacy)
+- **Setup**: CMDB+IdP present but stale >90 days
+- **Tests**: Staleness detection
+
+## Ground Truth Classification
+
+Admitted assets are classified based on evidence flags:
+
+| Classification | Criteria |
+|----------------|----------|
+| **Shadow** | HAS_ONGOING_FINANCE=false, not governed by vendor |
+| **Zombie** | All evidence stale (>90 days) |
+| **Clean** | Properly governed, recent evidence |
+
+### Vendor Governance Propagation
+
+Domains within known vendor sets inherit governance from the parent vendor. For example, if `microsoft.com` is governed, then `outlook.com`, `azure.com`, `office365.com` are also considered governed.
+
+## Expected Block
+
+Each snapshot includes an `__expected__` block containing:
+
+```json
+{
+  "expected_shadows": ["shadow-app.com", ...],
+  "expected_zombies": ["stale-tool.com", ...],
+  "expected_clean": ["governed-saas.com", ...],
+  "expected_rejected": ["noise.example.com", ...],
+  "expected_totals": {
+    "shadow": 48,
+    "zombie": 41,
+    "clean": 127,
+    "admitted": 216,
+    "rejected": 843
+  }
+}
+```
+
+This provides ground truth for grading AOD's performance.
+
+## API Usage
+
+### Generate Snapshot
+
+```bash
+curl -X POST "http://localhost:5000/api/snapshots" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenant_id": "TestCorp",
+    "scale": "large",
+    "realism_profile": "messy",
+    "data_preset": "adversarial"
+  }'
+```
+
+### Response
+
+```json
+{
+  "snapshot_id": "abc123...",
+  "meta": {
+    "schema_version": "farm.v1",
+    "generated_at": "2025-12-27T12:00:00Z",
+    "scale": "large",
+    "realism_profile": "messy"
+  }
+}
+```
+
+## Design Principles
+
+1. **No Conclusions**: Farm generates raw evidence, not pre-concluded classifications
+2. **Deterministic**: Same seed + config = same output
+3. **Plane Independence**: Each data plane is generated independently
+4. **FQDN Validation**: Only valid fully-qualified domain names are admitted
+5. **Fail Loudly**: Invalid data produces explicit errors, not silent fallbacks

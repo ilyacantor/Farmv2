@@ -1,0 +1,320 @@
+Excellent — then let’s do this **cleanly, deterministically, and in a way Replit agents can actually execute**.
+
+Below is a **single, consolidated master prompt** you can give to **both the AOD agent and the Farm agent**, followed by **agent-specific sub-prompts**.
+This respects the fact that they are **separate beings**, with **no cross-control**, and it clearly defines:
+
+* exact overlay copy (tight, factual)
+* what is automated vs manual
+* where control hands off
+* how the tour exits into free exploration
+
+No marketing language. No fluff. No ambiguity.
+
+---
+
+# MASTER PROMPT
+
+### Guided Validation Run (AOS / AOD / Farm)
+
+You are implementing a **Guided Validation Run** across AutonomOS Discovery (AOD) and AOS Farm.
+
+This is **not a product tour**.
+This is a **narrated execution and inspection of a real system under adversarial conditions**.
+
+The system must:
+
+* auto-navigate and auto-open key panels
+* auto-select representative examples
+* explain *what is happening and why* in short, factual overlays
+* allow the user to pause or exit at any time
+* end in unrestricted exploration
+
+Tone requirements:
+
+* factual
+* slightly technical
+* no marketing language
+* no promises
+* no anthropomorphism
+
+All overlay copy is authoritative and concise.
+
+---
+
+## GLOBAL RULES (BOTH AGENTS)
+
+* One overlay per step
+* 2–3 lines max per overlay
+* One primary action per step
+* Secondary “Exit Tour” always visible
+* Never explain implementation details
+* Never hide real data or results
+* Do not simulate outcomes — only navigate and reveal
+
+---
+
+## TOUR PHASES OVERVIEW
+
+| Phase | System | Mode                |
+| ----- | ------ | ------------------- |
+| 0     | AOD    | Framing             |
+| 1     | Farm   | Reality Generation  |
+| 2     | Farm   | Snapshot Inspection |
+| 3     | AOD    | Discovery Run       |
+| 4     | AOD    | Shadows             |
+| 5     | AOD    | Triage              |
+| 6     | AOD    | Catalog             |
+| 7     | Farm   | Reconciliation      |
+| 8     | AOD    | Free Exploration    |
+
+---
+
+# AOD AGENT PROMPT
+
+### Responsibility
+
+You control:
+
+* AOD landing
+* Discovery runs
+* Results
+* Findings
+* Triage
+* Catalog
+* Tour exit
+
+You **do not** generate or validate snapshots.
+
+---
+
+## AOD — Phase 0: Entry Framing
+
+**Trigger:** First load or “Run Validation” button
+
+**Overlay copy:**
+
+> AOD discovers what actually exists in an enterprise environment.
+> This run shows how discovery is executed, inspected, and verified.
+
+**Action (automated):**
+
+* Highlight “Run Guided Validation”
+
+**User action:**
+
+* Click ▶ Run Validation
+
+---
+
+## AOD → Farm Handoff
+
+**Overlay copy:**
+
+> Discovery must be tested against reality.
+> You will now generate a realistic enterprise environment.
+
+**Action (automated):**
+
+* Navigate to Farm
+
+---
+
+## AOD — Phase 3: Discovery Run
+
+**Trigger:** Return from Farm with snapshot available
+
+**Overlay copy:**
+
+> AOD ingests signals, resolves entities, scores evidence, and classifies assets.
+> Every result is traceable to source data.
+
+**Automated actions:**
+
+* Start Discovery run
+* Expand lifecycle funnel
+* Highlight cataloged vs rejected
+
+**User action:** none
+
+---
+
+## AOD — Phase 4: Shadows
+
+**Overlay copy:**
+
+> Shadow assets are systems in active use without governance coverage.
+> Classification is based on evidence patterns, not hardcoded rules.
+
+**Automated actions:**
+
+* Navigate to Findings → Shadows
+* Open one representative shadow asset
+* Highlight evidence sources and missing coverage
+
+---
+
+## AOD — Phase 5: Triage
+
+**Overlay copy:**
+
+> Triage simulates decisions AOD can support or automate.
+> Actions change asset state and downstream eligibility.
+
+**Automated actions:**
+
+* Navigate to Triage
+* Select the previously shown shadow
+* Open one triage action panel
+* Show before/after state
+
+---
+
+## AOD — Phase 6: Catalog
+
+**Overlay copy:**
+
+> The catalog is the trusted output of discovery.
+> Only cataloged assets are eligible for integration and automation.
+
+**Automated actions:**
+
+* Navigate to Catalog
+* Open one clean asset
+* Open one previously shadowed but resolved asset
+
+---
+
+## AOD → Farm Handoff (Verification)
+
+**Overlay copy:**
+
+> Discovery results are now verified against ground truth.
+> You will inspect reconciliation in Farm.
+
+**Action:**
+
+* Navigate to Farm → Reconciliation
+
+---
+
+## AOD — Phase 8: Exit to Exploration
+
+**Trigger:** User returns from Farm
+
+**Overlay copy:**
+
+> The guided run is complete.
+> You may now explore freely or restart the validation.
+
+**Actions:**
+
+* Disable tour automation
+* Show buttons:
+
+  * Explore freely
+  * Restart guided run
+  * Open AOD User Guide
+
+---
+
+# FARM AGENT PROMPT
+
+### Responsibility
+
+You control:
+
+* Snapshot generation
+* Snapshot inspection
+* Reconciliation and scoring
+
+You **do not** run discovery.
+
+---
+
+## FARM — Phase 1: Reality Generation
+
+**Overlay copy:**
+
+> Farm generates enterprise environments at scale.
+> These snapshots intentionally include conflicts, gaps, and unmanaged systems.
+
+**Automated actions:**
+
+* Preselect:
+
+  * Scale: Medium
+  * Enterprise: Modern SaaS
+  * Realism: Typical
+* Briefly open dropdowns to show breadth
+
+**User action:**
+
+* Click Generate Snapshot
+
+---
+
+## FARM — Phase 2: Snapshot Inspection
+
+**Overlay copy:**
+
+> This snapshot is ground truth.
+> AOD sees only raw signals — not classifications.
+
+**Automated actions:**
+
+* Open snapshot details
+* Highlight source counts
+* Expand one raw observation
+
+**User action:**
+
+* Click “Run Discovery in AOD”
+
+---
+
+## FARM — Phase 7: Reconciliation
+
+**Overlay copy:**
+
+> Reconciliation compares expected outcomes to AOD’s results.
+> Accuracy, misses, and false positives are all visible.
+
+**Automated actions:**
+
+* Open reconciliation report
+* Expand scorecard
+* Open one mismatch
+* Highlight reasoning
+
+**User action:** none
+
+---
+
+## END CONDITION (BOTH AGENTS)
+
+* Tour state is cleared
+* No overlays remain
+* User has unrestricted navigation
+* System does not auto-advance
+
+---
+
+## SUCCESS CRITERIA
+
+* User understands why Farm exists
+* User trusts AOD’s results
+* Complexity feels intentional, not accidental
+* Engineers see rigor
+* Non-technical users see outcomes
+* User ends in exploration, not explanation
+
+---
+
+If you want next, I can:
+
+* Provide a **JSON tour state model**
+* Generate **deterministic asset selection rules**
+* Reduce copy further for a **5-minute investor cut**
+* Help you version this into *Basic* vs *Deep Validation* runs
+
+This is exactly the right approach for what you’ve built.

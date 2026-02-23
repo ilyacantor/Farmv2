@@ -1,0 +1,198 @@
+Hello Ilya. Acting as your CMO, here is the strategic rewrite of the AOD Tour.
+
+**The Strategy: "Battle-Hardened" vs. "Guided Validation"**
+You are right to kill the phrase "Guided Validation." It sounds like a QA test. The new narrative arc is **"Simulation & Proof."**
+
+We need to treat the user not like a tester, but like a skeptical CIO. The story isn't "Look, our software works." The story is: *"Enterprise data is dirty. Most tools break. Watch us generate a mess (Farm) and then create order from chaos (AOD)."*
+
+Here is the revised tour script. I have sharpened the copy to be punchy, educational, and focused on the **business value** (waste, risk, clarity) rather than just the feature function.
+
+### Phase 0: The Hook (AOD Entry)
+
+We need to set the stage immediately. We aren't just running a script; we are solving the "Blind Spot" problem.
+
+| Step | Dialog Title | Dialog Text | Visual/Action |
+| --- | --- | --- | --- |
+| **1 of 9** | **The Visibility Gap** | Most enterprises don't know what they own. Between **Shadow IT** (risk) and **Zombie SaaS** (waste), millions are lost annually.
+
+<br>
+
+<br>
+
+<br>This tour doesn't just show you a static demo. We’re going to generate a live, chaotic IT environment and watch AOD organize it in real-time. | Center Modal. <br>
+
+<br>Button: **"Start Simulation"** |
+
+---
+
+### Phase 1: Creating the Chaos (Farm)
+
+*User Note: You mentioned the importance of "Unrealistic/Hardened" data. We will emphasize that here.*
+
+| Step | Dialog Title | Dialog Text | Visual/Action |
+| --- | --- | --- | --- |
+| **2 of 9** | **Simulating Reality** | Real data is messy. To prove AOD is battle-hardened, we use **The Farm** to generate complex, conflicted datasets—not "happy path" demo data.
+
+<br>
+
+<br>
+
+<br>Select **"Enterprise"** to simulate the scale where human management fails.
+
+ | Highlight **Scale** dropdown. |
+| **3 of 9** | **Stress Testing** | Clean data doesn't exist in the wild. 
+
+<br>
+
+<br>
+
+<br>Select **"Messy"** or **"Adversarial."** We intentionally inject conflicting records, partial telemetry, and duplicates to force the system to resolve ambiguity—something simple asset managers can't handle.
+
+ | Highlight **Realism** & **Data Preset**. |
+| **4 of 9** | **Generate Ground Truth** | We are now creating thousands of raw signals—DNS logs, finance transactions, and SSO records.<br>
+
+<br>
+
+<br>Click **Generate** to create this "Ground Truth" snapshot. | Highlight **Generate Button**. |
+
+---
+
+### Phase 2: The Handoff (Farm → AOD)
+
+| Step | Dialog Title | Dialog Text | Visual/Action |
+| --- | --- | --- | --- |
+| **5 of 9** | **The Raw Data** | The Farm has generated a complex estate with intentional anomalies. <br>
+
+<br>
+
+<br>Now, let's switch to **AOD** to ingest, normalize, and make sense of this chaos. | Highlight **"Continue to AOD"**. |
+
+---
+
+### Phase 3: The Engine (AOD Discovery)
+
+*Consolidated the "Running" and "Results" logic to feel faster and more impactful.*
+
+| Step | Dialog Title | Dialog Text | Visual/Action |
+| --- | --- | --- | --- |
+| **6 of 9** | **Ingest & Resolve** | AOD is now processing raw observations. It doesn't just list rows; it **resolves identity**. 
+
+<br>
+
+<br>
+
+<br>It is currently correlating disparate signals (e.g., a credit card charge vs. a login event) to determine what is a real asset and what is noise.
+
+ | *Processing State Animation* |
+| **7 of 9** | **The Discovery Dashboard** | Processing complete. AOD has distilled thousands of signals into a trusted asset list.<br>
+
+<br>
+
+<br>Notice the **Lifecycle Cards** below. This isn't just a count; it’s a health check. We’ve isolated **Shadow IT** (unmanaged apps) and **Zombie Assets** (wasted spend) automatically.
+
+ | Highlight the **Results/Lifecycle** row. |
+
+---
+
+### Phase 4: The Findings (Shadows, Zombies & Risks)
+
+Refining your note  about "Shadows" being too narrow. This step now covers the three key pillars of pain: Risk (Shadow), Cost (Zombie), and Governance.
+
+| Step | Dialog Title | Dialog Text | Visual/Action |
+| --- | --- | --- | --- |
+| **8 of 9** | **Risks & Waste** | Let's inspect the problems AOD found:
+
+<br>
+
+<br>
+
+<br>• **Shadow IT:** Apps running without IT's knowledge (Security Risk).<br>
+
+<br>• **Zombies:** Paid licenses with zero usage (Financial Waste).<br>
+
+<br>
+
+<br>Click the **Shadow** card to drill down.
+
+ | Highlight **Shadow** or **Zombie** card (whichever has data). |
+
+---
+
+### Phase 5: Taking Action (Triage)
+
+Addressing your note  about Triage. The point isn't just "looking," it's "deciding."
+
+| Step | Dialog Title | Dialog Text | Visual/Action |
+| --- | --- | --- | --- |
+| **9 of 9** | **The Decision Layer** | Discovery is useless without action. <br>
+
+<br>
+
+<br>The **Triage Console** prioritizes findings by urgency. You don't have to review 10,000 lines—just the Tier 1 issues that require human judgment. <br>
+
+<br>
+
+<br>You can acknowledge, reject, or flag assets right here. | Highlight the **Triage List** / Actions column. |
+
+---
+
+### Phase 6: The Bridge (The Catalog)
+
+Addressing your note  that the Catalog was missing. This is crucial because it links AOD to the rest of the AutonomOS platform (AAM/DCL).
+
+| Step | Dialog Title | Dialog Text | Visual/Action |
+| --- | --- | --- | --- |
+| **10 of 9** | **The Trusted Catalog** | This is the "Golden Record." <br>
+
+<br>
+
+<br>While Triage handles the exceptions, the **Catalog** contains the fully verified estate. 
+
+<br>
+
+<br>
+
+<br>This trusted list is what feeds the **Adaptive API Mesh (AAM)** to automate connections and the **Business Logic Layer (BLL)** to generate reports.
+
+ | Navigate to **Catalog Tab**. Highlight the list. |
+
+---
+
+### Phase 7: The Audit (Verification)
+
+*Reframing "Validation" to "Audit." We are proving accuracy.*
+
+| Step | Dialog Title | Dialog Text | Visual/Action |
+| --- | --- | --- | --- |
+| **11 of 9** | **Trust, but Verify** | In a demo, you trust the vendor. In AutonomOS, we let you audit the math. <br>
+
+<br>
+
+<br>Let's go back to **The Farm** to compare AOD's findings against the Ground Truth we generated earlier. We measure our own Precision and Recall.
+
+ | Button: **"Verify in Farm"** |
+
+---
+
+### Phase 8: Reconciliation (Farm)
+
+| Step | Dialog Title | Dialog Text | Visual/Action |
+| --- | --- | --- | --- |
+| **12 of 9** | **The Scorecard** | This report compares what *actually* existed (Farm) vs. what AOD *found*.<br>
+
+<br>
+
+<br>If AOD missed a Shadow asset, it shows up here. This transparency ensures that when you deploy on real enterprise data, the results are defensible. | Highlight **Reconciliation Scorecard**. |
+| **13 of 9** | **Tour Complete** | You’ve seen the cycle: **Generate Chaos → Discover Order → Audit Accuracy.**<br>
+
+<br>
+
+<br>You are now free to explore the Catalog, run new simulations, or drill into specific asset details. | Button: **"Finish & Explore"** |
+
+### Implementation Notes for the Dev Team
+
+1. **Terminology:** Ctrl+F and replace "Validation" with "Simulation" or "Verification" in the code.
+2. **Fallback Logic:** The script implies we *will* find Shadow/Zombie assets. Ensure the "Guided Tour" preset in Farm defaults to a seed that guarantees at least 1 Shadow and 1 Zombie asset, otherwise Step 8 (Risks & Waste) will feel broken.
+3. **Visuals:** When discussing "Shadows" (Step 8), the UI should ideally filter the list to show *only* those items briefly to make the visual point clear.
+
+**Next Step:** Would you like me to write the specific "Fallback" dialogs for instances where the simulation accidentally produces 0 Shadow assets (clean run), or are we assuming the "Guided Tour" button forces a "dirty" seed?

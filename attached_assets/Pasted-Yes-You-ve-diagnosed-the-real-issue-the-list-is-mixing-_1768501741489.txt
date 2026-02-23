@@ -1,0 +1,65 @@
+Yes. You’ve diagnosed the real issue: **the list is mixing two different semantic classes**, and Farm is explicitly ignoring it anyway — so it’s currently useless and confusing.
+
+### The simple, correct fix
+
+Split this into **two explicit policy lists** and make both Farm + AOD follow them.
+
+## 1) `excluded_vendor_roots`
+
+These are “umbrella” roots that are **too broad to be assets** and should be excluded (or treated as infrastructure/noise):
+
+Examples (likely):
+
+* `microsoft.com`
+* `google.com`
+* `amazon.com`
+* `apple.com`
+
+**Behavior:** never catalog as a standalone asset key (unless you *explicitly* want it in a special bucket).
+
+## 2) `valid_saas_root_domains`
+
+These are legitimate product domains that **are** real SaaS assets and should remain admissible:
+
+Examples:
+
+* `slack.com`
+* `dropbox.com`
+* `zoom.com` / `zoom.us` (depending)
+* `atlassian.com` (debatable, but likely yes)
+* `hubspot.com` (often yes)
+* `servicenow.com` (often yes)
+* `salesforce.com` (often yes)
+
+**Behavior:** treat like normal domains (subject to discovery/governance rules).
+
+---
+
+### Why this matters for your mismatches
+
+* AOD excluding `microsoft.com` / `google.com` is reasonable: they’re not “apps,” they’re corporate umbrellas.
+* AOD cataloging `slack.com` / `dropbox.com` is also reasonable: those are direct SaaS products.
+
+So the inconsistency isn’t a bug in AOD — it’s a **bad policy taxonomy**.
+
+---
+
+### One more necessary step
+
+Farm currently says:
+
+> corporate_root_domains intentionally NOT checked
+
+That has to change. Otherwise policy is theater.
+
+So:
+
+* remove/replace `corporate_root_domains`
+* implement `excluded_vendor_roots` and actually enforce it in Farm expected-block generation
+
+---
+
+### Bottom line
+
+**Yes**, create `excluded_vendor_roots` (or similar) and keep product domains separate.
+Then make both systems obey it via switchboard so you stop getting “key normalization bugs” that are really “intentional exclusions.”

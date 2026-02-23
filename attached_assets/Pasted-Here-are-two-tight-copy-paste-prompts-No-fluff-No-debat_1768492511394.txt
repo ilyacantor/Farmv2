@@ -1,0 +1,106 @@
+Here are **two tight, copy-paste prompts**.
+No fluff. No debate. Binary outputs only.
+
+---
+
+## Prompt to **AOD Agent**
+
+> **Objective:** Identify anything *critically wrong* in the Farm alignment summary below.
+> **Definition of “critically wrong”:**
+> – Factually incorrect description of AOD behavior
+> – Internal contradiction in AOD logic
+> – Anything that would cause irreconcilable Farm vs AOD divergence
+>
+> **Do NOT** suggest improvements, alternatives, or refactors.
+> **Do NOT** explain things Farm “should do.”
+>
+> **Output format (strict):**
+>
+> ```
+> CRITICAL ERROR: <yes/no>
+> If yes:
+> - Item:
+> - Why it is wrong:
+> - Correct AOD behavior (1 sentence):
+> ```
+>
+> **Alignment Summary to Review:**
+>
+> ```
+> 1. Multi-Domain Vendor Normalization
+> - Limited alias collapse only (e.g., googlemail.com → gmail.com)
+> - Infrastructure domains (outlook.com, office.com, gstatic.com, cloudfront.net, awsstatic.com) preserved as standalone
+> - No parent collapse like googleapis.com → google.com
+> - Canonical keys described as entity-name based with multiple domains
+>
+> 2. Zombie Detection
+> - zombie_window_days = 90
+> - Activity = discovery + IdP (not finance)
+> - Zombie = governed (IdP or CMDB) + stale + ongoing finance
+>
+> 3. Synthetic Domain Handling
+> - generic_collision_roots suppressed unless anchored
+> - shared_infrastructure_domains policy-driven
+>
+> 4. Admission Gates
+> - CMDB or IdP admits
+> - Discovery + finance admits
+> - Discovery + cloud admits
+> - Lifecycle + noise floor gates apply
+>
+> 5. Governance Definition
+> - governed = has_idp OR has_cmdb OR vendor_governed
+> - lifecycle gates may nullify governance
+>
+> 6. Policy Snapshot
+> - policy_snapshot is authoritative and must be used for grading
+> ```
+>
+> **Question:** Is anything above critically wrong?
+
+---
+
+## Prompt to **Farm Agent**
+
+> **Objective:** Identify anything *critically wrong* or *misaligned* in Farm’s understanding vs AOD, based on the alignment summary below.
+>
+> **Definition of “critically wrong”:**
+> – Farm assumption contradicts AOD actual behavior
+> – Farm logic cannot converge with AOD even if bugs are fixed
+> – Farm grading would be invalid without structural change
+>
+> **Do NOT** propose fixes unless explicitly asked.
+> **Do NOT** speculate.
+>
+> **Output format (strict):**
+>
+> ```
+> CRITICAL MISALIGNMENT: <yes/no>
+> If yes:
+> - Assumption:
+> - Why it cannot align with AOD:
+> - What Farm must treat as authoritative:
+> ```
+>
+> **Alignment Summary:**
+>
+> ```
+> - AOD does limited domain alias collapse; infrastructure domains are standalone
+> - Canonical identity is NOT parent-domain based
+> - Zombies require governance + stale activity + ongoing finance
+> - Finance timestamps do not count as activity
+> - CMDB lifecycle states can fail governance
+> - Admission depends on policy gates (noise floor, lifecycle, SSO/CI)
+> - AOD policy_snapshot is authoritative for grading
+> ```
+>
+> **Question:** Is any Farm assumption here fundamentally incompatible with AOD?
+
+---
+
+If you want next:
+
+* **one combined verdict table**
+* or **go/no-go decision** on reconciliation validity
+
+Say the word.

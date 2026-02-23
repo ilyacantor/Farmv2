@@ -1,0 +1,138 @@
+{
+  "schema_version": "1.0.0",
+  "description": "Single source of truth for Farm and AOD admission/classification policy. Changes here auto-sync both systems.",
+  
+  "admission": {
+    "minimum_spend": 200,
+    "noise_floor": 1,
+    "zombie_window_days": 90
+  },
+  
+  "scope": {
+    "include_infra": false,
+    "treat_directory_as_idp": false,
+    "use_policy_engine": false
+  },
+  
+  "secondary_gates": {
+    "require_sso_for_idp": false,
+    "require_valid_ci_type": true,
+    "require_valid_lifecycle": true,
+    "valid_ci_types": ["app", "application", "service", "database", "server", "network_device", "storage", "infra"],
+    "valid_lifecycle_states": ["active", "development", "staging", "production", "maintenance"],
+    "invalid_lifecycle_states": ["pending", "draft", "retired", "decommissioned", "deprecated", "archived"]
+  },
+  
+  "exclusions": [
+    "cdn.com",
+    "cloud.net",
+    "services.io",
+    "api.co",
+    "platform.io",
+    "tech.net",
+    "app.co",
+    "data.io",
+    "sys.net",
+    "hub.io",
+    "edge.com",
+    "fast.io",
+    "quick.net",
+    "global.com",
+    "world.net",
+    "smart.io",
+    "pro.co",
+    "plus.net",
+    "max.io",
+    "awsstatic.com"
+  ],
+  
+  "infrastructure_seeds": [
+    "postgresql.org",
+    "mysql.com",
+    "apache.org",
+    "redis.io",
+    "redis.com",
+    "mongodb.com",
+    "elastic.co",
+    "elasticsearch.com",
+    "kafka.apache.org",
+    "nginx.org",
+    "docker.com",
+    "kubernetes.io",
+    "linux.org",
+    "gnu.org",
+    "python.org",
+    "nodejs.org",
+    "golang.org",
+    "rust-lang.org",
+    "ruby-lang.org",
+    "grafana.com",
+    "jenkins.io",
+    "terraform.io",
+    "hashicorp.com",
+    "prometheus.io"
+  ],
+  
+  "excluded_vendor_roots": [
+    "google.com",
+    "microsoft.com",
+    "amazon.com",
+    "apple.com"
+  ],
+  
+  "infrastructure_domains": [
+    "outlook.com",
+    "office.com",
+    "office365.com",
+    "sharepoint.com",
+    "microsoftonline.com",
+    "live.com",
+    "hotmail.com",
+    "googleapis.com",
+    "gstatic.com",
+    "googleusercontent.com",
+    "googlevideo.com",
+    "cloudfront.net",
+    "awsstatic.com",
+    "amazonaws.com",
+    "akamaihd.net",
+    "akamai.net",
+    "fastly.net",
+    "cloudflare.com"
+  ],
+  
+  "banned_domains": [],
+  
+  "alias_domains_to_collapse": {
+    "slack-files.com": "slack.com",
+    "slackb.com": "slack.com",
+    "slack-edge.com": "slack.com",
+    "slack-imgs.com": "slack.com",
+    "zoom.us": "zoom.com",
+    "zoomgov.com": "zoom.com",
+    "zoom-legacy.com": "zoom.com",
+    "dropboxusercontent.com": "dropbox.com",
+    "dropboxapi.com": "dropbox.com",
+    "atlassian.net": "atlassian.com",
+    "trello.com": "atlassian.com",
+    "bitbucket.org": "atlassian.com",
+    "jira.com": "atlassian.com",
+    "hipchat.com": "atlassian.com",
+    "1password.com": "1password.com",
+    "1password.eu": "1password.com",
+    "1password.ca": "1password.com",
+    "notion.so": "notion.so",
+    "notion.site": "notion.so",
+    "figma.com": "figma.com",
+    "figmausercontent.com": "figma.com",
+    "linear.app": "linear.app",
+    "loom.com": "loom.com",
+    "useloom.com": "loom.com",
+    "miro.com": "miro.com",
+    "realtimeboard.com": "miro.com",
+    "force.com": "salesforce.com",
+    "salesforceliveagent.com": "salesforce.com",
+    "adobelogin.com": "adobe.com",
+    "yammer.com": "microsoft.com"
+  }
+}

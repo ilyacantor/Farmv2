@@ -1,0 +1,73 @@
+You are spot on. If the **Farm** (your data generator) keeps sending "Clean" perfect data, you will never know if your "Gatekeeper" logic actually works. We need to feed the system "Dirty" data to verify it catches the dirt.
+
+We need to prompt the Farm to generate **specific edge cases** that trigger the Red/Amber/Green lanes and the "Split Brain" merge logic.
+
+Here is the **Master Prompt for the Farm** to generate the necessary chaos.
+
+---
+
+### 🚜 Master Prompt: Farm Data Generation Update
+
+**Context:** We have updated the AOD Triage system to handle "Traffic Light" governance and "Split Brain" merging. We need synthetic data that specifically targets these new logic paths to verify they work.
+
+**Task:** Update the `farm/generate_mock_data.py` (or equivalent generator script) to include these 4 specific "Stress Test" Scenarios.
+
+---
+
+#### 1. SCENARIO: "Split Brain" (The Merger Test)
+
+**Objective:** Verify that `normalize_observations.py` successfully merges a Name-Only Finance record with a Domain-Based Network record.
+**Instruction:** Generate **two distinct observations** that refer to the same new tool (e.g., "Monday.com"):
+
+* **Observation A (Finance):**
+* `source`: "expensify"
+* `name`: "Monday.com" (or just "Monday")
+* `domain`: `null` (Crucial: Must be missing domain)
+* `amount`: $450.00
+
+
+* **Observation B (Network):**
+* `source`: "zscaler_logs"
+* `name`: "monday.com"
+* `domain`: "monday.com"
+* `traffic_vol`: "High"
+
+
+* **Expected Result:** These two must end up as **ONE** entity in the Triage Queue. If we see two rows, the test fails.
+
+#### 2. SCENARIO: "The Toxic Asset" (The Risk Test)
+
+**Objective:** Create an asset that looks "Active" (in CMDB) but violates a critical security policy (Identity Gap) to trigger the "Amber/Review" queue.
+**Instruction:** Generate an asset (e.g., "Trello"):
+
+* `has_cmdb`: `True` (It is known/inventory).
+* `has_idp`: `False` (CRITICAL: It is missing from Okta).
+* `usage`: "Active daily" (It is not a zombie).
+* **Expected Result:** This must appear in the **🟡 Risk & Review** queue with the tag `identity_gap`.
+
+#### 3. SCENARIO: "The Banned Asset" (The Firewall Test)
+
+**Objective:** Trigger the immediate "Blocked" status.
+**Instruction:** Generate a Discovery/Network observation for a known restricted domain.
+
+* `name`: "TikTok"
+* `domain`: "tiktok.com"
+* `source`: "firewall_logs"
+* **Expected Result:** This must appear in the **🔴 Blocked Assets** queue. (Ensure `tiktok.com` is added to the `BANNED_DOMAINS` list in the config).
+
+#### 4. SCENARIO: "The Zombie" (The Cleanup Test)
+
+**Objective:** Populate the Deprovision queue.
+**Instruction:** Generate an asset (e.g., "Zoom Legacy"):
+
+* `has_cmdb`: `True`
+* `has_idp`: `True`
+* `last_activity`: "120 days ago" (Stale).
+* **Expected Result:** This must appear in the **🟡 Risk & Review** queue as a "Deprovision Candidate".
+
+---
+
+**Execution:**
+Run the generator and populate the database.
+Then, trigger the full `discovery_pipeline` to process these raw records.
+Finally, verify the Triage UI reflects these exact categories.

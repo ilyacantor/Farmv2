@@ -1,0 +1,87 @@
+Problem:
+Farm stores large snapshot blobs in Postgres (Supabase) and repeatedly pulls/parses them during normal UI flows (lists/modals/analysis). This creates memory pressure and unstable behavior. We upgraded to 2GB, but the architecture must stop treating “raw snapshot” as hot-path data.
+
+Principle:
+Split “hot metadata + summaries” from “cold raw blob”. The hot path must never touch the blob. Heavy analysis must be cached and paginated. Full blob fetch must be explicit and rare.
+
+Constraints:
+- FastAPI + asyncpg; keep stack.
+- Supabase pooler only (no direct DB).
+- Minimal UX changes: summary first; details on demand.
+- Implement migrations + backfill in repo (no manual console steps).
+
+Deliverables (must implement all):
+1) Separate snapshot metadata from snapshot blob
+   - Create two tables:
+     a) snapshots_meta (id, created_at, tenant/run refs, counts, plane_counts jsonb, size_bytes, hash)
+     b) snapshots_blob (snapshot_id PK/FK, blob jsonb or text)
+   - Guarantee: any “list” or “modal open” queries only hit snapshots_meta.
+   - Ensure existing code never SELECTs blob by default.
+
+2) Ingest-time summary computation
+   - When Farm creates a snapshot:
+     - compute counts (assets, observations, per-plane counts)
+     - compute size_bytes (len of serialized)
+     - compute hash (stable; sha256 of canonical serialized snapshot)
+     - write meta + blob in one transaction
+
+3) Explicit blob retrieval endpoint
+   - Add GET /api/snapshots/{id}/blob (or /raw) that returns ONLY the blob.
+   - This is used only for drill-down.
+
+4) Reconciliation analysis caching with invalidation
+   - Add reconciliation_analysis_cache table keyed by reconciliation_id:
+     - light_json jsonb (counts, KPIs, top-level)
+     - heavy_json jsonb nullable (detailed lists)
+     - computed_at timestamp
+     - snapshot_id + snapshot_hash
+   - Default behavior:
+     - modal loads LIGHT only (no blob read)
+     - heavy is fetched only when user clicks “Load details”
+   - Invalidate cache when snapshot_hash changes (or snapshot_id changes).
+   - Add ?refresh=1 to force recompute for debugging.
+
+5) Pagination for heavy lists
+   - Any “missed/false-positive/matched lists” must be paginated.
+   - Implement limit/offset or cursor. Default limit=100.
+   - UI requests pages, never downloads huge arrays.
+
+6) DB hygiene
+   - No SELECT * anywhere on snapshots tables.
+   - Create indexes needed for hot path:
+     - snapshots_meta(created_at desc)
+     - snapshots_meta(run_id/tenant_id if present)
+     - reconciliation_analysis_cache(reconciliation_id), plus snapshot_id
+
+7) Migrations + backfill
+   - Add Alembic migration(s) to create tables/indexes and migrate existing data:
+     - backfill snapshots_meta from existing snapshots
+     - move existing blob into snapshots_blob
+   - Provide a one-time backfill command/script runnable in repo.
+
+8) Verification
+   - Add logging counters:
+     - number of blob fetches
+     - ensure modal open does not fetch blob
+   - Add a small test/diagnostic route or script that:
+     - loads snapshot list
+     - opens reconciliation modal (light)
+     - loads heavy details page 1
+     - asserts blob only fetched for heavy path or explicit blob endpoint
+
+Execution order:
+1) Find current snapshots schema + read/write codepaths.
+2) Implement schema split + migration + backfill.
+3) Refactor snapshot queries to meta-only by default.
+4) Implement cache layer for reconciliation analysis + invalidation.
+5) Add pagination.
+6) Update UI to load light first, heavy on demand.
+7) Run diagnostics and report results.
+
+Acceptance criteria:
+- Normal UI flows (lists, modal open, light analysis) never read snapshots_blob.
+- Heavy analysis is cached and paginated.
+- Blob fetch is explicit and rare.
+- Works under pooler; stable under restarts; no memory blowups.
+
+Implement now. Do not ask me questions; inspect repo and decide correct locations.

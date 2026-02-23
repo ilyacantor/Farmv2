@@ -1,0 +1,54 @@
+{
+  "admission": {
+    "minimum_spend": 200,
+    "noise_floor": 1,
+    "zombie_window_days": 90
+  },
+  "scope": {
+    "include_infra": false,
+    "treat_directory_as_idp": false,
+    "use_policy_engine": false
+  },
+  "exclusions": [],
+  "infrastructure_seeds": [
+    "postgresql.org",
+    "mysql.com",
+    "apache.org",
+    "redis.io",
+    "redis.com",
+    "mongodb.com",
+    "elastic.co",
+    "elasticsearch.com",
+    "kafka.apache.org",
+    "nginx.org",
+    "docker.com",
+    "kubernetes.io",
+    "linux.org",
+    "gnu.org",
+    "python.org",
+    "nodejs.org",
+    "golang.org",
+    "rust-lang.org",
+    "ruby-lang.org",
+    "grafana.com",
+    "jenkins.io",
+    "terraform.io",
+    "hashicorp.com",
+    "prometheus.io"
+  ],
+  "corporate_root_domains": [
+    "google.com",
+    "microsoft.com",
+    "amazon.com",
+    "apple.com",
+    "hubspot.com",
+    "salesforce.com",
+    "servicenow.com",
+    "oracle.com",
+    "adobe.com",
+    "atlassian.com",
+    "dropbox.com",
+    "slack.com",
+    "zoom.com"
+  ]
+}

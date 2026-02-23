@@ -1,0 +1,61 @@
+No, the prompt I just gave you **only** fixes the 214 Admission FPs (the "Intranet Leak").
+
+It **missed** the "Zombie Fix" (Activity Rollup) we discussed right before that. If you only run the previous prompt, `google.com` will still be falsely flagged as a Zombie.
+
+Here is the **Master Package** that combines **everything** discussed in the last two turns into one execution per agent. This is the safest way to ensure nothing gets lost.
+
+### Master Prompt 1: AOD Agent (Fix Admission & Zombies)
+
+**Copy/Paste into AOD Replit:**
+
+```markdown
+# Urgent Engineering Order: Fix Admission Gates & Zombie Logic
+
+**Context:**
+We have two critical remaining issues:
+1.  **Admission Leak:** We are admitting internal hostnames (e.g., `images694`) because we lack strict TLD validation.
+2.  **False Zombies:** `google.com` is flagged as a Zombie because we are not counting activity on subdomains (`mail.google.com`).
+
+**Your Mission:**
+Execute both fixes below.
+
+## Fix 1: Enforce Strict TLD Validation (The Gate)
+In `admission.py` (or wherever the gate logic lives):
+* Before admitting *any* asset (Discovery or Finance), check the key with `tldextract`.
+* **Logic:** `if not tldextract.extract(key).suffix: REJECT("Invalid TLD / Internal Hostname")`
+* **Outcome:** `images694`, `auth-service` must be rejected. `google.com` must pass.
+
+## Fix 2: Implement Activity Rollup (The Zombie Cure)
+In `classification.py` (Zombie logic):
+* When checking if an asset is active, do not rely on strict string equality.
+* **Logic:** If the Asset Key is a valid domain, count activity from **ANY** log where `log.domain` ends with `.{asset_key}`.
+* **Example:** Asset `google.com` is **ACTIVE** if logs exist for `mail.google.com`.
+
+**Execute both changes now.**
+
+```
+
+---
+
+### Master Prompt 2: Farm Agent (Fix Expectations)
+
+**Copy/Paste into Farm Replit:**
+
+```markdown
+# Urgent Engineering Order: Align Expectations
+
+**Context:**
+Farm is currently penalizing AOD for correctly rejecting invalid keys (e.g., `paymentgateway`). We need to stop expecting these to appear in the catalog.
+
+**Your Mission:**
+Update the Reconciliation grading logic.
+
+## Fix: Filter Non-FQDNs
+In `reconciliation.py` -> `compute_expected_block()`:
+* After normalizing the expected keys, apply a strict filter.
+* **Logic:** If a key does not look like a valid domain (no dots `.` or no valid suffix), **remove it** from the `expected_shadows` / `expected_zombies` list.
+* **Outcome:** Farm will no longer list `paymentgateway` or `notificationservice` as "Missed Assets."
+
+**Execute this change now.**
+
+```

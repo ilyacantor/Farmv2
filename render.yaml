@@ -1,26 +1,61 @@
-# Render Blueprint for AOS-Farm
-# https://render.com/docs/blueprint-spec
-
 services:
   - type: web
-    name: aos-farm-backend
+    name: aos-farm
     runtime: python
     region: oregon
-    plan: free
+    plan: starter
     branch: dev
-    buildCommand: pip install -r backend/requirements.txt
-    startCommand: cd backend && uvicorn src.main:app --host 0.0.0.0 --port $PORT --workers 2
-    envVars:
-      - key: SUPABASE_URL
-        value: https://fdqldiqmskdihefzjalf.supabase.co
-      - key: SUPABASE_KEY
-        sync: false  # Set this manually in Render dashboard for security
-      - key: FARM_PORT
-        value: 10000
-      - key: LOG_LEVEL
-        value: info
-      - key: DEV_MODE
-        value: false
-      - key: CORS_ORIGINS
-        value: '["*"]'
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn src.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+
+      # --- Database (required — service will not start without this) ---
+      - key: SUPABASE_DB_URL
+        sync: false
+
+      # --- AOS Service URLs ---
+      - key: AOD_BASE_URL
+        sync: false          # AOD service URL — used for reconciliation callbacks
+      - key: AOD_SHARED_SECRET
+        sync: false          # Auth token sent to AOD in x-shared-secret header
+      - key: DCL_INGEST_URL
+        sync: false          # Was hardcoded prod URL; set per-environment in Render dashboard
+      - key: DCL_HEALTH_URL
+        sync: false          # Was hardcoded prod URL; set per-environment in Render dashboard
+      - key: DCL_INGEST_KEY
+        sync: false          # Auth key sent to DCL ingest (x-api-key header)
+      - key: PLATFORM_URL
+        sync: false          # Platform service URL for agent dispatch
+
+      # --- Farm identity ---
+      - key: FARM_URL
+        value: "https://farmv2.onrender.com"   # Farm's own public URL (for self-reference)
+      - key: DCL_TENANT_ID
+        value: "aos-demo"
+
+      # --- Feature flags ---
+      - key: BUSINESS_DATA_ENABLED
+        value: "true"
+      - key: BUSINESS_DATA_TIERS
+        value: "1,2,3"
+
+      # --- AOD discover URL ---
+      - key: AOD_DISCOVER_URL
+        sync: false          # Defaults to https://aodv3-1.onrender.com if unset
+
+      # --- DB pool tunables (optional; sensible defaults in code) ---
+      - key: DB_POOL_MIN
+        sync: false
+      - key: DB_POOL_MAX
+        sync: false
+      - key: DB_CONNECT_TIMEOUT
+        sync: false
+      - key: DB_SIMULATE_DOWN
+        value: "false"       # Safety: explicit false prevents accidental activation in prod
+
+      # --- CORS ---
+      - key: CORS_ORIGINS
+        sync: false

@@ -1,0 +1,89 @@
+This is a crucial catch. **You saved the product.**
+
+If we had let the agent enforce "Governance Required," AOD would have become a glorified Excel viewer for existing contracts. We would have lost the ability to detect *novel* risks (the "Unknown Unknowns"), which is the entire point of a Discovery tool.
+
+### The Situation Report
+
+We are in the **"Uncanny Valley"** of validation.
+
+* **Shadows (74%):** Strong. The engine works.
+* **Cataloged (5%):** Disaster. 723 False Positives.
+* **Rejected (25%):** Disaster. 481 Missed Rejections (meaning we admitted them).
+
+**Diagnosis:**
+The **Syntactic Gate (TLD Validation)** either wasn't applied, wasn't deployed, or—most likely—was only applied to *one* ingestion pipeline (e.g., Discovery) while the other pipelines (Simulated CMDB, Endpoint) are leaking the internal hostnames.
+
+Those 723 False Positives are the `images694`, `auth-service`, and `token865` keys flooding back in.
+
+### The Fix: "The Iron Dome" (Unified Gate)
+
+We cannot play "Whac-A-Mole" with pipelines. We need a single **Unified Admission Function** that every piece of evidence must pass through, regardless of whether it came from a bank statement or a firewall log.
+
+Here are the correcting orders.
+
+---
+
+### Prompt Package 1: AOD Agent (The Iron Dome)
+
+**Copy/Paste into AOD Replit:**
+
+```markdown
+# EXECUTIVE ORDER: UNIFIED ADMISSION GATE
+
+**Context:**
+We still have 700+ False Positives. The "Syntactic Gate" (TLD Check) failed to stop internal hostnames.
+**Hypothesis:** You likely applied the check to the `Discovery` pipeline but missed the `CMDB` or `Endpoint` ingestion paths. `images694` is bypassing the check.
+
+**Your Mission:**
+Centralize admission logic into a single "Iron Dome" function that **nothing** can bypass.
+
+## Code Changes
+1.  **Create `validate_key_integrity(key)`:**
+    * This function must run `tldextract`.
+    * **Rule:** If `suffix` is empty (e.g., "internal", "local", or blank), return `FALSE`.
+    * **Rule:** If key contains spaces or invalid chars, return `FALSE`.
+
+2.  **Apply to ALL Streams:**
+    * **Discovery:** Call this before aggregating sources.
+    * **Finance:** Call this before creating a Finance Asset. (If "Workday Inc" fails, try to resolve domain. If no domain, REJECT).
+    * **CMDB/IdP:** Call this before syncing. **We do not catalog internal CMDB CIs that lack valid domains.**
+
+3.  **Fix `okta.com` / `workday.com` (Normalization):**
+    * Ensure that high-value assets are not being rejected by this gate.
+    * If the key is `Okta`, map it to `okta.com` *before* the gate.
+
+**Outcome:**
+The 700+ internal hostnames must trigger a "Rejected: Invalid Key" log.
+
+```
+
+---
+
+### Prompt Package 2: Farm Agent (Sync Exclusions)
+
+**Copy/Paste into Farm Replit:**
+
+```markdown
+# Urgent Engineering Order: Sync Exclusion Knowledge
+
+**Context:**
+Farm is marking `tech.net`, `cloud.net`, `world.net`, `services.io`, and `plus.net` as "Missed Shadows."
+**Reality:** AOD is correctly rejecting them because we added them to the Exclusion List.
+**Root Cause:** Farm's local knowledge of the exclusion list is stale.
+
+**Your Mission:**
+Update your local `policy_config` (or mock) to match AOD's blacklist.
+
+## Update Exclusions
+Ensure your grader knows these are now **Banned**:
+`["tech.net", "cloud.net", "world.net", "services.io", "plus.net"]`
+
+**Logic Update:**
+In `compute_expected_block()`, if a generated shadow matches this list, **remove it from expectations.**
+* *Old Expectation:* "I generated `tech.net`, so AOD must find it."
+* *New Expectation:* "I generated `tech.net`, but it is Banned, so AOD must Reject it."
+
+**Outcome:**
+The 5 "Missed Shadows" will disappear from the error report.
+
+```

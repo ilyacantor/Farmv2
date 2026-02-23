@@ -1,0 +1,64 @@
+🟢 FORWARD-SAFE SIMPLIFY PROMPT — do exactly this, no extra features
+
+We are turning the Farm Visual Explainer into an AT-A-GLANCE infographic. The current screen is too detailed and inherently confusing. Simplify radically.
+
+HARD RULES
+- Remove all dynamic numbers, recalcs, FP/FN, and any “data realism” behavior.
+- Remove the 6-step AOD pipeline list. Replace with 3 phases max.
+- Remove Ground Truth node and all reconciliation metrics.
+- Keep Farm visually subordinate/utility (smaller, lower, left).
+- Keep ONE simple feedback loop labeled “Policy / Tuning”.
+
+FINAL COMPOSITION (ONLY THESE 3 MAIN NODES + 1 LOOP)
+1) AOD (primary, largest, centered)
+2) Farm (utility, smaller, bottom-left feeding AOD)
+3) Outputs (right side, medium)
+
+EDGES (ONLY THESE)
+- Farm -> AOD (label: “Synthetic Snapshot”)
+- AOD -> Outputs (label: “Catalog + Findings”)
+- Outputs -> AOD (dashed loop label: “Policy / Tuning”)
+
+NODE CONTENT (MINIMAL COPY)
+A) Farm node title: “Farm”
+subtitle: “Synthetic Enterprise Generator”
+inside: 2 bullets only:
+- “Creates evidence across planes”
+- “Feeds test snapshots into AOD”
+Do NOT list planes as separate nodes. If you must show planes, show them as tiny icon chips in one row (IdP, CMDB, Cloud, Finance, Network) with no text.
+
+B) AOD node title: “AOD”
+subtitle: “Discovery & Catalog”
+inside: EXACTLY 3 pill chips (not a vertical list):
+- “Ingest”
+- “Resolve”
+- “Classify”
+
+C) Outputs node title: “Outputs”
+inside: EXACTLY 2 items (stacked):
+- “Asset Catalog”
+- “Findings (gaps / shadow)”
+No numbers.
+
+TOGGLES
+- Delete Scale and Realism toggles entirely.
+- Keep only ONE optional toggle: “Show future layers”
+If ON, show grey dashed boxes to the far right labeled:
+- “AAM”
+- “DCL”
+- “Agents”
+Connected from Outputs with dashed grey lines.
+
+INTERACTIONS (ONLY THESE)
+- Hover tooltip on the 3 main nodes (1–2 sentences each).
+- Click opens a right drawer with short explanation (max 6 lines) for that node.
+No tables, no metrics, no reason codes.
+
+LAYOUT / STYLE
+- Dark theme as-is, glass panels, cyan primary edges.
+- AOD is the visual anchor and largest element.
+- Farm is smaller and clearly a utility input.
+- Keep whitespace clean; fitView with padding ~0.20.
+
+DELIVERABLE
+Replace the current page with the simplified infographic. No additional nodes, no recalcs, no extra edges.

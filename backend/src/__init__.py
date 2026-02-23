@@ -1,1 +1,0 @@
-"""AOS-Farm Backend Package."""

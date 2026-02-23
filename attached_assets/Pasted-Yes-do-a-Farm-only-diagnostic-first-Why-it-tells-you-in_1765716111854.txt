@@ -1,0 +1,107 @@
+Yes — do a **Farm-only diagnostic** first. Why: it tells you, in plain English, whether the snapshot *contains* the evidence patterns for shadow/zombie (or other “spooky” cases) **before AOD touches it**. Then you’ll know if it’s Farm distribution or AOD logic.
+
+Here’s the **single Replit prompt** to run in **Farm**.
+
+---
+
+## Replit Prompt — Farm Snapshot “Spooky Conditions” Diagnostic (No AOD)
+
+> Build a fast diagnostic that analyzes a Farm snapshot and reports whether it contains evidence patterns that should produce “spooky” conditions (e.g., shadow, zombie) that AOD ought to report on.
+>
+> Constraints:
+>
+> * Do NOT change snapshot generation yet.
+> * Do NOT add ground-truth labels.
+> * This is read-only analysis of existing snapshots.
+> * Output must be plain English and quick.
+>
+> Implement:
+>
+> 1. Add a script: `scripts/spooky_check.py`
+>
+> * It should load a snapshot in one of two ways:
+>   a) via HTTP: `FARM_URL` + `snapshot_id` (fetch `GET /api/snapshots/{snapshot_id}`)
+>   b) or from a local JSON file path argument (optional)
+>
+> 2. Define **evidence-only heuristics** (no assumptions about AOD):
+>
+> * Treat “IdP present” if there is an IdP object whose normalized name OR domain matches a system candidate.
+> * Treat “CMDB present” similarly.
+> * Treat “Finance present” if there is a contract or transaction whose vendor/product/memo matches the candidate.
+> * Treat “Activity present” only if there are timestamps within window days (default 30):
+>
+>   * discovery observed_at
+>
+>   * idp last_login_at
+>
+>   * endpoint last_seen_at
+>
+>   * network dns/proxy timestamps
+>
+>   * finance txn date counts as “financial activity” but must be called out separately
+>
+> 3. System candidate extraction:
+>
+> * Create “system candidates” from discovery observations by grouping by normalized domain if present, else normalized observed_name.
+> * For each candidate, compute booleans:
+>
+>   * idp_present, cmdb_present, finance_present, cloud_present
+>
+>   * activity_present (usage activity), financial_activity_present
+>
+> 4. Detect these “spooky opportunities” (evidence-only):
+>
+> * Shadow opportunity:
+>
+>   * (finance_present OR cloud_present) AND activity_present
+>   * AND idp_present == false AND cmdb_present == false
+> * Zombie opportunity:
+>
+>   * (idp_present OR cmdb_present)
+>   * AND activity_present == false
+>   * AND there exist stale timestamps (e.g., last_login_at older than window OR only old observations)
+> * Also report “Indeterminate” bucket:
+>
+>   * candidates with no usable timestamps anywhere (can’t assess zombie)
+>
+> 5. Output (plain English):
+>
+> * Snapshot meta (tenant_id, schema_version, generated_at)
+> * Counts:
+>
+>   * total discovery observations
+>   * total candidates created
+>   * candidates with idp_present
+>   * candidates with cmdb_present
+>   * candidates with finance_present
+>   * candidates with activity_present
+>   * shadow opportunities count
+>   * zombie opportunities count
+>   * indeterminate count
+> * List top 10 shadow opportunities and top 10 zombie opportunities with:
+>
+>   * candidate key (domain/name)
+>
+>   * which planes matched (idp/cmdb/finance/cloud)
+>
+>   * what activity timestamps were found (and newest timestamp)
+>
+> 6. Make it runnable:
+>
+> * `python scripts/spooky_check.py --snapshot-id <id> --farm-url <url> --window-days 30`
+> * Exit code:
+>
+>   * 0 if no errors
+>   * 2 if parsing/shape issues
+>
+> Deliver proof:
+> Run it against one of the pre-seeded snapshots and paste the plain-English output.
+>
+> This is a diagnostic only. Do not modify generation yet.
+
+---
+
+Once you have that output, we’ll know in one glance:
+
+* Farm **has** shadow/zombie opportunities → AOD code is missing them
+* Farm **doesn’t** → we adjust Farm generation (intentionally)

@@ -1,0 +1,38 @@
+Here's the full contract that Farm needs to follow when pushing data to DCL:
+
+Endpoint: POST /api/dcl/ingest
+
+Headers:
+
+Header	Required?	Description
+x-pipe-id	Yes (strongly recommended)	The UUID pipe_id from the AAM manifest — this is THE join key that links the data back to its pipe definition
+x-run-id	Optional	Farm's run ID; DCL generates one if omitted
+x-dispatch-id	Optional	Groups all pipes from one manifest push; if omitted, DCL derives it deterministically from run_timestamp + tenant_id + snapshot_name
+x-schema-hash	Optional	SHA-256 of the field names; DCL computes its own and flags drift if they differ
+x-api-key	Optional	Only required if DCL_INGEST_KEY env var is set on DCL side
+JSON Body:
+
+{
+  "source_system": "salesforce",          // required — vendor/system name
+  "tenant_id": "acme_corp",              // required — which tenant this belongs to
+  "snapshot_name": "revenue_q1",          // required — logical dataset name
+  "run_timestamp": "2026-02-16T12:00:00Z", // required — ISO-8601 UTC, when extraction started
+  "schema_version": "1.0",               // required — version of the schema map used
+  "row_count": 150,                       // required — expected len(rows), validated server-side
+  "rows": [                              // required — the actual data records
+    {"field_a": "val1", "field_b": 123},
+    {"field_a": "val2", "field_b": 456}
+  ],
+  "runner_id": "runner_xyz"              // optional — which runner produced this
+}
+Key rules:
+
+pipe_id is the join key — It must match a pipe definition registered via AAM's /export-pipes call. If pipe definitions exist and the pipe_id doesn't match, DCL returns a hard 422 NO_MATCHING_PIPE rejection.
+
+Dispatch grouping — All pipes from the same manifest should share the same run_timestamp (to the second), tenant_id, and snapshot_name. That's how DCL groups them into one dispatch for reconciliation. You can also pass x-dispatch-id explicitly if you prefer.
+
+Field name flexibility — DCL accepts camelCase alternatives (tenantId, snapshotName, runTimestamp, etc.) and will normalize them. It also accepts data, records, or payload in place of rows.
+
+Success response returns the dcl_run_id, dispatch_id, row count accepted, schema hash computed, and any drift detected.
+
+Guard bypass — If no pipe definitions have been registered yet (export-pipes hasn't been called), the guard is bypassed with a warning so self-directed flows still work.
