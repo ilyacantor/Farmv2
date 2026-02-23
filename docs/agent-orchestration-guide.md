@@ -38,7 +38,7 @@ POST /api/agents/run-stress-test
 Content-Type: application/json
 
 {
-  "target_url": "https://your-platform.replit.app",
+  "target_url": "https://your-platform-url.com",
   "scale": "medium",
   "workflow_count": 10,
   "chaos_rate": 0.2,

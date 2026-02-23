@@ -321,7 +321,7 @@ app/agentic/checkpointer.py
 
 ## Environment Notes
 
-- AOA runs on Replit (configured deployment)
+- AOA runs locally or deployed via Render
 - No sqlalchemy required for stress testing (lazy imports)
 - Redis optional for event streaming (falls back to in-memory)
 - All 6 AOA RACI modules integrated (registry, lifecycle, approval, coordination, observability, governance)
