@@ -86,7 +86,8 @@ async def get_runs_by_aam_run(run_id: str):
     """Find all Farm executions triggered by a single AAM run_id.
 
     An AAM batch dispatch produces one run_id across multiple pipes.
-    This endpoint shows all Farm executions for that batch.
+    This endpoint shows all Farm executions for that batch with a
+    structured run-level summary including per-system and per-error breakdowns.
     """
     async with db_connection() as conn:
         rows = await conn.fetch(
@@ -100,12 +101,60 @@ async def get_runs_by_aam_run(run_id: str):
                ORDER BY created_at DESC""",
             run_id,
         )
+
+        # Status counts
+        completed = sum(1 for r in rows if r["status"] == "completed")
+        failed = sum(1 for r in rows if r["status"] == "failed")
+        rejected = sum(1 for r in rows if r["status"] == "rejected_by_dcl")
+
+        # Per-system breakdown
+        per_system: dict[str, dict[str, int]] = {}
+        for r in rows:
+            sys_key = r["source_system"]
+            if sys_key not in per_system:
+                per_system[sys_key] = {"completed": 0, "failed": 0, "rejected_by_dcl": 0}
+            per_system[sys_key][r["status"]] = per_system[sys_key].get(r["status"], 0) + 1
+
+        # Error type breakdown
+        error_types: dict[str, int] = {}
+        for r in rows:
+            if r["error_type"]:
+                error_types[r["error_type"]] = error_types.get(r["error_type"], 0) + 1
+
+        # Timing
+        elapsed_values = [r["elapsed_ms"] for r in rows if r["elapsed_ms"] is not None]
+        total_rows_generated = sum(r["rows_generated"] or 0 for r in rows)
+        total_rows_accepted = sum(r["rows_accepted"] or 0 for r in rows if r["rows_accepted"] is not None)
+
+        # Failed pipes detail (so operators can see at a glance what failed)
+        failed_pipes = [
+            {
+                "pipe_id": r["pipe_id"],
+                "source_system": r["source_system"],
+                "error_type": r["error_type"],
+                "error_message": r["error_message"],
+                "dcl_status_code": r["dcl_status_code"],
+            }
+            for r in rows
+            if r["status"] in ("failed", "rejected_by_dcl")
+        ]
+
         summary = {
             "run_id": run_id,
             "total": len(rows),
-            "completed": sum(1 for r in rows if r["status"] == "completed"),
-            "failed": sum(1 for r in rows if r["status"] == "failed"),
-            "rejected_by_dcl": sum(1 for r in rows if r["status"] == "rejected_by_dcl"),
+            "completed": completed,
+            "failed": failed,
+            "rejected_by_dcl": rejected,
+            "total_rows_generated": total_rows_generated,
+            "total_rows_accepted": total_rows_accepted,
+            "per_system": per_system,
+            "error_types": error_types if error_types else None,
+            "failed_pipes": failed_pipes if failed_pipes else None,
+            "timing": {
+                "min_ms": min(elapsed_values) if elapsed_values else None,
+                "max_ms": max(elapsed_values) if elapsed_values else None,
+                "avg_ms": round(sum(elapsed_values) / len(elapsed_values)) if elapsed_values else None,
+            },
         }
         return {"summary": summary, "runs": [dict(r) for r in rows]}
 

@@ -401,11 +401,16 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
     )
 
     seed = hash(run_id) % (2**31)
-    profile = BusinessProfile(seed=seed)
 
-    financial_model = FinancialModel(Assumptions())
-    model_quarters = financial_model.generate()
-    profile = BusinessProfile.from_model_quarters(model_quarters, seed=seed)
+    # Financial model + profile construction is CPU-bound; offload to thread
+    # to keep the event loop free for concurrent requests.
+    def _build_profile():
+        p = BusinessProfile(seed=seed)
+        fm = FinancialModel(Assumptions())
+        quarters = fm.generate()
+        return BusinessProfile.from_model_quarters(quarters, seed=seed)
+
+    profile = await asyncio.to_thread(_build_profile)
 
     spec = _GENERATOR_REGISTRY[generator_key]
     gen_class = spec["class"]
@@ -414,21 +419,26 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
         "run_timestamp", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     )
 
-    try:
+    # Generators are CPU-bound synchronous code. Running them directly on the
+    # async event loop blocks ALL other requests (the primary cause of 503s
+    # under concurrent load — Render's LB times out waiting for a free worker).
+    # asyncio.to_thread() offloads to a thread so the loop stays responsive.
+    def _run_generator():
         if interface == "generate_profile":
-            generator = gen_class(seed=seed)
-            generated_data = generator.generate(profile, farm_run_id, run_timestamp)
+            gen = gen_class(seed=seed)
+            return gen.generate(profile, farm_run_id, run_timestamp)
         elif interface == "init_profile":
-            generator = gen_class(profile=profile, seed=seed)
-            generated_data = generator.generate(
-                run_id=farm_run_id, run_timestamp=run_timestamp
-            )
+            gen = gen_class(profile=profile, seed=seed)
+            return gen.generate(run_id=farm_run_id, run_timestamp=run_timestamp)
         elif interface == "generate_profile_only":
-            generator = gen_class(seed=seed)
-            generated_data = generator.generate(profile)
+            gen = gen_class(seed=seed)
+            return gen.generate(profile)
         else:
-            generator = gen_class(seed=seed)
-            generated_data = generator.generate(profile, farm_run_id, run_timestamp)
+            gen = gen_class(seed=seed)
+            return gen.generate(profile, farm_run_id, run_timestamp)
+
+    try:
+        generated_data = await asyncio.to_thread(_run_generator)
     except Exception as e:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         logger.error(
@@ -560,7 +570,19 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
             f"tenant_id={tenant_id}, snapshot_name={snapshot_name}"
         )
     except Exception as db_err:
-        logger.warning(f"Failed to persist manifest run {farm_run_id}: {db_err}")
+        logger.error(
+            f"PERSISTENCE FAILURE: run {farm_run_id} NOT saved to DB. "
+            f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
+            f"rows_generated={rows_generated}, elapsed_ms={elapsed_ms}, "
+            f"dcl_status={push_result.status_code}, error: {db_err}"
+        )
+
+    # Per-pipe completion log — one-line summary for every manifest, success or failure
+    logger.info(
+        f"MANIFEST DONE: run_id={run_id}, pipe_id={pipe_id}, status={status}, "
+        f"rows={rows_generated}, dcl_status={push_result.status_code}, "
+        f"elapsed_ms={elapsed_ms}, farm_run_id={farm_run_id}"
+    )
 
     recon_triggered = False
     if manifest.farm_verification and push_result.status == "success":
@@ -625,17 +647,50 @@ async def batch_manifest_intake(request: BatchManifestRequest):
             try:
                 return await _execute_single_manifest(m)
             except HTTPException as exc:
-                logger.warning(
+                logger.error(
                     f"Manifest failed with HTTP {exc.status_code} for "
-                    f"pipe_id={m.source.pipe_id}: {exc.detail}"
+                    f"pipe_id={m.source.pipe_id}, run_id={m.run_id}: {exc.detail}"
                 )
-                return None
+                # Return a synthetic failed result so the batch summary
+                # preserves the pipe_id and error context (not just "execution_error")
+                return ManifestExecutionResult(
+                    run_id=m.run_id,
+                    pipe_id=m.source.pipe_id,
+                    farm_run_id=f"failed_{uuid.uuid4().hex[:8]}",
+                    status="failed",
+                    source_system=m.source.system,
+                    rows_generated=0,
+                    push_result=DCLPushResult(
+                        run_id=m.run_id,
+                        pipe_id=m.source.pipe_id,
+                        farm_run_id=f"failed_{uuid.uuid4().hex[:8]}",
+                        status="failed",
+                        error=str(exc.detail)[:500],
+                        error_type=f"http_{exc.status_code}",
+                    ),
+                )
             except Exception as exc:
                 logger.error(
-                    f"Unexpected error processing manifest pipe_id={m.source.pipe_id}: {exc}",
+                    f"Unexpected error processing manifest pipe_id={m.source.pipe_id}, "
+                    f"run_id={m.run_id}: {exc}",
                     exc_info=True,
                 )
-                return None
+                return ManifestExecutionResult(
+                    run_id=m.run_id,
+                    pipe_id=m.source.pipe_id,
+                    farm_run_id=f"failed_{uuid.uuid4().hex[:8]}",
+                    status="failed",
+                    source_system=m.source.system,
+                    rows_generated=0,
+                    push_result=DCLPushResult(
+                        run_id=m.run_id,
+                        pipe_id=m.source.pipe_id,
+                        farm_run_id=f"failed_{uuid.uuid4().hex[:8]}",
+                        status="failed",
+                        error=str(exc)[:500],
+                        error_type="execution_error",
+                    ),
+                )
 
     results = await asyncio.gather(*[_run_with_semaphore(m) for m in manifests])
 
@@ -643,28 +698,57 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     pipes_succeeded = 0
     pipes_failed = 0
     errors_summary: Dict[str, int] = {}
+    per_system: Dict[str, Dict[str, int]] = {}  # system -> {succeeded, failed}
 
     for result in results:
         if result is None:
+            # Should not happen now, but guard against it
             pipes_pushed += 1
             pipes_failed += 1
             errors_summary["execution_error"] = errors_summary.get("execution_error", 0) + 1
             continue
 
+        pipes_pushed += 1
+
+        # Track per-system breakdown
+        sys_key = result.source_system
+        if sys_key not in per_system:
+            per_system[sys_key] = {"succeeded": 0, "failed": 0}
+
         if result.push_result is not None:
-            pipes_pushed += 1
             push_results.append(result.push_result)
 
             if result.push_result.status == "success":
                 pipes_succeeded += 1
-            elif result.push_result.status in ("rejected", "failed"):
+                per_system[sys_key]["succeeded"] += 1
+            else:
                 pipes_failed += 1
+                per_system[sys_key]["failed"] += 1
 
             if result.push_result.error_type:
                 et = result.push_result.error_type
                 errors_summary[et] = errors_summary.get(et, 0) + 1
+        else:
+            # Result with no push_result means generation failed before push
+            if result.status == "failed":
+                pipes_failed += 1
+                per_system[sys_key]["failed"] += 1
+                errors_summary["generation_error"] = errors_summary.get("generation_error", 0) + 1
 
     elapsed = time.monotonic() - start_time
+
+    # === Per-run summary log ===
+    # This is the structured log that makes batch outcomes visible at a glance.
+    # Without this, operators must scan individual pipe logs to reconstruct what happened.
+    logger.info(
+        f"BATCH SUMMARY: batch_run_id={batch_run_id}, "
+        f"batch_id={request.batch_id}, "
+        f"received={len(manifests)}, pushed={pipes_pushed}, "
+        f"succeeded={pipes_succeeded}, failed={pipes_failed}, "
+        f"elapsed={round(elapsed, 2)}s, "
+        f"errors={dict(errors_summary) if errors_summary else 'none'}, "
+        f"per_system={dict(per_system)}"
+    )
 
     return BatchManifestResponse(
         run_id=batch_run_id,

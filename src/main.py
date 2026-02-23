@@ -68,7 +68,7 @@ class APIJSONErrorMiddleware(BaseHTTPMiddleware):
 
         try:
             response = await call_next(request)
-            
+
             if response.status_code == 404:
                 logger.warning(f"404 NOT FOUND: {request.method} {request.url.path} (request_id={request_id})")
                 return JSONResponse(
@@ -79,7 +79,14 @@ class APIJSONErrorMiddleware(BaseHTTPMiddleware):
                         "path": request.url.path
                     }
                 )
-            
+
+            # Log all non-404 error responses so 503s and 500s are visible in logs
+            if response.status_code >= 400:
+                logger.warning(
+                    f"<<< {response.status_code} {request.method} {request.url.path} "
+                    f"(request_id={request_id})"
+                )
+
             return response
             
         except Exception as e:
@@ -177,7 +184,12 @@ async def db_unavailable_handler(request: Request, exc: DBUnavailable):
     """Handle database unavailable errors with 503 and retry info."""
     retry_after = int(exc.retry_after) if exc.retry_after else 60
     headers = {"Retry-After": str(retry_after)}
-    
+
+    logger.error(
+        f"503 DB_UNAVAILABLE: {request.method} {request.url.path} — "
+        f"{exc.message} (retry_after={retry_after}s)"
+    )
+
     if request.url.path.startswith('/api'):
         return JSONResponse(
             status_code=503,
