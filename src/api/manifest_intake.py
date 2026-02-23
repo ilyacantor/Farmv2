@@ -95,6 +95,8 @@ _CATEGORY_TO_GENERATOR = {
     "marketing": "salesforce",
     "commerce": "chargebee",
     "payments": "chargebee",
+    "event_bus": "aws_cost_explorer",
+    "messaging": "aws_cost_explorer",
     # AOD catch-all — "other" is assigned when AOD can't classify the system.
     # Route to salesforce archetype (simplest generator, produces generic rows).
     "other": "salesforce",
@@ -130,22 +132,14 @@ def _resolve_generator_key(manifest: JobManifest) -> str:
         )
         return resolved
 
-    logger.error(
-        f"NO_GENERATOR_ROUTE: system='{manifest.source.system}', "
-        f"category='{category or None}' — no direct match and no category for routing"
+    # Fallback: unknown category → salesforce (generic generator).
+    # Log a warning so we can add explicit routing later, but do NOT reject.
+    logger.warning(
+        f"Generator fallback: system='{manifest.source.system}', "
+        f"category='{category or None}' not in routing table — "
+        f"falling back to 'salesforce' archetype"
     )
-    raise HTTPException(
-        status_code=422,
-        detail={
-            "error": "NO_GENERATOR_ROUTE",
-            "system": manifest.source.system,
-            "category": category or None,
-            "message": "No direct match and no category for routing.",
-            "hint": "AAM should include source.category in the manifest.",
-            "available_categories": list(_CATEGORY_TO_GENERATOR.keys()),
-            "available_systems": list(_GENERATOR_REGISTRY.keys()),
-        },
-    )
+    return "salesforce"
 
 
 def _compute_schema_hash(rows: List[Dict]) -> str:
