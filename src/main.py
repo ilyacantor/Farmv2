@@ -319,6 +319,7 @@ async def manifest_self_test(
 
 
 @app.get("/api/health")
+@app.get("/health")
 async def health_check():
     """Health check endpoint with DB status."""
     healthy, status_msg = is_healthy()
