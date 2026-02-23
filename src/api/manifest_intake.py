@@ -62,6 +62,7 @@ _GENERATOR_REGISTRY = {
 }
 
 _CATEGORY_TO_GENERATOR = {
+    # Primary categories (1:1 with generators)
     "crm": "salesforce",
     "erp": "netsuite",
     "billing": "chargebee",
@@ -70,8 +71,33 @@ _CATEGORY_TO_GENERATOR = {
     "devops": "jira",
     "observability": "datadog",
     "infrastructure": "aws_cost_explorer",
+    # AOD category synonyms — same domain, different label
+    "hcm": "workday",
+    "itsm": "zendesk",
+    "finance": "netsuite",
+    "accounting": "netsuite",
+    "idp": "aws_cost_explorer",
+    "identity": "aws_cost_explorer",
+    "data": "aws_cost_explorer",
+    "data_warehouse": "aws_cost_explorer",
+    "api_gateway": "aws_cost_explorer",
     "cloud": "aws_cost_explorer",
     "cost": "aws_cost_explorer",
+    "security": "aws_cost_explorer",
+    "saas": "zendesk",
+    "helpdesk": "zendesk",
+    "monitoring": "datadog",
+    "apm": "datadog",
+    "ci_cd": "jira",
+    "scm": "jira",
+    "project_management": "jira",
+    "collaboration": "jira",
+    "marketing": "salesforce",
+    "commerce": "chargebee",
+    "payments": "chargebee",
+    # AOD catch-all — "other" is assigned when AOD can't classify the system.
+    # Route to salesforce archetype (simplest generator, produces generic rows).
+    "other": "salesforce",
 }
 
 
