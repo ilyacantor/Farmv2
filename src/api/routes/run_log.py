@@ -10,6 +10,7 @@ Endpoints:
 - GET  /api/runs/{farm_run_id}      Full run detail with push result
 - GET  /api/runs/by-pipe/{pipe_id}  All runs for a specific pipe
 - GET  /api/runs/by-aam-run/{run_id} All Farm executions for an AAM batch run
+- GET  /api/farm/status/{job_id}    Quick execution status + row counts for AAM polling
 """
 import logging
 from typing import Optional
@@ -169,3 +170,45 @@ async def get_run_detail(farm_run_id: str):
             detail=f"No manifest run found with farm_run_id={farm_run_id}",
         )
     return run
+
+
+@router.get("/api/farm/status/{job_id}")
+async def get_farm_status(job_id: str):
+    """Quick execution status for a single job — designed for AAM polling.
+
+    Accepts either a farm_run_id or AAM's run_id (job_id). Tries
+    farm_run_id first, then falls back to run_id. Returns the most
+    recent run if multiple exist for the same run_id.
+    """
+    # Try farm_run_id match first
+    run = await get_manifest_run(job_id)
+    if not run:
+        # Fall back to AAM run_id match (most recent)
+        async with db_connection() as conn:
+            row = await conn.fetchrow(
+                """SELECT farm_run_id, run_id, status, rows_generated,
+                          rows_accepted, elapsed_ms, error_message
+                   FROM manifest_runs
+                   WHERE run_id = $1
+                   ORDER BY created_at DESC
+                   LIMIT 1""",
+                job_id,
+            )
+            if row:
+                run = dict(row)
+
+    if not run:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No manifest run found for job_id={job_id}",
+        )
+
+    return {
+        "job_id": job_id,
+        "farm_run_id": run.get("farm_run_id"),
+        "status": run.get("status"),
+        "rows_generated": run.get("rows_generated", 0),
+        "rows_accepted": run.get("rows_accepted"),
+        "elapsed_ms": run.get("elapsed_ms"),
+        "error_message": run.get("error_message"),
+    }
