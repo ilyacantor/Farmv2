@@ -1779,34 +1779,46 @@
             btn.textContent = 'Loading...';
             btn.disabled = true;
             try {
-                // First, get the most recent run to find the latest aam_run_id
-                const resp = await fetch('/api/runs?limit=1');
+                // Fetch recent pipes to find the most recent complete run (aam_run_id)
+                const resp = await fetch('/api/runs?limit=100');
                 if (!resp.ok) {
                     throw new Error(`HTTP ${resp.status}`);
                 }
-                const runs = await resp.json();
-                console.log('DEBUG: /api/runs?limit=1 returned:', runs);
+                const pipes = await resp.json();
 
-                if (!runs || runs.length === 0) {
+                if (!pipes || pipes.length === 0) {
                     // No runs yet
                     document.getElementById('rlNoRun').classList.remove('hidden');
                     document.getElementById('rlCurrentRun').classList.add('hidden');
                     return;
                 }
 
-                // Get the most recent aam_run_id
-                const latestRunId = runs[0].run_id;
-                console.log('DEBUG: Latest aam_run_id:', latestRunId);
+                // Group pipes by aam_run_id and find the most recent run
+                const runGroups = {};
+                for (const pipe of pipes) {
+                    const runId = pipe.run_id;
+                    if (!runGroups[runId]) {
+                        runGroups[runId] = {
+                            run_id: runId,
+                            max_created_at: pipe.created_at
+                        };
+                    }
+                    if (pipe.created_at > runGroups[runId].max_created_at) {
+                        runGroups[runId].max_created_at = pipe.created_at;
+                    }
+                }
 
-                // Fetch aggregated data for this run
+                // Find the run with the most recent activity
+                const runs = Object.values(runGroups);
+                runs.sort((a, b) => new Date(b.max_created_at) - new Date(a.max_created_at));
+                const latestRunId = runs[0].run_id;
+
+                // Fetch complete aggregated data for this run
                 const aggResp = await fetch(`/api/runs/by-aam-run/${latestRunId}`);
                 if (!aggResp.ok) {
                     throw new Error(`HTTP ${aggResp.status}`);
                 }
                 const aggData = await aggResp.json();
-                console.log('DEBUG: /api/runs/by-aam-run response:', aggData);
-                console.log('DEBUG: Total pipes in summary:', aggData.summary?.total);
-                console.log('DEBUG: Number of runs in array:', aggData.runs?.length);
 
                 rlCurrentRunData = aggData;
                 rlRenderCurrentRun(aggData);
