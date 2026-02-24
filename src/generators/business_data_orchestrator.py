@@ -331,19 +331,22 @@ class BusinessDataOrchestrator:
                         except Exception:
                             resp_data = {"error": response.text[:500]}
 
-                        if resp_data.get("error") == "NO_MATCHING_PIPE":
+                        # DCL may wrap error at top level OR inside FastAPI's {"detail": {...}}
+                        error_code = resp_data.get("error") or resp_data.get("detail", {}).get("error")
+                        detail = resp_data.get("detail") or resp_data
+                        if error_code == "NO_MATCHING_PIPE":
                             logger.critical(
                                 f"NO_MATCHING_PIPE: DCL rejected pipe_id={pipe_id}. "
                                 f"No schema blueprint exists. This is expected in "
                                 f"self-directed mode (Farm-internal pipe_ids don't "
                                 f"participate in the late-binding join). "
                                 f"For joinable pushes, use manifest-driven mode. "
-                                f"Hint: {resp_data.get('hint', 'N/A')}"
+                                f"Hint: {detail.get('hint', 'N/A')}"
                             )
-                            result["error"] = resp_data.get("message", "NO_MATCHING_PIPE")
+                            result["error"] = detail.get("message", "NO_MATCHING_PIPE")
                             result["error_type"] = "NO_MATCHING_PIPE"
-                            result["hint"] = resp_data.get("hint")
-                            result["available_pipes"] = resp_data.get("available_pipes")
+                            result["hint"] = detail.get("hint")
+                            result["available_pipes"] = detail.get("available_pipes")
                             return result
 
                         # Other 422 errors
