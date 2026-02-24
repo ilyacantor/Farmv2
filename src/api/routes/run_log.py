@@ -68,7 +68,7 @@ async def get_runs_by_pipe(
         rows = await conn.fetch(
             """SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                       tenant_id, snapshot_name, source_system, category, generator_key,
-                      status, rows_generated, rows_accepted, dcl_status_code,
+                      status, rows_generated, rows_pushed, rows_accepted, dcl_status_code,
                       error_type, error_message, schema_drift,
                       created_at, elapsed_ms
                FROM manifest_runs
@@ -95,7 +95,7 @@ async def get_runs_by_aam_run(aam_run_id: str):
         rows = await conn.fetch(
             """SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                       tenant_id, snapshot_name, source_system, category, generator_key,
-                      status, rows_generated, rows_accepted, dcl_status_code,
+                      status, rows_generated, rows_pushed, rows_accepted, dcl_status_code,
                       error_type, error_message, schema_drift,
                       created_at, elapsed_ms
                FROM manifest_runs
