@@ -681,7 +681,9 @@ async def manifest_intake(manifest: JobManifest):
     The manifest's source.pipe_id is the ONLY identity used in DCL push
     headers. Generator-internal pipe_ids are not used.
     """
-    return await _execute_single_manifest(manifest)
+    # Single dispatch is a batch of one — use run_id as the aam_run_id
+    # so the NLQ tab can always display a traceable AAM correlation key.
+    return await _execute_single_manifest(manifest, aam_run_id=manifest.run_id)
 
 
 @router.post("/manifest-intake/batch", response_model=BatchManifestResponse)
@@ -709,7 +711,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     async def _run_with_semaphore(m: JobManifest) -> Optional[ManifestExecutionResult]:
         async with semaphore:
             try:
-                return await _execute_single_manifest(m, aam_run_id=request.batch_id)
+                return await _execute_single_manifest(m, aam_run_id=request.batch_id or batch_run_id)
             except HTTPException as exc:
                 logger.error(
                     f"Manifest failed with HTTP {exc.status_code} for "
