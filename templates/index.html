@@ -857,8 +857,8 @@
                     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
                         <!-- Row 1: Core IDs -->
                         <div class="bg-slate-800/50 rounded-lg p-3 border border-cyan-800/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Run ID</div>
-                            <div id="rlKpiRunId" class="text-sm text-cyan-400 font-mono break-all">--</div>
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">AAM Run ID</div>
+                            <div id="rlKpiAamRunId" class="text-sm text-cyan-400 font-mono break-all">--</div>
                         </div>
                         <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
                             <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Tenant</div>
@@ -1816,8 +1816,9 @@
             // Get first run for common fields
             const firstRun = runs[0] || {};
 
-            // Render KPI boxes
-            document.getElementById('rlKpiRunId').textContent = summary.aam_run_id || '--';
+            // Render KPI boxes — aam_run_id is the batch-level ID, never fall back to per-pipe run_id
+            const aamRunId = (runs[0] || {}).aam_run_id || null;
+            document.getElementById('rlKpiAamRunId').textContent = aamRunId || '--';
             document.getElementById('rlKpiTenant').textContent = firstRun.tenant_id || '--';
 
             document.getElementById('rlKpiTotal').textContent = summary.total || 0;
