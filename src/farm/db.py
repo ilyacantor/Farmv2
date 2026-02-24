@@ -578,17 +578,17 @@ class DatabaseManager:
                         push_result_json JSONB
                     )
                 """)
+                # Migration: add aam_run_id column if table predates it (must run before index creation)
+                try:
+                    await conn.execute("ALTER TABLE manifest_runs ADD COLUMN IF NOT EXISTS aam_run_id TEXT")
+                except Exception:
+                    pass  # Column already exists
+
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_run_id ON manifest_runs(run_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_aam_run_id ON manifest_runs(aam_run_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_tenant_created ON manifest_runs(tenant_id, created_at DESC)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_status ON manifest_runs(status)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_pipe_id ON manifest_runs(pipe_id)")
-
-                # Migration: add aam_run_id column if table predates it
-                try:
-                    await conn.execute("ALTER TABLE manifest_runs ADD COLUMN IF NOT EXISTS aam_run_id TEXT")
-                except Exception:
-                    pass  # Column already exists
 
                 self._schema_initialized = True
                 self._log("Schema initialized")
@@ -906,6 +906,7 @@ async def list_manifest_runs(
 ) -> list[dict]:
     """List manifest runs with optional filters, ordered by created_at DESC."""
     import json
+    await db.ensure_schema()
     conditions = []
     params: list = []
     idx = 1
