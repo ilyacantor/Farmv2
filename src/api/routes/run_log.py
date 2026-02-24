@@ -39,7 +39,7 @@ async def list_runs(
             rows = await conn.fetch(
                 """SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                           tenant_id, snapshot_name, source_system, category, generator_key,
-                          status, rows_generated, rows_accepted, dcl_status_code,
+                          status, rows_generated, rows_pushed, rows_accepted, dcl_status_code,
                           error_type, error_message, schema_drift,
                           created_at, elapsed_ms
                    FROM manifest_runs
@@ -109,7 +109,7 @@ async def get_runs_by_aam_run(aam_run_id: str):
             rows = await conn.fetch(
                 """SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                           tenant_id, snapshot_name, source_system, category, generator_key,
-                          status, rows_generated, rows_accepted, dcl_status_code,
+                          status, rows_generated, rows_pushed, rows_accepted, dcl_status_code,
                           error_type, error_message, schema_drift,
                           created_at, elapsed_ms
                    FROM manifest_runs
@@ -140,6 +140,7 @@ async def get_runs_by_aam_run(aam_run_id: str):
         # Timing
         elapsed_values = [r["elapsed_ms"] for r in rows if r["elapsed_ms"] is not None]
         total_rows_generated = sum(r["rows_generated"] or 0 for r in rows)
+        total_rows_pushed = sum(r["rows_pushed"] or 0 for r in rows)
         total_rows_accepted = sum(r["rows_accepted"] or 0 for r in rows if r["rows_accepted"] is not None)
 
         # Failed pipes detail (so operators can see at a glance what failed)
@@ -162,6 +163,7 @@ async def get_runs_by_aam_run(aam_run_id: str):
             "failed": failed,
             "rejected_by_dcl": rejected,
             "total_rows_generated": total_rows_generated,
+            "total_rows_pushed": total_rows_pushed,
             "total_rows_accepted": total_rows_accepted,
             "per_system": per_system,
             "error_types": error_types if error_types else None,
@@ -202,7 +204,7 @@ async def get_farm_status(job_id: str):
         async with db_connection() as conn:
             row = await conn.fetchrow(
                 """SELECT farm_run_id, run_id, status, rows_generated,
-                          rows_accepted, elapsed_ms, error_message
+                          rows_pushed, rows_accepted, elapsed_ms, error_message
                    FROM manifest_runs
                    WHERE run_id = $1
                    ORDER BY created_at DESC
@@ -223,6 +225,7 @@ async def get_farm_status(job_id: str):
         "farm_run_id": run.get("farm_run_id"),
         "status": run.get("status"),
         "rows_generated": run.get("rows_generated", 0),
+        "rows_pushed": run.get("rows_pushed", 0),
         "rows_accepted": run.get("rows_accepted"),
         "elapsed_ms": run.get("elapsed_ms"),
         "error_message": run.get("error_message"),

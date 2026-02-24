@@ -357,7 +357,13 @@ class BusinessDataOrchestrator:
                     # --- Handle 200 success ---
                     if response.status_code == 200:
                         resp_data = response.json()
-                        result["rows_accepted"] = resp_data.get("rows_accepted", len(rows))
+                        rows_accepted = resp_data.get("rows_accepted")
+                        if rows_accepted is None:
+                            logger.warning(
+                                f"DCL_MISSING_ROWS_ACCEPTED: DCL response for pipe_id={pipe_id} "
+                                f"omitted rows_accepted field. Cannot verify row delivery."
+                            )
+                        result["rows_accepted"] = rows_accepted
                         result["schema_drift"] = resp_data.get("schema_drift", False)
                         result["matched_schema"] = resp_data.get("matched_schema")
                         result["schema_fields"] = resp_data.get("schema_fields")

@@ -170,13 +170,31 @@ def _find_pipe_data(
             payload = generated_data[pipe_name]
             if isinstance(payload, dict) and "data" in payload:
                 return payload
-        # Try fuzzy match (e.g., "cost_line_items" in generated data)
+        # Suffix match on underscore boundaries (e.g., pipe_name="line_items"
+        # matches key="cost_line_items" but NOT "line_items_v2")
+        suffix_matches = []
         for key, payload in generated_data.items():
             if key.startswith("_"):
                 continue
-            if pipe_name in key or key in pipe_name:
-                if isinstance(payload, dict) and "data" in payload:
-                    return payload
+            if not (isinstance(payload, dict) and "data" in payload):
+                continue
+            if key.endswith(f"_{pipe_name}") or pipe_name.endswith(f"_{key}"):
+                suffix_matches.append((key, payload))
+
+        if len(suffix_matches) == 1:
+            matched_key, matched_payload = suffix_matches[0]
+            logger.info(
+                f"FUZZY_PIPE_MATCH: pipe_name='{pipe_name}' matched key='{matched_key}' "
+                f"via underscore-boundary suffix"
+            )
+            return matched_payload
+        elif len(suffix_matches) > 1:
+            matched_keys = [k for k, _ in suffix_matches]
+            logger.warning(
+                f"AMBIGUOUS_PIPE_MATCH: pipe_name='{pipe_name}' matched multiple keys: "
+                f"{matched_keys}. Returning None to avoid wrong-pipe data."
+            )
+            return None
         return None
 
     # No pipe_name specified: return first valid pipe
@@ -323,9 +341,25 @@ async def _push_to_dcl(
                 )
 
             dcl_run_id = resp_data.get("dcl_run_id")
+            rows_accepted = resp_data.get("rows_accepted")
+            if rows_accepted is None:
+                logger.warning(
+                    f"DCL_MISSING_ROWS_ACCEPTED: DCL response for pipe_id={pipe_id} "
+                    f"omitted rows_accepted field. Cannot verify row delivery. "
+                    f"dcl_run_id={dcl_run_id}"
+                )
+
+            if rows_accepted is not None and rows_accepted < len(rows):
+                lost = len(rows) - rows_accepted
+                logger.warning(
+                    f"ROW_LOSS_DETECTED: pipe_id={pipe_id} pushed {len(rows)} rows "
+                    f"but DCL accepted only {rows_accepted} ({lost} rows lost). "
+                    f"dcl_run_id={dcl_run_id}"
+                )
+
             logger.info(
                 f"Push succeeded: pipe_id={pipe_id}, "
-                f"rows_accepted={resp_data.get('rows_accepted')}, "
+                f"rows_accepted={rows_accepted}, "
                 f"dcl_run_id={dcl_run_id}, matched_schema={resp_data.get('matched_schema')}"
             )
 
@@ -337,7 +371,7 @@ async def _push_to_dcl(
                 status="success",
                 status_code=200,
                 rows_pushed=len(rows),
-                rows_accepted=resp_data.get("rows_accepted", len(rows)),
+                rows_accepted=rows_accepted,
                 matched_schema=resp_data.get("matched_schema"),
                 schema_fields=resp_data.get("schema_fields"),
                 schema_drift=resp_data.get("schema_drift", False),
@@ -540,6 +574,7 @@ async def _execute_single_manifest(
 
     rows = pipe_payload.get("data", [])
     rows_generated = len(rows)
+    rows_pushed = rows_generated  # Default: all generated rows will be pushed
     del generated_data  # Release ~14-40MB; no longer needed after row extraction
 
     logger.info(
@@ -553,6 +588,7 @@ async def _execute_single_manifest(
             f"(manifest limit)"
         )
         rows = rows[:manifest.limits.max_rows]
+        rows_pushed = len(rows)
 
     schema_hash = _compute_schema_hash(rows)
     push_result = await _push_to_dcl(
@@ -588,6 +624,7 @@ async def _execute_single_manifest(
             generator_key=generator_key,
             status=status,
             rows_generated=rows_generated,
+            rows_pushed=rows_pushed,
             rows_accepted=push_result.rows_accepted,
             dcl_status_code=push_result.status_code,
             error_type=push_result.error_type,
@@ -613,7 +650,8 @@ async def _execute_single_manifest(
     # Per-pipe completion log — one-line summary for every manifest, success or failure
     logger.info(
         f"MANIFEST DONE: run_id={run_id}, pipe_id={pipe_id}, status={status}, "
-        f"rows={rows_generated}, dcl_status={push_result.status_code}, "
+        f"rows_generated={rows_generated}, rows_pushed={rows_pushed}, "
+        f"rows_accepted={push_result.rows_accepted}, dcl_status={push_result.status_code}, "
         f"elapsed_ms={elapsed_ms}, farm_run_id={farm_run_id}"
     )
 

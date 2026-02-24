@@ -1908,7 +1908,7 @@
                         </div>
                         <div>
                             <div class="text-[10px] text-slate-500 uppercase">Rows</div>
-                            <div class="text-xs text-slate-300">${pipe.rows_generated || 0} → ${pipe.rows_accepted || 0}</div>
+                            <div class="text-xs text-slate-300">${pipe.rows_generated || 0} → ${pipe.rows_pushed || pipe.rows_generated || 0} → ${pipe.rows_accepted || 0}</div>
                         </div>
                         <div>
                             <div class="text-[10px] text-slate-500 uppercase">Elapsed</div>
@@ -1949,9 +1949,10 @@
                 return `Warning: field structure has changed since last run. Affected fields: ${prj.drift_fields.join(', ')}`;
             }
 
-            if (pipe.rows_accepted < pipe.rows_generated) {
-                const lost = pipe.rows_generated - pipe.rows_accepted;
-                return `DCL accepted fewer rows than Farm generated. ${lost} rows lost in transit.`;
+            const expectedRows = pipe.rows_pushed || pipe.rows_generated;
+            if (pipe.rows_accepted != null && pipe.rows_accepted < expectedRows) {
+                const lost = expectedRows - pipe.rows_accepted;
+                return `DCL accepted fewer rows than Farm pushed. ${lost} rows lost in transit.`;
             }
 
             if (statusCode >= 500) {

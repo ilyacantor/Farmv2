@@ -568,6 +568,7 @@ class DatabaseManager:
                         generator_key TEXT NOT NULL,
                         status TEXT NOT NULL,
                         rows_generated INTEGER DEFAULT 0,
+                        rows_pushed INTEGER DEFAULT 0,
                         rows_accepted INTEGER,
                         dcl_status_code INTEGER,
                         error_type TEXT,
@@ -581,6 +582,12 @@ class DatabaseManager:
                 # Migration: add aam_run_id column if table predates it (must run before index creation)
                 try:
                     await conn.execute("ALTER TABLE manifest_runs ADD COLUMN IF NOT EXISTS aam_run_id TEXT")
+                except Exception:
+                    pass  # Column already exists
+
+                # Migration: add rows_pushed column (tracks post-truncation count, distinct from rows_generated)
+                try:
+                    await conn.execute("ALTER TABLE manifest_runs ADD COLUMN IF NOT EXISTS rows_pushed INTEGER DEFAULT 0")
                 except Exception:
                     pass  # Column already exists
 
@@ -835,6 +842,7 @@ async def save_manifest_run(
     aam_run_id: str | None = None,
     dcl_run_id: str | None = None,
     rows_generated: int = 0,
+    rows_pushed: int = 0,
     rows_accepted: int | None = None,
     dcl_status_code: int | None = None,
     error_type: str | None = None,
@@ -852,20 +860,21 @@ async def save_manifest_run(
             INSERT INTO manifest_runs (
                 farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                 tenant_id, snapshot_name, source_system, category, generator_key,
-                status, rows_generated, rows_accepted, dcl_status_code,
+                status, rows_generated, rows_pushed, rows_accepted, dcl_status_code,
                 error_type, error_message, schema_drift,
                 created_at, elapsed_ms, push_result_json
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8, $9, $10,
-                $11, $12, $13, $14,
-                $15, $16, $17,
-                $18, $19, $20::jsonb
+                $11, $12, $13, $14, $15,
+                $16, $17, $18,
+                $19, $20, $21::jsonb
             )
             ON CONFLICT (farm_run_id) DO UPDATE SET
                 status = EXCLUDED.status,
                 aam_run_id = EXCLUDED.aam_run_id,
                 dcl_run_id = EXCLUDED.dcl_run_id,
+                rows_pushed = EXCLUDED.rows_pushed,
                 rows_accepted = EXCLUDED.rows_accepted,
                 dcl_status_code = EXCLUDED.dcl_status_code,
                 error_type = EXCLUDED.error_type,
@@ -876,7 +885,7 @@ async def save_manifest_run(
         """,
             farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
             tenant_id, snapshot_name, source_system, category, generator_key,
-            status, rows_generated, rows_accepted, dcl_status_code,
+            status, rows_generated, rows_pushed, rows_accepted, dcl_status_code,
             error_type, error_message, schema_drift,
             created_at, elapsed_ms, json.dumps(push_result_json) if push_result_json else None,
         )
@@ -926,7 +935,7 @@ async def list_manifest_runs(
     query = f"""
         SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                tenant_id, snapshot_name, source_system, category, generator_key,
-               status, rows_generated, rows_accepted, dcl_status_code,
+               status, rows_generated, rows_pushed, rows_accepted, dcl_status_code,
                error_type, error_message, schema_drift,
                created_at, elapsed_ms
         FROM manifest_runs
