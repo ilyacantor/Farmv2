@@ -2,10 +2,11 @@
 # farm_config.yaml — Single source of truth for Farm's synthetic data engine
 # ═══════════════════════════════════════════════════════════════════════════════
 #
-# Three sections:
+# Four sections:
 #   schema           → structural dimensions (regions, departments, stages)
 #   company_profile  → point-in-time company assumptions (ARR, headcount, ratios)
 #   realism_params   → simulation mechanics (improvement rates, deceleration)
+#   vendors          → SOR vendor domains and fabric plane vendor mappings
 #
 # Field names are the DCL contract — do NOT rename them.
 # Compiled defaults in financial_model.py are the fallback when this file is absent.
@@ -145,3 +146,89 @@ realism_params:
   cogs_improvement_annual: 0.007   # COGS improves 0.7pp per year
   dso_improvement_annual: 1.0      # DSO improves 1 day per year
   attrition_improvement_annual: 0.005  # attrition improves 0.5pp per year
+
+
+# ── Vendors: SOR vendor domains and fabric plane vendor mappings ──────────
+vendors:
+
+  # SOR vendor domains by data domain — which vendor domains are authoritative
+  # for each business data domain. Used by both enterprise_data.py (Farm generation)
+  # and sor_scoring.py (AOD scoring).
+  sor_vendors_by_domain:
+    customer:
+      - salesforce.com
+      - hubspot.com
+      - dynamics.com
+      - dynamics365.com
+      - zoho.com
+      - pipedrive.com
+      - freshworks.com
+      - zendesk.com
+    employee:
+      - workday.com
+      - adp.com
+      - bamboohr.com
+      - namely.com
+      - paylocity.com
+      - paychex.com
+      - gusto.com
+      - rippling.com
+      - successfactors.com
+      - ultipro.com
+      - dayforce.com
+    financial:
+      - netsuite.com
+      - quickbooks.com
+      - xero.com
+      - sage.com
+      - intacct.com
+      - freshbooks.com
+      - oracle.com
+      - sap.com
+    product:
+      - sap.com
+      - oracle.com
+      - epicor.com
+      - infor.com
+      - dynamics.com
+      - netsuite.com
+    identity:
+      - okta.com
+      - onelogin.com
+      - auth0.com
+      - ping.com
+      - duo.com
+    it_assets:
+      - servicenow.com
+      - freshservice.com
+      - manageengine.com
+
+  # Fabric plane vendor details — vendors for each integration plane.
+  # Keyed by vendor slug; plane, domain, and display name per vendor.
+  # Used by enterprise_data.py (FABRIC_VENDOR_DOMAINS) and fabric.py (FabricPlaneVendors).
+  fabric_plane_vendors:
+    # iPaaS
+    workato:                {plane: ipaas, domain: workato.com, vendor_name: Workato}
+    mulesoft:               {plane: ipaas, domain: mulesoft.com, vendor_name: MuleSoft}
+    boomi:                  {plane: ipaas, domain: boomi.com, vendor_name: Boomi}
+    tray.io:                {plane: ipaas, domain: tray.io, vendor_name: Tray.io}
+    celigo:                 {plane: ipaas, domain: celigo.com, vendor_name: Celigo}
+    sap_integration_suite:  {plane: ipaas, domain: sap.com, vendor_name: SAP Integration Suite}
+    # API Gateway
+    kong:                   {plane: api_gateway, domain: konghq.com, vendor_name: Kong}
+    apigee:                 {plane: api_gateway, domain: apigee.com, vendor_name: Apigee}
+    aws_api_gateway:        {plane: api_gateway, domain: amazonaws.com, vendor_name: AWS API Gateway}
+    azure_api_management:   {plane: api_gateway, domain: azure.com, vendor_name: Azure API Management}
+    # Event Bus
+    kafka:                  {plane: event_bus, domain: kafka.apache.org, vendor_name: Apache Kafka}
+    confluent:              {plane: event_bus, domain: confluent.io, vendor_name: Confluent}
+    eventbridge:            {plane: event_bus, domain: amazonaws.com, vendor_name: AWS EventBridge}
+    rabbitmq:               {plane: event_bus, domain: rabbitmq.com, vendor_name: RabbitMQ}
+    pulsar:                 {plane: event_bus, domain: pulsar.apache.org, vendor_name: Apache Pulsar}
+    azure_event_hubs:       {plane: event_bus, domain: azure.com, vendor_name: Azure Event Hubs}
+    # Data Warehouse
+    snowflake:              {plane: data_warehouse, domain: snowflake.com, vendor_name: Snowflake}
+    bigquery:               {plane: data_warehouse, domain: cloud.google.com, vendor_name: Google BigQuery}
+    redshift:               {plane: data_warehouse, domain: amazonaws.com, vendor_name: AWS Redshift}
+    databricks:             {plane: data_warehouse, domain: databricks.com, vendor_name: Databricks}
+    synapse:                {plane: data_warehouse, domain: azure.com, vendor_name: Azure Synapse}

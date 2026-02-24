@@ -28,6 +28,7 @@ Confidence thresholds:
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
+from src.generators.enterprise_data import SOR_VENDORS_BY_DOMAIN
 from src.services.key_normalization import extract_registered_domain
 
 
@@ -59,32 +60,10 @@ SIGNAL_WEIGHTS = {
 
 MAX_SCORE = sum(w for w in SIGNAL_WEIGHTS.values() if w > 0)
 
-KNOWN_SOR_VENDORS = {
-    DataDomain.CUSTOMER: {
-        "salesforce.com", "hubspot.com", "dynamics.com", "dynamics365.com",
-        "zoho.com", "pipedrive.com", "freshworks.com", "zendesk.com",
-    },
-    DataDomain.EMPLOYEE: {
-        "workday.com", "adp.com", "bamboohr.com", "namely.com",
-        "paylocity.com", "paychex.com", "gusto.com", "rippling.com",
-        "successfactors.com", "ultipro.com", "dayforce.com",
-    },
-    DataDomain.FINANCIAL: {
-        "netsuite.com", "quickbooks.com", "xero.com", "sage.com",
-        "intacct.com", "freshbooks.com", "oracle.com", "sap.com",
-    },
-    DataDomain.PRODUCT: {
-        "sap.com", "oracle.com", "epicor.com", "infor.com",
-        "dynamics.com", "netsuite.com",
-    },
-    DataDomain.IDENTITY: {
-        "okta.com", "onelogin.com", "auth0.com", "ping.com",
-        "duo.com",
-    },
-    DataDomain.IT_ASSETS: {
-        "servicenow.com", "freshservice.com", "manageengine.com",
-    },
-}
+# Canonical source: farm_config.yaml → vendors.sor_vendors_by_domain
+# Loaded via enterprise_data.SOR_VENDORS_BY_DOMAIN (string keys).
+# Re-keyed here to DataDomain enum for type-safe scoring.
+KNOWN_SOR_VENDORS = {DataDomain(k): v for k, v in SOR_VENDORS_BY_DOMAIN.items()}
 
 DOMAIN_TO_SOR_DOMAIN = {}
 for data_domain, domains in KNOWN_SOR_VENDORS.items():

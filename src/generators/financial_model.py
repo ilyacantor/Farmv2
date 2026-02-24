@@ -73,6 +73,12 @@ def get_schema_config() -> Dict[str, Any]:
     return raw.get("schema") or {}
 
 
+def get_vendor_config() -> Dict[str, Any]:
+    """Return the 'vendors' section from farm_config.yaml, or empty dict."""
+    raw = _cfg.get("_raw", {})
+    return raw.get("vendors") or {}
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Assumptions — the ONLY independent inputs
 # ═══════════════════════════════════════════════════════════════════════════════

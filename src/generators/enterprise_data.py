@@ -3,9 +3,16 @@ Enterprise data constants for synthetic data generation.
 
 Contains app catalogs, stress test scenarios, and reference data used
 by EnterpriseGenerator to create realistic enterprise snapshots.
+
+Vendor lists (SOR_VENDORS_BY_DOMAIN, FABRIC_VENDOR_DOMAINS) are loaded from
+farm_config.yaml's vendors section. Compiled defaults below are the fallback
+when the YAML file is absent.
 """
 
+from src.generators.financial_model import get_vendor_config
 from src.models.planes import ScaleEnum, RealismProfileEnum
+
+_vendors = get_vendor_config()
 
 # =============================================================================
 # APP CATALOGS
@@ -265,10 +272,10 @@ GOVERNANCE_RATES = {
 # =============================================================================
 # SYSTEM OF RECORD (SOR) VENDOR PATTERNS
 # =============================================================================
-# These patterns are used by Farm to generate test data with SOR expectations.
-# The scoring logic in sor_scoring.py uses these same patterns.
+# Canonical source: farm_config.yaml → vendors.sor_vendors_by_domain
+# Compiled defaults below are the fallback when YAML is absent.
 
-SOR_VENDORS_BY_DOMAIN = {
+_SOR_VENDORS_COMPILED = {
     "customer": {
         "salesforce.com", "hubspot.com", "dynamics.com", "dynamics365.com",
         "zoho.com", "pipedrive.com", "freshworks.com", "zendesk.com",
@@ -295,6 +302,12 @@ SOR_VENDORS_BY_DOMAIN = {
     },
 }
 
+_sor_yaml = _vendors.get("sor_vendors_by_domain")
+if _sor_yaml:
+    SOR_VENDORS_BY_DOMAIN = {k: set(v) for k, v in _sor_yaml.items()}
+else:
+    SOR_VENDORS_BY_DOMAIN = _SOR_VENDORS_COMPILED
+
 # Flatten into a domain -> data_domain lookup for easy checking
 DOMAIN_TO_SOR_TYPE = {}
 for data_domain, domains in SOR_VENDORS_BY_DOMAIN.items():
@@ -315,10 +328,10 @@ SOR_APP_DOMAINS = {
 # =============================================================================
 # FABRIC PLANE VENDOR MAPPINGS
 # =============================================================================
-# These patterns are used by Farm to generate fabric routing signals in snapshots.
-# Maps fabric vendor names to their domains and cloud resource types.
+# Canonical source: farm_config.yaml → vendors.fabric_plane_vendors
+# Compiled defaults below are the fallback when YAML is absent.
 
-FABRIC_VENDOR_DOMAINS = {
+_FABRIC_VENDORS_COMPILED = {
     # iPaaS vendors
     "workato": {"domain": "workato.com", "plane": "ipaas", "vendor_name": "Workato"},
     "mulesoft": {"domain": "mulesoft.com", "plane": "ipaas", "vendor_name": "MuleSoft"},
@@ -345,6 +358,15 @@ FABRIC_VENDOR_DOMAINS = {
     "databricks": {"domain": "databricks.com", "plane": "data_warehouse", "vendor_name": "Databricks"},
     "synapse": {"domain": "azure.com", "plane": "data_warehouse", "vendor_name": "Azure Synapse"},
 }
+
+_fabric_yaml = _vendors.get("fabric_plane_vendors")
+if _fabric_yaml:
+    FABRIC_VENDOR_DOMAINS = {
+        k: {"domain": v["domain"], "plane": v["plane"], "vendor_name": v["vendor_name"]}
+        for k, v in _fabric_yaml.items()
+    }
+else:
+    FABRIC_VENDOR_DOMAINS = _FABRIC_VENDORS_COMPILED
 
 # Cloud resource types for fabric plane infrastructure
 FABRIC_CLOUD_RESOURCES = {

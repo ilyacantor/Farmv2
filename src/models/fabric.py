@@ -11,6 +11,7 @@ to individual SaaS applications (except in Preset 6 Scrappy mode).
 
 FARM uses these types to generate appropriate test scenarios for each preset.
 """
+from collections import defaultdict
 from enum import Enum
 from typing import Optional, List, Dict
 from pydantic import BaseModel, Field
@@ -71,13 +72,44 @@ class FabricPlaneConfig(BaseModel):
     latency_ms: Optional[int] = None
     
     
+# Canonical source: farm_config.yaml → vendors.fabric_plane_vendors
+# Reads YAML directly to avoid circular import through generators/__init__.py.
+# Compiled fallback below matches the YAML defaults.
+def _build_plane_vendor_lists() -> Dict[str, list]:
+    from pathlib import Path
+    try:
+        import yaml
+        candidate = Path(__file__).resolve().parent.parent.parent / "farm_config.yaml"
+        if candidate.is_file():
+            with open(candidate, encoding="utf-8") as f:
+                raw = yaml.safe_load(f)
+            if isinstance(raw, dict):
+                fpv = (raw.get("vendors") or {}).get("fabric_plane_vendors")
+                if fpv:
+                    by_plane: Dict[str, list] = defaultdict(list)
+                    for slug, info in fpv.items():
+                        by_plane[info["plane"]].append(slug)
+                    return dict(by_plane)
+    except Exception:
+        pass
+    # Compiled fallback — matches farm_config.yaml defaults
+    return {
+        "ipaas": ["workato", "mulesoft", "boomi", "tray.io", "celigo", "sap_integration_suite"],
+        "api_gateway": ["kong", "apigee", "aws_api_gateway", "azure_api_management"],
+        "event_bus": ["kafka", "confluent", "eventbridge", "rabbitmq", "pulsar", "azure_event_hubs"],
+        "data_warehouse": ["snowflake", "bigquery", "redshift", "databricks", "synapse"],
+    }
+
+_PLANE_VENDORS = _build_plane_vendor_lists()
+
+
 class FabricPlaneVendors:
     """Known vendors for each Fabric Plane type."""
-    IPAAS = ["workato", "mulesoft", "boomi", "tray.io", "celigo", "sap_integration_suite"]
-    API_GATEWAY = ["kong", "apigee", "aws_api_gateway", "azure_api_management"]
-    EVENT_BUS = ["kafka", "confluent", "eventbridge", "rabbitmq", "pulsar", "azure_event_hubs"]
-    DATA_WAREHOUSE = ["snowflake", "bigquery", "redshift", "databricks", "synapse"]
-    
+    IPAAS = _PLANE_VENDORS.get("ipaas", [])
+    API_GATEWAY = _PLANE_VENDORS.get("api_gateway", [])
+    EVENT_BUS = _PLANE_VENDORS.get("event_bus", [])
+    DATA_WAREHOUSE = _PLANE_VENDORS.get("data_warehouse", [])
+
     @classmethod
     def for_plane(cls, plane_type: FabricPlaneType) -> list[str]:
         return {
