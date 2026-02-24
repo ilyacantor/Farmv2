@@ -11,9 +11,9 @@
 ## Table of Contents
 
 1. [Ground Truth Manifest Envelope](#1-ground-truth-manifest-envelope)
-2. [Quarterly Metrics — v2.0 (89 scalars per quarter)](#2-quarterly-metrics--v20)
+2. [Quarterly Metrics — v2.0 (113 scalars per quarter)](#2-quarterly-metrics--v20)
 3. [Quarterly Metrics — v1.0 Legacy (23 per quarter)](#3-quarterly-metrics--v10-legacy)
-4. [Dimensional Breakdowns (13 dimensions)](#4-dimensional-breakdowns)
+4. [Dimensional Breakdowns (21 dimensions)](#4-dimensional-breakdowns)
 5. [Dimension Value Enums](#5-dimension-value-enums)
 6. [Expected Conflicts](#6-expected-conflicts)
 7. [Source System Pipe Schemas](#7-source-system-pipe-schemas)
@@ -94,6 +94,7 @@ Each metric is a dict: `{"value": <num>, "unit": "<unit>", "primary_source": "<s
 | `tax_expense` | `millions_usd` | 2 | `netsuite` | 120 |
 | `net_income` | `millions_usd` | 2 | `netsuite` | 121 |
 | `net_margin_pct` | `percent` | 1 | `netsuite` | 122 |
+| `sga` | `millions_usd` | 2 | `netsuite` | — |
 
 ### Balance Sheet
 
@@ -150,6 +151,9 @@ Each metric is a dict: `{"value": <num>, "unit": "<unit>", "primary_source": "<s
 | `sales_cycle_days` | `days` | 0 | `salesforce` | 164 |
 | `avg_deal_size` | `millions_usd` | 4 | `salesforce` | 165 |
 | `quota_attainment` | `percent` | 1 | `salesforce` | 166 |
+| `bookings` | `millions_usd` | 2 | `salesforce` | — |
+| `qualified_pipeline` | `millions_usd` | 2 | `salesforce` | — |
+| `reps_at_quota_pct` | `percent` | 1 | `salesforce` | — |
 
 ### Customer Metrics
 
@@ -169,6 +173,17 @@ Each metric is a dict: `{"value": <num>, "unit": "<unit>", "primary_source": "<s
 | `attrition_rate` | `percent` | 1 | `workday` | 177 |
 | `engineering_headcount` | `count` | int | `workday` | 178 |
 | `sales_headcount` | `count` | int | `workday` | 179 |
+| `open_roles` | `count` | int | `workday` | — |
+| `cost_per_employee` | `millions_usd` | 4 | `computed` | — |
+| `offer_acceptance_rate_pct` | `percent` | 1 | `workday` | — |
+| `training_hours_per_employee` | `hours` | 1 | `workday` | — |
+| `internal_mobility_rate_pct` | `percent` | 1 | `workday` | — |
+| `span_of_control` | `ratio` | 1 | `workday` | — |
+| `cs_headcount` | `count` | int | `workday` | — |
+| `marketing_headcount` | `count` | int | `workday` | — |
+| `product_headcount` | `count` | int | `workday` | — |
+| `finance_headcount` | `count` | int | `workday` | — |
+| `ga_headcount` | `count` | int | `workday` | — |
 
 ### Support
 
@@ -188,6 +203,12 @@ Each metric is a dict: `{"value": <num>, "unit": "<unit>", "primary_source": "<s
 | `story_points` | `points` | 2 | `jira` | 190 |
 | `features_shipped` | `count` | int | `jira` | 191 |
 | `tech_debt_pct` | `percent` | 3 | `jira` | 192 |
+| `code_coverage_pct` | `percent` | 1 | `jira` | — |
+| `deployment_success_pct` | `percent` | 1 | `datadog` | — |
+| `lead_time_days` | `days` | 1 | `jira` | — |
+| `change_failure_rate` | `percent` | 1 | `datadog` | — |
+| `bug_escape_rate` | `percent` | 1 | `jira` | — |
+| `engineering_utilization` | `percent` | 1 | `jira` | — |
 
 ### Infrastructure
 
@@ -202,6 +223,9 @@ Each metric is a dict: `{"value": <num>, "unit": "<unit>", "primary_source": "<s
 | `mttr_p2_hours` | `hours` | 1 | `datadog` | 201 |
 | `uptime_pct` | `percent` | 2 | `datadog` | 202 |
 | `downtime_hours` | `hours` | 1 | `datadog` | 203 |
+| `api_requests_millions` | `count` | 2 | `datadog` | — |
+| `security_vulns` | `count` | int | `datadog` | — |
+| `critical_bugs` | `count` | int | `jira` | — |
 
 ### Meta
 
@@ -209,7 +233,7 @@ Each metric is a dict: `{"value": <num>, "unit": "<unit>", "primary_source": "<s
 |---|---|---|
 | `is_forecast` | boolean | 206 |
 
-**Total: 89 scalar metrics + 1 boolean meta flag = 90 keys per quarter.**
+**Total: 113 scalar metrics + 1 boolean meta flag = 114 keys per quarter.**
 
 ---
 
@@ -272,6 +296,24 @@ Each dimension is a dict with `"source"` key plus per-quarter breakdowns. Values
 | `opex_breakdown` | `netsuite` | `sales_and_marketing`, `research_and_development`, `general_and_administrative` | float | 242 |
 | `headcount_by_department` | `workday` | `Engineering`, `Product`, `Sales`, `Marketing`, `Customer Success`, `G&A` | int | 243 |
 | `new_logo_revenue_by_region` | `salesforce` | `AMER`, `EMEA`, `APAC` | float | 244 |
+
+### Rep-Level Dimensions
+
+| Dimension Key | Source | Per Quarter | Breakdown Keys | Value Type |
+|---|---|---|---|---|
+| `quota_by_rep` | `salesforce` | 36 reps | `rep_id`, `rep_name`, `region`, `quota`, `attainment`, `quota_attainment_pct` | float |
+| `pipeline_by_rep` | `salesforce` | 36 reps | `rep_id`, `rep_name`, `pipeline_value`, `deal_count`, `avg_deal_size` | float |
+| `win_rate_by_rep` | `salesforce` | 36 reps | `rep_id`, `rep_name`, `opportunities`, `won`, `win_rate_pct` | float |
+| `top_deals` | `salesforce` | top 10 deals | `deal_id`, `account_name`, `region`, `segment`, `amount`, `stage`, `close_date`, `rep_id`, `rep_name` | float |
+| `stalled_deals` | `salesforce` | 3-8 deals (Proposal/Negotiation 60+ days) | `deal_id`, `account_name`, `days_in_stage`, `stage`, `amount`, `rep_id` | float |
+
+### Department-Level Dimensions
+
+| Dimension Key | Source | Per Quarter | Breakdown Keys | Value Type |
+|---|---|---|---|---|
+| `attrition_by_department` | `workday` | 6 departments | `attrition_count`, `attrition_rate_pct` | float |
+| `engagement_by_department` | `workday` | 6 departments | `engagement_score` | float |
+| `time_to_fill_by_department` | `workday` | 6 departments | `time_to_fill_days` | float |
 
 ### v1.0 Legacy — 3 dimensions
 

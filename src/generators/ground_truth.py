@@ -9,6 +9,7 @@ v2.0 adds: full P&L, balance sheet, cash flow, SaaS metrics, ARR waterfall,
 revenue decomposition, and 13 dimensional breakdowns from the financial model.
 """
 
+import random
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -21,6 +22,220 @@ from src.generators.business_data.profile import (
 def _r(val: float, decimals: int = 2) -> float:
     """Round a value."""
     return round(val, decimals)
+
+
+_SEASONAL_FACTORS = {1: -0.10, 2: 0.0, 3: 0.0, 4: 0.15}
+
+
+def _bookings_value(fmq, q: str) -> float:
+    """Compute bookings = pipeline x win_rate_pct x (1 + seasonal_factor)."""
+    q_num = int(q.split("-Q")[1])
+    seasonal = _SEASONAL_FACTORS.get(q_num, 0.0)
+    return fmq.pipeline * fmq.win_rate / 100 * (1.0 + seasonal)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Rep-level data generation
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# 36 stable rep names — seeded once, used across all quarters
+_REP_FIRST = [
+    "James", "Maria", "David", "Sarah", "Carlos", "Priya", "Ahmed", "Yuki",
+    "Michael", "Lisa", "Wei", "Fatima", "Thomas", "Elena", "Raj", "Anna",
+    "Robert", "Sofia", "John", "Mei", "Alex", "Nina", "Daniel", "Aisha",
+    "Kevin", "Rachel", "Chris", "Laura", "Patrick", "Hannah", "Marcus",
+    "Chloe", "Brian", "Zara", "Tyler", "Eva",
+]
+_REP_LAST = [
+    "Smith", "Garcia", "Patel", "Kim", "Johnson", "Chen", "Singh", "Tanaka",
+    "Williams", "Lopez", "Brown", "Nakamura", "Davis", "Fernandez", "Gupta",
+    "Sato", "Anderson", "Martinez", "Lee", "Wang", "Taylor", "Hernandez",
+    "Kumar", "Suzuki", "Wilson", "Gomez", "Shah", "Watanabe", "Moore",
+    "Rodriguez", "Ali", "Park", "Clark", "Torres", "Murphy", "Costa",
+]
+
+# Region distribution: 18 AMER, 11 EMEA, 7 APAC
+_REP_REGIONS = (["AMER"] * 18) + (["EMEA"] * 11) + (["APAC"] * 7)
+
+# Performance tiers: 20% top, 40% at/near, 30% below, 10% significantly below
+# With 36 reps: 7 top, 14 near, 11 below, 4 bottom
+_TIER_COUNTS = [7, 14, 11, 4]
+_TIER_RANGES = [
+    (1.20, 1.80),  # top performers
+    (0.85, 1.15),  # at or near quota
+    (0.50, 0.85),  # below quota
+    (0.20, 0.50),  # significantly below
+]
+
+
+def _build_reps() -> List[Dict[str, str]]:
+    """Build stable list of 36 sales reps with deterministic names/regions."""
+    reps = []
+    for i in range(36):
+        reps.append({
+            "rep_id": f"REP-{i+1:03d}",
+            "rep_name": f"{_REP_FIRST[i]} {_REP_LAST[i]}",
+            "region": _REP_REGIONS[i],
+        })
+    return reps
+
+
+def _generate_rep_level_data(
+    model_quarters: List,
+) -> Dict[str, Dict[str, Any]]:
+    """
+    Generate rep-level dimensional data for all quarters.
+
+    Returns dict with keys: quota_by_rep, pipeline_by_rep, win_rate_by_rep,
+    top_deals, stalled_deals. Each keyed by quarter label.
+    Also returns reps_at_quota_pct per quarter for scalar metrics.
+    """
+    reps = _build_reps()
+    result = {
+        "quota_by_rep": {"source": "salesforce"},
+        "pipeline_by_rep": {"source": "salesforce"},
+        "win_rate_by_rep": {"source": "salesforce"},
+        "top_deals": {"source": "salesforce"},
+        "stalled_deals": {"source": "salesforce"},
+        "_reps_at_quota_pct": {},  # internal: used by quarterly truth
+    }
+
+    # Assign stable performance tiers to reps (consistent across quarters with drift)
+    rng_base = random.Random(42)
+    base_tiers = []
+    for lo, hi in _TIER_RANGES:
+        for _ in range(_TIER_COUNTS[_TIER_RANGES.index((lo, hi))]):
+            base_tiers.append((lo, hi))
+    rng_base.shuffle(base_tiers)
+
+    # Track open deals for stalled detection
+    open_deals_tracker: Dict[str, Dict[str, Any]] = {}
+
+    for fmq in model_quarters:
+        q = fmq.quarter
+        qi = fmq.quarter_index
+        rng = random.Random(42 + qi * 1000)
+
+        # Regional quota allocation: total quarterly new ARR / sales_headcount * quota multiplier
+        total_quarterly_quota = (fmq.ending_arr / fmq.sales_headcount * 0.015) * fmq.sales_headcount
+        region_quota = {
+            "AMER": total_quarterly_quota * 0.50,
+            "EMEA": total_quarterly_quota * 0.30,
+            "APAC": total_quarterly_quota * 0.20,
+        }
+        region_rep_counts = {"AMER": 18, "EMEA": 11, "APAC": 7}
+
+        quota_records = []
+        pipeline_records = []
+        win_rate_records = []
+        at_quota_count = 0
+
+        for i, rep in enumerate(reps):
+            tier_lo, tier_hi = base_tiers[i]
+            # Add per-quarter drift (±5%) for realism
+            drift = rng.uniform(-0.05, 0.05)
+            attainment_factor = rng.uniform(tier_lo, tier_hi) + drift
+            attainment_factor = max(0.10, attainment_factor)
+
+            region = rep["region"]
+            rep_quota = region_quota[region] / region_rep_counts[region]
+            rep_attainment = rep_quota * attainment_factor
+            attainment_pct = _r(attainment_factor * 100, 1)
+
+            if attainment_pct >= 100.0:
+                at_quota_count += 1
+
+            # Pipeline: reps with higher attainment tend to have more pipeline
+            pipeline_factor = rng.uniform(0.8, 1.4) * (0.7 + 0.3 * attainment_factor)
+            rep_pipeline = rep_quota * pipeline_factor * rng.uniform(2.5, 4.0)
+            deal_count = max(3, int(rep_pipeline / fmq.avg_deal_size)) if fmq.avg_deal_size > 0 else 10
+            rep_avg_deal = _r(rep_pipeline / deal_count, 4) if deal_count > 0 else 0
+
+            # Win rate: correlated with attainment
+            base_wr = fmq.win_rate
+            rep_wr = _r(base_wr * rng.uniform(0.7, 1.3) * (0.8 + 0.2 * attainment_factor), 1)
+            rep_wr = min(65.0, max(10.0, rep_wr))
+            total_opps = max(5, int(deal_count * rng.uniform(1.5, 3.0)))
+            won = max(1, int(total_opps * rep_wr / 100))
+
+            quota_records.append({
+                "rep_id": rep["rep_id"],
+                "rep_name": rep["rep_name"],
+                "region": region,
+                "quota": _r(rep_quota, 4),
+                "attainment": _r(rep_attainment, 4),
+                "quota_attainment_pct": attainment_pct,
+            })
+
+            pipeline_records.append({
+                "rep_id": rep["rep_id"],
+                "rep_name": rep["rep_name"],
+                "pipeline_value": _r(rep_pipeline, 4),
+                "deal_count": deal_count,
+                "avg_deal_size": rep_avg_deal,
+            })
+
+            win_rate_records.append({
+                "rep_id": rep["rep_id"],
+                "rep_name": rep["rep_name"],
+                "opportunities": total_opps,
+                "won": won,
+                "win_rate_pct": _r(won / total_opps * 100, 1) if total_opps > 0 else 0,
+            })
+
+        result["quota_by_rep"][q] = quota_records
+        result["pipeline_by_rep"][q] = pipeline_records
+        result["win_rate_by_rep"][q] = win_rate_records
+        result["_reps_at_quota_pct"][q] = _r(at_quota_count / len(reps) * 100, 1)
+
+        # Top deals: generate 10 top deals per quarter
+        segments = ["Enterprise", "Mid-Market", "SMB"]
+        seg_weights = [0.5, 0.35, 0.15]
+        seg_amounts = {"Enterprise": 0.15, "Mid-Market": 0.045, "SMB": 0.012}
+        stages = ["Qualified", "Proposal", "Negotiation", "Closed-Won"]
+        top_deals = []
+        for d in range(10):
+            seg = rng.choices(segments, weights=seg_weights, k=1)[0]
+            base_amt = seg_amounts[seg]
+            amount = _r(base_amt * rng.uniform(1.5, 4.0), 4)
+            rep_idx = rng.randint(0, 35)
+            close_q_num = int(q.split("-Q")[1])
+            close_year = int(q.split("-Q")[0])
+            close_month = close_q_num * 3
+            close_day = rng.randint(1, 28)
+            top_deals.append({
+                "deal_id": f"DEAL-{qi:02d}-{d+1:03d}",
+                "account_name": f"{rng.choice(['Acme', 'Global', 'Pacific', 'Atlas', 'Summit', 'Apex', 'Vertex', 'Pinnacle', 'Nova', 'Zenith'])} {rng.choice(['Corp', 'Inc', 'Ltd', 'Group', 'Partners', 'Systems', 'Tech', 'Digital'])}",
+                "region": reps[rep_idx]["region"],
+                "segment": seg,
+                "amount": amount,
+                "stage": rng.choice(stages),
+                "close_date": f"{close_year}-{close_month:02d}-{close_day:02d}",
+                "rep_id": reps[rep_idx]["rep_id"],
+                "rep_name": reps[rep_idx]["rep_name"],
+            })
+        top_deals.sort(key=lambda x: x["amount"], reverse=True)
+        result["top_deals"][q] = top_deals
+
+        # Stalled deals: deals in Proposal/Negotiation for 2+ quarters
+        # Track deals across quarters
+        stalled = []
+        num_stalled = rng.randint(3, 8)
+        for s in range(num_stalled):
+            rep_idx = rng.randint(0, 35)
+            seg = rng.choices(segments, weights=seg_weights, k=1)[0]
+            days = rng.randint(60, 180)
+            stalled.append({
+                "deal_id": f"STALL-{qi:02d}-{s+1:03d}",
+                "account_name": f"{rng.choice(['Legacy', 'Heritage', 'Glacier', 'Iron', 'Silver', 'Bronze'])} {rng.choice(['Systems', 'Corp', 'Group', 'Inc', 'Partners'])}",
+                "days_in_stage": days,
+                "stage": rng.choice(["Proposal", "Negotiation"]),
+                "amount": _r(seg_amounts[seg] * rng.uniform(1.0, 3.0), 4),
+                "rep_id": reps[rep_idx]["rep_id"],
+            })
+        result["stalled_deals"][q] = stalled
+
+    return result
 
 
 def compute_ground_truth(
@@ -49,8 +264,9 @@ def compute_ground_truth(
 
     # Build per-quarter ground truth
     if model_quarters:
-        quarterly_truth = _build_v2_quarterly_truth(model_quarters)
-        dimensional_truth = _build_v2_dimensional_truth(model_quarters)
+        rep_data = _generate_rep_level_data(model_quarters)
+        quarterly_truth = _build_v2_quarterly_truth(model_quarters, rep_data)
+        dimensional_truth = _build_v2_dimensional_truth(model_quarters, rep_data)
         expected_conflicts = _build_v2_expected_conflicts(model_quarters)
         manifest_version = "2.0"
     else:
@@ -82,12 +298,17 @@ def compute_ground_truth(
 # v2.0 — Full financial model metrics
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _build_v2_quarterly_truth(model_quarters: List) -> Dict[str, Any]:
+def _build_v2_quarterly_truth(
+    model_quarters: List,
+    rep_data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Build per-quarter ground truth from financial model Quarter objects."""
     quarterly_truth = {}
 
     for fmq in model_quarters:
         q = fmq.quarter
+        qi = fmq.quarter_index
+        rng = random.Random(42 + qi * 777)
         quarterly_truth[q] = {
             # ── ARR Waterfall ─────────────────────────────────────────────
             "beginning_arr": {"value": _r(fmq.beginning_arr), "unit": "millions_usd", "primary_source": "chargebee"},
@@ -111,6 +332,7 @@ def _build_v2_quarterly_truth(model_quarters: List) -> Dict[str, Any]:
             "sm_expense": {"value": _r(fmq.sm_expense), "unit": "millions_usd", "primary_source": "netsuite"},
             "rd_expense": {"value": _r(fmq.rd_expense), "unit": "millions_usd", "primary_source": "netsuite"},
             "ga_expense": {"value": _r(fmq.ga_expense), "unit": "millions_usd", "primary_source": "netsuite"},
+            "sga": {"value": _r(fmq.sm_expense + fmq.ga_expense), "unit": "millions_usd", "primary_source": "netsuite"},
             "opex": {"value": _r(fmq.total_opex), "unit": "millions_usd", "primary_source": "netsuite"},
             "ebitda": {"value": _r(fmq.ebitda), "unit": "millions_usd", "primary_source": "netsuite"},
             "ebitda_margin_pct": {"value": _r(fmq.ebitda_margin_pct, 1), "unit": "percent", "primary_source": "netsuite"},
@@ -202,6 +424,39 @@ def _build_v2_quarterly_truth(model_quarters: List) -> Dict[str, Any]:
             "uptime_pct": {"value": _r(fmq.uptime_pct, 2), "unit": "percent", "primary_source": "datadog"},
             "downtime_hours": {"value": _r(fmq.downtime_hours, 1), "unit": "hours", "primary_source": "datadog"},
 
+            # ── Financial (computed) ─────────────────────────────────────
+            "bookings": {"value": _r(_bookings_value(fmq, q)), "unit": "millions_usd", "primary_source": "salesforce"},
+            "qualified_pipeline": {"value": _r(fmq.pipeline * 0.60), "unit": "millions_usd", "primary_source": "salesforce"},
+            "reps_at_quota_pct": {"value": rep_data["_reps_at_quota_pct"].get(q, 60.0) if rep_data else 60.0, "unit": "percent", "primary_source": "salesforce"},
+
+            # ── Engineering (expanded) ───────────────────────────────────
+            "code_coverage_pct": {"value": _r(min(68.0 + qi * 1.2 + rng.uniform(-1, 1), 92.0), 1), "unit": "percent", "primary_source": "jira"},
+            "deployment_success_pct": {"value": _r(min(94.0 + qi * 0.4 + rng.uniform(-0.5, 0.5), 99.5), 1), "unit": "percent", "primary_source": "datadog"},
+            "lead_time_days": {"value": _r(max(12.0 - qi * 0.5 + rng.uniform(-0.5, 0.5), 4.0), 1), "unit": "days", "primary_source": "jira"},
+            "change_failure_rate": {"value": _r(max(6.0 - qi * 0.3 + rng.uniform(-0.3, 0.3), 1.5), 1), "unit": "percent", "primary_source": "datadog"},
+            "bug_escape_rate": {"value": _r(max(4.0 - qi * 0.2 + rng.uniform(-0.2, 0.2), 1.0), 1), "unit": "percent", "primary_source": "jira"},
+            "engineering_utilization": {"value": _r(min(max(75.0 + rng.uniform(-5, 10), 70.0), 90.0), 1), "unit": "percent", "primary_source": "jira"},
+
+            # ── Infrastructure (expanded) ────────────────────────────────
+            "api_requests_millions": {"value": _r(max(50 + fmq.revenue * 8 + rng.uniform(-5, 5), 50), 1), "unit": "count", "primary_source": "datadog"},
+            "security_vulns": {"value": max(2, int(15 - qi * 0.8 + rng.uniform(-2, 2))), "unit": "count", "primary_source": "datadog"},
+            "critical_bugs": {"value": max(1, int(8 - qi * 0.3 + rng.uniform(-1, 1))), "unit": "count", "primary_source": "jira"},
+
+            # ── CHRO (expanded) ──────────────────────────────────────────
+            "open_roles": {"value": max(5, int(fmq.hires * 2.5 + rng.uniform(-3, 5))), "unit": "count", "primary_source": "workday"},
+            "cost_per_employee": {"value": _r(fmq.total_opex / fmq.headcount, 4) if fmq.headcount > 0 else 0, "unit": "millions_usd", "primary_source": "computed"},
+            "offer_acceptance_rate_pct": {"value": _r(82.0 + rng.uniform(-3, 4), 1), "unit": "percent", "primary_source": "workday"},
+            "training_hours_per_employee": {"value": _r(rng.uniform(20, 40), 1), "unit": "hours", "primary_source": "workday"},
+            "internal_mobility_rate_pct": {"value": _r(rng.uniform(8, 12), 1), "unit": "percent", "primary_source": "workday"},
+            "span_of_control": {"value": _r(fmq.headcount / max(1, int(fmq.headcount * 0.15)), 1), "unit": "ratio", "primary_source": "workday"},
+
+            # ── Department headcounts (from headcount_by_department) ─────
+            "cs_headcount": {"value": fmq.headcount_by_department.get("Customer Success", 0), "unit": "count", "primary_source": "workday"},
+            "marketing_headcount": {"value": fmq.headcount_by_department.get("Marketing", 0), "unit": "count", "primary_source": "workday"},
+            "product_headcount": {"value": fmq.headcount_by_department.get("Product", 0), "unit": "count", "primary_source": "workday"},
+            "finance_headcount": {"value": int(fmq.headcount_by_department.get("G&A", 0) * 0.45), "unit": "count", "primary_source": "workday"},
+            "ga_headcount": {"value": fmq.headcount_by_department.get("G&A", 0) - int(fmq.headcount_by_department.get("G&A", 0) * 0.45), "unit": "count", "primary_source": "workday"},
+
             # ── Meta ──────────────────────────────────────────────────────
             "is_forecast": fmq.is_forecast,
         }
@@ -209,7 +464,10 @@ def _build_v2_quarterly_truth(model_quarters: List) -> Dict[str, Any]:
     return quarterly_truth
 
 
-def _build_v2_dimensional_truth(model_quarters: List) -> Dict[str, Any]:
+def _build_v2_dimensional_truth(
+    model_quarters: List,
+    rep_data: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Build dimensional breakdowns from financial model Quarter objects."""
     dims: Dict[str, Dict[str, Any]] = {
         "revenue_by_region": {"source": "netsuite+salesforce"},
@@ -242,6 +500,65 @@ def _build_v2_dimensional_truth(model_quarters: List) -> Dict[str, Any]:
         dims["opex_breakdown"][q] = {k: _r(v) for k, v in fmq.opex_breakdown.items()}
         dims["headcount_by_department"][q] = dict(fmq.headcount_by_department)
         dims["new_logo_revenue_by_region"][q] = {k: _r(v) for k, v in fmq.new_logo_revenue_by_region.items()}
+
+    # ── Rep-level sections (from pre-generated rep data) ─────────────
+    if rep_data:
+        for section in ["quota_by_rep", "pipeline_by_rep", "win_rate_by_rep",
+                        "top_deals", "stalled_deals"]:
+            if section in rep_data:
+                dims[section] = {k: v for k, v in rep_data[section].items()
+                                 if not k.startswith("_")}
+
+    # ── Department-level sections ────────────────────────────────────
+    dims["attrition_by_department"] = {"source": "workday"}
+    dims["engagement_by_department"] = {"source": "workday"}
+    dims["time_to_fill_by_department"] = {"source": "workday"}
+
+    for fmq in model_quarters:
+        q = fmq.quarter
+        qi = fmq.quarter_index
+        rng = random.Random(42 + qi * 555)
+
+        # Attrition by department: derive from overall attrition_rate
+        # Engineering and Sales have higher attrition; G&A lowest
+        dept_attrition_factors = {
+            "Engineering": 1.15, "Product": 0.95, "Sales": 1.25,
+            "Marketing": 1.0, "Customer Success": 0.90, "G&A": 0.75,
+        }
+        attrition_dept = {}
+        for dept, hc in fmq.headcount_by_department.items():
+            factor = dept_attrition_factors.get(dept, 1.0)
+            dept_rate = _r(fmq.attrition_rate * factor * rng.uniform(0.9, 1.1), 1)
+            dept_count = max(0, int(hc * dept_rate / 100 / 4))  # quarterly
+            attrition_dept[dept] = {
+                "attrition_count": dept_count,
+                "attrition_rate_pct": dept_rate,
+            }
+        dims["attrition_by_department"][q] = attrition_dept
+
+        # Engagement by department: 65-85 range, improving over time
+        dept_engagement_base = {
+            "Engineering": 72, "Product": 78, "Sales": 68,
+            "Marketing": 75, "Customer Success": 70, "G&A": 73,
+        }
+        engagement_dept = {}
+        for dept in fmq.headcount_by_department:
+            base = dept_engagement_base.get(dept, 72)
+            score = _r(min(base + qi * 0.5 + rng.uniform(-2, 2), 92), 1)
+            engagement_dept[dept] = {"engagement_score": score}
+        dims["engagement_by_department"][q] = engagement_dept
+
+        # Time to fill by department: engineering longest, G&A shortest
+        dept_ttf_base = {
+            "Engineering": 55, "Product": 45, "Sales": 35,
+            "Marketing": 30, "Customer Success": 28, "G&A": 22,
+        }
+        ttf_dept = {}
+        for dept in fmq.headcount_by_department:
+            base = dept_ttf_base.get(dept, 35)
+            days = _r(max(base - qi * 0.8 + rng.uniform(-5, 5), 15), 0)
+            ttf_dept[dept] = {"time_to_fill_days": days}
+        dims["time_to_fill_by_department"][q] = ttf_dept
 
     return dims
 
