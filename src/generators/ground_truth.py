@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Optional
 from src.generators.business_data.profile import (
     BusinessProfile,
     QuarterMetrics,
-    REGION_WEIGHTS,
 )
 
 

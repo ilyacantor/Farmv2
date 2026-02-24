@@ -433,7 +433,6 @@ async def _execute_single_manifest(
     # Financial model + profile construction is CPU-bound; offload to thread
     # to keep the event loop free for concurrent requests.
     def _build_profile():
-        p = BusinessProfile(seed=seed)
         fm = FinancialModel(Assumptions())
         quarters = fm.generate()
         return BusinessProfile.from_model_quarters(quarters, seed=seed)

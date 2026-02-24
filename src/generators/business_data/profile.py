@@ -11,6 +11,15 @@ import random
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from src.generators.financial_model import Assumptions, get_schema_config
+
+# ── Canonical assumptions instance ────────────────────────────────────────
+# All BusinessProfile defaults below derive from this single source.
+# If you need to change a company assumption, change it in farm_config.yaml
+# (or in Assumptions compiled defaults if YAML is absent).
+_A = Assumptions()
+_schema = get_schema_config()
+
 
 @dataclass
 class QuarterMetrics:
@@ -70,27 +79,22 @@ class QuarterMetrics:
     pipeline_by_stage: Dict[str, float] = field(default_factory=dict)
 
 
-REGIONS = ["AMER", "EMEA", "APAC"]
-REGION_WEIGHTS = {"AMER": 0.50, "EMEA": 0.30, "APAC": 0.20}
+REGIONS = _schema.get("regions", ["AMER", "EMEA", "APAC"])
+REGION_WEIGHTS = {"AMER": _A.region_amer, "EMEA": _A.region_emea, "APAC": _A.region_apac}
 
-DEPARTMENTS = ["Engineering", "Product", "Marketing", "CS", "G&A", "Sales"]
+DEPARTMENTS = _schema.get("departments", ["Engineering", "Product", "Marketing", "CS", "G&A", "Sales"])
 DEPT_WEIGHTS = {
-    "Engineering": 0.319,
-    "Product": 0.077,
-    "Marketing": 0.098,
-    "CS": 0.136,
-    "G&A": 0.183,
-    "Sales": 0.179,
+    "Engineering": _A.hc_engineering_pct,
+    "Product": _A.hc_product_pct,
+    "Marketing": _A.hc_marketing_pct,
+    "CS": _A.hc_cs_pct,
+    "G&A": _A.hc_ga_pct,
+    "Sales": _A.hc_sales_pct,
 }
 
-PIPELINE_STAGES = ["Lead", "Qualified", "Proposal", "Negotiation", "Closed-Won"]
-STAGE_WEIGHTS = {
-    "Lead": 0.25,
-    "Qualified": 0.20,
-    "Proposal": 0.20,
-    "Negotiation": 0.16,
-    "Closed-Won": 0.19,
-}
+PIPELINE_STAGES = _schema.get("pipeline_stages", ["Lead", "Qualified", "Proposal", "Negotiation", "Closed-Won"])
+_default_stage_weights = {"Lead": 0.25, "Qualified": 0.20, "Proposal": 0.20, "Negotiation": 0.16, "Closed-Won": 0.19}
+STAGE_WEIGHTS = _schema.get("stage_weights", _default_stage_weights)
 
 
 @dataclass
@@ -103,20 +107,20 @@ class BusinessProfile:
     """
 
     seed: int = 42
-    base_revenue: float = 22.0  # millions USD, Q1 2024
-    yoy_growth_rate: float = 0.15  # 15% YoY
-    base_arr: float = 20.9
-    base_customer_count: int = 760
-    base_headcount: int = 235
-    base_win_rate: float = 39.0
-    base_nrr: float = 114.0
-    base_gross_churn: float = 8.2
-    base_gross_margin: float = 65.0
-    base_csat: float = 4.15
-    base_sprint_velocity: float = 47.0
-    base_support_tickets: int = 2800
-    base_cloud_spend: float = 1.8  # millions per quarter
-    base_incident_count: int = 18
+    base_revenue: float = _A.starting_arr / 4
+    yoy_growth_rate: float = _A.arr_growth_rate_annual
+    base_arr: float = _A.starting_arr
+    base_customer_count: int = _A.starting_customer_count
+    base_headcount: int = _A.starting_headcount
+    base_win_rate: float = _A.win_rate
+    base_nrr: float = _A.nrr_base
+    base_gross_churn: float = _A.gross_churn_rate_annual * 100
+    base_gross_margin: float = (1 - _A.cogs_pct) * 100
+    base_csat: float = _A.csat_base
+    base_sprint_velocity: float = _A.points_per_sprint
+    base_support_tickets: int = int(_A.starting_customer_count * _A.tickets_per_customer_annual / 4)
+    base_cloud_spend: float = _A.starting_arr / 4 * _A.cloud_spend_pct_revenue
+    base_incident_count: int = _A.p1_incidents_per_quarter + _A.p2_incidents_per_quarter
     num_quarters: int = 12
 
     def __post_init__(self):
@@ -311,7 +315,7 @@ class BusinessProfile:
         profile = cls.__new__(cls)
         profile.seed = seed
         profile.base_revenue = model_quarters[0].revenue if model_quarters else 22.0
-        profile.yoy_growth_rate = 0.32
+        profile.yoy_growth_rate = _A.arr_growth_rate_annual
         profile.num_quarters = len(model_quarters)
         profile.base_arr = model_quarters[0].beginning_arr if model_quarters else 83.6
         profile.base_customer_count = model_quarters[0].customer_count if model_quarters else 760

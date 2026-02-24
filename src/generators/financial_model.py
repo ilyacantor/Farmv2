@@ -22,9 +22,55 @@ Usage:
 from __future__ import annotations
 
 import json
+import logging
 import math
 from dataclasses import dataclass, field, asdict
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import yaml
+
+_logger = logging.getLogger("farm.financial_model")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# YAML config loader — reads farm_config.yaml once at import time.
+# Absence of the file is normal; compiled defaults in the dataclass are used.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _load_farm_config() -> Dict[str, Any]:
+    """
+    Load farm_config.yaml from the repo root.
+
+    Returns a flat dict merging company_profile + realism_params sections.
+    Returns empty dict if the file is absent (compiled defaults apply).
+    Also stores the raw 'schema' section for profile.py to consume.
+    """
+    candidate = Path(__file__).resolve().parent.parent.parent / "farm_config.yaml"
+    if not candidate.is_file():
+        return {}
+    try:
+        with open(candidate, encoding="utf-8") as f:
+            raw = yaml.safe_load(f)
+        if not isinstance(raw, dict):
+            return {}
+        cp = raw.get("company_profile") or {}
+        rp = raw.get("realism_params") or {}
+        merged = {**cp, **rp}
+        # Stash the raw config so other modules can read the schema section
+        merged["_raw"] = raw
+        return merged
+    except Exception as exc:
+        _logger.warning(f"Failed to load farm_config.yaml: {exc} — using compiled defaults")
+        return {}
+
+_cfg = _load_farm_config()
+
+
+def get_schema_config() -> Dict[str, Any]:
+    """Return the 'schema' section from farm_config.yaml, or empty dict."""
+    raw = _cfg.get("_raw", {})
+    return raw.get("schema") or {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -33,103 +79,111 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class Assumptions:
-    """~30 driver assumptions that parameterize the entire model."""
+    """
+    Driver assumptions that parameterize the entire financial model.
+
+    Values are loaded from farm_config.yaml when present.
+    Compiled defaults (the second argument to _cfg.get) are the fallback
+    when the YAML file is absent — Farm always runs without a config file.
+    Field names are the DCL contract and must not be renamed.
+    """
 
     # ARR
-    starting_arr: float = 83.6          # millions USD, beginning of 2024-Q1
-    arr_growth_rate_annual: float = 0.32 # 32% YoY
-    arr_growth_deceleration: float = 0.06 # growth rate drops 6pp per year
-    new_logo_pct_of_new_arr: float = 0.42
+    starting_arr: float = _cfg.get("starting_arr", 83.6)
+    arr_growth_rate_annual: float = _cfg.get("arr_growth_rate_annual", 0.32)
+    arr_growth_deceleration: float = _cfg.get("arr_growth_deceleration", 0.06)
+    new_logo_pct_of_new_arr: float = _cfg.get("new_logo_pct_of_new_arr", 0.42)
 
-    # Churn
-    gross_churn_rate_annual: float = 0.082  # 8.2% annual
-    churn_improvement_annual: float = 0.005 # improves 0.5pp per year
+    # Churn & retention
+    gross_churn_rate_annual: float = _cfg.get("gross_churn_rate_annual", 0.082)
+    churn_improvement_annual: float = _cfg.get("churn_improvement_annual", 0.005)
+    nrr_base: float = _cfg.get("nrr_base", 114.0)
 
-    # P&L ratios (as % of revenue)
-    cogs_pct: float = 0.35
-    cogs_improvement_annual: float = 0.007  # improves 0.7pp/yr
-    sm_pct: float = 0.115
-    rd_pct: float = 0.085
-    ga_pct: float = 0.065
-    da_pct: float = 0.035
+    # P&L ratios (as fraction of revenue)
+    cogs_pct: float = _cfg.get("cogs_pct", 0.35)
+    cogs_improvement_annual: float = _cfg.get("cogs_improvement_annual", 0.007)
+    sm_pct: float = _cfg.get("sm_pct", 0.115)
+    rd_pct: float = _cfg.get("rd_pct", 0.085)
+    ga_pct: float = _cfg.get("ga_pct", 0.065)
+    da_pct: float = _cfg.get("da_pct", 0.035)
 
     # COGS breakdown
-    cogs_hosting_pct: float = 0.35
-    cogs_support_staff_pct: float = 0.30
-    cogs_ps_pct: float = 0.20
-    cogs_licenses_pct: float = 0.10
-    cogs_payments_pct: float = 0.05
+    cogs_hosting_pct: float = _cfg.get("cogs_hosting_pct", 0.35)
+    cogs_support_staff_pct: float = _cfg.get("cogs_support_staff_pct", 0.30)
+    cogs_ps_pct: float = _cfg.get("cogs_ps_pct", 0.20)
+    cogs_licenses_pct: float = _cfg.get("cogs_licenses_pct", 0.10)
+    cogs_payments_pct: float = _cfg.get("cogs_payments_pct", 0.05)
 
     # Balance sheet drivers
-    dso_days: float = 45.0
-    dso_improvement_annual: float = 1.0
-    deferred_rev_months: float = 5.5
-    capex_pct_revenue: float = 0.03
-    tax_rate: float = 0.25
+    dso_days: float = _cfg.get("dso_days", 45.0)
+    dso_improvement_annual: float = _cfg.get("dso_improvement_annual", 1.0)
+    deferred_rev_months: float = _cfg.get("deferred_rev_months", 5.5)
+    capex_pct_revenue: float = _cfg.get("capex_pct_revenue", 0.03)
+    tax_rate: float = _cfg.get("tax_rate", 0.25)
 
     # Starting balance sheet
-    starting_cash: float = 61.29
-    starting_ar: float = 10.82
-    starting_unbilled_revenue: float = 3.5
-    starting_prepaid: float = 4.2
-    starting_pp_e: float = 8.5
-    starting_intangibles: float = 5.2
-    starting_goodwill: float = 45.0
-    starting_ap: float = 3.5
-    starting_accrued_expenses: float = 6.8
+    starting_cash: float = _cfg.get("starting_cash", 61.29)
+    starting_ar: float = _cfg.get("starting_ar", 10.82)
+    starting_unbilled_revenue: float = _cfg.get("starting_unbilled_revenue", 3.5)
+    starting_prepaid: float = _cfg.get("starting_prepaid", 4.2)
+    starting_pp_e: float = _cfg.get("starting_pp_e", 8.5)
+    starting_intangibles: float = _cfg.get("starting_intangibles", 5.2)
+    starting_goodwill: float = _cfg.get("starting_goodwill", 45.0)
+    starting_ap: float = _cfg.get("starting_ap", 3.5)
+    starting_accrued_expenses: float = _cfg.get("starting_accrued_expenses", 6.8)
 
     # Customers
-    starting_customer_count: int = 760
-    acv_enterprise: float = 0.185  # millions
-    acv_mid_market: float = 0.065
-    acv_smb: float = 0.018
-    segment_enterprise_pct: float = 0.20
-    segment_mid_market_pct: float = 0.40
-    segment_smb_pct: float = 0.40
-    churn_smb_pct_of_total: float = 0.50
-    churn_mm_pct_of_total: float = 0.30
-    churn_ent_pct_of_total: float = 0.20
+    starting_customer_count: int = _cfg.get("starting_customer_count", 760)
+    acv_enterprise: float = _cfg.get("acv_enterprise", 0.185)
+    acv_mid_market: float = _cfg.get("acv_mid_market", 0.065)
+    acv_smb: float = _cfg.get("acv_smb", 0.018)
+    segment_enterprise_pct: float = _cfg.get("segment_enterprise_pct", 0.20)
+    segment_mid_market_pct: float = _cfg.get("segment_mid_market_pct", 0.40)
+    segment_smb_pct: float = _cfg.get("segment_smb_pct", 0.40)
+    churn_smb_pct_of_total: float = _cfg.get("churn_smb_pct_of_total", 0.50)
+    churn_mm_pct_of_total: float = _cfg.get("churn_mm_pct_of_total", 0.30)
+    churn_ent_pct_of_total: float = _cfg.get("churn_ent_pct_of_total", 0.20)
 
     # Regional mix
-    region_amer: float = 0.50
-    region_emea: float = 0.30
-    region_apac: float = 0.20
+    region_amer: float = _cfg.get("region_amer", 0.50)
+    region_emea: float = _cfg.get("region_emea", 0.30)
+    region_apac: float = _cfg.get("region_apac", 0.20)
 
     # People
-    starting_headcount: int = 235
-    hc_engineering_pct: float = 0.319
-    hc_product_pct: float = 0.077
-    hc_sales_pct: float = 0.179
-    hc_marketing_pct: float = 0.098
-    hc_cs_pct: float = 0.136
-    hc_ga_pct: float = 0.191
-    attrition_rate_annual: float = 0.12
-    attrition_improvement_annual: float = 0.005
+    starting_headcount: int = _cfg.get("starting_headcount", 235)
+    hc_engineering_pct: float = _cfg.get("hc_engineering_pct", 0.319)
+    hc_product_pct: float = _cfg.get("hc_product_pct", 0.077)
+    hc_sales_pct: float = _cfg.get("hc_sales_pct", 0.179)
+    hc_marketing_pct: float = _cfg.get("hc_marketing_pct", 0.098)
+    hc_cs_pct: float = _cfg.get("hc_cs_pct", 0.136)
+    hc_ga_pct: float = _cfg.get("hc_ga_pct", 0.191)
+    attrition_rate_annual: float = _cfg.get("attrition_rate_annual", 0.12)
+    attrition_improvement_annual: float = _cfg.get("attrition_improvement_annual", 0.005)
 
     # Pipeline
-    pipeline_multiple: float = 3.6
-    win_rate: float = 39.0    # percent
-    sales_cycle_days: float = 90.0
+    pipeline_multiple: float = _cfg.get("pipeline_multiple", 3.6)
+    win_rate: float = _cfg.get("win_rate", 39.0)
+    sales_cycle_days: float = _cfg.get("sales_cycle_days", 90.0)
 
     # Support
-    tickets_per_customer_annual: float = 15.0
-    csat_base: float = 4.15
-    nps_base: int = 40
-    first_response_hours: float = 2.5
-    resolution_hours: float = 18.0
+    tickets_per_customer_annual: float = _cfg.get("tickets_per_customer_annual", 15.0)
+    csat_base: float = _cfg.get("csat_base", 4.15)
+    nps_base: int = _cfg.get("nps_base", 40)
+    first_response_hours: float = _cfg.get("first_response_hours", 2.5)
+    resolution_hours: float = _cfg.get("resolution_hours", 18.0)
 
     # Engineering
-    points_per_sprint: float = 96.0
-    sprints_per_quarter: int = 6
-    tech_debt_pct: float = 0.15
+    points_per_sprint: float = _cfg.get("points_per_sprint", 96.0)
+    sprints_per_quarter: int = _cfg.get("sprints_per_quarter", 6)
+    tech_debt_pct: float = _cfg.get("tech_debt_pct", 0.15)
 
     # Infrastructure
-    cloud_spend_pct_revenue: float = 0.028
-    uptime_pct: float = 99.45
-    p1_incidents_per_quarter: int = 3
-    p2_incidents_per_quarter: int = 8
-    mttr_p1_hours: float = 2.5
-    mttr_p2_hours: float = 4.0
+    cloud_spend_pct_revenue: float = _cfg.get("cloud_spend_pct_revenue", 0.028)
+    uptime_pct: float = _cfg.get("uptime_pct", 99.45)
+    p1_incidents_per_quarter: int = _cfg.get("p1_incidents_per_quarter", 3)
+    p2_incidents_per_quarter: int = _cfg.get("p2_incidents_per_quarter", 8)
+    mttr_p1_hours: float = _cfg.get("mttr_p1_hours", 2.5)
+    mttr_p2_hours: float = _cfg.get("mttr_p2_hours", 4.0)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

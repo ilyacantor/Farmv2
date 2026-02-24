@@ -55,8 +55,6 @@ class BusinessDataOrchestrator:
         dcl_ingest_url: Optional[str] = None,
         dcl_api_key: Optional[str] = None,
         tiers: Optional[List[str]] = None,
-        base_revenue: float = 22.0,
-        growth_rate: float = 0.15,
         num_quarters: int = 12,
     ):
         self.seed = seed
@@ -73,8 +71,6 @@ class BusinessDataOrchestrator:
         self.dcl_api_key = dcl_api_key or os.getenv(
             "DCL_INGEST_KEY", os.getenv("DCL_API_KEY", "")
         )
-        self.base_revenue = base_revenue
-        self.growth_rate = growth_rate
         self.num_quarters = num_quarters
 
         # Which tiers to generate
@@ -125,14 +121,7 @@ class BusinessDataOrchestrator:
         logger.info(f"Starting business data generation run: {run_id}")
 
         # Step 1: Run financial model → generate business profile
-        assumptions = Assumptions(
-            starting_arr=self.base_revenue * 4 * 0.95,  # approximate from base revenue
-            arr_growth_rate_annual=self.growth_rate * 2.1,  # scale to ARR growth
-        )
-        # Use default assumptions for richer model when using standard params
-        if self.base_revenue == 22.0 and self.growth_rate == 0.15:
-            assumptions = Assumptions()  # full spec defaults: ARR $83.6M, 32% growth
-
+        assumptions = Assumptions()
         financial_model = FinancialModel(assumptions)
         self.model_quarters = financial_model.generate()
 

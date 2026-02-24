@@ -1,0 +1,147 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# farm_config.yaml — Single source of truth for Farm's synthetic data engine
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Three sections:
+#   schema           → structural dimensions (regions, departments, stages)
+#   company_profile  → point-in-time company assumptions (ARR, headcount, ratios)
+#   realism_params   → simulation mechanics (improvement rates, deceleration)
+#
+# Field names are the DCL contract — do NOT rename them.
+# Compiled defaults in financial_model.py are the fallback when this file is absent.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ── Schema: structural dimensions that define the shape of generated data ─────
+schema:
+  regions:
+    - AMER
+    - EMEA
+    - APAC
+
+  departments:
+    - Engineering
+    - Product
+    - Marketing
+    - CS
+    - "G&A"
+    - Sales
+
+  pipeline_stages:
+    - Lead
+    - Qualified
+    - Proposal
+    - Negotiation
+    - Closed-Won
+
+  stage_weights:
+    Lead: 0.25
+    Qualified: 0.20
+    Proposal: 0.20
+    Negotiation: 0.16
+    Closed-Won: 0.19
+
+
+# ── Company Profile: who the company is at t=0 ───────────────────────────────
+company_profile:
+
+  # ARR
+  starting_arr: 83.6               # millions USD, beginning of 2024-Q1
+  arr_growth_rate_annual: 0.32     # 32% YoY
+  new_logo_pct_of_new_arr: 0.42
+
+  # Churn & retention
+  gross_churn_rate_annual: 0.082   # 8.2% annual
+  nrr_base: 114.0                  # net revenue retention, percent
+
+  # P&L ratios (as fraction of revenue)
+  cogs_pct: 0.35
+  sm_pct: 0.115
+  rd_pct: 0.085
+  ga_pct: 0.065
+  da_pct: 0.035
+
+  # COGS breakdown (fractions of total COGS)
+  cogs_hosting_pct: 0.35
+  cogs_support_staff_pct: 0.30
+  cogs_ps_pct: 0.20
+  cogs_licenses_pct: 0.10
+  cogs_payments_pct: 0.05
+
+  # Balance sheet drivers
+  dso_days: 45.0
+  deferred_rev_months: 5.5
+  capex_pct_revenue: 0.03
+  tax_rate: 0.25
+
+  # Starting balance sheet (millions USD)
+  starting_cash: 61.29
+  starting_ar: 10.82
+  starting_unbilled_revenue: 3.5
+  starting_prepaid: 4.2
+  starting_pp_e: 8.5
+  starting_intangibles: 5.2
+  starting_goodwill: 45.0
+  starting_ap: 3.5
+  starting_accrued_expenses: 6.8
+
+  # Customers
+  starting_customer_count: 760
+  acv_enterprise: 0.185            # millions
+  acv_mid_market: 0.065
+  acv_smb: 0.018
+  segment_enterprise_pct: 0.20
+  segment_mid_market_pct: 0.40
+  segment_smb_pct: 0.40
+  churn_smb_pct_of_total: 0.50
+  churn_mm_pct_of_total: 0.30
+  churn_ent_pct_of_total: 0.20
+
+  # Regional mix (fractions, must sum to 1.0)
+  region_amer: 0.50
+  region_emea: 0.30
+  region_apac: 0.20
+
+  # People
+  starting_headcount: 235
+  hc_engineering_pct: 0.319
+  hc_product_pct: 0.077
+  hc_sales_pct: 0.179
+  hc_marketing_pct: 0.098
+  hc_cs_pct: 0.136
+  hc_ga_pct: 0.191
+  attrition_rate_annual: 0.12
+
+  # Pipeline
+  pipeline_multiple: 3.6
+  win_rate: 39.0                   # percent
+  sales_cycle_days: 90.0
+
+  # Support
+  tickets_per_customer_annual: 15.0
+  csat_base: 4.15                  # score out of 5
+  nps_base: 40
+  first_response_hours: 2.5
+  resolution_hours: 18.0
+
+  # Engineering
+  points_per_sprint: 96.0
+  sprints_per_quarter: 6
+  tech_debt_pct: 0.15
+
+  # Infrastructure
+  cloud_spend_pct_revenue: 0.028
+  uptime_pct: 99.45
+  p1_incidents_per_quarter: 3
+  p2_incidents_per_quarter: 8
+  mttr_p1_hours: 2.5
+  mttr_p2_hours: 4.0
+
+
+# ── Realism Params: how the simulation evolves over time ─────────────────────
+realism_params:
+  arr_growth_deceleration: 0.06    # growth rate drops 6pp per year
+  churn_improvement_annual: 0.005  # churn improves 0.5pp per year
+  cogs_improvement_annual: 0.007   # COGS improves 0.7pp per year
+  dso_improvement_annual: 1.0      # DSO improves 1 day per year
+  attrition_improvement_annual: 0.005  # attrition improves 0.5pp per year
