@@ -13,6 +13,7 @@ import random
 import time
 from datetime import datetime
 from enum import Enum
+from collections import OrderedDict
 from typing import Optional, AsyncGenerator
 
 from fastapi import APIRouter, Query, Path, HTTPException, Body
@@ -69,7 +70,9 @@ class InvoiceVerifyRequest(BaseModel):
     original_invoice_id: Optional[str] = None
 
 
-_scenario_seeds: dict[str, tuple[int, ScaleEnum]] = {}
+_SCENARIO_SEEDS_MAX = 20  # Lightweight metadata; generous cap
+
+_scenario_seeds: OrderedDict[str, tuple[int, ScaleEnum]] = OrderedDict()
 
 
 def _generate_scenario_id(seed: int, scale: str) -> str:
@@ -94,7 +97,9 @@ async def generate_scenario(request: GenerateRequest):
     scenario_id = _generate_scenario_id(seed, request.scale.value)
     
     _scenario_seeds[scenario_id] = (seed, request.scale)
-    
+    while len(_scenario_seeds) > _SCENARIO_SEEDS_MAX:
+        _scenario_seeds.popitem(last=False)
+
     generator = get_or_create_scenario(scenario_id, seed, request.scale)
     manifest = generator.get_manifest()
     

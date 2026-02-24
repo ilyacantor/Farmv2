@@ -7,7 +7,7 @@ and aggregation correctness. All data is generated on-the-fly from seed.
 import random
 import hashlib
 from datetime import datetime, timedelta
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from typing import Optional
 
 from src.models.scenarios import (
@@ -815,19 +815,27 @@ class ScenarioGenerator:
         }
 
 
-_scenario_cache: dict[str, ScenarioGenerator] = {}
+_SCENARIO_CACHE_MAX = 2  # Each ScenarioGenerator holds ~50-100MB; cap to limit RSS
+
+_scenario_cache: OrderedDict[str, ScenarioGenerator] = OrderedDict()
 
 
 def get_or_create_scenario(scenario_id: str, seed: int, scale: ScaleEnum = ScaleEnum.medium) -> ScenarioGenerator:
-    """Get a cached scenario or create a new one."""
+    """Get a cached scenario or create a new one (LRU, max 2 entries)."""
     cache_key = f"{scenario_id}:{seed}"
-    
-    if cache_key not in _scenario_cache:
-        generator = ScenarioGenerator(scenario_id, seed, scale)
-        generator.generate()
-        _scenario_cache[cache_key] = generator
-    
-    return _scenario_cache[cache_key]
+
+    if cache_key in _scenario_cache:
+        _scenario_cache.move_to_end(cache_key)
+        return _scenario_cache[cache_key]
+
+    generator = ScenarioGenerator(scenario_id, seed, scale)
+    generator.generate()
+    _scenario_cache[cache_key] = generator
+
+    while len(_scenario_cache) > _SCENARIO_CACHE_MAX:
+        _scenario_cache.popitem(last=False)
+
+    return generator
 
 
 def clear_scenario_cache():

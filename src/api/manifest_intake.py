@@ -264,6 +264,7 @@ async def _push_to_dcl(
             timeout=manifest.limits.timeout_seconds
         ) as client:
             response = await client.post(dcl_url, json=body, headers=headers)
+        del body  # Release serialized row payload after POST completes
 
         # --- Handle 422 NO_MATCHING_PIPE (configuration error, never retry) ---
         if response.status_code == 422:
@@ -539,6 +540,7 @@ async def _execute_single_manifest(
 
     rows = pipe_payload.get("data", [])
     rows_generated = len(rows)
+    del generated_data  # Release ~14-40MB; no longer needed after row extraction
 
     logger.info(
         f"Generated {rows_generated} rows for system={system} "
@@ -560,6 +562,7 @@ async def _execute_single_manifest(
         source_system=system,
         schema_hash=schema_hash,
     )
+    del rows, pipe_payload  # Release row data after push; only push_result metadata needed
 
     elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
