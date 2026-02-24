@@ -856,17 +856,9 @@
                     <!-- KPI Boxes -->
                     <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
                         <!-- Row 1: Core IDs -->
-                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">AOD Run ID</div>
-                            <div id="rlKpiAodRun" class="text-sm text-slate-400 font-mono">N/A</div>
-                        </div>
                         <div class="bg-slate-800/50 rounded-lg p-3 border border-cyan-800/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">AAM Run ID</div>
-                            <div id="rlKpiAamRun" class="text-sm text-cyan-400 font-mono break-all">--</div>
-                        </div>
-                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Pipe ID</div>
-                            <div id="rlKpiPipeId" class="text-sm text-slate-400 font-mono">Run-Level</div>
+                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Run ID</div>
+                            <div id="rlKpiRunId" class="text-sm text-cyan-400 font-mono break-all">--</div>
                         </div>
                         <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
                             <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Tenant</div>
@@ -1779,7 +1771,7 @@
             btn.textContent = 'Loading...';
             btn.disabled = true;
             try {
-                // Get most recent pipe to find latest aam_run_id
+                // Get most recent pipe to find latest run_id
                 const resp = await fetch('/api/runs?limit=1');
                 if (!resp.ok) {
                     throw new Error(`HTTP ${resp.status}`);
@@ -1828,9 +1820,7 @@
             const firstRun = runs[0] || {};
 
             // Render KPI boxes
-            document.getElementById('rlKpiAodRun').textContent = 'N/A';
-            document.getElementById('rlKpiAamRun').textContent = summary.run_id || '--';
-            document.getElementById('rlKpiPipeId').textContent = 'Run-Level';
+            document.getElementById('rlKpiRunId').textContent = summary.run_id || '--';
             document.getElementById('rlKpiTenant').textContent = firstRun.tenant_id || '--';
             document.getElementById('rlKpiSnapshot').textContent = firstRun.snapshot_name || '--';
 
