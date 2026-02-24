@@ -394,12 +394,20 @@ async def _push_to_dcl(
         )
 
 
-async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionResult:
+async def _execute_single_manifest(
+    manifest: JobManifest,
+    aam_run_id: str | None = None,
+) -> ManifestExecutionResult:
     """
     Core logic for executing a single JobManifest.
 
     Extracted so both the single-manifest endpoint and the batch endpoint
     can reuse the same execution path.
+
+    Args:
+        manifest: The job manifest from AAM.
+        aam_run_id: The batch-level AAM/AOD run ID that groups all pipes
+                    in a single dispatch. Passed from BatchManifestRequest.batch_id.
     """
     start_time = time.monotonic()
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -469,6 +477,7 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
         try:
             await save_manifest_run(
                 farm_run_id=farm_run_id, run_id=run_id, pipe_id=pipe_id,
+                aam_run_id=aam_run_id,
                 tenant_id=tenant_id, snapshot_name=snapshot_name,
                 source_system=system, category=category or None,
                 generator_key=generator_key, status="failed",
@@ -509,6 +518,7 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
             try:
                 await save_manifest_run(
                     farm_run_id=farm_run_id, run_id=run_id, pipe_id=pipe_id,
+                    aam_run_id=aam_run_id,
                     tenant_id=tenant_id, snapshot_name=snapshot_name,
                     source_system=system, category=category or None,
                     generator_key=generator_key, status="failed",
@@ -567,6 +577,7 @@ async def _execute_single_manifest(manifest: JobManifest) -> ManifestExecutionRe
             farm_run_id=farm_run_id,
             run_id=run_id,
             pipe_id=pipe_id,
+            aam_run_id=aam_run_id,
             dcl_run_id=push_result.dcl_run_id,
             tenant_id=tenant_id,
             snapshot_name=snapshot_name,
@@ -698,7 +709,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     async def _run_with_semaphore(m: JobManifest) -> Optional[ManifestExecutionResult]:
         async with semaphore:
             try:
-                return await _execute_single_manifest(m)
+                return await _execute_single_manifest(m, aam_run_id=request.batch_id)
             except HTTPException as exc:
                 logger.error(
                     f"Manifest failed with HTTP {exc.status_code} for "

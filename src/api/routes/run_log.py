@@ -9,7 +9,7 @@ Endpoints:
 - GET  /api/runs                    List runs (filterable by tenant_id, status, pipe_id)
 - GET  /api/runs/{farm_run_id}      Full run detail with push result
 - GET  /api/runs/by-pipe/{pipe_id}  All runs for a specific pipe
-- GET  /api/runs/by-aam-run/{run_id} All Farm executions for an AAM batch run
+- GET  /api/runs/by-aam-run/{aam_run_id} All Farm executions for an AAM batch run
 - GET  /api/farm/status/{job_id}    Quick execution status + row counts for AAM polling
 """
 import logging
@@ -37,7 +37,7 @@ async def list_runs(
         # Use dedicated pipe query for pipe_id filtering
         async with db_connection() as conn:
             rows = await conn.fetch(
-                """SELECT farm_run_id, run_id, pipe_id, dcl_run_id,
+                """SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                           tenant_id, snapshot_name, source_system, category, generator_key,
                           status, rows_generated, rows_accepted, dcl_status_code,
                           error_type, error_message, schema_drift,
@@ -66,7 +66,7 @@ async def get_runs_by_pipe(
     """Find all runs for a specific pipe_id. Traces a pipe's execution history."""
     async with db_connection() as conn:
         rows = await conn.fetch(
-            """SELECT farm_run_id, run_id, pipe_id, dcl_run_id,
+            """SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                       tenant_id, snapshot_name, source_system, category, generator_key,
                       status, rows_generated, rows_accepted, dcl_status_code,
                       error_type, error_message, schema_drift,
@@ -82,26 +82,41 @@ async def get_runs_by_pipe(
         return {"pipe_id": pipe_id, "runs": [dict(r) for r in rows], "count": len(rows)}
 
 
-@router.get("/api/runs/by-aam-run/{run_id}")
-async def get_runs_by_aam_run(run_id: str):
-    """Find all Farm executions triggered by a single AAM run_id.
+@router.get("/api/runs/by-aam-run/{aam_run_id}")
+async def get_runs_by_aam_run(aam_run_id: str):
+    """Find all Farm executions triggered by a single AAM batch run.
 
-    An AAM batch dispatch produces one run_id across multiple pipes.
-    This endpoint shows all Farm executions for that batch with a
-    structured run-level summary including per-system and per-error breakdowns.
+    The aam_run_id is the batch-level correlation key that AAM/AOD assigns
+    to a dispatch. All pipes in that batch share the same aam_run_id.
+    Falls back to matching run_id for pre-migration data.
     """
     async with db_connection() as conn:
+        # Try aam_run_id first; fall back to run_id for pre-migration rows
         rows = await conn.fetch(
-            """SELECT farm_run_id, run_id, pipe_id, dcl_run_id,
+            """SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                       tenant_id, snapshot_name, source_system, category, generator_key,
                       status, rows_generated, rows_accepted, dcl_status_code,
                       error_type, error_message, schema_drift,
                       created_at, elapsed_ms
                FROM manifest_runs
-               WHERE run_id = $1
+               WHERE aam_run_id = $1
                ORDER BY created_at DESC""",
-            run_id,
+            aam_run_id,
         )
+
+        if not rows:
+            # Fallback: pre-migration data only has run_id
+            rows = await conn.fetch(
+                """SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
+                          tenant_id, snapshot_name, source_system, category, generator_key,
+                          status, rows_generated, rows_accepted, dcl_status_code,
+                          error_type, error_message, schema_drift,
+                          created_at, elapsed_ms
+                   FROM manifest_runs
+                   WHERE run_id = $1
+                   ORDER BY created_at DESC""",
+                aam_run_id,
+            )
 
         # Status counts
         completed = sum(1 for r in rows if r["status"] == "completed")
@@ -141,7 +156,7 @@ async def get_runs_by_aam_run(run_id: str):
         ]
 
         summary = {
-            "run_id": run_id,
+            "aam_run_id": aam_run_id,
             "total": len(rows),
             "completed": completed,
             "failed": failed,

@@ -558,6 +558,7 @@ class DatabaseManager:
                     CREATE TABLE IF NOT EXISTS manifest_runs (
                         farm_run_id TEXT PRIMARY KEY,
                         run_id TEXT NOT NULL,
+                        aam_run_id TEXT,
                         pipe_id TEXT NOT NULL,
                         dcl_run_id TEXT,
                         tenant_id TEXT NOT NULL,
@@ -578,9 +579,16 @@ class DatabaseManager:
                     )
                 """)
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_run_id ON manifest_runs(run_id)")
+                await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_aam_run_id ON manifest_runs(aam_run_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_tenant_created ON manifest_runs(tenant_id, created_at DESC)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_status ON manifest_runs(status)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_pipe_id ON manifest_runs(pipe_id)")
+
+                # Migration: add aam_run_id column if table predates it
+                try:
+                    await conn.execute("ALTER TABLE manifest_runs ADD COLUMN IF NOT EXISTS aam_run_id TEXT")
+                except Exception:
+                    pass  # Column already exists
 
                 self._schema_initialized = True
                 self._log("Schema initialized")
@@ -824,6 +832,7 @@ async def save_manifest_run(
     status: str,
     created_at: str,
     category: str | None = None,
+    aam_run_id: str | None = None,
     dcl_run_id: str | None = None,
     rows_generated: int = 0,
     rows_accepted: int | None = None,
@@ -841,20 +850,21 @@ async def save_manifest_run(
     async with connection() as conn:
         await conn.execute("""
             INSERT INTO manifest_runs (
-                farm_run_id, run_id, pipe_id, dcl_run_id,
+                farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                 tenant_id, snapshot_name, source_system, category, generator_key,
                 status, rows_generated, rows_accepted, dcl_status_code,
                 error_type, error_message, schema_drift,
                 created_at, elapsed_ms, push_result_json
             ) VALUES (
-                $1, $2, $3, $4,
-                $5, $6, $7, $8, $9,
-                $10, $11, $12, $13,
-                $14, $15, $16,
-                $17, $18, $19::jsonb
+                $1, $2, $3, $4, $5,
+                $6, $7, $8, $9, $10,
+                $11, $12, $13, $14,
+                $15, $16, $17,
+                $18, $19, $20::jsonb
             )
             ON CONFLICT (farm_run_id) DO UPDATE SET
                 status = EXCLUDED.status,
+                aam_run_id = EXCLUDED.aam_run_id,
                 dcl_run_id = EXCLUDED.dcl_run_id,
                 rows_accepted = EXCLUDED.rows_accepted,
                 dcl_status_code = EXCLUDED.dcl_status_code,
@@ -864,7 +874,7 @@ async def save_manifest_run(
                 elapsed_ms = EXCLUDED.elapsed_ms,
                 push_result_json = EXCLUDED.push_result_json
         """,
-            farm_run_id, run_id, pipe_id, dcl_run_id,
+            farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
             tenant_id, snapshot_name, source_system, category, generator_key,
             status, rows_generated, rows_accepted, dcl_status_code,
             error_type, error_message, schema_drift,
@@ -913,7 +923,7 @@ async def list_manifest_runs(
     params.extend([limit, offset])
 
     query = f"""
-        SELECT farm_run_id, run_id, pipe_id, dcl_run_id,
+        SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                tenant_id, snapshot_name, source_system, category, generator_key,
                status, rows_generated, rows_accepted, dcl_status_code,
                error_type, error_message, schema_drift,
