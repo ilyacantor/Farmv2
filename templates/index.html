@@ -1825,15 +1825,17 @@
             document.getElementById('rlKpiFailed').textContent = (summary.failed || 0) + (summary.rejected_by_dcl || 0);
             document.getElementById('rlKpiDispatched').textContent = summary.completed || 0;
 
-            // SOR Count - count unique source systems
-            const systems = Object.keys(summary.per_system || {});
-            const sorSystems = systems.filter(s => ['salesforce', 'netsuite', 'workday', 'chargebee'].includes(s.toLowerCase()));
-            document.getElementById('rlKpiSorCount').textContent = sorSystems.length;
-            document.getElementById('rlKpiSorList').textContent = sorSystems.join(', ') || 'None';
+            // SOR Count — server-computed, excludes fabric-plane systems
+            document.getElementById('rlKpiSorCount').textContent = summary.sor_count || 0;
+            document.getElementById('rlKpiSorList').textContent = (summary.sor_systems || []).join(', ') || 'None';
 
-            // Fabric Count - placeholder (data not available in current structure)
-            document.getElementById('rlKpiFabricCount').textContent = 'N/A';
-            document.getElementById('rlKpiFabricList').textContent = 'Not tracked';
+            // Fabric Count — big number = total planes from snapshot topology,
+            // detail text = how many fabric pipes DCL actually received
+            document.getElementById('rlKpiFabricCount').textContent = summary.fabric_count || 0;
+            const fabricDetail = summary.fabric_received_by_dcl != null
+                ? `${summary.fabric_received_by_dcl} received by DCL`
+                : (summary.fabric_planes || []).join(', ') || 'None';
+            document.getElementById('rlKpiFabricList').textContent = fabricDetail;
 
             // Render transactional table
             rlRenderSystemTable(summary, runs);

@@ -12,12 +12,16 @@ Endpoints:
 - GET  /api/runs/by-aam-run/{aam_run_id} All Farm executions for an AAM batch run
 - GET  /api/farm/status/{job_id}    Quick execution status + row counts for AAM polling
 """
+import json
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
 from src.farm.db import get_manifest_run, list_manifest_runs, connection as db_connection
+
+# Canonical fabric-plane categories — must match farm_config.yaml definitions
+FABRIC_PLANE_CATEGORIES = {"ipaas", "api_gateway", "event_bus", "data_warehouse"}
 
 logger = logging.getLogger("farm.api.run_log")
 
@@ -91,32 +95,39 @@ async def get_runs_by_aam_run(aam_run_id: str):
     Falls back to matching run_id for pre-migration data.
     """
     async with db_connection() as conn:
-        # Try aam_run_id first; fall back to run_id for pre-migration rows
+        # Try aam_run_id first; fall back to run_id for pre-migration rows.
+        # DISTINCT ON (pipe_id) keeps only the latest execution per pipe,
+        # so AAM retries/re-dispatches don't inflate counts.
         rows = await conn.fetch(
-            """SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
+            """SELECT DISTINCT ON (pipe_id)
+                      farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                       tenant_id, snapshot_name, source_system, category, generator_key,
                       status, rows_generated, rows_pushed, rows_accepted, dcl_status_code,
                       error_type, error_message, schema_drift,
                       created_at, elapsed_ms
                FROM manifest_runs
                WHERE aam_run_id = $1
-               ORDER BY created_at DESC""",
+               ORDER BY pipe_id, created_at DESC""",
             aam_run_id,
         )
 
         if not rows:
             # Fallback: pre-migration data only has run_id
             rows = await conn.fetch(
-                """SELECT farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
+                """SELECT DISTINCT ON (pipe_id)
+                          farm_run_id, run_id, aam_run_id, pipe_id, dcl_run_id,
                           tenant_id, snapshot_name, source_system, category, generator_key,
                           status, rows_generated, rows_pushed, rows_accepted, dcl_status_code,
                           error_type, error_message, schema_drift,
                           created_at, elapsed_ms
                    FROM manifest_runs
                    WHERE run_id = $1
-                   ORDER BY created_at DESC""",
+                   ORDER BY pipe_id, created_at DESC""",
                 aam_run_id,
             )
+
+        # Re-sort by created_at DESC for display (DISTINCT ON forced pipe_id ordering)
+        rows = sorted(rows, key=lambda r: r["created_at"], reverse=True)
 
         # Status counts
         completed = sum(1 for r in rows if r["status"] == "completed")
@@ -156,6 +167,32 @@ async def get_runs_by_aam_run(aam_run_id: str):
             if r["status"] in ("failed", "rejected_by_dcl")
         ]
 
+        # --- Fabric plane tracking ---
+        # Count fabric pipes received by DCL (completed with a fabric category)
+        fabric_received = sum(
+            1 for r in rows
+            if (r["category"] or "").lower() in FABRIC_PLANE_CATEGORIES
+            and r["status"] == "completed"
+        )
+
+        # Query snapshots_meta for total fabric planes in enterprise topology
+        tenant_id = rows[0]["tenant_id"] if rows else None
+        snapshot_fabric_planes: list = []
+        if tenant_id:
+            fabric_meta = await conn.fetchrow(
+                "SELECT fabric_planes FROM snapshots_meta WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1",
+                tenant_id,
+            )
+            if fabric_meta and fabric_meta["fabric_planes"]:
+                raw = fabric_meta["fabric_planes"]
+                snapshot_fabric_planes = json.loads(raw) if isinstance(raw, str) else raw
+
+        # SOR systems — non-fabric source systems
+        sor_systems = sorted(set(
+            r["source_system"] for r in rows
+            if (r["category"] or "").lower() not in FABRIC_PLANE_CATEGORIES
+        ))
+
         summary = {
             "aam_run_id": aam_run_id,
             "total": len(rows),
@@ -173,6 +210,14 @@ async def get_runs_by_aam_run(aam_run_id: str):
                 "max_ms": max(elapsed_values) if elapsed_values else None,
                 "avg_ms": round(sum(elapsed_values) / len(elapsed_values)) if elapsed_values else None,
             },
+            "fabric_count": len(snapshot_fabric_planes),
+            "fabric_planes": [
+                fp.get("plane", fp) if isinstance(fp, dict) else fp
+                for fp in snapshot_fabric_planes
+            ],
+            "fabric_received_by_dcl": fabric_received,
+            "sor_count": len(sor_systems),
+            "sor_systems": sor_systems,
         }
         return {"summary": summary, "runs": [dict(r) for r in rows]}
 
