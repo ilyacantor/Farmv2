@@ -250,7 +250,7 @@ class BusinessDataOrchestrator:
             logger.warning("No generated data to push")
             return [{"status": "skipped", "reason": "no_data"}]
 
-        dcl_run_id = str(uuid.uuid4())
+        dcl_run_id = self.run_id  # e.g. farm_run_20260225_191133_42
         run_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         snapshot_name = getattr(self, 'snapshot_name', None) or f"cloudedge-{dcl_run_id[:4]}"
         tenant_id = os.getenv("DCL_TENANT_ID", "aos-demo")
