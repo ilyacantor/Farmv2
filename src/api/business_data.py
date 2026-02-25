@@ -85,8 +85,6 @@ async def generate_business_data(request: GenerateRequest):
     orchestrator = BusinessDataOrchestrator(
         seed=request.seed,
         tiers=active,
-        base_revenue=request.base_revenue,
-        growth_rate=request.growth_rate,
         num_quarters=request.num_quarters,
     )
 
