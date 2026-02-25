@@ -718,17 +718,17 @@ async def _execute_single_manifest(
             try:
                 async with httpx.AsyncClient(timeout=10.0) as cb_client:
                     cb_resp = await cb_client.put(
-                        f"{callback_url}/{run_id}",
+                        f"{callback_url}/{pipe_id}",
                         json=callback_payload,
                     )
                 logger.info(
-                    f"AAM callback sent: run_id={run_id}, status={aam_status}, "
-                    f"http={cb_resp.status_code}"
+                    f"AAM callback sent: pipe_id={pipe_id}, run_id={run_id}, "
+                    f"status={aam_status}, http={cb_resp.status_code}"
                 )
             except Exception as cb_err:
                 logger.warning(
-                    f"AAM callback failed (non-fatal): run_id={run_id}, "
-                    f"url={callback_url}/{run_id}, error={cb_err}"
+                    f"AAM callback failed (non-fatal): pipe_id={pipe_id}, "
+                    f"run_id={run_id}, url={callback_url}/{pipe_id}, error={cb_err}"
                 )
 
         asyncio.create_task(_fire_callback())
