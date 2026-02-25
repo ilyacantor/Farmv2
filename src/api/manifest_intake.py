@@ -649,46 +649,44 @@ async def _execute_single_manifest(
     else:
         status = "failed"
 
-    # Persist run with full provenance (fire-and-forget — not on critical path).
-    # DB save takes ~0.3-1s per pipe and the return value is not needed.
-    async def _safe_persist():
-        try:
-            await save_manifest_run(
-                farm_run_id=farm_run_id,
-                run_id=run_id,
-                pipe_id=pipe_id,
-                aam_run_id=aam_run_id,
-                dcl_run_id=push_result.dcl_run_id,
-                tenant_id=tenant_id,
-                snapshot_name=snapshot_name,
-                source_system=system,
-                category=category or None,
-                generator_key=generator_key,
-                status=status,
-                rows_generated=rows_generated,
-                rows_pushed=rows_pushed,
-                rows_accepted=push_result.rows_accepted,
-                dcl_status_code=push_result.status_code,
-                error_type=push_result.error_type,
-                error_message=push_result.error[:500] if push_result.error else None,
-                schema_drift=push_result.schema_drift or False,
-                created_at=created_at,
-                elapsed_ms=elapsed_ms,
-                push_result_json=push_result.model_dump(),
-            )
-            logger.info(
-                f"Manifest run persisted: farm_run_id={farm_run_id}, "
-                f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
-                f"tenant_id={tenant_id}, snapshot_name={snapshot_name}"
-            )
-        except Exception as db_err:
-            logger.error(
-                f"PERSISTENCE FAILURE: run {farm_run_id} NOT saved to DB. "
-                f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
-                f"rows_generated={rows_generated}, elapsed_ms={elapsed_ms}, "
-                f"dcl_status={push_result.status_code}, error: {db_err}"
-            )
-    asyncio.create_task(_safe_persist())
+    # Persist run with full provenance — must complete before response
+    # so the run is queryable by the NLQ tab immediately.
+    try:
+        await save_manifest_run(
+            farm_run_id=farm_run_id,
+            run_id=run_id,
+            pipe_id=pipe_id,
+            aam_run_id=aam_run_id,
+            dcl_run_id=push_result.dcl_run_id,
+            tenant_id=tenant_id,
+            snapshot_name=snapshot_name,
+            source_system=system,
+            category=category or None,
+            generator_key=generator_key,
+            status=status,
+            rows_generated=rows_generated,
+            rows_pushed=rows_pushed,
+            rows_accepted=push_result.rows_accepted,
+            dcl_status_code=push_result.status_code,
+            error_type=push_result.error_type,
+            error_message=push_result.error[:500] if push_result.error else None,
+            schema_drift=push_result.schema_drift or False,
+            created_at=created_at,
+            elapsed_ms=elapsed_ms,
+            push_result_json=push_result.model_dump(),
+        )
+        logger.info(
+            f"Manifest run persisted: farm_run_id={farm_run_id}, "
+            f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
+            f"tenant_id={tenant_id}, snapshot_name={snapshot_name}"
+        )
+    except Exception as db_err:
+        logger.error(
+            f"PERSISTENCE FAILURE: run {farm_run_id} NOT saved to DB. "
+            f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
+            f"rows_generated={rows_generated}, elapsed_ms={elapsed_ms}, "
+            f"dcl_status={push_result.status_code}, error: {db_err}"
+        )
 
     # Per-pipe completion log — one-line summary for every manifest, success or failure
     logger.info(
