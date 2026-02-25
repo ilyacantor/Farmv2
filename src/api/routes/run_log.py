@@ -11,12 +11,15 @@ Endpoints:
 - GET  /api/runs/by-pipe/{pipe_id}  All runs for a specific pipe
 - GET  /api/runs/by-aam-run/{aam_run_id} All Farm executions for an AAM batch run
 - GET  /api/farm/status/{job_id}    Quick execution status + row counts for AAM polling
+- GET  /api/debug/latest            DB diagnostic: latest rows + row count
 """
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 from src.farm.db import get_manifest_run, list_manifest_runs, connection as db_connection
 
@@ -275,3 +278,44 @@ async def get_farm_status(job_id: str):
         "elapsed_ms": run.get("elapsed_ms"),
         "error_message": run.get("error_message"),
     }
+
+
+@router.get("/api/debug/latest")
+async def debug_latest_runs():
+    """DB diagnostic — shows what the NLQ tab SHOULD be displaying.
+
+    Hit this in a browser to verify:
+    1. DB is reachable
+    2. New runs are actually persisted
+    3. ORDER BY created_at DESC returns the expected row
+    """
+    try:
+        async with db_connection() as conn:
+            total = await conn.fetchval("SELECT COUNT(*) FROM manifest_runs")
+            rows = await conn.fetch(
+                """SELECT farm_run_id, aam_run_id, run_id, pipe_id,
+                          source_system, status, created_at, elapsed_ms
+                   FROM manifest_runs
+                   ORDER BY created_at DESC
+                   LIMIT 5"""
+            )
+            distinct_batches = await conn.fetchval(
+                "SELECT COUNT(DISTINCT aam_run_id) FROM manifest_runs"
+            )
+        latest = [dict(r) for r in rows]
+        return JSONResponse(
+            content={
+                "server_time_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "total_rows": total,
+                "distinct_batches": distinct_batches,
+                "latest_5": latest,
+                "nlq_tab_would_show_aam_run_id": latest[0]["aam_run_id"] if latest else None,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e), "type": type(e).__name__},
+            headers={"Cache-Control": "no-store"},
+        )
