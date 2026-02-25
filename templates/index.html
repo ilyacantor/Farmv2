@@ -1767,7 +1767,7 @@
             btn.disabled = true;
             try {
                 // Get most recent pipe to find latest aam_run_id (batch-level)
-                const resp = await fetch('/api/runs?limit=1');
+                const resp = await fetch('/api/runs?limit=1', { cache: 'no-store' });
                 if (!resp.ok) {
                     throw new Error(`HTTP ${resp.status}`);
                 }
@@ -1784,7 +1784,7 @@
                 const latestRunId = pipes[0].aam_run_id || pipes[0].run_id;
 
                 // Fetch ALL pipes for this batch run
-                const aggResp = await fetch(`/api/runs/by-aam-run/${latestRunId}`);
+                const aggResp = await fetch(`/api/runs/by-aam-run/${latestRunId}`, { cache: 'no-store' });
                 if (!aggResp.ok) {
                     throw new Error(`HTTP ${aggResp.status}`);
                 }

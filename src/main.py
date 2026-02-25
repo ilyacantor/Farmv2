@@ -88,6 +88,10 @@ class APIJSONErrorMiddleware(BaseHTTPMiddleware):
                     f"(request_id={request_id})"
                 )
 
+            # Prevent browser from caching API responses — stale GET results
+            # cause the NLQ tab to display old run data even after new runs complete.
+            response.headers["Cache-Control"] = "no-store"
+
             return response
             
         except Exception as e:
