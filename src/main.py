@@ -46,6 +46,7 @@ from src.api.stream import router as stream_router
 from src.api.agents import router as agents_router
 from src.api.scenarios import router as scenarios_router, fabric_router
 from src.api.manifest_intake import router as manifest_intake_router
+from src.api.business_data import router as business_data_router
 from src.farm.db import DBUnavailable, close_pool, ensure_schema, is_healthy
 
 
@@ -231,6 +232,7 @@ app.include_router(agents_router)
 app.include_router(scenarios_router)
 app.include_router(fabric_router)
 app.include_router(manifest_intake_router)
+app.include_router(business_data_router)
 
 # ---------------------------------------------------------------------------
 # Route aliases — common paths AAM implementations may call
