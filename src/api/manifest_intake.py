@@ -212,6 +212,7 @@ async def _push_to_dcl(
     farm_run_id: str,
     source_system: str,
     schema_hash: str,
+    http_client: httpx.AsyncClient | None = None,
 ) -> DCLPushResult:
     """
     Push data rows to DCL using the manifest's identity and delivery address.
@@ -278,10 +279,16 @@ async def _push_to_dcl(
     )
 
     try:
-        async with httpx.AsyncClient(
-            timeout=manifest.limits.timeout_seconds
-        ) as client:
-            response = await client.post(dcl_url, json=body, headers=headers)
+        if http_client is not None:
+            response = await http_client.post(
+                dcl_url, json=body, headers=headers,
+                timeout=manifest.limits.timeout_seconds,
+            )
+        else:
+            async with httpx.AsyncClient(
+                timeout=manifest.limits.timeout_seconds
+            ) as client:
+                response = await client.post(dcl_url, json=body, headers=headers)
         del body  # Release serialized row payload after POST completes
 
         # --- Handle 422 NO_MATCHING_PIPE (configuration error, never retry) ---
@@ -436,6 +443,8 @@ async def _push_to_dcl(
 async def _execute_single_manifest(
     manifest: JobManifest,
     aam_run_id: str | None = None,
+    http_client: httpx.AsyncClient | None = None,
+    precomputed_profile: BusinessProfile | None = None,
 ) -> ManifestExecutionResult:
     """
     Core logic for executing a single JobManifest.
@@ -447,6 +456,11 @@ async def _execute_single_manifest(
         manifest: The job manifest from AAM.
         aam_run_id: The batch-level AAM/AOD run ID that groups all pipes
                     in a single dispatch. Passed from BatchManifestRequest.batch_id.
+        http_client: Optional shared httpx client (batch mode) to avoid per-pipe
+                     TLS handshakes. Falls back to creating a new client per push.
+        precomputed_profile: Optional shared BusinessProfile (batch mode). All
+                             manifests in a batch share the same run_id → same seed
+                             → same profile. Eliminates redundant CPU work.
     """
     start_time = time.monotonic()
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -469,14 +483,19 @@ async def _execute_single_manifest(
 
     seed = hash(run_id) % (2**31)
 
-    # Financial model + profile construction is CPU-bound; offload to thread
-    # to keep the event loop free for concurrent requests.
-    def _build_profile():
-        fm = FinancialModel(Assumptions())
-        quarters = fm.generate()
-        return BusinessProfile.from_model_quarters(quarters, seed=seed)
+    # Use pre-computed profile from batch if available (Fix 6: eliminates
+    # 56 redundant profile builds — all manifests share the same seed).
+    if precomputed_profile is not None:
+        profile = precomputed_profile
+    else:
+        # Financial model + profile construction is CPU-bound; offload to thread
+        # to keep the event loop free for concurrent requests.
+        def _build_profile():
+            fm = FinancialModel(Assumptions())
+            quarters = fm.generate()
+            return BusinessProfile.from_model_quarters(quarters, seed=seed)
 
-    profile = await asyncio.to_thread(_build_profile)
+        profile = await asyncio.to_thread(_build_profile)
 
     spec = _GENERATOR_REGISTRY[generator_key]
     gen_class = spec["class"]
@@ -601,6 +620,7 @@ async def _execute_single_manifest(
         farm_run_id=farm_run_id,
         source_system=system,
         schema_hash=schema_hash,
+        http_client=http_client,
     )
     del rows, pipe_payload  # Release row data after push; only push_result metadata needed
 
@@ -613,43 +633,46 @@ async def _execute_single_manifest(
     else:
         status = "failed"
 
-    # Persist run with full provenance
-    try:
-        await save_manifest_run(
-            farm_run_id=farm_run_id,
-            run_id=run_id,
-            pipe_id=pipe_id,
-            aam_run_id=aam_run_id,
-            dcl_run_id=push_result.dcl_run_id,
-            tenant_id=tenant_id,
-            snapshot_name=snapshot_name,
-            source_system=system,
-            category=category or None,
-            generator_key=generator_key,
-            status=status,
-            rows_generated=rows_generated,
-            rows_pushed=rows_pushed,
-            rows_accepted=push_result.rows_accepted,
-            dcl_status_code=push_result.status_code,
-            error_type=push_result.error_type,
-            error_message=push_result.error[:500] if push_result.error else None,
-            schema_drift=push_result.schema_drift or False,
-            created_at=created_at,
-            elapsed_ms=elapsed_ms,
-            push_result_json=push_result.model_dump(),
-        )
-        logger.info(
-            f"Manifest run persisted: farm_run_id={farm_run_id}, "
-            f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
-            f"tenant_id={tenant_id}, snapshot_name={snapshot_name}"
-        )
-    except Exception as db_err:
-        logger.error(
-            f"PERSISTENCE FAILURE: run {farm_run_id} NOT saved to DB. "
-            f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
-            f"rows_generated={rows_generated}, elapsed_ms={elapsed_ms}, "
-            f"dcl_status={push_result.status_code}, error: {db_err}"
-        )
+    # Persist run with full provenance (fire-and-forget — not on critical path).
+    # DB save takes ~0.3-1s per pipe and the return value is not needed.
+    async def _safe_persist():
+        try:
+            await save_manifest_run(
+                farm_run_id=farm_run_id,
+                run_id=run_id,
+                pipe_id=pipe_id,
+                aam_run_id=aam_run_id,
+                dcl_run_id=push_result.dcl_run_id,
+                tenant_id=tenant_id,
+                snapshot_name=snapshot_name,
+                source_system=system,
+                category=category or None,
+                generator_key=generator_key,
+                status=status,
+                rows_generated=rows_generated,
+                rows_pushed=rows_pushed,
+                rows_accepted=push_result.rows_accepted,
+                dcl_status_code=push_result.status_code,
+                error_type=push_result.error_type,
+                error_message=push_result.error[:500] if push_result.error else None,
+                schema_drift=push_result.schema_drift or False,
+                created_at=created_at,
+                elapsed_ms=elapsed_ms,
+                push_result_json=push_result.model_dump(),
+            )
+            logger.info(
+                f"Manifest run persisted: farm_run_id={farm_run_id}, "
+                f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
+                f"tenant_id={tenant_id}, snapshot_name={snapshot_name}"
+            )
+        except Exception as db_err:
+            logger.error(
+                f"PERSISTENCE FAILURE: run {farm_run_id} NOT saved to DB. "
+                f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
+                f"rows_generated={rows_generated}, elapsed_ms={elapsed_ms}, "
+                f"dcl_status={push_result.status_code}, error: {db_err}"
+            )
+    asyncio.create_task(_safe_persist())
 
     # Per-pipe completion log — one-line summary for every manifest, success or failure
     logger.info(
@@ -659,7 +682,7 @@ async def _execute_single_manifest(
         f"elapsed_ms={elapsed_ms}, farm_run_id={farm_run_id}"
     )
 
-    # --- AAM callback: notify dispatcher that this manifest is done ---
+    # --- AAM callback: fire-and-forget (not on critical path) ---
     callback_url = manifest.target.callback_url
     if callback_url:
         # Map Farm status → AAM RunnerJobStatus (AAM has no "rejected_by_dcl")
@@ -676,21 +699,25 @@ async def _execute_single_manifest(
                 "schema_drift": push_result.schema_drift or False,
             },
         }
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                cb_resp = await client.put(
-                    f"{callback_url}/{run_id}",
-                    json=callback_payload,
+
+        async def _fire_callback():
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as cb_client:
+                    cb_resp = await cb_client.put(
+                        f"{callback_url}/{run_id}",
+                        json=callback_payload,
+                    )
+                logger.info(
+                    f"AAM callback sent: run_id={run_id}, status={aam_status}, "
+                    f"http={cb_resp.status_code}"
                 )
-            logger.info(
-                f"AAM callback sent: run_id={run_id}, status={aam_status}, "
-                f"http={cb_resp.status_code}"
-            )
-        except Exception as cb_err:
-            logger.warning(
-                f"AAM callback failed (non-fatal): run_id={run_id}, "
-                f"url={callback_url}/{run_id}, error={cb_err}"
-            )
+            except Exception as cb_err:
+                logger.warning(
+                    f"AAM callback failed (non-fatal): run_id={run_id}, "
+                    f"url={callback_url}/{run_id}, error={cb_err}"
+                )
+
+        asyncio.create_task(_fire_callback())
 
     recon_triggered = False
     if manifest.farm_verification and push_result.status == "success":
@@ -752,10 +779,37 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     push_results: List[DCLPushResult] = []
     start_time = time.monotonic()
 
-    async def _run_with_semaphore(m: JobManifest) -> Optional[ManifestExecutionResult]:
+    # Pre-compute shared BusinessProfile (Fix 6): all manifests in a batch
+    # share the same run_id → same seed → same profile. Eliminates 56
+    # redundant FinancialModel + BusinessProfile builds (~0.5-2s CPU each).
+    shared_profile: BusinessProfile | None = None
+    if manifests:
+        first_run_id = manifests[0].run_id
+        shared_seed = hash(first_run_id) % (2**31)
+
+        def _build_shared_profile():
+            fm = FinancialModel(Assumptions())
+            quarters = fm.generate()
+            return BusinessProfile.from_model_quarters(quarters, seed=shared_seed)
+
+        shared_profile = await asyncio.to_thread(_build_shared_profile)
+        logger.info(
+            f"Shared profile pre-computed: seed={shared_seed}, run_id={first_run_id}"
+        )
+
+    async def _run_with_semaphore(
+        m: JobManifest,
+        client: httpx.AsyncClient | None,
+        profile: BusinessProfile | None,
+    ) -> Optional[ManifestExecutionResult]:
         async with semaphore:
             try:
-                return await _execute_single_manifest(m, aam_run_id=request.batch_id or batch_run_id)
+                return await _execute_single_manifest(
+                    m,
+                    aam_run_id=request.batch_id or batch_run_id,
+                    http_client=client,
+                    precomputed_profile=profile,
+                )
             except HTTPException as exc:
                 logger.error(
                     f"Manifest failed with HTTP {exc.status_code} for "
@@ -802,7 +856,16 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                     ),
                 )
 
-    results = await asyncio.gather(*[_run_with_semaphore(m) for m in manifests])
+    # Shared httpx client (Fix 2): one client for the entire batch eliminates
+    # ~114 TLS handshakes (~50-200ms each) across DCL pushes.
+    async with httpx.AsyncClient(
+        timeout=300,
+        limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+    ) as shared_client:
+        results = await asyncio.gather(*[
+            _run_with_semaphore(m, shared_client, shared_profile)
+            for m in manifests
+        ])
 
     pipes_pushed = 0
     pipes_succeeded = 0
