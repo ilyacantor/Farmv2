@@ -630,7 +630,7 @@ class EnterpriseGenerator:
                     observed_at=self._random_activity_date(),
                     source=single_source,
                     observed_name=junk["name"],
-                    domain=junk["domain"] if self._should_include_domain() else None,
+                    domain=junk["domain"],
                     category_hint=CategoryHintEnum.unknown,
                     environment_hint=EnvironmentHintEnum.unknown,
                     raw={"type": "junk", "bytes": self.rng.randint(100, 10000)},
