@@ -263,7 +263,7 @@ async def _push_to_dcl(
         )
 
     body = {
-        "source_system": source_system,
+        "source_system": "farm",
         "tenant_id": tenant_id,
         "snapshot_name": snapshot_name,
         "run_timestamp": run_timestamp,
@@ -292,16 +292,25 @@ async def _push_to_dcl(
                 resp_data = {"error": response.text[:500]}
 
             # DCL may wrap error at top level OR inside FastAPI's {"detail": {...}}
-            error_code = resp_data.get("error") or resp_data.get("detail", {}).get("error")
+            # detail can be a string (e.g. "NON_CANONICAL_SOURCE: ...") or a dict.
+            raw_detail = resp_data.get("detail")
+            if isinstance(raw_detail, dict):
+                error_code = resp_data.get("error") or raw_detail.get("error")
+                detail = raw_detail
+            else:
+                error_code = resp_data.get("error") or (raw_detail if isinstance(raw_detail, str) else None)
+                detail = resp_data
+
             if error_code == "NO_MATCHING_PIPE":
-                # Normalize: pull fields from whichever level they appear
-                detail = resp_data.get("detail") or resp_data
+                hint = detail.get("hint", "N/A") if isinstance(detail, dict) else "N/A"
+                avail = detail.get("available_pipes", "N/A") if isinstance(detail, dict) else "N/A"
+                msg = detail.get("message", "No schema blueprint for this pipe_id") if isinstance(detail, dict) else str(raw_detail or "No schema blueprint for this pipe_id")
                 logger.critical(
                     f"NO_MATCHING_PIPE: DCL has no schema blueprint for pipe_id={pipe_id}. "
                     f"AAM's Structure Path (Export) and Farm's Content Path (Ingest) are misaligned. "
                     f"Do NOT retry — this is a configuration error. "
-                    f"Hint: {detail.get('hint', 'N/A')}. "
-                    f"Available pipes: {detail.get('available_pipes', 'N/A')}"
+                    f"Hint: {hint}. "
+                    f"Available pipes: {avail}"
                 )
                 return DCLPushResult(
                     run_id=run_id,
@@ -311,14 +320,15 @@ async def _push_to_dcl(
                     status="rejected",
                     status_code=422,
                     rows_pushed=len(rows),
-                    error=detail.get("message", "No schema blueprint for this pipe_id"),
+                    error=msg,
                     error_type="NO_MATCHING_PIPE",
-                    hint=detail.get("hint"),
+                    hint=hint if hint != "N/A" else None,
                 )
             else:
-                # Some other 422 (validation error, etc.)
+                # Some other 422 (validation error, NON_CANONICAL_SOURCE, etc.)
+                error_msg = str(raw_detail) if raw_detail else str(resp_data)
                 logger.error(
-                    f"DCL returned 422 for pipe_id={pipe_id}: {resp_data}"
+                    f"DCL returned 422 for pipe_id={pipe_id}: {error_msg[:500]}"
                 )
                 return DCLPushResult(
                     run_id=run_id,
@@ -327,7 +337,7 @@ async def _push_to_dcl(
                     status="failed",
                     status_code=422,
                     rows_pushed=len(rows),
-                    error=str(resp_data)[:500],
+                    error=error_msg[:500],
                     error_type="validation_error",
                 )
 
