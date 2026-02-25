@@ -881,7 +881,6 @@
                         <div class="bg-slate-800/50 rounded-lg p-3 border border-violet-800/50">
                             <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">SOR Count</div>
                             <div id="rlKpiSorCount" class="text-xl font-bold text-violet-400">--</div>
-                            <div id="rlKpiSorList" class="text-[10px] text-slate-500 mt-1">--</div>
                         </div>
                         <div class="bg-slate-800/50 rounded-lg p-3 border border-orange-800/50">
                             <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Fabric Count</div>
@@ -1827,7 +1826,6 @@
 
             // SOR Count — server-computed, excludes fabric-plane systems
             document.getElementById('rlKpiSorCount').textContent = summary.sor_count || 0;
-            document.getElementById('rlKpiSorList').textContent = (summary.sor_systems || []).join(', ') || 'None';
 
             // Fabric Count — big number = total planes from snapshot topology,
             // detail text = how many fabric pipes DCL actually received
