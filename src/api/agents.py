@@ -17,9 +17,12 @@ This is still verification/QA - Farm generates the test, the target executes it.
 """
 from datetime import datetime
 from typing import Optional, List
+import logging
 import os
 import uuid
 import time
+
+logger = logging.getLogger("farm.agents")
 
 from fastapi import APIRouter, Query, HTTPException
 from fastapi.responses import StreamingResponse
@@ -913,7 +916,8 @@ async def list_stress_test_runs(
                 "total": len(runs),
             }
     except Exception as e:
-        return {"runs": [], "total": 0, "error": str(e)}
+        logger.error("Failed to list stress-test runs: %s", e, exc_info=True)
+        return {"runs": [], "total": 0, "error": str(e), "error_type": type(e).__name__}
 
 
 @router.get("/api/agents/stress-test-runs/{run_id}")

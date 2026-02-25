@@ -288,8 +288,9 @@ async def _push_to_dcl(
         if response.status_code == 422:
             try:
                 resp_data = response.json()
-            except Exception:
-                resp_data = {"error": response.text[:500]}
+            except Exception as e:
+                logger.error("Failed to parse DCL 422 response as JSON for pipe_id=%s: %s (body: %.200s)", pipe_id, e, response.text)
+                resp_data = {"error": response.text[:500], "parse_error": True}
 
             # DCL may wrap error at top level OR inside FastAPI's {"detail": {...}}
             # detail can be a string (e.g. "NON_CANONICAL_SOURCE: ...") or a dict.
@@ -357,10 +358,26 @@ async def _push_to_dcl(
             dcl_run_id = resp_data.get("dcl_run_id")
             rows_accepted = resp_data.get("rows_accepted")
             if rows_accepted is None:
-                logger.warning(
+                logger.error(
                     f"DCL_MISSING_ROWS_ACCEPTED: DCL response for pipe_id={pipe_id} "
                     f"omitted rows_accepted field. Cannot verify row delivery. "
-                    f"dcl_run_id={dcl_run_id}"
+                    f"dcl_run_id={dcl_run_id}. Marking push as degraded."
+                )
+                return DCLPushResult(
+                    run_id=run_id,
+                    pipe_id=pipe_id,
+                    dcl_run_id=dcl_run_id,
+                    farm_run_id=farm_run_id,
+                    status="degraded",
+                    status_code=200,
+                    rows_pushed=len(rows),
+                    rows_accepted=None,
+                    matched_schema=resp_data.get("matched_schema"),
+                    schema_fields=resp_data.get("schema_fields"),
+                    schema_drift=resp_data.get("schema_drift", False),
+                    drift_fields=resp_data.get("drift_fields"),
+                    error="DCL response omitted rows_accepted — delivery unverifiable",
+                    error_type="MISSING_ROWS_ACCEPTED",
                 )
 
             if rows_accepted is not None and rows_accepted < len(rows):

@@ -378,8 +378,9 @@ class DatabaseManager:
                     await conn.execute("ALTER TABLE snapshots_meta ADD COLUMN IF NOT EXISTS fabric_planes JSONB DEFAULT '[]'")
                     await conn.execute("ALTER TABLE snapshots_meta ADD COLUMN IF NOT EXISTS sors JSONB DEFAULT '[]'")
                     await conn.execute("ALTER TABLE snapshots_meta ADD COLUMN IF NOT EXISTS industry TEXT DEFAULT 'default'")
-                except Exception:
-                    pass  # Columns may already exist
+                except Exception as e:
+                    logger.error("Migration failed adding fabric/SOR columns to snapshots_meta: %s", e, exc_info=True)
+                    raise
                 
                 self._log("Creating snapshots_blob table (cold storage)...")
                 await conn.execute("""
@@ -582,14 +583,16 @@ class DatabaseManager:
                 # Migration: add aam_run_id column if table predates it (must run before index creation)
                 try:
                     await conn.execute("ALTER TABLE manifest_runs ADD COLUMN IF NOT EXISTS aam_run_id TEXT")
-                except Exception:
-                    pass  # Column already exists
+                except Exception as e:
+                    logger.error("Migration failed adding aam_run_id to manifest_runs: %s", e, exc_info=True)
+                    raise
 
                 # Migration: add rows_pushed column (tracks post-truncation count, distinct from rows_generated)
                 try:
                     await conn.execute("ALTER TABLE manifest_runs ADD COLUMN IF NOT EXISTS rows_pushed INTEGER DEFAULT 0")
-                except Exception:
-                    pass  # Column already exists
+                except Exception as e:
+                    logger.error("Migration failed adding rows_pushed to manifest_runs: %s", e, exc_info=True)
+                    raise
 
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_run_id ON manifest_runs(run_id)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_aam_run_id ON manifest_runs(aam_run_id)")

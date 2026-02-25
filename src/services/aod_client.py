@@ -80,10 +80,13 @@ This allows testing without real AOD while maintaining accurate correlation logi
 
 import copy
 import json
+import logging
 import os
 import time
 from typing import Optional
 import httpx
+
+logger = logging.getLogger("farm.aod_client")
 from src.services.logging import trace_log
 from src.models.policy import PolicyConfig
 from src.services.key_normalization import extract_registered_domain
@@ -365,11 +368,16 @@ async def stub_aod_explain_nonflag_from_snapshot(
                     "idp_name_count": len(idp_name_index),
                 })
     except Exception as e:
+        logger.error("Stub snapshot fetch failed for %s: %s", snapshot_id, e, exc_info=True)
         trace_log("aod_client", "stub_snapshot_fetch_error", {
             "snapshot_id": snapshot_id,
             "error": str(e),
+            "error_type": type(e).__name__,
         })
-    
+        snapshot_fetch_failed = True
+    else:
+        snapshot_fetch_failed = False
+
     results = {}
     authoritative_count = 0
     weak_count = 0
@@ -476,7 +484,7 @@ async def stub_aod_explain_nonflag_from_snapshot(
         else:
             decision = "SHADOW_CANDIDATE" if ask in ["shadow", "both"] else "ZOMBIE_CANDIDATE"
         
-        results[key] = {
+        entry = {
             "present_in_aod": True,
             "decision": decision,
             "reason_codes": reason_codes,
@@ -484,6 +492,9 @@ async def stub_aod_explain_nonflag_from_snapshot(
             "cmdb_correlation": cmdb_correlation,
             "idp_correlation": idp_correlation,
         }
+        if snapshot_fetch_failed:
+            entry["snapshot_fetch_failed"] = True
+        results[key] = entry
     
     trace_log("aod_client", "stub_v2_explain_computed", {
         "snapshot_id": snapshot_id,
@@ -577,13 +588,19 @@ async def call_aod_explain_nonflag(
                 return _get_fallback_response(asset_keys, f"HTTP_{resp.status_code}")
                 
     except Exception as e:
+        logger.error("AOD explain call failed for snapshot %s (%d keys): %s", snapshot_id, len(asset_keys), e, exc_info=True)
         trace_log("aod_client", "call_error", {
             "snapshot_id": snapshot_id,
             "error": str(e),
+            "error_type": type(e).__name__,
             "keys_count": len(asset_keys)
         })
         _record_failure()
-        return _get_fallback_response(asset_keys)
+        fallback = _get_fallback_response(asset_keys)
+        for entry in fallback.values():
+            entry["fallback_reason"] = "exception"
+            entry["fallback_error_type"] = type(e).__name__
+        return fallback
 
 
 _policy_cache: Optional[PolicyConfig] = None

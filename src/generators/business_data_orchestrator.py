@@ -328,8 +328,9 @@ class BusinessDataOrchestrator:
                     if response.status_code == 422:
                         try:
                             resp_data = response.json()
-                        except Exception:
-                            resp_data = {"error": response.text[:500]}
+                        except Exception as e:
+                            logger.error("Failed to parse DCL 422 response as JSON for pipe_id=%s: %s (body: %.200s)", pipe_id, e, response.text)
+                            resp_data = {"error": response.text[:500], "parse_error": True}
 
                         # DCL may wrap error at top level OR inside FastAPI's {"detail": {...}}
                         error_code = resp_data.get("error") or resp_data.get("detail", {}).get("error")
