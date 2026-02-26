@@ -22,7 +22,7 @@ AOD must implement this endpoint:
 Request:
     GET /api/runs/{run_id}/policy
     Headers:
-        X-Shared-Secret: <shared_secret>  (if configured)
+        X-API-Key: <AOD_SHARED_SECRET>  (if configured)
 
 Response (200 OK):
     {
@@ -158,7 +158,7 @@ async def create_aod_http_client(timeout: float = 30.0) -> tuple[httpx.AsyncClie
     aod_secret = os.environ.get("AOD_SHARED_SECRET", "")
     headers = {}
     if aod_secret:
-        headers["Authorization"] = f"Bearer {aod_secret}"
+        headers["X-API-Key"] = aod_secret
     client = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
     return client, headers
 
@@ -555,8 +555,8 @@ async def call_aod_explain_nonflag(
     try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             shared_secret = os.environ.get("AOD_SHARED_SECRET", "")
-            headers = {"X-Shared-Secret": shared_secret} if shared_secret else {}
-            
+            headers = {"X-API-Key": shared_secret} if shared_secret else {}
+
             resp = await client.post(
                 f"{aod_url}/reconcile/explain-nonflag",
                 json={
@@ -649,8 +649,8 @@ async def fetch_policy_config(force_refresh: bool = False) -> PolicyConfig:
     try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             shared_secret = os.environ.get("AOD_SHARED_SECRET", "")
-            headers = {"X-Shared-Secret": shared_secret} if shared_secret else {}
-            
+            headers = {"X-API-Key": shared_secret} if shared_secret else {}
+
             resp = await client.get(
                 f"{aod_url}/api/v1/policy/config",
                 headers=headers
@@ -757,8 +757,8 @@ async def fetch_run_policy_snapshot(run_id: str) -> tuple[Optional[PolicyConfig]
     try:
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             shared_secret = os.environ.get("AOD_SHARED_SECRET", "")
-            headers = {"X-Shared-Secret": shared_secret} if shared_secret else {}
-            
+            headers = {"X-API-Key": shared_secret} if shared_secret else {}
+
             resp = await client.get(
                 f"{aod_url}/api/runs/{run_id}/policy",
                 headers=headers

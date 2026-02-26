@@ -682,7 +682,7 @@ async def auto_reconcile(request: AutoReconcileRequest):
 
     headers = {}
     if aod_secret:
-        headers["Authorization"] = f"Bearer {aod_secret}"
+        headers["X-API-Key"] = aod_secret
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -788,7 +788,7 @@ async def refresh_reconciliation(reconciliation_id: str):
 
     headers = {}
     if aod_secret:
-        headers["Authorization"] = f"Bearer {aod_secret}"
+        headers["X-API-Key"] = aod_secret
 
     aod_run_id = rec_row["aod_run_id"]
     snapshot_id = rec_row["snapshot_id"]

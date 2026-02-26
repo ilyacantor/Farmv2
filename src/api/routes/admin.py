@@ -181,7 +181,7 @@ async def check_aod_run_status(
 
     headers = {}
     if aod_secret:
-        headers["Authorization"] = f"Bearer {aod_secret}"
+        headers["X-API-Key"] = aod_secret
 
     async with httpx.AsyncClient(timeout=15.0) as client:
         try:
