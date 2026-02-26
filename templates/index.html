@@ -197,6 +197,102 @@
             z-index: 1000;
             pointer-events: none;
         }
+        /* ====================================================
+           NLQ TAB v3 — meta bar · KPI filters · collapsible table
+           ==================================================== */
+
+        #runlogTab {
+          font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+          display: flex; flex-direction: column; height: 100%; overflow: hidden;
+        }
+        #runlogTab > div {
+          display: flex !important; flex-direction: column !important;
+          padding: 0 !important; gap: 0 !important;
+          height: 100% !important; overflow: hidden !important;
+        }
+
+        /* ── Meta bar ── */
+        #nlq-meta-bar { display:flex; align-items:center; justify-content:space-between; padding:6px 16px; border-bottom:1px solid rgba(255,255,255,0.05); background:rgba(8,14,28,0.6); flex-shrink:0; gap:16px; }
+        #nlq-meta-left { display:flex; align-items:center; gap:12px; min-width:0; flex:1; }
+        #nlq-meta-run-id { font-family:'JetBrains Mono','Fira Code',monospace; font-size:9.5px; color:#22d3ee; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px; }
+        #nlq-meta-tenant { font-size:10px; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px; }
+        .nlq-meta-sep { width:1px; height:10px; background:rgba(255,255,255,0.07); flex-shrink:0; }
+        #nlq-meta-right { display:flex; align-items:center; gap:8px; flex-shrink:0; }
+        #nlq-conn-indicator { display:flex; align-items:center; gap:4px; font-size:9.5px; color:#3d4f6b; }
+        .nlq-conn-dot { width:5px; height:5px; border-radius:50%; background:#3d4f6b; flex-shrink:0; }
+        .nlq-conn-dot.live { background:#34d399; box-shadow:0 0 6px rgba(52,211,153,0.5); }
+        .nlq-conn-dot.error { background:#f87171; }
+        #nlq-refresh-btn { padding:3px 9px; font-size:9.5px; font-weight:500; background:rgba(6,182,212,0.08); color:#22d3ee; border:1px solid rgba(6,182,212,0.2); border-radius:5px; cursor:pointer; transition:all 0.15s; }
+        #nlq-refresh-btn:hover { background:rgba(6,182,212,0.18); }
+        #nlq-auto-label { display:flex; align-items:center; gap:4px; font-size:9.5px; color:#3d4f6b; cursor:pointer; user-select:none; }
+        #nlq-auto-label input { accent-color:#06b6d4; width:11px; height:11px; }
+
+        /* ── KPI filter row ── */
+        #nlq-kpi-row { display:flex; flex-shrink:0; border-bottom:1px solid rgba(255,255,255,0.05); background:rgba(8,14,28,0.4); overflow-x:auto; }
+        #nlq-kpi-row::-webkit-scrollbar { height:0; }
+
+        .nlq-kpi { flex:1; min-width:72px; padding:10px 14px; border-right:1px solid rgba(255,255,255,0.04); cursor:pointer; transition:background 0.15s, border-color 0.15s; position:relative; user-select:none; display:flex; flex-direction:column; justify-content:center; }
+        .nlq-kpi:last-child { border-right:none; }
+        .nlq-kpi:hover { background:rgba(255,255,255,0.03); }
+        .nlq-kpi.active            { background:rgba(6,182,212,0.07) !important; border-bottom:2px solid #22d3ee !important; }
+        .nlq-kpi.active-failed     { background:rgba(248,113,113,0.07) !important; border-bottom:2px solid #f87171 !important; }
+        .nlq-kpi.active-dispatched { background:rgba(52,211,153,0.07) !important; border-bottom:2px solid #34d399 !important; }
+        .nlq-kpi-label { font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:0.09em; color:#3d4f6b; margin-bottom:4px; white-space:nowrap; }
+        .nlq-kpi-val { font-size:20px; font-weight:700; line-height:1; letter-spacing:-0.02em; }
+        .nlq-kpi-hint { font-size:8px; color:#3d4f6b; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .nlq-kpi-badge { position:absolute; top:6px; right:8px; font-size:7.5px; font-weight:700; letter-spacing:0.04em; color:#22d3ee; opacity:0; transition:opacity 0.15s; text-transform:uppercase; }
+        .nlq-kpi.active .nlq-kpi-badge            { opacity:1; }
+        .nlq-kpi.active-failed .nlq-kpi-badge     { opacity:1; color:#f87171; }
+        .nlq-kpi.active-dispatched .nlq-kpi-badge { opacity:1; color:#34d399; }
+
+        @keyframes nlq-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.65)} }
+        .nlq-pulse-dot { display:inline-block; width:5px; height:5px; border-radius:50%; background:#f87171; margin-left:6px; vertical-align:middle; animation:nlq-pulse 1.5s ease-in-out infinite; }
+
+        /* ── Table section ── */
+        #nlq-table-wrap { display:flex; flex-direction:column; flex:1; min-height:0; overflow:hidden; }
+        #nlq-table-bar { display:flex; align-items:center; justify-content:space-between; padding:6px 14px; border-bottom:1px solid rgba(255,255,255,0.05); background:rgba(8,14,28,0.5); cursor:pointer; flex-shrink:0; user-select:none; transition:background 0.15s; }
+        #nlq-table-bar:hover { background:rgba(255,255,255,0.03); }
+        #nlq-table-bar-left { display:flex; align-items:center; gap:8px; }
+        #nlq-table-bar h3 { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#3d4f6b; margin:0; }
+        #nlq-table-bar-right { display:flex; align-items:center; gap:10px; }
+        #nlq-count-badge { font-size:9.5px; color:#3d4f6b; background:rgba(255,255,255,0.05); padding:1px 8px; border-radius:10px; font-weight:500; }
+        #nlq-filter-badge { font-size:9px; color:#22d3ee; background:rgba(6,182,212,0.1); border:1px solid rgba(6,182,212,0.2); padding:1px 7px; border-radius:10px; font-weight:600; display:none; }
+        #nlq-filter-badge.visible { display:inline-block; }
+        #nlq-search { background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.07); border-radius:5px; padding:3px 8px; font-size:10px; color:#94a3b8; outline:none; width:110px; transition:all 0.2s; }
+        #nlq-search:focus { border-color:rgba(6,182,212,0.3); background:rgba(6,182,212,0.04); width:150px; }
+        #nlq-collapse-icon { width:14px; height:14px; color:#3d4f6b; transition:transform 0.2s; flex-shrink:0; }
+        #nlq-collapse-icon.collapsed { transform:rotate(-90deg); }
+
+        #nlq-table-scroll { flex:1; overflow-y:auto; overflow-x:hidden; min-height:0; transition:max-height 0.25s ease; }
+        #nlq-table-scroll.collapsed { max-height:0 !important; overflow:hidden; }
+        #nlq-table-scroll::-webkit-scrollbar { width:4px; }
+        #nlq-table-scroll::-webkit-scrollbar-track { background:transparent; }
+        #nlq-table-scroll::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.08); border-radius:2px; }
+
+        #nlq-table-scroll table { width:100%; border-collapse:collapse; }
+        #nlq-table-scroll thead { position:sticky; top:0; z-index:5; }
+        #nlq-table-scroll thead tr { background:rgba(5,10,20,0.9) !important; border-bottom:1px solid rgba(255,255,255,0.05) !important; }
+        #nlq-table-scroll thead th { padding:6px 12px !important; font-size:8.5px !important; font-weight:700 !important; text-transform:uppercase !important; letter-spacing:0.08em !important; color:#3d4f6b !important; }
+        #nlq-table-scroll tbody tr { border-bottom:1px solid rgba(255,255,255,0.025) !important; transition:background 0.1s; }
+        #nlq-table-scroll tbody tr:hover { background:rgba(34,211,238,0.04) !important; }
+        #nlq-table-scroll tbody td { padding:5px 12px !important; font-size:11px !important; color:#64748b; }
+        #nlq-table-scroll tbody td:nth-child(2) { color:#cbd5e1 !important; font-weight:500 !important; }
+        #nlq-table-scroll tbody td:first-child svg { width:11px !important; height:11px !important; color:#2d3f55 !important; }
+
+        .nlq-pill { display:inline-block; padding:1px 7px; border-radius:10px; font-size:9.5px; font-weight:600; white-space:nowrap; }
+        .nlq-pill-ok      { background:rgba(52,211,153,0.08);  color:#34d399; border:1px solid rgba(52,211,153,0.15); }
+        .nlq-pill-fail    { background:rgba(248,113,113,0.10); color:#f87171; border:1px solid rgba(248,113,113,0.2); }
+        .nlq-pill-partial { background:rgba(251,146,60,0.10);  color:#fb923c; border:1px solid rgba(251,146,60,0.2); }
+        .nlq-pill-other   { background:rgba(100,116,139,0.10); color:#94a3b8; border:1px solid rgba(100,116,139,0.2); }
+
+        #nlq-table-scroll tr[id*="_detail"].hidden { display:none !important; }
+        #nlq-table-scroll tr[id*="_detail"] > td { padding:0 !important; border-bottom:2px solid rgba(6,182,212,0.1) !important; }
+        #nlq-table-scroll tr[id*="_detail"] > td > .space-y-2 { padding:4px 12px 10px !important; }
+        #nlq-table-scroll tr[id*="_detail"] .bg-slate-800\/50 { background:rgba(6,182,212,0.025) !important; border:1px solid rgba(6,182,212,0.08) !important; border-radius:6px !important; margin-top:4px !important; }
+
+        #nlq-empty { padding:32px 16px; text-align:center; font-size:11px; color:#3d4f6b; display:none; }
+        #nlq-empty.visible { display:block; }
+
     </style>
 </head>
 <body class="min-h-screen text-white">
@@ -825,93 +921,94 @@
         </div>
 
         <!-- NLQ Tab (manifest run log) -->
-        <div id="runlogTab" class="hidden h-full overflow-auto" style="max-height: calc(100vh - 120px);">
-            <div class="p-4 space-y-4">
-                <!-- Header -->
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h2 class="text-lg font-semibold text-white">Manifest Run Log - Current Run</h2>
-                        <p class="text-slate-400 text-sm">Showing most recent AAM → Farm → DCL execution batch</p>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <span id="dclConnIndicator" class="flex items-center gap-1.5 text-xs text-slate-500">
-                            <span id="dclConnDot" class="w-2 h-2 rounded-full bg-slate-600 inline-block"></span>
-                            <span id="dclConnLabel">checking...</span>
-                        </span>
-                        <button onclick="rlRefresh()" id="rlRefreshBtn" class="px-3 py-1.5 text-sm bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg transition-colors">Refresh</button>
-                        <label class="flex items-center gap-1.5 text-xs text-slate-400">
-                            <input type="checkbox" id="rlAutoRefresh" onchange="rlToggleAutoRefresh()" class="rounded">
-                            Auto
-                        </label>
-                    </div>
+        <div id="runlogTab" class="hidden h-full overflow-hidden">
+          <div>
+            <!-- Meta bar -->
+            <div id="nlq-meta-bar">
+              <div id="nlq-meta-left">
+                <div id="rlKpiAamRunId" class="nlq-meta-run-id-text" style="font-family:'JetBrains Mono','Fira Code',monospace; font-size:9.5px; color:#22d3ee; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px;">—</div>
+                <div class="nlq-meta-sep"></div>
+                <div id="rlKpiTenant" style="font-size:10px; color:#64748b; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:160px;">—</div>
+              </div>
+              <div id="nlq-meta-right">
+                <div id="nlq-conn-indicator">
+                  <span id="dclConnDot" class="nlq-conn-dot"></span>
+                  <span id="dclConnLabel">checking...</span>
                 </div>
-
-                <!-- Current Run Not Loaded -->
-                <div id="rlNoRun" class="bg-slate-800/50 rounded-lg p-8 border border-slate-700/50 text-center">
-                    <div class="text-slate-400">No runs yet. Waiting for AAM to dispatch manifests.</div>
-                </div>
-
-                <!-- Current Run View -->
-                <div id="rlCurrentRun" class="hidden space-y-4">
-                    <!-- KPI Boxes -->
-                    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                        <!-- Row 1: Core IDs -->
-                        <div class="bg-slate-800/50 rounded-lg p-3 border border-cyan-800/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">AAM Run ID</div>
-                            <div id="rlKpiAamRunId" class="text-sm text-cyan-400 font-mono break-all">--</div>
-                        </div>
-                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Tenant</div>
-                            <div id="rlKpiTenant" class="text-sm text-slate-300 break-all">--</div>
-                        </div>
-
-                        <!-- Row 2: Counts -->
-                        <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Total Pipes</div>
-                            <div id="rlKpiTotal" class="text-xl font-bold text-white">--</div>
-                        </div>
-                        <div class="bg-slate-800/50 rounded-lg p-3 border border-red-800/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Failed</div>
-                            <div id="rlKpiFailed" class="text-xl font-bold text-red-400">--</div>
-                        </div>
-                        <div class="bg-slate-800/50 rounded-lg p-3 border border-emerald-800/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Dispatched</div>
-                            <div id="rlKpiDispatched" class="text-xl font-bold text-emerald-400">--</div>
-                        </div>
-                        <div class="bg-slate-800/50 rounded-lg p-3 border border-violet-800/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">SOR Count</div>
-                            <div id="rlKpiSorCount" class="text-xl font-bold text-violet-400">--</div>
-                        </div>
-                        <div class="bg-slate-800/50 rounded-lg p-3 border border-orange-800/50">
-                            <div class="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Fabric Count</div>
-                            <div id="rlKpiFabricCount" class="text-xl font-bold text-orange-400">--</div>
-                            <div id="rlKpiFabricList" class="text-[10px] text-slate-500 mt-1">--</div>
-                        </div>
-                    </div>
-
-                    <!-- Transactional Table - One row per source system, expandable -->
-                    <div class="bg-slate-800/50 rounded-lg border border-slate-700/50 overflow-hidden">
-                        <div class="px-4 py-2 bg-slate-900/60 border-b border-slate-700/50">
-                            <h3 class="text-sm font-semibold text-white">Pipes by Source System</h3>
-                        </div>
-                        <table class="w-full text-xs">
-                            <thead>
-                                <tr class="bg-slate-900/40 text-slate-400 border-b border-slate-700/50">
-                                    <th class="px-3 py-2 text-left font-medium w-8"></th>
-                                    <th class="px-3 py-2 text-left font-medium">Source System</th>
-                                    <th class="px-3 py-2 text-center font-medium">Total Pipes</th>
-                                    <th class="px-3 py-2 text-center font-medium">Failed</th>
-                                    <th class="px-3 py-2 text-center font-medium">Dispatched</th>
-                                    <th class="px-3 py-2 text-center font-medium">Status</th>
-                                </tr>
-                            </thead>
-                            <tbody id="rlSystemTable" class="divide-y divide-slate-700/50">
-                                <tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">Loading...</td></tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
+                <button id="nlq-refresh-btn" onclick="rlRefresh()">Refresh</button>
+                <label id="nlq-auto-label">
+                  <input type="checkbox" id="rlAutoRefresh" onchange="rlToggleAutoRefresh()"> Auto
+                </label>
+              </div>
             </div>
+
+            <!-- No-run state -->
+            <div id="rlNoRun" class="hidden" style="padding:40px;text-align:center;color:#475569;">No active run.</div>
+
+            <!-- Current run -->
+            <div id="rlCurrentRun">
+              <!-- KPI filter row -->
+              <div id="nlq-kpi-row">
+                <div class="nlq-kpi" data-filter="all">
+                  <span class="nlq-kpi-badge">● active</span>
+                  <div class="nlq-kpi-label">Total Pipes</div>
+                  <div class="nlq-kpi-val" id="rlKpiTotal" style="color:#f8fafc">—</div>
+                </div>
+                <div class="nlq-kpi" data-filter="dispatched">
+                  <span class="nlq-kpi-badge">● active</span>
+                  <div class="nlq-kpi-label">Dispatched</div>
+                  <div class="nlq-kpi-val" id="rlKpiDispatched" style="color:#34d399">—</div>
+                </div>
+                <div class="nlq-kpi" data-filter="failed">
+                  <span class="nlq-kpi-badge">● active</span>
+                  <div class="nlq-kpi-label">Failed</div>
+                  <div class="nlq-kpi-val" id="rlKpiFailed" style="color:#f87171">—</div>
+                </div>
+                <div class="nlq-kpi" data-filter="none">
+                  <div class="nlq-kpi-label">SOR Count</div>
+                  <div class="nlq-kpi-val" id="rlKpiSorCount" style="color:#a78bfa">—</div>
+                </div>
+                <div class="nlq-kpi" data-filter="none">
+                  <div class="nlq-kpi-label">Fabric</div>
+                  <div class="nlq-kpi-val" id="rlKpiFabricCount" style="color:#fb923c">—</div>
+                  <div class="nlq-kpi-hint" id="rlKpiFabricList"></div>
+                </div>
+              </div>
+
+              <!-- Collapsible table section -->
+              <div id="nlq-table-wrap">
+                <div id="nlq-table-bar">
+                  <div id="nlq-table-bar-left">
+                    <svg id="nlq-collapse-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+                    </svg>
+                    <h3>Source Systems</h3>
+                  </div>
+                  <div id="nlq-table-bar-right">
+                    <span id="nlq-filter-badge"></span>
+                    <input id="nlq-search" type="text" placeholder="Filter sources…" onclick="event.stopPropagation()"/>
+                    <span id="nlq-count-badge">— sources</span>
+                  </div>
+                </div>
+                <div id="nlq-empty">No sources match the current filter.</div>
+                <div id="nlq-table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th class="w-8"></th>
+                        <th style="text-align:left">Source System</th>
+                        <th style="text-align:center">Total</th>
+                        <th style="text-align:center">Failed</th>
+                        <th style="text-align:center">Dispatched</th>
+                        <th style="text-align:center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rlSystemTable"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- DCL Tab -->
@@ -1721,7 +1818,7 @@
 
             // Tab-specific init
             if (tab === 'agents') refreshAOAMetrics();
-            if (tab === 'runlog') rlRefresh();
+            if (tab === 'runlog') { nlqInitUI(); rlRefresh(); }
             if (tab === 'dcl') updateDclScenarioStatus();
             if (tab === 'guide') loadUserGuide();
             if (tab === 'test') populateTestSnapshotSelect();
@@ -1762,9 +1859,8 @@
         let rlCurrentRunData = null;
 
         async function rlRefresh() {
-            const btn = document.getElementById('rlRefreshBtn');
-            btn.textContent = 'Loading...';
-            btn.disabled = true;
+            const btn = document.getElementById('nlq-refresh-btn');
+            if (btn) { btn.textContent = 'Loading...'; btn.disabled = true; }
             try {
                 // Get most recent pipe to find latest aam_run_id (batch-level)
                 const resp = await fetch('/api/runs?limit=1', { cache: 'no-store' });
@@ -1776,7 +1872,7 @@
                 if (!pipes || pipes.length === 0) {
                     // No runs yet
                     document.getElementById('rlNoRun').classList.remove('hidden');
-                    document.getElementById('rlCurrentRun').classList.add('hidden');
+                    document.getElementById('rlCurrentRun').style.display = 'none';
                     return;
                 }
 
@@ -1796,12 +1892,11 @@
             } catch (e) {
                 console.error('Error loading run data:', e);
                 document.getElementById('rlNoRun').innerHTML =
-                    `<div class="text-red-400">Error: ${e.message}</div>`;
+                    `<div style="color:#f87171;">Error: ${e.message}</div>`;
                 document.getElementById('rlNoRun').classList.remove('hidden');
-                document.getElementById('rlCurrentRun').classList.add('hidden');
+                document.getElementById('rlCurrentRun').style.display = 'none';
             } finally {
-                btn.textContent = 'Refresh';
-                btn.disabled = false;
+                if (btn) { btn.textContent = 'Refresh'; btn.disabled = false; }
             }
         }
 
@@ -1810,7 +1905,7 @@
 
             // Show the current run view
             document.getElementById('rlNoRun').classList.add('hidden');
-            document.getElementById('rlCurrentRun').classList.remove('hidden');
+            document.getElementById('rlCurrentRun').style.display = '';
 
             // Get first run for common fields
             const firstRun = runs[0] || {};
@@ -1842,9 +1937,11 @@
         function rlRenderSystemTable(summary, runs) {
             const tbody = document.getElementById('rlSystemTable');
             const perSystem = summary.per_system || {};
+            const systemKeys = Object.keys(perSystem);
 
-            if (Object.keys(perSystem).length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" class="px-3 py-8 text-center text-slate-500">No pipe data</td></tr>';
+            if (systemKeys.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="padding:24px;text-align:center;color:#475569;">No pipe data</td></tr>';
+                document.getElementById('nlq-count-badge').textContent = '0 sources';
                 return;
             }
 
@@ -1854,34 +1951,39 @@
                 const failed = (counts.failed || 0) + (counts.rejected_by_dcl || 0);
                 const dispatched = counts.completed || 0;
 
-                const statusColor = failed > 0 ? 'text-red-400' : 'text-emerald-400';
-                const statusText = failed > 0 ? 'Has Failures' : 'All Dispatched';
+                // Status pill
+                let pillClass, pillText;
+                if (failed > 0 && dispatched > 0) { pillClass = 'nlq-pill nlq-pill-partial'; pillText = 'Partial'; }
+                else if (failed > 0)               { pillClass = 'nlq-pill nlq-pill-fail';    pillText = 'Failed'; }
+                else if (dispatched > 0)            { pillClass = 'nlq-pill nlq-pill-ok';      pillText = 'OK'; }
+                else                                { pillClass = 'nlq-pill nlq-pill-other';   pillText = 'Pending'; }
 
                 // Get pipes for this system
                 const systemRuns = runs.filter(r => r.source_system === system);
                 const rowId = `rlSystem_${system.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
                 html += `
-                <tr class="hover:bg-slate-700/30 cursor-pointer" onclick="rlToggleSystemDetail('${system}')">
-                    <td class="px-3 py-2">
-                        <svg id="${rowId}_chevron" class="w-4 h-4 text-slate-400 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <tr class="cursor-pointer" data-failed="${failed}" data-dispatched="${dispatched}" onclick="rlToggleSystemDetail('${system}')">
+                    <td>
+                        <svg id="${rowId}_chevron" class="transition-transform" style="width:11px;height:11px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
                         </svg>
                     </td>
-                    <td class="px-3 py-2 text-slate-300 font-medium">${system}</td>
-                    <td class="px-3 py-2 text-center text-white">${total}</td>
-                    <td class="px-3 py-2 text-center text-red-400">${failed}</td>
-                    <td class="px-3 py-2 text-center text-emerald-400">${dispatched}</td>
-                    <td class="px-3 py-2 text-center ${statusColor}">${statusText}</td>
+                    <td>${system}</td>
+                    <td style="text-align:center">${total}</td>
+                    <td style="text-align:center;color:#f87171">${failed}</td>
+                    <td style="text-align:center;color:#34d399">${dispatched}</td>
+                    <td style="text-align:center"><span class="${pillClass}">${pillText}</span></td>
                 </tr>
                 <tr id="${rowId}_detail" class="hidden">
-                    <td colspan="6" class="px-6 py-3 bg-slate-900/40">
+                    <td colspan="6">
                         ${rlRenderPipeDetails(systemRuns)}
                     </td>
                 </tr>`;
             }
 
             tbody.innerHTML = html;
+            document.getElementById('nlq-count-badge').textContent = systemKeys.length + ' sources';
         }
 
         function rlRenderPipeDetails(pipes) {
@@ -2018,6 +2120,77 @@
                 clearInterval(rlAutoRefreshTimer);
                 rlAutoRefreshTimer = null;
             }
+        }
+
+        let nlqInitDone = false;
+        function nlqInitUI() {
+          if (nlqInitDone) return;
+          nlqInitDone = true;
+
+          let activeFilter = 'all';
+
+          function nlqApplyFilters() {
+            const searchVal = (document.getElementById('nlq-search')?.value || '').toLowerCase().trim();
+            const mainRows = document.querySelectorAll('#rlSystemTable > tr:not([id*="_detail"])');
+            let visible = 0;
+            mainRows.forEach(row => {
+              const name = row.querySelector('td:nth-child(2)')?.textContent.toLowerCase() || '';
+              const failed = parseInt(row.dataset.failed || '0');
+              const dispatched = parseInt(row.dataset.dispatched || '0');
+              const kpiMatch = activeFilter === 'all' ? true
+                             : activeFilter === 'failed' ? failed > 0
+                             : dispatched > 0;
+              const show = kpiMatch && (!searchVal || name.includes(searchVal));
+              row.style.display = show ? '' : 'none';
+              if (!show) {
+                const key = (row.querySelector('td:nth-child(2)')?.textContent || '').trim().replace(/\s+/g,'_');
+                document.getElementById(`rlSystem_${key}_detail`)?.classList.add('hidden');
+              }
+              if (show) visible++;
+            });
+            document.getElementById('nlq-count-badge').textContent = visible + ' sources';
+            document.getElementById('nlq-empty')?.classList.toggle('visible', visible === 0);
+
+            const fb = document.getElementById('nlq-filter-badge');
+            if (fb) {
+              if (activeFilter !== 'all') {
+                fb.textContent = activeFilter === 'failed' ? '\u26A0 Failed only' : '\u2713 Dispatched only';
+                fb.classList.add('visible');
+                fb.style.cssText = activeFilter === 'failed'
+                  ? 'background:rgba(248,113,113,0.1);color:#f87171;border-color:rgba(248,113,113,0.2)'
+                  : 'background:rgba(52,211,153,0.1);color:#34d399;border-color:rgba(52,211,153,0.2)';
+              } else {
+                fb.classList.remove('visible');
+              }
+            }
+          }
+
+          // KPI click handlers
+          document.querySelectorAll('.nlq-kpi').forEach(card => {
+            if (card.dataset.filter === 'none') return;
+            card.addEventListener('click', () => {
+              const f = card.dataset.filter;
+              activeFilter = activeFilter === f && f !== 'all' ? 'all' : f;
+              document.querySelectorAll('.nlq-kpi').forEach(c => c.classList.remove('active','active-failed','active-dispatched'));
+              if (activeFilter === 'all')         document.querySelector('[data-filter="all"]')?.classList.add('active');
+              else if (activeFilter === 'failed') card.classList.add('active-failed');
+              else                                card.classList.add('active-dispatched');
+              nlqApplyFilters();
+            });
+          });
+          document.querySelector('[data-filter="all"]')?.classList.add('active');
+
+          // Search
+          document.getElementById('nlq-search')?.addEventListener('input', nlqApplyFilters);
+
+          // Collapse
+          let collapsed = false;
+          document.getElementById('nlq-table-bar')?.addEventListener('click', e => {
+            if (e.target.closest('#nlq-search')) return;
+            collapsed = !collapsed;
+            document.getElementById('nlq-table-scroll')?.classList.toggle('collapsed', collapsed);
+            document.getElementById('nlq-collapse-icon')?.classList.toggle('collapsed', collapsed);
+          });
         }
 
         // DCL Tab Functions
