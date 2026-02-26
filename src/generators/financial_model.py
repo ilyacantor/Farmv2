@@ -320,6 +320,8 @@ class Quarter:
     uptime_pct: float = 0.0
     downtime_hours: float = 0.0
 
+    cloud_spend_by_resource_type: Dict[str, float] = field(default_factory=dict)
+
     # ── Dimensional breakdowns ────────────────────────────────────────────
     revenue_by_region: Dict[str, float] = field(default_factory=dict)
     revenue_by_segment: Dict[str, float] = field(default_factory=dict)
@@ -601,6 +603,17 @@ class FinancialModel:
         q.uptime_pct = _r(min(a.uptime_pct + q.quarter_index * 0.02, 99.99), 2)
         total_hours = 90 * 24  # ~90 days per quarter
         q.downtime_hours = _r(total_hours * (1 - q.uptime_pct / 100), 1)
+
+        # Cloud spend by resource type — top-down percentage split
+        # Categories match DCL entities.yaml resource_type allowed_values
+        q.cloud_spend_by_resource_type = {
+            "Compute": _r(q.cloud_spend * 0.40),
+            "Storage": _r(q.cloud_spend * 0.15),
+            "Database": _r(q.cloud_spend * 0.20),
+            "Network": _r(q.cloud_spend * 0.10),
+            "ML/AI": _r(q.cloud_spend * 0.08),
+            "Other": _r(q.cloud_spend * 0.07),
+        }
 
     # ─── Balance Sheet ────────────────────────────────────────────────────
 

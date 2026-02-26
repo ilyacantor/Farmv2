@@ -483,6 +483,7 @@ def _build_v2_dimensional_truth(
         "opex_breakdown": {"source": "netsuite"},
         "headcount_by_department": {"source": "workday"},
         "new_logo_revenue_by_region": {"source": "salesforce"},
+        "cloud_spend_by_resource_type": {"source": "aws_cost_explorer"},
     }
 
     for fmq in model_quarters:
@@ -500,6 +501,7 @@ def _build_v2_dimensional_truth(
         dims["opex_breakdown"][q] = {k: _r(v) for k, v in fmq.opex_breakdown.items()}
         dims["headcount_by_department"][q] = dict(fmq.headcount_by_department)
         dims["new_logo_revenue_by_region"][q] = {k: _r(v) for k, v in fmq.new_logo_revenue_by_region.items()}
+        dims["cloud_spend_by_resource_type"][q] = {k: _r(v) for k, v in fmq.cloud_spend_by_resource_type.items()}
 
     # ── Rep-level sections (from pre-generated rep data) ─────────────
     if rep_data:
