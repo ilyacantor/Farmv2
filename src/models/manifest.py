@@ -142,6 +142,7 @@ class ManifestExecutionResult(BaseModel):
     source_system: str
     rows_generated: int = Field(default=0)
     push_result: Optional[DCLPushResult] = None
+    persisted: bool = Field(default=True, description="Whether the run was saved to Farm DB")
 
     # Verification
     farm_verification_requested: bool = Field(default=False)
@@ -153,6 +154,17 @@ class BatchManifestRequest(BaseModel):
     manifests: List[JobManifest]
     batch_id: Optional[str] = Field(default=None, description="AAM batch correlation ID")
     concurrency: int = Field(default=4, ge=1, le=12, description="Max concurrent pushes (capped for 2GB Render instance)")
+
+
+class PipeResult(BaseModel):
+    """Per-pipe execution summary for batch response."""
+    pipe_id: str
+    status: str = Field(description="completed | failed | rejected_by_dcl")
+    error_type: Optional[str] = Field(default=None)
+    rows_generated: int = Field(default=0)
+    rows_pushed: int = Field(default=0)
+    rows_accepted: Optional[int] = Field(default=None)
+    persisted: bool = Field(default=True, description="Whether the run was saved to Farm DB")
 
 
 class BatchManifestResponse(BaseModel):
@@ -170,5 +182,8 @@ class BatchManifestResponse(BaseModel):
     pipes_failed: int = Field(default=0)
     pipes_queued: int = Field(default=0, description="Pipes still waiting (if async)")
     push_results: List[DCLPushResult] = Field(default_factory=list)
+    per_pipe_results: List[PipeResult] = Field(default_factory=list, description="Per-pipe execution details")
+    persistence_failures: int = Field(default=0, description="Pipes that failed to persist to Farm DB")
+    persistence_error: Optional[str] = Field(default=None, description="Last persistence error message")
     elapsed_seconds: float = Field(default=0.0)
     errors_summary: Dict[str, int] = Field(default_factory=dict, description="Error type -> count")

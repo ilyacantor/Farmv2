@@ -612,7 +612,44 @@ class DatabaseManager:
             remaining = self._circuit_breaker.cooldown_until - time.time()
             if remaining > 0:
                 return False, f"Circuit breaker cooldown ({int(remaining)}s remaining)"
-        return True, "Healthy"
+        # Check pool metrics — asyncpg pool is async so we can't execute a
+        # test query from this sync method, but pool exhaustion is detectable.
+        pool_size = self._pool.get_size()
+        idle_size = self._pool.get_idle_size()
+        max_size = self._pool.get_max_size()
+        if pool_size >= max_size and idle_size == 0:
+            return False, (
+                f"DB pool exhausted: {pool_size}/{max_size} connections in use, "
+                f"0 idle — all writes will block or fail"
+            )
+        return True, f"Healthy (pool: {pool_size}/{max_size}, idle: {idle_size})"
+
+    async def is_healthy_async(self) -> tuple[bool, str]:
+        """Async health check — executes a real test query against the database.
+
+        Use this from async endpoints (e.g. /api/health) to verify actual DB
+        connectivity, not just pool existence. Catches missing tables, rotated
+        credentials, and exhausted connection pools.
+        """
+        if DB_SIMULATE_DOWN:
+            return False, "DB_SIMULATE_DOWN=true"
+        if self._pool is None:
+            return False, "Pool not initialized"
+        if self._circuit_breaker.cooldown_until is not None:
+            remaining = self._circuit_breaker.cooldown_until - time.time()
+            if remaining > 0:
+                return False, f"Circuit breaker cooldown ({int(remaining)}s remaining)"
+        try:
+            async with self._pool.acquire() as conn:
+                result = await conn.fetchval("SELECT 1")
+                if result != 1:
+                    return False, f"DB test query returned unexpected result: {result}"
+        except Exception as e:
+            return False, f"DB unreachable: {e}"
+        pool_size = self._pool.get_size()
+        max_size = self._pool.get_max_size()
+        idle_size = self._pool.get_idle_size()
+        return True, f"Healthy (pool: {pool_size}/{max_size}, idle: {idle_size})"
 
 
 db = DatabaseManager()
@@ -642,6 +679,10 @@ async def close_pool():
 
 def is_healthy() -> tuple[bool, str]:
     return db.is_healthy()
+
+
+async def is_healthy_async() -> tuple[bool, str]:
+    return await db.is_healthy_async()
 
 
 import random as _random

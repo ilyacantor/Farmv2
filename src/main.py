@@ -47,7 +47,7 @@ from src.api.agents import router as agents_router
 from src.api.scenarios import router as scenarios_router, fabric_router
 from src.api.manifest_intake import router as manifest_intake_router
 from src.api.business_data import router as business_data_router
-from src.farm.db import DBUnavailable, close_pool, ensure_schema, is_healthy
+from src.farm.db import DBUnavailable, close_pool, ensure_schema, is_healthy, is_healthy_async
 
 
 class APIJSONErrorMiddleware(BaseHTTPMiddleware):
@@ -327,8 +327,14 @@ async def manifest_self_test(
 @app.get("/api/health")
 @app.get("/health")
 async def health_check():
-    """Health check endpoint with DB status."""
-    healthy, status_msg = is_healthy()
+    """Health check endpoint with DB status.
+
+    Uses async health check to execute a real SELECT 1 query against the
+    database — pool existence alone does not prove connectivity (missing
+    tables, rotated credentials, exhausted pools all pass sync checks).
+    Returns 503 when DB is unreachable so Render restarts the service.
+    """
+    healthy, status_msg = await is_healthy_async()
     return JSONResponse(
         status_code=200 if healthy else 503,
         content={

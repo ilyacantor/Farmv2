@@ -44,6 +44,7 @@ from src.models.manifest import (
     ManifestExecutionResult,
     BatchManifestRequest,
     BatchManifestResponse,
+    PipeResult,
 )
 
 logger = logging.getLogger("farm.api.manifest_intake")
@@ -277,187 +278,224 @@ async def _push_to_dcl(
         f"rows={len(rows)}, url={dcl_url}"
     )
 
-    try:
-        async with httpx.AsyncClient(
-            timeout=manifest.limits.timeout_seconds
-        ) as client:
-            response = await client.post(dcl_url, json=body, headers=headers)
-        del body  # Release serialized row payload after POST completes
+    max_retries = manifest.limits.retry_count  # default: 2
+    last_error = None
+    last_error_type = None
+    last_status_code = None
 
-        # --- Handle 422 NO_MATCHING_PIPE (configuration error, never retry) ---
-        if response.status_code == 422:
-            try:
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(
+                timeout=manifest.limits.timeout_seconds
+            ) as client:
+                response = await client.post(dcl_url, json=body, headers=headers)
+
+            # --- Handle 422 NO_MATCHING_PIPE (configuration error, never retry) ---
+            if response.status_code == 422:
+                del body
+                try:
+                    resp_data = response.json()
+                except Exception as e:
+                    logger.error("Failed to parse DCL 422 response as JSON for pipe_id=%s: %s (body: %.200s)", pipe_id, e, response.text)
+                    resp_data = {"error": response.text[:500], "parse_error": True}
+
+                # DCL may wrap error at top level OR inside FastAPI's {"detail": {...}}
+                # detail can be a string (e.g. "NON_CANONICAL_SOURCE: ...") or a dict.
+                raw_detail = resp_data.get("detail")
+                if isinstance(raw_detail, dict):
+                    error_code = resp_data.get("error") or raw_detail.get("error")
+                    detail = raw_detail
+                else:
+                    error_code = resp_data.get("error") or (raw_detail if isinstance(raw_detail, str) else None)
+                    detail = resp_data
+
+                if error_code == "NO_MATCHING_PIPE":
+                    hint = detail.get("hint", "N/A") if isinstance(detail, dict) else "N/A"
+                    avail = detail.get("available_pipes", "N/A") if isinstance(detail, dict) else "N/A"
+                    msg = detail.get("message", "No schema blueprint for this pipe_id") if isinstance(detail, dict) else str(raw_detail or "No schema blueprint for this pipe_id")
+                    logger.critical(
+                        f"NO_MATCHING_PIPE: DCL has no schema blueprint for pipe_id={pipe_id}. "
+                        f"AAM's Structure Path (Export) and Farm's Content Path (Ingest) are misaligned. "
+                        f"Do NOT retry — this is a configuration error. "
+                        f"Hint: {hint}. "
+                        f"Available pipes: {avail}"
+                    )
+                    return DCLPushResult(
+                        run_id=run_id,
+                        pipe_id=pipe_id,
+                        dcl_run_id=None,
+                        farm_run_id=farm_run_id,
+                        status="rejected",
+                        status_code=422,
+                        rows_pushed=len(rows),
+                        error=msg,
+                        error_type="NO_MATCHING_PIPE",
+                        hint=hint if hint != "N/A" else None,
+                    )
+                else:
+                    # Some other 422 (validation error, NON_CANONICAL_SOURCE, etc.)
+                    error_msg = str(raw_detail) if raw_detail else str(resp_data)
+                    logger.error(
+                        f"DCL returned 422 for pipe_id={pipe_id}: {error_msg[:500]}"
+                    )
+                    return DCLPushResult(
+                        run_id=run_id,
+                        pipe_id=pipe_id,
+                        farm_run_id=farm_run_id,
+                        status="failed",
+                        status_code=422,
+                        rows_pushed=len(rows),
+                        error=error_msg[:500],
+                        error_type="validation_error",
+                    )
+
+            # --- Handle success (200/201) ---
+            if response.status_code in (200, 201):
+                del body
                 resp_data = response.json()
-            except Exception as e:
-                logger.error("Failed to parse DCL 422 response as JSON for pipe_id=%s: %s (body: %.200s)", pipe_id, e, response.text)
-                resp_data = {"error": response.text[:500], "parse_error": True}
 
-            # DCL may wrap error at top level OR inside FastAPI's {"detail": {...}}
-            # detail can be a string (e.g. "NON_CANONICAL_SOURCE: ...") or a dict.
-            raw_detail = resp_data.get("detail")
-            if isinstance(raw_detail, dict):
-                error_code = resp_data.get("error") or raw_detail.get("error")
-                detail = raw_detail
-            else:
-                error_code = resp_data.get("error") or (raw_detail if isinstance(raw_detail, str) else None)
-                detail = resp_data
+                # Check for schema_drift
+                if resp_data.get("schema_drift"):
+                    drift_fields = resp_data.get("drift_fields", [])
+                    logger.warning(
+                        f"SCHEMA_DRIFT detected for pipe_id={pipe_id}: "
+                        f"drift_fields={drift_fields}. "
+                        f"Continuing but flagging for operator review."
+                    )
 
-            if error_code == "NO_MATCHING_PIPE":
-                hint = detail.get("hint", "N/A") if isinstance(detail, dict) else "N/A"
-                avail = detail.get("available_pipes", "N/A") if isinstance(detail, dict) else "N/A"
-                msg = detail.get("message", "No schema blueprint for this pipe_id") if isinstance(detail, dict) else str(raw_detail or "No schema blueprint for this pipe_id")
-                logger.critical(
-                    f"NO_MATCHING_PIPE: DCL has no schema blueprint for pipe_id={pipe_id}. "
-                    f"AAM's Structure Path (Export) and Farm's Content Path (Ingest) are misaligned. "
-                    f"Do NOT retry — this is a configuration error. "
-                    f"Hint: {hint}. "
-                    f"Available pipes: {avail}"
-                )
-                return DCLPushResult(
-                    run_id=run_id,
-                    pipe_id=pipe_id,
-                    dcl_run_id=None,
-                    farm_run_id=farm_run_id,
-                    status="rejected",
-                    status_code=422,
-                    rows_pushed=len(rows),
-                    error=msg,
-                    error_type="NO_MATCHING_PIPE",
-                    hint=hint if hint != "N/A" else None,
-                )
-            else:
-                # Some other 422 (validation error, NON_CANONICAL_SOURCE, etc.)
-                error_msg = str(raw_detail) if raw_detail else str(resp_data)
-                logger.error(
-                    f"DCL returned 422 for pipe_id={pipe_id}: {error_msg[:500]}"
-                )
-                return DCLPushResult(
-                    run_id=run_id,
-                    pipe_id=pipe_id,
-                    farm_run_id=farm_run_id,
-                    status="failed",
-                    status_code=422,
-                    rows_pushed=len(rows),
-                    error=error_msg[:500],
-                    error_type="validation_error",
+                dcl_run_id = resp_data.get("dcl_run_id")
+                rows_accepted = resp_data.get("rows_accepted")
+                if rows_accepted is None:
+                    logger.error(
+                        f"DCL_MISSING_ROWS_ACCEPTED: DCL response for pipe_id={pipe_id} "
+                        f"omitted rows_accepted field. Cannot verify row delivery. "
+                        f"dcl_run_id={dcl_run_id}. Marking push as degraded."
+                    )
+                    return DCLPushResult(
+                        run_id=run_id,
+                        pipe_id=pipe_id,
+                        dcl_run_id=dcl_run_id,
+                        farm_run_id=farm_run_id,
+                        status="degraded",
+                        status_code=200,
+                        rows_pushed=len(rows),
+                        rows_accepted=None,
+                        matched_schema=resp_data.get("matched_schema"),
+                        schema_fields=resp_data.get("schema_fields"),
+                        schema_drift=resp_data.get("schema_drift", False),
+                        drift_fields=resp_data.get("drift_fields"),
+                        error="DCL response omitted rows_accepted — delivery unverifiable",
+                        error_type="MISSING_ROWS_ACCEPTED",
+                    )
+
+                if rows_accepted is not None and rows_accepted < len(rows):
+                    lost = len(rows) - rows_accepted
+                    logger.warning(
+                        f"ROW_LOSS_DETECTED: pipe_id={pipe_id} pushed {len(rows)} rows "
+                        f"but DCL accepted only {rows_accepted} ({lost} rows lost). "
+                        f"dcl_run_id={dcl_run_id}"
+                    )
+
+                logger.info(
+                    f"Push succeeded: pipe_id={pipe_id}, "
+                    f"rows_accepted={rows_accepted}, "
+                    f"dcl_run_id={dcl_run_id}, matched_schema={resp_data.get('matched_schema')}"
                 )
 
-        # --- Handle success (200) ---
-        if response.status_code == 200:
-            resp_data = response.json()
-
-            # Check for schema_drift
-            if resp_data.get("schema_drift"):
-                drift_fields = resp_data.get("drift_fields", [])
-                logger.warning(
-                    f"SCHEMA_DRIFT detected for pipe_id={pipe_id}: "
-                    f"drift_fields={drift_fields}. "
-                    f"Continuing but flagging for operator review."
-                )
-
-            dcl_run_id = resp_data.get("dcl_run_id")
-            rows_accepted = resp_data.get("rows_accepted")
-            if rows_accepted is None:
-                logger.error(
-                    f"DCL_MISSING_ROWS_ACCEPTED: DCL response for pipe_id={pipe_id} "
-                    f"omitted rows_accepted field. Cannot verify row delivery. "
-                    f"dcl_run_id={dcl_run_id}. Marking push as degraded."
-                )
                 return DCLPushResult(
                     run_id=run_id,
                     pipe_id=pipe_id,
                     dcl_run_id=dcl_run_id,
                     farm_run_id=farm_run_id,
-                    status="degraded",
+                    status="success",
                     status_code=200,
                     rows_pushed=len(rows),
-                    rows_accepted=None,
+                    rows_accepted=rows_accepted,
                     matched_schema=resp_data.get("matched_schema"),
                     schema_fields=resp_data.get("schema_fields"),
                     schema_drift=resp_data.get("schema_drift", False),
                     drift_fields=resp_data.get("drift_fields"),
-                    error="DCL response omitted rows_accepted — delivery unverifiable",
-                    error_type="MISSING_ROWS_ACCEPTED",
                 )
 
-            if rows_accepted is not None and rows_accepted < len(rows):
-                lost = len(rows) - rows_accepted
-                logger.warning(
-                    f"ROW_LOSS_DETECTED: pipe_id={pipe_id} pushed {len(rows)} rows "
-                    f"but DCL accepted only {rows_accepted} ({lost} rows lost). "
-                    f"dcl_run_id={dcl_run_id}"
-                )
+            # --- Handle retryable HTTP errors (5xx, 429) ---
+            if response.status_code >= 500 or response.status_code == 429:
+                last_error = response.text[:500]
+                last_error_type = "http_error"
+                last_status_code = response.status_code
+                if attempt < max_retries:
+                    delay = 2 ** attempt
+                    logger.warning(
+                        f"DCL push retryable error for pipe_id={pipe_id}: "
+                        f"HTTP {response.status_code} (attempt {attempt}/{max_retries}). "
+                        f"Retrying in {delay}s."
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                # Final attempt failed
+                break
 
-            logger.info(
-                f"Push succeeded: pipe_id={pipe_id}, "
-                f"rows_accepted={rows_accepted}, "
-                f"dcl_run_id={dcl_run_id}, matched_schema={resp_data.get('matched_schema')}"
+            # --- Handle other non-retryable HTTP errors (4xx) ---
+            del body
+            logger.error(
+                f"DCL push failed for pipe_id={pipe_id}: "
+                f"HTTP {response.status_code} - {response.text[:200]}"
             )
-
             return DCLPushResult(
                 run_id=run_id,
                 pipe_id=pipe_id,
-                dcl_run_id=dcl_run_id,
                 farm_run_id=farm_run_id,
-                status="success",
-                status_code=200,
+                status="failed",
+                status_code=response.status_code,
                 rows_pushed=len(rows),
-                rows_accepted=rows_accepted,
-                matched_schema=resp_data.get("matched_schema"),
-                schema_fields=resp_data.get("schema_fields"),
-                schema_drift=resp_data.get("schema_drift", False),
-                drift_fields=resp_data.get("drift_fields"),
+                error=response.text[:500],
+                error_type="http_error",
             )
 
-        # --- Handle other HTTP errors (4xx/5xx) ---
-        logger.error(
-            f"DCL push failed for pipe_id={pipe_id}: "
-            f"HTTP {response.status_code} - {response.text[:200]}"
-        )
-        return DCLPushResult(
-            run_id=run_id,
-            pipe_id=pipe_id,
-            farm_run_id=farm_run_id,
-            status="failed",
-            status_code=response.status_code,
-            rows_pushed=len(rows),
-            error=response.text[:500],
-            error_type="http_error",
-        )
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
+            is_timeout = isinstance(e, httpx.TimeoutException)
+            last_error = "Connection timed out" if is_timeout else f"Connection refused: {e}"
+            last_error_type = "timeout" if is_timeout else "connection_error"
+            last_status_code = None
+            if attempt < max_retries:
+                delay = 2 ** attempt
+                logger.warning(
+                    f"DCL push {'timeout' if is_timeout else 'connection error'} for "
+                    f"pipe_id={pipe_id} (attempt {attempt}/{max_retries}). "
+                    f"Retrying in {delay}s. Error: {e}"
+                )
+                await asyncio.sleep(delay)
+                continue
+            # Final attempt
+            logger.error(
+                f"DCL push {'timeout' if is_timeout else 'connection refused'} for "
+                f"pipe_id={pipe_id} after {max_retries} attempts: {e}"
+            )
+            break
+        except Exception as e:
+            logger.error(f"DCL push error for pipe_id={pipe_id}: {e}", exc_info=True)
+            del body
+            return DCLPushResult(
+                run_id=run_id,
+                pipe_id=pipe_id,
+                farm_run_id=farm_run_id,
+                status="failed",
+                rows_pushed=len(rows),
+                error=str(e)[:500],
+                error_type="unexpected_error",
+            )
 
-    except httpx.TimeoutException:
-        logger.error(f"DCL push timeout for pipe_id={pipe_id}")
-        return DCLPushResult(
-            run_id=run_id,
-            pipe_id=pipe_id,
-            farm_run_id=farm_run_id,
-            status="failed",
-            rows_pushed=len(rows),
-            error="Connection timed out",
-            error_type="timeout",
-        )
-    except httpx.ConnectError as e:
-        logger.error(f"DCL connection refused for pipe_id={pipe_id}: {e}")
-        return DCLPushResult(
-            run_id=run_id,
-            pipe_id=pipe_id,
-            farm_run_id=farm_run_id,
-            status="failed",
-            rows_pushed=len(rows),
-            error=f"Connection refused: {e}",
-            error_type="connection_error",
-        )
-    except Exception as e:
-        logger.error(f"DCL push error for pipe_id={pipe_id}: {e}", exc_info=True)
-        return DCLPushResult(
-            run_id=run_id,
-            pipe_id=pipe_id,
-            farm_run_id=farm_run_id,
-            status="failed",
-            rows_pushed=len(rows),
-            error=str(e)[:500],
-            error_type="unexpected_error",
-        )
+    # All retries exhausted
+    del body
+    return DCLPushResult(
+        run_id=run_id,
+        pipe_id=pipe_id,
+        farm_run_id=farm_run_id,
+        status="failed",
+        status_code=last_status_code,
+        rows_pushed=len(rows),
+        error=f"Failed after {max_retries} attempts: {last_error}",
+        error_type=last_error_type or "unknown",
+    )
 
 
 async def _execute_single_manifest(
@@ -540,7 +578,43 @@ async def _execute_single_manifest(
             return gen.generate(profile, farm_run_id, run_timestamp)
 
     try:
-        generated_data = await asyncio.to_thread(_run_generator)
+        generated_data = await asyncio.wait_for(
+            asyncio.to_thread(_run_generator),
+            timeout=60.0,  # 60s CPU timeout — prevents thread starvation from hanging generators
+        )
+    except asyncio.TimeoutError:
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
+        logger.error(
+            f"Generator CPU timeout (60s) for system={system} (generator={generator_key}), "
+            f"run_id={run_id}, pipe_id={pipe_id}. Thread returned to pool."
+        )
+        try:
+            await save_manifest_run(
+                farm_run_id=farm_run_id, run_id=run_id, pipe_id=pipe_id,
+                aam_run_id=aam_run_id,
+                tenant_id=tenant_id, snapshot_name=snapshot_name,
+                source_system=system, category=category or None,
+                generator_key=generator_key, status="failed",
+                created_at=created_at, elapsed_ms=elapsed_ms,
+                error_type="cpu_timeout",
+                error_message=f"Generator {generator_key} exceeded 60s CPU timeout",
+            )
+        except Exception as db_err:
+            logger.error(f"PERSISTENCE FAILURE: manifest run {farm_run_id} NOT saved: {db_err}", exc_info=True)
+            return ManifestExecutionResult(
+                run_id=run_id, pipe_id=pipe_id, farm_run_id=farm_run_id,
+                status="failed", source_system=system, rows_generated=0,
+                persisted=False, farm_verification_requested=manifest.farm_verification,
+            )
+        return ManifestExecutionResult(
+            run_id=run_id,
+            pipe_id=pipe_id,
+            farm_run_id=farm_run_id,
+            status="failed",
+            source_system=system,
+            rows_generated=0,
+            farm_verification_requested=manifest.farm_verification,
+        )
     except Exception as e:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         logger.error(
@@ -560,6 +634,11 @@ async def _execute_single_manifest(
             )
         except Exception as db_err:
             logger.error(f"PERSISTENCE FAILURE: manifest run {farm_run_id} NOT saved: {db_err}", exc_info=True)
+            return ManifestExecutionResult(
+                run_id=run_id, pipe_id=pipe_id, farm_run_id=farm_run_id,
+                status="failed", source_system=system, rows_generated=0,
+                persisted=False, farm_verification_requested=manifest.farm_verification,
+            )
         return ManifestExecutionResult(
             run_id=run_id,
             pipe_id=pipe_id,
@@ -602,6 +681,11 @@ async def _execute_single_manifest(
                 )
             except Exception as db_err:
                 logger.error(f"PERSISTENCE FAILURE: manifest run {farm_run_id} NOT saved: {db_err}", exc_info=True)
+                return ManifestExecutionResult(
+                    run_id=run_id, pipe_id=pipe_id, farm_run_id=farm_run_id,
+                    status="failed", source_system=system, rows_generated=0,
+                    persisted=False, farm_verification_requested=manifest.farm_verification,
+                )
             return ManifestExecutionResult(
                 run_id=run_id,
                 pipe_id=pipe_id,
@@ -680,7 +764,9 @@ async def _execute_single_manifest(
             f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
             f"tenant_id={tenant_id}, snapshot_name={snapshot_name}"
         )
+        _persisted = True
     except Exception as db_err:
+        _persisted = False
         logger.error(
             f"PERSISTENCE FAILURE: run {farm_run_id} NOT saved to DB. "
             f"run_id={run_id}, pipe_id={pipe_id}, status={status}, "
@@ -749,6 +835,7 @@ async def _execute_single_manifest(
         source_system=system,
         rows_generated=rows_generated,
         push_result=push_result,
+        persisted=_persisted,
         farm_verification_requested=manifest.farm_verification,
         recon_triggered=recon_triggered,
     )
@@ -876,8 +963,11 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     pipes_pushed = 0
     pipes_succeeded = 0
     pipes_failed = 0
+    persistence_failures = 0
+    last_persistence_error: str | None = None
     errors_summary: Dict[str, int] = {}
     per_system: Dict[str, Dict[str, int]] = {}  # system -> {succeeded, failed}
+    per_pipe_results: List[PipeResult] = []
 
     for result in results:
         if result is None:
@@ -888,6 +978,11 @@ async def batch_manifest_intake(request: BatchManifestRequest):
             continue
 
         pipes_pushed += 1
+
+        # Track persistence status
+        if not result.persisted:
+            persistence_failures += 1
+            last_persistence_error = f"pipe_id={result.pipe_id} farm_run_id={result.farm_run_id}"
 
         # Track per-system breakdown
         sys_key = result.source_system
@@ -907,12 +1002,32 @@ async def batch_manifest_intake(request: BatchManifestRequest):
             if result.push_result.error_type:
                 et = result.push_result.error_type
                 errors_summary[et] = errors_summary.get(et, 0) + 1
+
+            per_pipe_results.append(PipeResult(
+                pipe_id=result.pipe_id,
+                status=result.status,
+                error_type=result.push_result.error_type,
+                rows_generated=result.rows_generated,
+                rows_pushed=result.push_result.rows_pushed,
+                rows_accepted=result.push_result.rows_accepted,
+                persisted=result.persisted,
+            ))
         else:
             # Result with no push_result means generation failed before push
             if result.status == "failed":
                 pipes_failed += 1
                 per_system[sys_key]["failed"] += 1
                 errors_summary["generation_error"] = errors_summary.get("generation_error", 0) + 1
+
+            per_pipe_results.append(PipeResult(
+                pipe_id=result.pipe_id,
+                status=result.status,
+                error_type="generation_error",
+                rows_generated=result.rows_generated,
+                rows_pushed=0,
+                rows_accepted=None,
+                persisted=result.persisted,
+            ))
 
     elapsed = time.monotonic() - start_time
 
@@ -938,6 +1053,9 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         pipes_failed=pipes_failed,
         pipes_queued=0,
         push_results=push_results,
+        per_pipe_results=per_pipe_results,
+        persistence_failures=persistence_failures,
+        persistence_error=last_persistence_error,
         elapsed_seconds=round(elapsed, 2),
         errors_summary=errors_summary,
     )
