@@ -104,7 +104,7 @@ _CATEGORY_TO_GENERATOR = {
 }
 
 
-def _resolve_generator_key(manifest: JobManifest) -> str:
+def _resolve_generator_key(manifest: JobManifest) -> Optional[str]:
     """
     Resolve which generator archetype to use for simulation.
 
@@ -112,9 +112,9 @@ def _resolve_generator_key(manifest: JobManifest) -> str:
       1. Direct system match (e.g. system="salesforce" → salesforce generator)
       2. Category-based routing (e.g. category="crm" → salesforce generator)
 
-    If neither resolves, raises HTTPException with NO_GENERATOR_ROUTE.
-    No silent fallback — if AAM didn't provide a category for an unknown
-    system, that's a manifest completeness problem and AAM needs to fix it.
+    Returns None if neither resolves — no silent fallback. If AAM didn't
+    provide a routable category for an unknown system, that's a manifest
+    completeness problem and AAM needs to fix it.
 
     In production, this function won't be called — Farm will use
     adapter + endpoint_ref + credentials_ref to connect to the real API.
@@ -133,14 +133,12 @@ def _resolve_generator_key(manifest: JobManifest) -> str:
         )
         return resolved
 
-    # Fallback: unknown category → salesforce (generic generator).
-    # Log a warning so we can add explicit routing later, but do NOT reject.
-    logger.warning(
-        f"Generator fallback: system='{manifest.source.system}', "
-        f"category='{category or None}' not in routing table — "
-        f"falling back to 'salesforce' archetype"
+    logger.error(
+        f"NO_GENERATOR_ROUTE: system='{manifest.source.system}', "
+        f"category='{category or None}' — no matching generator. "
+        f"AAM must provide a routable category for this system."
     )
-    return "salesforce"
+    return None
 
 
 def _compute_schema_hash(rows: List[Dict]) -> str:
@@ -528,6 +526,35 @@ async def _execute_single_manifest(
     snapshot_name = manifest.target.snapshot_name
 
     generator_key = _resolve_generator_key(manifest)
+
+    if generator_key is None:
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
+        error_msg = (
+            f"No generator route for system='{system}', category='{category or None}'. "
+            f"AAM must provide a routable category."
+        )
+        try:
+            await save_manifest_run(
+                farm_run_id=farm_run_id, run_id=run_id, pipe_id=pipe_id,
+                aam_run_id=aam_run_id,
+                tenant_id=tenant_id, snapshot_name=snapshot_name,
+                source_system=system, category=category or None,
+                generator_key=None, status="failed",
+                created_at=created_at, elapsed_ms=elapsed_ms,
+                error_type="no_generator_route", error_message=error_msg,
+            )
+        except Exception as db_err:
+            logger.error(f"PERSISTENCE FAILURE: manifest run {farm_run_id} NOT saved: {db_err}", exc_info=True)
+            return ManifestExecutionResult(
+                run_id=run_id, pipe_id=pipe_id, farm_run_id=farm_run_id,
+                status="failed", source_system=system, rows_generated=0,
+                persisted=False, farm_verification_requested=manifest.farm_verification,
+            )
+        return ManifestExecutionResult(
+            run_id=run_id, pipe_id=pipe_id, farm_run_id=farm_run_id,
+            status="failed", source_system=system, rows_generated=0,
+            farm_verification_requested=manifest.farm_verification,
+        )
 
     logger.info(
         f"Manifest received: run_id={run_id}, pipe_id={pipe_id}, "
