@@ -406,8 +406,12 @@ class FinancialModel:
         # Gross new ARR = growth target + churn replacement
         target_ending = _r(q.beginning_arr * (1 + quarterly_growth))
         q.new_arr = _r(target_ending - q.beginning_arr + q.churned_arr)
-        q.new_logo_arr = _r(q.new_arr * a.new_logo_pct_of_new_arr)
-        q.expansion_arr = _r(q.new_arr - q.new_logo_arr)
+        # Expansion driven by NRR target (annualized → quarterly)
+        quarterly_nrr = (1 + (a.nrr_base - 100) / 100) ** 0.25  # 1.14 → 1.0333
+        target_expansion = q.beginning_arr * (quarterly_nrr - 1) + q.churned_arr
+        # Cap expansion at total new ARR (can't expand more than we grow)
+        q.expansion_arr = _r(min(target_expansion, q.new_arr))
+        q.new_logo_arr = _r(q.new_arr - q.expansion_arr)
 
         q.ending_arr = _r(q.beginning_arr + q.new_arr - q.churned_arr)
         q.mrr = _r(q.ending_arr / 12)
@@ -715,10 +719,10 @@ class FinancialModel:
 
     def _compute_saas_metrics(self, q: Quarter, prev: Optional[Quarter]):
         a = self.a
-        # NRR = (ending ARR from existing customers) / beginning ARR
-        # existing ARR = beginning - churned + expansion (no new logos)
+        # NRR = (ending ARR from existing customers) / beginning ARR, annualized
         existing_ending = q.beginning_arr + q.expansion_arr - q.churned_arr
-        q.nrr = _r((existing_ending / q.beginning_arr * 100) if q.beginning_arr else 100, 1)
+        quarterly_ratio = existing_ending / q.beginning_arr if q.beginning_arr else 1.0
+        q.nrr = _r(quarterly_ratio ** 4 * 100, 1)  # annualize
 
         # ACV
         if q.new_customers > 0:
@@ -748,9 +752,10 @@ class FinancialModel:
         q.burn_multiple = _r(net_burn / (net_new_arr) if net_new_arr > 0 else 0, 2)
 
         # Rule of 40 = revenue growth rate + FCF margin
-        rev_growth_annualized = 0.0
         if prev and prev.revenue > 0:
             rev_growth_annualized = ((q.revenue / prev.revenue) ** 4 - 1) * 100
+        else:
+            rev_growth_annualized = a.arr_growth_rate_annual * 100  # seed quarter: use config
         fcf_margin = (q.fcf / q.revenue * 100) if q.revenue > 0 else 0
         q.rule_of_40 = _r(rev_growth_annualized + fcf_margin, 1)
 
@@ -758,11 +763,12 @@ class FinancialModel:
         q.revenue_per_employee = _r(q.revenue / q.headcount if q.headcount else 0, 4)
         q.arr_per_employee = _r(q.ending_arr / q.headcount if q.headcount else 0, 4)
 
-        # Quota attainment (implied)
+        # Quota attainment — plan-based quota with stretch
         if q.sales_headcount > 0:
-            quota_per_rep = q.ending_arr / q.sales_headcount * 0.015  # rough quarterly quota
+            quota_stretch = 1.12  # reps get 12% stretch over plan
+            quota_per_rep = (q.new_arr * quota_stretch) / q.sales_headcount
             actual_per_rep = (q.new_logo_arr + q.expansion_arr) / q.sales_headcount
-            q.quota_attainment = _r(min(actual_per_rep / quota_per_rep * 100, 150) if quota_per_rep > 0 else 100, 1)
+            q.quota_attainment = _r(min(actual_per_rep / quota_per_rep * 100, 150), 1)
         else:
             q.quota_attainment = 100.0
 
