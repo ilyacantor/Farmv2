@@ -253,6 +253,11 @@ class Quarter:
     retained_earnings: float = 0.0
     stockholders_equity: float = 0.0
 
+    # ── Derived ratios ───────────────────────────────────────────────────
+    dso: float = 0.0               # Days Sales Outstanding
+    dpo: float = 0.0               # Days Payables Outstanding
+    working_capital: float = 0.0   # Current assets − current liabilities
+
     # ── Cash Flow ──────────────────────────────────────────────────────────
     cfo: float = 0.0
     capex: float = 0.0
@@ -626,6 +631,7 @@ class FinancialModel:
 
         # DSO improves over time
         dso = a.dso_days - a.dso_improvement_annual * years_elapsed
+        q.dso = _r(dso, 1)
         q.ar = _r(q.revenue / 90 * dso)  # quarterly rev / 90 days * DSO
 
         # Deferred revenue ~ ARR * (deferred_months / 12)
@@ -649,6 +655,9 @@ class FinancialModel:
         # AP and accrued
         q.ap = _r(q.cogs * 0.15 + q.total_opex * 0.08)  # ~15% of COGS + 8% of opex
         q.accrued_expenses = _r(q.total_opex * 0.35)  # ~35% of opex accrued
+
+        # DPO = AP / annualised COGS × 365
+        q.dpo = _r(q.ap / (q.cogs * 4) * 365, 1) if q.cogs else 0.0
 
         # Cash computed after cash flow
 
@@ -714,6 +723,11 @@ class FinancialModel:
         # Now compute total assets (needs cash)
         q.total_assets = _r(q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
                             + q.pp_e + q.intangibles + q.goodwill)
+
+        # Working capital = current assets − current liabilities
+        current_assets = q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
+        current_liabilities = q.ap + q.accrued_expenses + q.deferred_revenue_current
+        q.working_capital = _r(current_assets - current_liabilities)
 
     # ─── SaaS Metrics ─────────────────────────────────────────────────────
 
