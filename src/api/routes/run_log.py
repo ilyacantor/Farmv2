@@ -178,23 +178,28 @@ async def get_runs_by_aam_run(aam_run_id: str):
             and r["status"] == "completed"
         )
 
-        # Query snapshots_meta for total fabric planes in enterprise topology
+        # Query snapshots_meta for fabric planes and SOR declarations.
+        # SOR authority: Farm generates SOR declarations at snapshot time
+        # and stores them in snapshots_meta.sors.  The old code counted
+        # "non-fabric source systems" as SORs, giving ~same as total pipes.
+        # That path is dead — only the declared SORs count.
         tenant_id = rows[0]["tenant_id"] if rows else None
         snapshot_fabric_planes: list = []
+        snapshot_sors: list = []
         if tenant_id:
-            fabric_meta = await conn.fetchrow(
-                "SELECT fabric_planes FROM snapshots_meta WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1",
+            snap_meta = await conn.fetchrow(
+                "SELECT fabric_planes, sors FROM snapshots_meta WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 1",
                 tenant_id,
             )
-            if fabric_meta and fabric_meta["fabric_planes"]:
-                raw = fabric_meta["fabric_planes"]
-                snapshot_fabric_planes = json.loads(raw) if isinstance(raw, str) else raw
+            if snap_meta:
+                if snap_meta["fabric_planes"]:
+                    raw = snap_meta["fabric_planes"]
+                    snapshot_fabric_planes = json.loads(raw) if isinstance(raw, str) else raw
+                if snap_meta["sors"]:
+                    raw_sors = snap_meta["sors"]
+                    snapshot_sors = json.loads(raw_sors) if isinstance(raw_sors, str) else raw_sors
 
-        # SOR systems — non-fabric source systems
-        sor_systems = sorted(set(
-            r["source_system"] for r in rows
-            if (r["category"] or "").lower() not in FABRIC_PLANE_CATEGORIES
-        ))
+        sor_systems = [s.get("sor_name", s.get("vendor", "")) for s in snapshot_sors]
 
         summary = {
             "aam_run_id": aam_run_id,
