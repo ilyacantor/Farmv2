@@ -203,7 +203,10 @@
 
         #runlogTab {
           font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-          display: flex; flex-direction: column; height: 100%; overflow: hidden;
+          flex-direction: column; height: 100%; overflow: hidden;
+        }
+        #runlogTab:not(.hidden) {
+          display: flex;
         }
         #runlogTab > div {
           display: flex !important; flex-direction: column !important;
