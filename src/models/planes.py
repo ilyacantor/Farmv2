@@ -1,3 +1,5 @@
+import random
+import string
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -390,8 +392,30 @@ class SnapshotMeta(BaseModel):
         return data
 
 
+_COMPANY_PREFIXES = [
+    "Tech", "Data", "Cloud", "Cyber", "Net", "Info", "Sys", "Core",
+    "Blue", "Nova", "Apex", "Velo", "Aero", "Flux", "Helix",
+]
+_COMPANY_SUFFIXES = [
+    "Corp", "Labs", "Systems", "Works", "Flow", "Hub",
+    "Dynamics", "Logic", "Wave", "Edge",
+]
+
+
+def generate_tenant_id() -> str:
+    """Generate a human-readable tenant name like 'AeroCorp-UBEG'.
+
+    Server-side equivalent of the JS generateTenantId() in index.html.
+    Called automatically when a snapshot request omits tenant_id.
+    """
+    prefix = random.choice(_COMPANY_PREFIXES)
+    suffix = random.choice(_COMPANY_SUFFIXES)
+    code = "".join(random.choices(string.ascii_uppercase + string.digits, k=4))
+    return f"{prefix}{suffix}-{code}"
+
+
 class SnapshotRequest(BaseModel):
-    tenant_id: str
+    tenant_id: Optional[str] = None
     seed: int = 12345
     scale: ScaleEnum = ScaleEnum.medium
     enterprise_profile: EnterpriseProfileEnum = EnterpriseProfileEnum.modern_saas

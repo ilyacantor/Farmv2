@@ -59,6 +59,12 @@ async def create_snapshot(request: SnapshotRequest):
     """Create a new synthetic data snapshot."""
     total_start = time.perf_counter()
 
+    # Auto-generate tenant_id if caller didn't provide one
+    if not request.tenant_id:
+        from src.models.planes import generate_tenant_id
+        request.tenant_id = generate_tenant_id()
+        logger.info("Auto-generated tenant_id: %s", request.tenant_id)
+
     fingerprint = compute_fingerprint(
         request.tenant_id,
         request.seed,
