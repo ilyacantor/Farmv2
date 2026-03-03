@@ -148,6 +148,9 @@ class ManifestExecutionResult(BaseModel):
     farm_verification_requested: bool = Field(default=False)
     recon_triggered: bool = Field(default=False)
 
+    # Idempotency: True when this result is a cached duplicate (no data generated)
+    skipped_duplicate: bool = Field(default=False)
+
 
 class BatchManifestRequest(BaseModel):
     """Batch of manifests dispatched by AAM Runner."""
