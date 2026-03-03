@@ -553,7 +553,7 @@ async def _execute_single_manifest(
             farm_run_id=existing["farm_run_id"],
             pipe_id=pipe_id,
             run_id=run_id,
-            status="completed",
+            status="skipped",
             source_system=system,
             rows_generated=0,
             push_result=None,
@@ -863,8 +863,10 @@ async def _execute_single_manifest(
                 "schema_drift": push_result.schema_drift or False,
             },
         }
-    elif callback_url and push_result is None and status == "completed":
-        # Idempotency skip or other path with no push — notify AAM minimally
+    elif callback_url and push_result is None and status == "skipped":
+        # Idempotency skip — data was already pushed in a prior execution.
+        # Tell AAM "completed" (its enum doesn't include "skipped") with
+        # skipped_duplicate=True so it knows this was a cache hit, not new work.
         aam_status = "completed"
         callback_payload = {
             "status": "completed",
@@ -1091,8 +1093,8 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         else:
             if getattr(result, "skipped_duplicate", False):
                 # Idempotency skip — not a new push, not a failure.
-                # AAM double-dispatched this pipe; Farm returned a cached
-                # "completed" without re-executing or re-pushing to DCL.
+                # AAM double-dispatched this pipe; Farm returned "skipped"
+                # without re-executing or re-pushing to DCL.
                 pipes_skipped += 1
                 per_system[sys_key]["skipped"] = per_system[sys_key].get("skipped", 0) + 1
                 per_pipe_results.append(PipeResult(

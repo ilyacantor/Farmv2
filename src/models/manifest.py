@@ -138,7 +138,7 @@ class ManifestExecutionResult(BaseModel):
     farm_run_id: str = Field(..., description="Farm's internal execution ID")
 
     # Execution summary
-    status: str = Field(..., description="completed | failed | rejected_by_dcl")
+    status: str = Field(..., description="completed | skipped | failed | rejected_by_dcl")
     source_system: str
     rows_generated: int = Field(default=0)
     push_result: Optional[DCLPushResult] = None
