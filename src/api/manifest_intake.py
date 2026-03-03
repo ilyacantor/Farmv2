@@ -845,7 +845,8 @@ async def _execute_single_manifest(
 
     # --- AAM callback: fire-and-forget (not on critical path) ---
     callback_url = manifest.target.callback_url
-    if callback_url:
+    callback_payload = None
+    if callback_url and push_result is not None:
         # Map Farm status → AAM RunnerJobStatus (AAM has no "rejected_by_dcl")
         aam_status = "completed" if status == "completed" else "failed"
         callback_payload = {
@@ -860,7 +861,18 @@ async def _execute_single_manifest(
                 "schema_drift": push_result.schema_drift or False,
             },
         }
+    elif callback_url and push_result is None and status == "completed":
+        # Idempotency skip or other path with no push — notify AAM minimally
+        aam_status = "completed"
+        callback_payload = {
+            "status": "completed",
+            "rows_transferred": 0,
+            "error_message": None,
+            "dcl_response": None,
+            "skipped_duplicate": True,
+        }
 
+    if callback_url and callback_payload is not None:
         async def _fire_callback():
             try:
                 async with httpx.AsyncClient(timeout=10.0) as cb_client:
@@ -881,7 +893,7 @@ async def _execute_single_manifest(
         asyncio.create_task(_fire_callback())
 
     recon_triggered = False
-    if manifest.farm_verification and push_result.status == "success":
+    if manifest.farm_verification and push_result is not None and push_result.status == "success":
         logger.info(
             f"farm_verification=true and push succeeded: triggering recon "
             f"for run_id={run_id}, pipe_id={pipe_id}"
@@ -1024,10 +1036,11 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     pipes_pushed = 0
     pipes_succeeded = 0
     pipes_failed = 0
+    pipes_skipped = 0
     persistence_failures = 0
     last_persistence_error: str | None = None
     errors_summary: Dict[str, int] = {}
-    per_system: Dict[str, Dict[str, int]] = {}  # system -> {succeeded, failed}
+    per_system: Dict[str, Dict[str, int]] = {}  # system -> {succeeded, failed, skipped}
     per_pipe_results: List[PipeResult] = []
 
     for result in results:
@@ -1074,21 +1087,46 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                 persisted=result.persisted,
             ))
         else:
-            # Result with no push_result means generation failed before push
-            if result.status == "failed":
+            if getattr(result, "skipped_duplicate", False):
+                # Idempotency skip — not a new push, not a failure.
+                # AAM double-dispatched this pipe; Farm returned a cached
+                # "completed" without re-executing or re-pushing to DCL.
+                pipes_skipped += 1
+                per_system[sys_key]["skipped"] = per_system[sys_key].get("skipped", 0) + 1
+                per_pipe_results.append(PipeResult(
+                    pipe_id=result.pipe_id,
+                    status="skipped_duplicate",
+                    error_type=None,
+                    rows_generated=0,
+                    rows_pushed=0,
+                    rows_accepted=None,
+                    persisted=result.persisted,
+                ))
+            elif result.status == "failed":
+                # Generation failed before push
                 pipes_failed += 1
                 per_system[sys_key]["failed"] += 1
                 errors_summary["generation_error"] = errors_summary.get("generation_error", 0) + 1
-
-            per_pipe_results.append(PipeResult(
-                pipe_id=result.pipe_id,
-                status=result.status,
-                error_type="generation_error",
-                rows_generated=result.rows_generated,
-                rows_pushed=0,
-                rows_accepted=None,
-                persisted=result.persisted,
-            ))
+                per_pipe_results.append(PipeResult(
+                    pipe_id=result.pipe_id,
+                    status=result.status,
+                    error_type="generation_error",
+                    rows_generated=result.rows_generated,
+                    rows_pushed=0,
+                    rows_accepted=None,
+                    persisted=result.persisted,
+                ))
+            else:
+                # Unknown state with no push_result — log for investigation
+                per_pipe_results.append(PipeResult(
+                    pipe_id=result.pipe_id,
+                    status=result.status,
+                    error_type="no_push_result",
+                    rows_generated=result.rows_generated,
+                    rows_pushed=0,
+                    rows_accepted=None,
+                    persisted=result.persisted,
+                ))
 
     elapsed = time.monotonic() - start_time
 
@@ -1100,6 +1138,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         f"batch_id={request.batch_id}, "
         f"received={len(manifests)}, pushed={pipes_pushed}, "
         f"succeeded={pipes_succeeded}, failed={pipes_failed}, "
+        f"skipped={pipes_skipped}, "
         f"elapsed={round(elapsed, 2)}s, "
         f"errors={dict(errors_summary) if errors_summary else 'none'}, "
         f"per_system={dict(per_system)}"
@@ -1112,6 +1151,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         pipes_pushed=pipes_pushed,
         pipes_succeeded=pipes_succeeded,
         pipes_failed=pipes_failed,
+        pipes_skipped=pipes_skipped,
         pipes_queued=0,
         push_results=push_results,
         per_pipe_results=per_pipe_results,

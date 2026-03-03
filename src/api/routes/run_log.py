@@ -136,6 +136,7 @@ async def get_runs_by_aam_run(aam_run_id: str):
         completed = sum(1 for r in rows if r["status"] == "completed")
         failed = sum(1 for r in rows if r["status"] == "failed")
         rejected = sum(1 for r in rows if r["status"] == "rejected_by_dcl")
+        skipped = sum(1 for r in rows if r["status"] == "skipped_duplicate")
 
         # Per-system breakdown
         per_system: dict[str, dict[str, int]] = {}
@@ -168,6 +169,24 @@ async def get_runs_by_aam_run(aam_run_id: str):
             }
             for r in rows
             if r["status"] in ("failed", "rejected_by_dcl")
+        ]
+
+        # Skipped pipes detail — idempotency duplicates that Farm returned
+        # as "completed" without re-pushing to DCL.
+        skipped_pipes = [
+            {
+                "pipe_id": r["pipe_id"],
+                "source_system": r["source_system"],
+                "farm_run_id": r["farm_run_id"],
+                "reason": (
+                    f"Idempotency skip: pipe_id '{r['pipe_id']}' was already completed "
+                    f"in farm_run_id '{r['farm_run_id']}'. Farm returned cached 'completed' "
+                    f"status without re-pushing to DCL. The original DCL receipt (if any) "
+                    f"exists under the snapshot from the first push."
+                ),
+            }
+            for r in rows
+            if r["status"] == "skipped_duplicate"
         ]
 
         # --- Fabric plane tracking ---
@@ -207,12 +226,14 @@ async def get_runs_by_aam_run(aam_run_id: str):
             "completed": completed,
             "failed": failed,
             "rejected_by_dcl": rejected,
+            "skipped": skipped,
             "total_rows_generated": total_rows_generated,
             "total_rows_pushed": total_rows_pushed,
             "total_rows_accepted": total_rows_accepted,
             "per_system": per_system,
             "error_types": error_types if error_types else None,
             "failed_pipes": failed_pipes if failed_pipes else None,
+            "skipped_pipes": skipped_pipes if skipped_pipes else None,
             "timing": {
                 "min_ms": min(elapsed_values) if elapsed_values else None,
                 "max_ms": max(elapsed_values) if elapsed_values else None,

@@ -162,7 +162,7 @@ class BatchManifestRequest(BaseModel):
 class PipeResult(BaseModel):
     """Per-pipe execution summary for batch response."""
     pipe_id: str
-    status: str = Field(description="completed | failed | rejected_by_dcl")
+    status: str = Field(description="completed | failed | rejected_by_dcl | skipped_duplicate")
     error_type: Optional[str] = Field(default=None)
     rows_generated: int = Field(default=0)
     rows_pushed: int = Field(default=0)
@@ -183,6 +183,7 @@ class BatchManifestResponse(BaseModel):
     pipes_pushed: int = Field(default=0, description="Pipes where push was attempted")
     pipes_succeeded: int = Field(default=0)
     pipes_failed: int = Field(default=0)
+    pipes_skipped: int = Field(default=0, description="Idempotency-skipped pipes (duplicate dispatch, no re-push)")
     pipes_queued: int = Field(default=0, description="Pipes still waiting (if async)")
     push_results: List[DCLPushResult] = Field(default_factory=list)
     per_pipe_results: List[PipeResult] = Field(default_factory=list, description="Per-pipe execution details")
