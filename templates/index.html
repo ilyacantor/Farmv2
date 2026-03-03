@@ -237,6 +237,8 @@
         .nlq-kpi.active            { background:rgba(6,182,212,0.07) !important; border-bottom:2px solid #22d3ee !important; }
         .nlq-kpi.active-failed     { background:rgba(248,113,113,0.07) !important; border-bottom:2px solid #f87171 !important; }
         .nlq-kpi.active-dispatched { background:rgba(52,211,153,0.07) !important; border-bottom:2px solid #34d399 !important; }
+        .nlq-kpi.active-sor        { background:rgba(167,139,250,0.07) !important; border-bottom:2px solid #a78bfa !important; }
+        .nlq-kpi.active-fabric     { background:rgba(251,146,60,0.07) !important; border-bottom:2px solid #fb923c !important; }
         .nlq-kpi-label { font-size:8px; font-weight:700; text-transform:uppercase; letter-spacing:0.09em; color:#3d4f6b; margin-bottom:4px; white-space:nowrap; }
         .nlq-kpi-val { font-size:20px; font-weight:700; line-height:1; letter-spacing:-0.02em; }
         .nlq-kpi-hint { font-size:8px; color:#3d4f6b; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -244,6 +246,8 @@
         .nlq-kpi.active .nlq-kpi-badge            { opacity:1; }
         .nlq-kpi.active-failed .nlq-kpi-badge     { opacity:1; color:#f87171; }
         .nlq-kpi.active-dispatched .nlq-kpi-badge { opacity:1; color:#34d399; }
+        .nlq-kpi.active-sor .nlq-kpi-badge        { opacity:1; color:#a78bfa; }
+        .nlq-kpi.active-fabric .nlq-kpi-badge     { opacity:1; color:#fb923c; }
 
         @keyframes nlq-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(0.65)} }
         .nlq-pulse-dot { display:inline-block; width:5px; height:5px; border-radius:50%; background:#f87171; margin-left:6px; vertical-align:middle; animation:nlq-pulse 1.5s ease-in-out infinite; }
@@ -964,11 +968,13 @@
                   <div class="nlq-kpi-label">Failed</div>
                   <div class="nlq-kpi-val" id="rlKpiFailed" style="color:#f87171">—</div>
                 </div>
-                <div class="nlq-kpi" data-filter="none">
+                <div class="nlq-kpi" data-filter="sor">
+                  <span class="nlq-kpi-badge">● active</span>
                   <div class="nlq-kpi-label">SOR Count</div>
                   <div class="nlq-kpi-val" id="rlKpiSorCount" style="color:#a78bfa">—</div>
                 </div>
-                <div class="nlq-kpi" data-filter="none">
+                <div class="nlq-kpi" data-filter="fabric">
+                  <span class="nlq-kpi-badge">● active</span>
                   <div class="nlq-kpi-label">Fabric</div>
                   <div class="nlq-kpi-val" id="rlKpiFabricCount" style="color:#fb923c">—</div>
                   <div class="nlq-kpi-hint" id="rlKpiFabricList"></div>
@@ -1945,6 +1951,16 @@
                 return;
             }
 
+            // Build SOR and fabric lookup sets for row tagging
+            const sorSet = new Set((summary.sor_systems || []).map(s => s.toLowerCase()));
+            const fabricCategories = new Set(['ipaas', 'api_gateway', 'event_bus', 'data_warehouse']);
+            const fabricSystems = new Set();
+            for (const r of runs) {
+                if (fabricCategories.has((r.category || '').toLowerCase())) {
+                    fabricSystems.add(r.source_system);
+                }
+            }
+
             let html = '';
             for (const [system, counts] of Object.entries(perSystem)) {
                 const total = (counts.completed || 0) + (counts.failed || 0) + (counts.rejected_by_dcl || 0);
@@ -1958,12 +1974,16 @@
                 else if (dispatched > 0)            { pillClass = 'nlq-pill nlq-pill-ok';      pillText = 'OK'; }
                 else                                { pillClass = 'nlq-pill nlq-pill-other';   pillText = 'Pending'; }
 
+                // Determine SOR / Fabric membership for filtering
+                const isSor = sorSet.has(system.toLowerCase()) ? '1' : '0';
+                const isFabric = fabricSystems.has(system) ? '1' : '0';
+
                 // Get pipes for this system
                 const systemRuns = runs.filter(r => r.source_system === system);
                 const rowId = `rlSystem_${system.replace(/[^a-zA-Z0-9]/g, '_')}`;
 
                 html += `
-                <tr class="cursor-pointer" data-failed="${failed}" data-dispatched="${dispatched}" onclick="rlToggleSystemDetail('${system}')">
+                <tr class="cursor-pointer" data-failed="${failed}" data-dispatched="${dispatched}" data-sor="${isSor}" data-fabric="${isFabric}" onclick="rlToggleSystemDetail('${system}')">
                     <td>
                         <svg id="${rowId}_chevron" class="transition-transform" style="width:11px;height:11px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
@@ -2139,7 +2159,10 @@
               const dispatched = parseInt(row.dataset.dispatched || '0');
               const kpiMatch = activeFilter === 'all' ? true
                              : activeFilter === 'failed' ? failed > 0
-                             : dispatched > 0;
+                             : activeFilter === 'dispatched' ? dispatched > 0
+                             : activeFilter === 'sor' ? row.dataset.sor === '1'
+                             : activeFilter === 'fabric' ? row.dataset.fabric === '1'
+                             : true;
               const show = kpiMatch && (!searchVal || name.includes(searchVal));
               row.style.display = show ? '' : 'none';
               if (!show) {
@@ -2154,11 +2177,16 @@
             const fb = document.getElementById('nlq-filter-badge');
             if (fb) {
               if (activeFilter !== 'all') {
-                fb.textContent = activeFilter === 'failed' ? '\u26A0 Failed only' : '\u2713 Dispatched only';
+                const badgeMap = {
+                  failed:     { text: '\u26A0 Failed only',     bg: 'rgba(248,113,113,0.1)', fg: '#f87171', border: 'rgba(248,113,113,0.2)' },
+                  dispatched: { text: '\u2713 Dispatched only', bg: 'rgba(52,211,153,0.1)',  fg: '#34d399', border: 'rgba(52,211,153,0.2)' },
+                  sor:        { text: '\u25C6 SOR only',        bg: 'rgba(167,139,250,0.1)', fg: '#a78bfa', border: 'rgba(167,139,250,0.2)' },
+                  fabric:     { text: '\u25A0 Fabric only',     bg: 'rgba(251,146,60,0.1)',  fg: '#fb923c', border: 'rgba(251,146,60,0.2)' },
+                };
+                const b = badgeMap[activeFilter] || badgeMap.dispatched;
+                fb.textContent = b.text;
                 fb.classList.add('visible');
-                fb.style.cssText = activeFilter === 'failed'
-                  ? 'background:rgba(248,113,113,0.1);color:#f87171;border-color:rgba(248,113,113,0.2)'
-                  : 'background:rgba(52,211,153,0.1);color:#34d399;border-color:rgba(52,211,153,0.2)';
+                fb.style.cssText = `background:${b.bg};color:${b.fg};border-color:${b.border}`;
               } else {
                 fb.classList.remove('visible');
               }
@@ -2167,14 +2195,15 @@
 
           // KPI click handlers
           document.querySelectorAll('.nlq-kpi').forEach(card => {
-            if (card.dataset.filter === 'none') return;
             card.addEventListener('click', () => {
               const f = card.dataset.filter;
               activeFilter = activeFilter === f && f !== 'all' ? 'all' : f;
-              document.querySelectorAll('.nlq-kpi').forEach(c => c.classList.remove('active','active-failed','active-dispatched'));
-              if (activeFilter === 'all')         document.querySelector('[data-filter="all"]')?.classList.add('active');
-              else if (activeFilter === 'failed') card.classList.add('active-failed');
-              else                                card.classList.add('active-dispatched');
+              document.querySelectorAll('.nlq-kpi').forEach(c => c.classList.remove('active','active-failed','active-dispatched','active-sor','active-fabric'));
+              if (activeFilter === 'all')           document.querySelector('[data-filter="all"]')?.classList.add('active');
+              else if (activeFilter === 'failed')   card.classList.add('active-failed');
+              else if (activeFilter === 'sor')      card.classList.add('active-sor');
+              else if (activeFilter === 'fabric')   card.classList.add('active-fabric');
+              else                                  card.classList.add('active-dispatched');
               nlqApplyFilters();
             });
           });
