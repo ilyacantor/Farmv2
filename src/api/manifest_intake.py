@@ -528,24 +528,26 @@ async def _execute_single_manifest(
     # ── Idempotency guard ──────────────────────────────────────────
     # If AAM double-dispatches (e.g. batch timeout → individual fallback),
     # skip re-execution when a completed run already exists for this
-    # (run_id, pipe_id) pair. No data generation, no DCL push, no waste.
+    # (run_id, pipe_id, snapshot_name) triple. No data generation, no DCL
+    # push, no waste. Snapshot-aware: a new snapshot under the same run_id
+    # is NOT a duplicate — Farm must re-generate and re-push to DCL.
     try:
-        existing = await get_completed_run_for_pipe(run_id, pipe_id)
+        existing = await get_completed_run_for_pipe(run_id, pipe_id, snapshot_name)
     except Exception as dedup_err:
         # DB lookup failed — proceed with normal execution rather than
         # blocking the pipeline. The guard is defense-in-depth, not critical path.
         logger.warning(
-            "Idempotency check failed for run_id=%s pipe_id=%s: %s — proceeding with execution",
-            run_id, pipe_id, dedup_err,
+            "Idempotency check failed for run_id=%s pipe_id=%s snapshot=%s: %s — proceeding with execution",
+            run_id, pipe_id, snapshot_name, dedup_err,
         )
         existing = None
 
     if existing:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         logger.info(
-            "IDEMPOTENCY SKIP: run_id=%s, pipe_id=%s already completed "
+            "IDEMPOTENCY SKIP: run_id=%s, pipe_id=%s, snapshot=%s already completed "
             "(farm_run_id=%s, rows_accepted=%s). Returning cached result.",
-            run_id, pipe_id, existing["farm_run_id"], existing.get("rows_accepted"),
+            run_id, pipe_id, snapshot_name, existing["farm_run_id"], existing.get("rows_accepted"),
         )
         return ManifestExecutionResult(
             farm_run_id=existing["farm_run_id"],

@@ -935,22 +935,26 @@ async def save_manifest_run(
         )
 
 
-async def get_completed_run_for_pipe(run_id: str, pipe_id: str) -> dict | None:
-    """Check if a completed run already exists for this (run_id, pipe_id) pair.
+async def get_completed_run_for_pipe(run_id: str, pipe_id: str, snapshot_name: str) -> dict | None:
+    """Check if a completed run already exists for this (run_id, pipe_id, snapshot_name) triple.
 
     Used as an idempotency guard: if AAM double-dispatches the same manifest
     (e.g. due to batch timeout fallback), Farm skips re-execution and returns
     the cached result instead of generating + pushing duplicate data to DCL.
+
+    Snapshot-aware: a new snapshot under the same run_id is NOT a duplicate —
+    Farm must re-generate and re-push to DCL for the new snapshot context.
     """
     await db.ensure_schema()
     async with connection() as conn:
         row = await conn.fetchrow(
             """SELECT farm_run_id, status, rows_accepted, dcl_status_code, elapsed_ms,
-                      rows_generated, rows_pushed, source_system
+                      rows_generated, rows_pushed, source_system, snapshot_name
                FROM manifest_runs
-               WHERE run_id = $1 AND pipe_id = $2 AND status = 'completed'
+               WHERE run_id = $1 AND pipe_id = $2 AND snapshot_name = $3
+                     AND status = 'completed'
                ORDER BY created_at DESC LIMIT 1""",
-            run_id, pipe_id,
+            run_id, pipe_id, snapshot_name,
         )
         return dict(row) if row else None
 
