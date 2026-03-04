@@ -535,12 +535,19 @@ async def _execute_single_manifest(
     tenant_id = manifest.target.tenant_id
     snapshot_name = manifest.target.snapshot_name
 
+    # ── Per-phase timing ────────────────────────────────────────────
+    t_idempotency_ms: int | None = None
+    t_generator_ms: int | None = None
+    t_push_ms: int | None = None
+    t_persist_ms: int | None = None
+
     # ── Idempotency guard ──────────────────────────────────────────
     # If AAM double-dispatches (e.g. batch timeout → individual fallback),
     # skip re-execution when a completed run already exists for this
     # (run_id, pipe_id, snapshot_name) triple. No data generation, no DCL
     # push, no waste. Snapshot-aware: a new snapshot under the same run_id
     # is NOT a duplicate — Farm must re-generate and re-push to DCL.
+    t_phase = time.monotonic()
     try:
         existing = await get_completed_run_for_pipe(run_id, pipe_id, snapshot_name)
     except Exception as dedup_err:
@@ -551,6 +558,7 @@ async def _execute_single_manifest(
             run_id, pipe_id, snapshot_name, dedup_err,
         )
         existing = None
+    t_idempotency_ms = int((time.monotonic() - t_phase) * 1000)
 
     if existing:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
@@ -650,6 +658,7 @@ async def _execute_single_manifest(
             gen = gen_class(seed=seed)
             return gen.generate(profile, farm_run_id, run_timestamp)
 
+    t_phase = time.monotonic()
     try:
         generated_data = await asyncio.wait_for(
             asyncio.to_thread(_run_generator),
@@ -722,6 +731,8 @@ async def _execute_single_manifest(
             farm_verification_requested=manifest.farm_verification,
         )
 
+    t_generator_ms = int((time.monotonic() - t_phase) * 1000)
+
     pipe_name = manifest.source.endpoint_ref.get("pipe_name")
     pipe_payload = _find_pipe_data(generated_data, pipe_name)
 
@@ -788,6 +799,7 @@ async def _execute_single_manifest(
         rows_pushed = len(rows)
 
     schema_hash = _compute_schema_hash(rows)
+    t_phase = time.monotonic()
     push_result = await _push_to_dcl(
         manifest=manifest,
         rows=rows,
@@ -796,6 +808,7 @@ async def _execute_single_manifest(
         schema_hash=schema_hash,
         http_client=http_client,
     )
+    t_push_ms = int((time.monotonic() - t_phase) * 1000)
     del rows, pipe_payload  # Release row data after push; only push_result metadata needed
 
     elapsed_ms = int((time.monotonic() - start_time) * 1000)
@@ -809,6 +822,7 @@ async def _execute_single_manifest(
 
     # Persist run with full provenance — must complete before response
     # so the run is queryable by the NLQ tab immediately.
+    t_phase = time.monotonic()
     try:
         await save_manifest_run(
             farm_run_id=farm_run_id,
@@ -847,13 +861,18 @@ async def _execute_single_manifest(
             f"rows_generated={rows_generated}, elapsed_ms={elapsed_ms}, "
             f"dcl_status={push_result.status_code}, error: {db_err}"
         )
+    t_persist_ms = int((time.monotonic() - t_phase) * 1000)
+
+    t_total_ms = int((time.monotonic() - start_time) * 1000)
 
     # Per-pipe completion log — one-line summary for every manifest, success or failure
     logger.info(
         f"MANIFEST DONE: run_id={run_id}, pipe_id={pipe_id}, status={status}, "
         f"rows_generated={rows_generated}, rows_pushed={rows_pushed}, "
         f"rows_accepted={push_result.rows_accepted}, dcl_status={push_result.status_code}, "
-        f"elapsed_ms={elapsed_ms}, farm_run_id={farm_run_id}"
+        f"elapsed_ms={elapsed_ms}, farm_run_id={farm_run_id}, "
+        f"t_idempotency_ms={t_idempotency_ms}, t_generator_ms={t_generator_ms}, "
+        f"t_push_ms={t_push_ms}, t_persist_ms={t_persist_ms}, t_total_ms={t_total_ms}"
     )
 
     # --- AAM callback: fire-and-forget (not on critical path) ---
@@ -926,6 +945,11 @@ async def _execute_single_manifest(
         persisted=_persisted,
         farm_verification_requested=manifest.farm_verification,
         recon_triggered=recon_triggered,
+        t_idempotency_ms=t_idempotency_ms,
+        t_generator_ms=t_generator_ms,
+        t_push_ms=t_push_ms,
+        t_persist_ms=t_persist_ms,
+        t_total_ms=t_total_ms,
     )
 
 
@@ -972,6 +996,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     # share the same run_id → same seed → same profile. Eliminates 56
     # redundant FinancialModel + BusinessProfile builds (~0.5-2s CPU each).
     shared_profile: BusinessProfile | None = None
+    t_profile_start = time.monotonic()
     if manifests:
         first_run_id = manifests[0].run_id
         shared_seed = hash(first_run_id) % (2**31)
@@ -982,8 +1007,11 @@ async def batch_manifest_intake(request: BatchManifestRequest):
             return BusinessProfile.from_model_quarters(quarters, seed=shared_seed)
 
         shared_profile = await asyncio.to_thread(_build_shared_profile)
+    t_profile_ms = int((time.monotonic() - t_profile_start) * 1000)
+    if manifests:
         logger.info(
-            f"Shared profile pre-computed: seed={shared_seed}, run_id={first_run_id}"
+            f"Shared profile pre-computed: seed={shared_seed}, run_id={first_run_id}, "
+            f"t_profile_ms={t_profile_ms}"
         )
 
     async def _run_with_semaphore(
@@ -1087,6 +1115,15 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         if sys_key not in per_system:
             per_system[sys_key] = {"succeeded": 0, "failed": 0}
 
+        # Per-phase timing carried from ManifestExecutionResult → PipeResult
+        _timing = {
+            "t_idempotency_ms": result.t_idempotency_ms,
+            "t_generator_ms": result.t_generator_ms,
+            "t_push_ms": result.t_push_ms,
+            "t_persist_ms": result.t_persist_ms,
+            "t_total_ms": result.t_total_ms,
+        }
+
         if result.push_result is not None:
             push_results.append(result.push_result)
 
@@ -1109,6 +1146,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                 rows_pushed=result.push_result.rows_pushed,
                 rows_accepted=result.push_result.rows_accepted,
                 persisted=result.persisted,
+                **_timing,
             ))
         else:
             if getattr(result, "skipped_duplicate", False):
@@ -1125,6 +1163,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                     rows_pushed=0,
                     rows_accepted=None,
                     persisted=result.persisted,
+                    **_timing,
                 ))
             elif result.status == "failed":
                 # Generation failed before push
@@ -1139,6 +1178,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                     rows_pushed=0,
                     rows_accepted=None,
                     persisted=result.persisted,
+                    **_timing,
                 ))
             else:
                 # Unknown state with no push_result — log for investigation
@@ -1150,9 +1190,11 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                     rows_pushed=0,
                     rows_accepted=None,
                     persisted=result.persisted,
+                    **_timing,
                 ))
 
     elapsed = time.monotonic() - start_time
+    t_batch_wall_ms = int(elapsed * 1000)
 
     # === Per-run summary log ===
     # This is the structured log that makes batch outcomes visible at a glance.
@@ -1164,6 +1206,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         f"succeeded={pipes_succeeded}, failed={pipes_failed}, "
         f"skipped={pipes_skipped}, "
         f"elapsed={round(elapsed, 2)}s, "
+        f"t_profile_ms={t_profile_ms}, t_batch_wall_ms={t_batch_wall_ms}, "
         f"errors={dict(errors_summary) if errors_summary else 'none'}, "
         f"per_system={dict(per_system)}"
     )
