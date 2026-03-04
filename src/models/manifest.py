@@ -151,13 +151,6 @@ class ManifestExecutionResult(BaseModel):
     # Idempotency: True when this result is a cached duplicate (no data generated)
     skipped_duplicate: bool = Field(default=False)
 
-    # Per-phase timing (milliseconds) — for diagnosing where execution time goes
-    t_idempotency_ms: Optional[int] = Field(default=None)
-    t_generator_ms: Optional[int] = Field(default=None)
-    t_push_ms: Optional[int] = Field(default=None)
-    t_persist_ms: Optional[int] = Field(default=None)
-    t_total_ms: Optional[int] = Field(default=None)
-
 
 class BatchManifestRequest(BaseModel):
     """Batch of manifests dispatched by AAM Runner."""
@@ -175,13 +168,6 @@ class PipeResult(BaseModel):
     rows_pushed: int = Field(default=0)
     rows_accepted: Optional[int] = Field(default=None)
     persisted: bool = Field(default=True, description="Whether the run was saved to Farm DB")
-
-    # Per-phase timing (milliseconds) — populated when timing instrumentation is active
-    t_idempotency_ms: Optional[int] = Field(default=None, description="Idempotency check duration")
-    t_generator_ms: Optional[int] = Field(default=None, description="Data generation duration")
-    t_push_ms: Optional[int] = Field(default=None, description="DCL push duration")
-    t_persist_ms: Optional[int] = Field(default=None, description="DB persist duration")
-    t_total_ms: Optional[int] = Field(default=None, description="Total pipe execution wall time")
 
 
 class BatchManifestResponse(BaseModel):
