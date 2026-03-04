@@ -156,7 +156,7 @@ class BatchManifestRequest(BaseModel):
     """Batch of manifests dispatched by AAM Runner."""
     manifests: List[JobManifest]
     batch_id: Optional[str] = Field(default=None, description="AAM batch correlation ID")
-    concurrency: int = Field(default=4, ge=1, le=12, description="Max concurrent pushes (capped for 2GB Render instance)")
+    concurrency: int = Field(default=8, ge=1, le=20, description="Max concurrent pushes")
 
 
 class PipeResult(BaseModel):

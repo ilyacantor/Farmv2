@@ -211,6 +211,7 @@ async def _push_to_dcl(
     farm_run_id: str,
     source_system: str,
     schema_hash: str,
+    http_client: httpx.AsyncClient | None = None,
 ) -> DCLPushResult:
     """
     Push data rows to DCL using the manifest's identity and delivery address.
@@ -283,10 +284,16 @@ async def _push_to_dcl(
 
     for attempt in range(1, max_retries + 1):
         try:
-            async with httpx.AsyncClient(
-                timeout=manifest.limits.timeout_seconds
-            ) as client:
-                response = await client.post(dcl_url, json=body, headers=headers)
+            if http_client is not None:
+                response = await http_client.post(
+                    dcl_url, json=body, headers=headers,
+                    timeout=manifest.limits.timeout_seconds,
+                )
+            else:
+                async with httpx.AsyncClient(
+                    timeout=manifest.limits.timeout_seconds
+                ) as client:
+                    response = await client.post(dcl_url, json=body, headers=headers)
 
             # --- Handle 422 NO_MATCHING_PIPE (configuration error, never retry) ---
             if response.status_code == 422:
@@ -500,6 +507,7 @@ async def _execute_single_manifest(
     manifest: JobManifest,
     aam_run_id: str | None = None,
     precomputed_profile: BusinessProfile | None = None,
+    http_client: httpx.AsyncClient | None = None,
 ) -> ManifestExecutionResult:
     """
     Core logic for executing a single JobManifest.
@@ -514,6 +522,8 @@ async def _execute_single_manifest(
         precomputed_profile: Optional shared BusinessProfile (batch mode). All
                              manifests in a batch share the same run_id → same seed
                              → same profile. Eliminates redundant CPU work.
+        http_client: Optional shared httpx client (batch mode) to avoid per-pipe
+                     TLS handshakes. Falls back to creating a new client per push.
     """
     start_time = time.monotonic()
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -784,6 +794,7 @@ async def _execute_single_manifest(
         farm_run_id=farm_run_id,
         source_system=system,
         schema_hash=schema_hash,
+        http_client=http_client,
     )
     del rows, pipe_payload  # Release row data after push; only push_result metadata needed
 
@@ -977,6 +988,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
 
     async def _run_with_semaphore(
         m: JobManifest,
+        shared_client: httpx.AsyncClient,
         profile: BusinessProfile | None,
     ) -> Optional[ManifestExecutionResult]:
         async with semaphore:
@@ -985,6 +997,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                     m,
                     aam_run_id=request.batch_id or batch_run_id,
                     precomputed_profile=profile,
+                    http_client=shared_client,
                 )
             except HTTPException as exc:
                 logger.error(
@@ -1032,10 +1045,17 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                     ),
                 )
 
-    results = await asyncio.gather(*[
-        _run_with_semaphore(m, shared_profile)
-        for m in manifests
-    ])
+    # Shared httpx client: one client for the entire batch eliminates per-pipe
+    # TLS handshakes (~50-200ms each). The single-manifest endpoint is not
+    # affected — it continues creating a fresh client per push.
+    async with httpx.AsyncClient(
+        timeout=300,
+        limits=httpx.Limits(max_connections=12, max_keepalive_connections=8),
+    ) as shared_client:
+        results = await asyncio.gather(*[
+            _run_with_semaphore(m, shared_client, shared_profile)
+            for m in manifests
+        ])
 
     pipes_pushed = 0
     pipes_succeeded = 0

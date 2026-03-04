@@ -9,8 +9,8 @@ Features:
 - Graceful degradation when DB is unavailable
 
 Environment variables (all optional with sensible defaults):
-- DB_POOL_MIN: Minimum pool size (default: 0)
-- DB_POOL_MAX: Maximum pool size (default: 2)
+- DB_POOL_MIN: Minimum pool size (default: 2)
+- DB_POOL_MAX: Maximum pool size (default: 7)
 - DB_CONNECT_TIMEOUT: Connection timeout in seconds (default: 10)
 - DB_COMMAND_TIMEOUT: Command timeout in seconds (default: 15)
 - DB_MAX_INACTIVE_LIFETIME: Max idle connection lifetime (default: 10)
@@ -18,7 +18,7 @@ Environment variables (all optional with sensible defaults):
 - DB_BACKOFF_CAP: Maximum backoff delay in seconds (default: 120)
 - DB_FAIL_THRESHOLD: Failures before circuit breaker trips (default: 8)
 - DB_COOLDOWN_SECONDS: Circuit breaker cooldown period (default: 180)
-- DB_CONCURRENCY: Max concurrent DB operations (default: 2)
+- DB_CONCURRENCY: Max concurrent DB operations (default: 5)
 - DB_SIMULATE_DOWN: Force DB failures for testing (default: false)
 """
 
@@ -48,7 +48,7 @@ logger.setLevel(logging.DEBUG)
 T = TypeVar('T')
 
 DB_POOL_MIN = int(os.environ.get("DB_POOL_MIN", "2"))
-DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "5"))
+DB_POOL_MAX = int(os.environ.get("DB_POOL_MAX", "7"))
 DB_CONNECT_TIMEOUT = float(os.environ.get("DB_CONNECT_TIMEOUT", "30"))
 DB_COMMAND_TIMEOUT = float(os.environ.get("DB_COMMAND_TIMEOUT", "30"))
 DB_STATEMENT_TIMEOUT = int(os.environ.get("DB_STATEMENT_TIMEOUT", "30"))
@@ -57,7 +57,7 @@ DB_BACKOFF_BASE = float(os.environ.get("DB_BACKOFF_BASE", "2"))
 DB_BACKOFF_CAP = float(os.environ.get("DB_BACKOFF_CAP", "30"))
 DB_FAIL_THRESHOLD = int(os.environ.get("DB_FAIL_THRESHOLD", "5"))
 DB_COOLDOWN_SECONDS = float(os.environ.get("DB_COOLDOWN_SECONDS", "60"))
-DB_CONCURRENCY = int(os.environ.get("DB_CONCURRENCY", "2"))
+DB_CONCURRENCY = int(os.environ.get("DB_CONCURRENCY", "5"))
 DB_BATCH_SIZE = int(os.environ.get("DB_BATCH_SIZE", "500"))
 DB_MAX_RETRIES = int(os.environ.get("DB_MAX_RETRIES", "3"))
 DB_SIMULATE_DOWN = os.environ.get("DB_SIMULATE_DOWN", "").lower() == "true"
