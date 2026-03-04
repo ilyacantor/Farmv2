@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from src.farm.db import save_manifest_run, get_completed_run_for_pipe
+from src.farm.db import save_manifest_run, get_completed_run_for_pipe, get_completed_pipes_batch
 
 from src.generators.business_data.profile import BusinessProfile
 from src.generators.business_data.salesforce import SalesforceGenerator
@@ -1073,6 +1073,47 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                     ),
                 )
 
+    # ── Bulk preflight idempotency check ─────────────────────────────
+    # Run ONE query OUTSIDE the semaphore to find already-completed pipes.
+    # This eliminates the "cold Supabase connection holds a semaphore slot
+    # for 25s" problem — the DB round-trip happens before any semaphore is
+    # acquired, and completed pipes never enter the execution loop at all.
+    already_completed: set[str] = set()
+    preflight_results: list[ManifestExecutionResult] = []
+    if manifests:
+        all_pipe_ids = [m.source.pipe_id for m in manifests]
+        first_snapshot = manifests[0].target.snapshot_name
+        try:
+            already_completed = await get_completed_pipes_batch(
+                manifests[0].run_id, all_pipe_ids, first_snapshot,
+            )
+            if already_completed:
+                logger.info(
+                    f"Bulk preflight: {len(already_completed)}/{len(manifests)} pipes "
+                    f"already completed — skipping before semaphore"
+                )
+        except Exception as pf_err:
+            # Preflight failed — fall through to per-pipe idempotency (defense in depth)
+            logger.warning(f"Bulk preflight query failed: {pf_err} — falling back to per-pipe checks")
+
+    # Split manifests: completed pipes get synthetic skip results, rest go to execution
+    execute_manifests: list[JobManifest] = []
+    for m in manifests:
+        if m.source.pipe_id in already_completed:
+            preflight_results.append(ManifestExecutionResult(
+                run_id=m.run_id,
+                pipe_id=m.source.pipe_id,
+                farm_run_id=f"preflight_skip_{uuid.uuid4().hex[:8]}",
+                status="skipped",
+                source_system=m.source.system,
+                rows_generated=0,
+                push_result=None,
+                persisted=True,
+                skipped_duplicate=True,
+            ))
+        else:
+            execute_manifests.append(m)
+
     # Shared httpx client: one client for the entire batch eliminates per-pipe
     # TLS handshakes (~50-200ms each). The single-manifest endpoint is not
     # affected — it continues creating a fresh client per push.
@@ -1080,10 +1121,12 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         timeout=300,
         limits=httpx.Limits(max_connections=12, max_keepalive_connections=8),
     ) as shared_client:
-        results = await asyncio.gather(*[
+        executed_results = await asyncio.gather(*[
             _run_with_semaphore(m, shared_client, shared_profile)
-            for m in manifests
+            for m in execute_manifests
         ])
+
+    results = list(executed_results) + preflight_results
 
     pipes_pushed = 0
     pipes_succeeded = 0

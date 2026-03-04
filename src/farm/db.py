@@ -600,6 +600,15 @@ class DatabaseManager:
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_status ON manifest_runs(status)")
                 await conn.execute("CREATE INDEX IF NOT EXISTS idx_manifest_runs_pipe_id ON manifest_runs(pipe_id)")
 
+                # Composite partial index for the idempotency query:
+                # WHERE run_id = $1 AND pipe_id = $2 AND snapshot_name = $3 AND status = 'completed'
+                # Without this, Postgres uses idx_manifest_runs_run_id and scans all rows for that run.
+                await conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_manifest_runs_idempotency
+                    ON manifest_runs(run_id, pipe_id, snapshot_name)
+                    WHERE status = 'completed'
+                """)
+
                 self._schema_initialized = True
                 self._log("Schema initialized")
     
@@ -957,6 +966,29 @@ async def get_completed_run_for_pipe(run_id: str, pipe_id: str, snapshot_name: s
             run_id, pipe_id, snapshot_name,
         )
         return dict(row) if row else None
+
+
+async def get_completed_pipes_batch(
+    run_id: str, pipe_ids: list[str], snapshot_name: str
+) -> set[str]:
+    """Bulk idempotency check: return the set of pipe_ids that already have
+    a completed run for this (run_id, snapshot_name) pair.
+
+    Replaces N serial get_completed_run_for_pipe() calls with one query.
+    Runs OUTSIDE the batch semaphore so cold Supabase connections don't
+    hold semaphore slots (the 25s outlier problem).
+    """
+    if not pipe_ids:
+        return set()
+    await db.ensure_schema()
+    async with connection() as conn:
+        rows = await conn.fetch(
+            """SELECT DISTINCT pipe_id FROM manifest_runs
+               WHERE run_id = $1 AND pipe_id = ANY($2) AND snapshot_name = $3
+                     AND status = 'completed'""",
+            run_id, pipe_ids, snapshot_name,
+        )
+        return {row["pipe_id"] for row in rows}
 
 
 async def get_manifest_run(farm_run_id: str) -> dict | None:
