@@ -22,6 +22,9 @@ from .evidence import (
 
 # Threshold for considering a small sample (auto-pass)
 SMALL_SAMPLE_THRESHOLD = 7
+# Low-volume guard: if any individual variance (missed or FP) is below this
+# threshold, the category cannot receive a FAIL — capped at WARN instead.
+LOW_VOLUME_FAIL_FLOOR = 10
 
 
 def build_reconciliation_analysis(
@@ -755,6 +758,17 @@ def _compute_verdict_and_metrics(
             admission_score = 'SOME_ISSUES'
         else:
             admission_score = 'NEEDS_WORK'
+
+    # Low-volume guard: if any individual variance (missed or FP) for a
+    # category is below LOW_VOLUME_FAIL_FLOOR, cap at WARN — never FAIL.
+    # Rationale: small absolute counts don't warrant a catastrophic signal
+    # regardless of what the percentage-based materiality thresholds say.
+    if classification_score == 'NEEDS_WORK':
+        if total_missed < LOW_VOLUME_FAIL_FLOOR or total_fp < LOW_VOLUME_FAIL_FLOOR:
+            classification_score = 'SOME_ISSUES'
+    if admission_score == 'NEEDS_WORK':
+        if admission_missed < LOW_VOLUME_FAIL_FLOOR or admission_fp < LOW_VOLUME_FAIL_FLOOR:
+            admission_score = 'SOME_ISSUES'
 
     # Compute accuracies
     classification_accuracy = round(total_matched / (total_expected + total_fp) * 100, 1) if (total_expected + total_fp) > 0 else 100.0
