@@ -311,7 +311,6 @@
                     <div class="h-6 w-px bg-slate-600"></div>
                     <span class="text-white font-medium text-lg">AOS Farm</span>
                     <nav class="flex items-center gap-1 ml-4">
-                        <button id="tabOverview" onclick="switchMainTab('overview')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Overview</button>
                         <button id="tabConsole" onclick="switchMainTab('console')" class="px-3 py-1.5 text-sm text-white bg-slate-700/50 rounded-lg transition-colors">AOD</button>
                         <button id="tabAgents" onclick="switchMainTab('agents')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">AOA</button>
                         <button id="tabRunLog" onclick="switchMainTab('runlog')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">NLQ</button>
@@ -338,16 +337,6 @@
             </div>
         </header>
 
-
-        <div id="overviewTab" class="hidden w-full" style="min-width: 0;">
-            <iframe 
-                src="https://overview.autonomos.software/farm/embed" 
-                class="w-full rounded-xl border border-slate-700 bg-slate-800/60"
-                style="height: calc(100vh - 120px); min-height: 600px;"
-                frameborder="0"
-                allowfullscreen>
-            </iframe>
-        </div>
 
         <div id="consoleTab" class="">
             <!-- AOD Collapsible Guide -->
@@ -539,7 +528,16 @@
         </div>
 
         <div id="agentsTab" class="hidden">
-            <div class="bg-gradient-to-r from-purple-900/30 to-cyan-900/30 rounded-xl p-5 border border-purple-700/50 mb-6">
+            <!-- STUB: AOA tab content removed — will be replaced with live AOA integration -->
+            <div class="flex flex-col items-center justify-center py-24 text-center">
+                <div class="w-16 h-16 rounded-2xl bg-purple-600/20 flex items-center justify-center mb-6">
+                    <svg class="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                </div>
+                <h2 class="text-xl font-semibold text-white mb-2">AOA — Agent Orchestration</h2>
+                <p class="text-slate-400 text-sm max-w-md">Agent governance, policy enforcement, and HITL workflows. Coming soon to Farm console.</p>
+            </div>
+            <!-- END STUB -->
+            <div class="hidden bg-gradient-to-r from-purple-900/30 to-cyan-900/30 rounded-xl p-5 border border-purple-700/50 mb-6">
                 <div class="flex items-center justify-between cursor-pointer" onclick="toggleAgentGuide()">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-lg bg-purple-600/30 flex items-center justify-center">
@@ -1022,7 +1020,16 @@
 
         <!-- DCL Tab -->
         <div id="dclTab" class="hidden h-full overflow-hidden">
-            <div class="space-y-6">
+            <!-- STUB: DCL tab content removed — will be replaced with live DCL integration -->
+            <div class="flex flex-col items-center justify-center py-24 text-center">
+                <div class="w-16 h-16 rounded-2xl bg-orange-600/20 flex items-center justify-center mb-6">
+                    <svg class="w-8 h-8 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"/></svg>
+                </div>
+                <h2 class="text-xl font-semibold text-white mb-2">DCL — Data Catalog Layer</h2>
+                <p class="text-slate-400 text-sm max-w-md">Semantic catalog, ontology management, and MCP exposure. Coming soon to Farm console.</p>
+            </div>
+            <!-- END STUB -->
+            <div class="hidden space-y-6">
                 <!-- DCL Collapsible Guide -->
                 <div class="bg-gradient-to-r from-orange-900/30 to-rose-900/30 rounded-xl p-5 border border-orange-700/50">
                     <div class="flex items-center justify-between cursor-pointer" onclick="toggleDclGuide()">
@@ -1793,7 +1800,6 @@
 
         function switchMainTab(tab) {
             const panels = {
-                overview: document.getElementById('overviewTab'),
                 console: document.getElementById('consoleTab'),
                 agents: document.getElementById('agentsTab'),
                 runlog: document.getElementById('runlogTab'),
@@ -1802,7 +1808,6 @@
                 test: document.getElementById('testTab'),
             };
             const buttons = {
-                overview: document.getElementById('tabOverview'),
                 console: document.getElementById('tabConsole'),
                 agents: document.getElementById('tabAgents'),
                 runlog: document.getElementById('tabRunLog'),
@@ -6732,7 +6737,7 @@
                 this.clearHighlights();
                 
                 if (step === 0) {
-                    switchMainTab('overview');
+                    switchMainTab('console');
                     this.showOverlay(
                         "<strong>Simulation & Proof</strong><br><br>The first step in the simulation is synthetic generation of a complete IT environment.<br><br>We use <strong>The Farm</strong> to generate complex, conflicted datasets—not \"happy path\" demo data.",
                         { buttonText: 'Next', position: 'top-left' }
