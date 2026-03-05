@@ -353,3 +353,85 @@ async def dcl_status():
         return {"connected": False, "status": "unreachable", "message": "DCL connection refused", "url": base_url}
     except Exception as e:
         return {"connected": False, "status": "error", "message": str(e)[:200], "url": base_url}
+
+
+# -- Mapping from DCL stats keys to human-readable category labels ----------
+_DCL_RETENTION_CATEGORIES = [
+    # (label,           actual_key,            limit_key)
+    ("Ingest Runs",     "total_runs",          "max_runs"),
+    ("Buffered Rows",   "total_rows_buffered", "max_rows"),
+    ("Materialized Pts","materialized_points",  "max_materialized_points"),
+    ("Drift Events",    "total_drift_events",  "max_drift_events"),
+    ("Schema Entries",  "pipes_tracked",       "max_schema_entries"),
+    ("Activity Log",    "activity_entries",     "max_activity"),
+    ("Drop Log",        "total_drops",         "max_drops"),
+    ("Dispatches",      "content_dispatches",  "max_content_dispatches"),
+]
+
+
+@router.get("/api/_diagnostics/dcl-retention")
+async def dcl_retention():
+    """Return DCL retention utilization for each capped category.
+
+    Fetches GET {DCL_INGEST_URL}/stats, maps 8 categories with
+    actual / limit / pct.  Skips any category where DCL has not yet
+    exposed the limit (graceful forward-compatibility).  All transport
+    errors surface as HTTPException (no silent fallbacks).
+    """
+    dcl_url = os.environ.get("DCL_INGEST_URL", "")
+    if not dcl_url:
+        raise HTTPException(
+            status_code=503,
+            detail="DCL_INGEST_URL environment variable is not configured -- cannot fetch retention stats",
+        )
+
+    stats_url = dcl_url.rstrip("/") + "/stats"
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(stats_url)
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=504,
+            detail=f"DCL timed out after 5 s -- GET {stats_url}",
+        )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=503,
+            detail=f"DCL unreachable (connection refused) -- GET {stats_url}",
+        )
+    except httpx.RequestError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"DCL request failed -- GET {stats_url} -- {type(exc).__name__}: {exc}",
+        )
+
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"DCL returned HTTP {resp.status_code} -- GET {stats_url}",
+        )
+
+    try:
+        data = resp.json()
+    except Exception:
+        raise HTTPException(
+            status_code=502,
+            detail=f"DCL returned non-JSON body -- GET {stats_url}",
+        )
+
+    categories = []
+    for label, actual_key, limit_key in _DCL_RETENTION_CATEGORIES:
+        limit = data.get(limit_key)
+        actual = data.get(actual_key)
+        if limit is None or actual is None:
+            continue  # DCL hasn't exposed this field yet -- skip gracefully
+        pct = round(actual / limit * 100, 1) if limit > 0 else 0.0
+        categories.append({
+            "label": label,
+            "actual": actual,
+            "limit": limit,
+            "pct": pct,
+        })
+
+    return {"categories": categories, "dcl_url": stats_url}

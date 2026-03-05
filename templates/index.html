@@ -520,6 +520,21 @@
                         </select>
                     </div>
                 </div>
+
+                <!-- DCL Retention Limits widget -->
+                <div class="border-b border-slate-700 px-4 py-3">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-medium text-slate-300">DCL Retention Limits</span>
+                            <span id="dclRetentionPill" class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-700 text-slate-400">offline</span>
+                        </div>
+                        <button onclick="loadDclRetention()" class="text-xs px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors" title="Refresh retention stats">&#x21bb;</button>
+                    </div>
+                    <div id="dclRetentionContent">
+                        <div class="text-slate-500 text-xs text-center py-2">Loading...</div>
+                    </div>
+                </div>
+
                 <div id="reconciliationsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-220px)] overflow-y-auto">
                     <div class="text-slate-500 text-center py-12">Loading reconciliations...</div>
                 </div>
@@ -4049,6 +4064,57 @@
             renderSnapshotsList();
         }
 
+        // -- DCL Retention Limits widget ----------------------------------------
+        function renderDclRetention(data, container) {
+            const cats = data.categories || [];
+            if (cats.length === 0) {
+                container.innerHTML = '<div class="text-slate-500 text-xs text-center py-2">No retention categories reported by DCL</div>';
+                return;
+            }
+            let html = '<div class="space-y-1.5">';
+            for (const c of cats) {
+                // Threshold coloring: <60 emerald, 60-84 amber, >=85 rose
+                let barColor, textColor;
+                if (c.pct >= 85) { barColor = 'bg-rose-500'; textColor = 'text-rose-400'; }
+                else if (c.pct >= 60) { barColor = 'bg-amber-500'; textColor = 'text-amber-400'; }
+                else { barColor = 'bg-emerald-500'; textColor = 'text-emerald-400'; }
+                const actualFmt = c.actual.toLocaleString();
+                const limitFmt = c.limit.toLocaleString();
+                html += `
+                    <div>
+                        <div class="flex items-center justify-between text-[11px]">
+                            <span class="text-slate-400">${c.label}</span>
+                            <span class="${textColor} font-mono">${actualFmt} / ${limitFmt}</span>
+                        </div>
+                        <div class="w-full bg-slate-700/60 rounded-full h-[6px] mt-0.5">
+                            <div class="${barColor} h-[6px] rounded-full transition-all" style="width:${Math.min(c.pct, 100)}%"></div>
+                        </div>
+                    </div>`;
+            }
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        async function loadDclRetention() {
+            const container = document.getElementById('dclRetentionContent');
+            const pill = document.getElementById('dclRetentionPill');
+            try {
+                const resp = await fetch('/api/_diagnostics/dcl-retention');
+                if (!resp.ok) {
+                    const detail = await resp.text();
+                    throw new Error(detail || `HTTP ${resp.status}`);
+                }
+                const data = await resp.json();
+                pill.textContent = 'connected';
+                pill.className = 'text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-900/60 text-emerald-400';
+                renderDclRetention(data, container);
+            } catch (e) {
+                pill.textContent = 'offline';
+                pill.className = 'text-[10px] px-1.5 py-0.5 rounded-full bg-rose-900/60 text-rose-400';
+                container.innerHTML = `<div class="bg-rose-900/30 border border-rose-800/50 rounded px-2 py-1.5 text-[11px] text-rose-300">${e.message || 'DCL unreachable'}</div>`;
+            }
+        }
+
         async function loadAllData() {
             return RequestController.fetch('loadAllData', async () => {
                 // Process each API call independently - render as soon as data arrives
@@ -4092,8 +4158,10 @@
                     throw e;
                 });
                 
-                // Wait for both but don't block rendering on either
-                await Promise.allSettled([snapshotsPromise, reconcilePromise]);
+                const retentionPromise = loadDclRetention();
+
+                // Wait for all but don't block rendering on any individual one
+                await Promise.allSettled([snapshotsPromise, reconcilePromise, retentionPromise]);
                 FarmState.loadDataRetryCount = 0;
                 hideLoadDataError();
             });
