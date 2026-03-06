@@ -1,17 +1,19 @@
 """
-Financial Summary generator — pushes pre-computed P&L metrics to DCL as a
-dedicated pipe so that the materializer can extract margin percentages and
-profitability line items.
+Financial Summary generator — pushes pre-computed metrics to DCL as a
+dedicated pipe so that the materializer can extract margin percentages,
+profitability line items, CRO ratios, CTO infrastructure metrics, and
+CHRO people metrics.
 
-The financial model (financial_model.py) computes a full income statement per
-quarter, but that data only flows into the ground truth manifest. The existing
-source-system generators (NetSuite, Salesforce, etc.) produce transactional
-rows — invoices, GL entries, subscriptions — from which DCL can derive revenue,
-AR, headcount, etc.  However, derived P&L metrics like gross_margin_pct or
-EBITDA require either complex GL aggregation rules or a pre-computed summary.
-This generator provides the latter: one flat row per quarter with the full P&L.
+The financial model (financial_model.py) computes a full set of ~177
+data points per quarter, but that data only flows into the ground truth
+manifest. The existing source-system generators (NetSuite, Salesforce,
+etc.) produce transactional rows — invoices, GL entries, subscriptions —
+from which DCL can derive revenue, AR, headcount, etc.  However, derived
+metrics like gross_margin_pct, win_rate, uptime_pct, etc. require either
+complex aggregation or a pre-computed summary. This generator provides
+the latter: one flat row per quarter with all pre-computed metrics.
 
-Field names are chosen to avoid collisions with existing extraction rules:
+Field names are chosen to match DCL extraction rule hints exactly:
 - No `revenue` field (already extracted from invoices)
 - No `opex` field (matches the `cost` concept's example_fields)
 - Uses `operating_expenses` instead of `opex`/`total_opex`
@@ -46,6 +48,23 @@ SCHEMA_FIELDS: List[Dict[str, Any]] = [
     {"name": "tax_expense", "type": "number", "semantic_hint": "tax_expense"},
     # ARR (annualized recurring revenue — millions USD)
     {"name": "arr", "type": "number", "semantic_hint": "annual_recurring_revenue"},
+    # Balance sheet (millions USD)
+    {"name": "cash", "type": "number", "semantic_hint": "cash_and_equivalents"},
+    # CRO metrics
+    {"name": "win_rate", "type": "number", "semantic_hint": "win_rate_percentage"},
+    {"name": "churn_rate", "type": "number", "semantic_hint": "churn_rate_percentage"},
+    {"name": "nrr", "type": "number", "semantic_hint": "net_revenue_retention"},
+    {"name": "attainment_pct", "type": "number", "semantic_hint": "quota_attainment"},
+    {"name": "sales_cycle_days", "type": "number", "semantic_hint": "sales_cycle"},
+    # CTO metrics
+    {"name": "uptime", "type": "number", "semantic_hint": "uptime_percentage"},
+    {"name": "time_to_resolve", "type": "number", "semantic_hint": "mttr_hours"},
+    {"name": "p1_incidents", "type": "number", "semantic_hint": "p1_incident_count"},
+    {"name": "deploy_count", "type": "number", "semantic_hint": "deployment_frequency"},
+    # CHRO metrics
+    {"name": "attrition_rate", "type": "number", "semantic_hint": "attrition_percentage"},
+    {"name": "engagement_score", "type": "number", "semantic_hint": "employee_engagement"},
+    {"name": "revenue_per_employee", "type": "number", "semantic_hint": "revenue_per_head"},
 ]
 
 # Quarter end dates for period derivation
@@ -59,9 +78,9 @@ _QUARTER_END = {
 
 class FinancialSummaryGenerator(BaseBusinessGenerator):
     """
-    Generates one flat row per quarter containing the full income statement
+    Generates one flat row per quarter containing pre-computed metrics
     from the financial model.  Designed for DCL's materializer to extract
-    margin percentages and profitability metrics via value_field_hint rules.
+    via strict_hint value_field_hint rules.
     """
 
     SOURCE_SYSTEM = SOURCE_SYSTEM
@@ -110,6 +129,25 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                 "da_expense": round(fmq.da_expense, 2),
                 "tax_expense": round(fmq.tax_expense, 2),
                 "arr": round(fmq.ending_arr, 2),
+                # Balance sheet (millions USD)
+                "cash": round(fmq.cash, 2),
+                # CRO metrics (percentages as raw numbers, days as integers)
+                "win_rate": round(fmq.win_rate, 1),
+                "churn_rate": round(fmq.gross_churn_pct, 2),
+                "nrr": round(fmq.nrr, 1),
+                "attainment_pct": round(fmq.quota_attainment, 1),
+                "sales_cycle_days": round(fmq.sales_cycle_days),
+                # CTO metrics
+                "uptime": round(fmq.uptime_pct, 2),
+                "time_to_resolve": round(fmq.mttr_p1_hours, 1),
+                "p1_incidents": int(fmq.p1_incidents),
+                "deploy_count": int(getattr(fmq, 'features_shipped', 0)),
+                # CHRO metrics
+                "attrition_rate": round(fmq.attrition_rate, 1),
+                "engagement_score": round(getattr(fmq, 'csat', 3.8) * 20, 1),
+                "revenue_per_employee": round(
+                    fmq.revenue_per_employee * 1000, 1
+                ) if fmq.revenue_per_employee else 0.0,
             })
 
         return {
