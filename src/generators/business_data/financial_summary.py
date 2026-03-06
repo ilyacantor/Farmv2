@@ -29,6 +29,8 @@ SOURCE_SYSTEM = "oracle"
 SCHEMA_FIELDS: List[Dict[str, Any]] = [
     {"name": "date", "type": "date", "semantic_hint": "fiscal_period_end"},
     {"name": "quarter_label", "type": "string"},
+    # Total revenue (millions USD) — single source of truth for P&L consistency
+    {"name": "total_revenue", "type": "number", "semantic_hint": "total_revenue"},
     # Margins (percentages)
     {"name": "gross_margin_pct", "type": "number", "semantic_hint": "gross_margin"},
     {"name": "operating_margin_pct", "type": "number", "semantic_hint": "operating_margin"},
@@ -65,6 +67,7 @@ SCHEMA_FIELDS: List[Dict[str, Any]] = [
     {"name": "attrition_rate", "type": "number", "semantic_hint": "attrition_percentage"},
     {"name": "engagement_score", "type": "number", "semantic_hint": "employee_engagement"},
     {"name": "revenue_per_employee", "type": "number", "semantic_hint": "revenue_per_head"},
+    {"name": "total_headcount", "type": "number", "semantic_hint": "total_employee_count"},
 ]
 
 # Quarter end dates for period derivation
@@ -111,6 +114,8 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
             rows.append({
                 "date": quarter_end,
                 "quarter_label": fmq.quarter,
+                # Total revenue (millions USD)
+                "total_revenue": round(fmq.revenue, 2),
                 # Margins (percentage values, e.g. 65.2 means 65.2%)
                 "gross_margin_pct": round(fmq.gross_margin_pct, 1),
                 "operating_margin_pct": round(fmq.operating_margin_pct, 1),
@@ -122,7 +127,7 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                 "ebitda": round(fmq.ebitda, 2),
                 "operating_profit": round(fmq.operating_profit, 2),
                 "net_income": round(fmq.net_income, 2),
-                "operating_expenses": round(fmq.total_opex, 2),
+                "operating_expenses": round(fmq.total_opex + fmq.da_expense, 2),
                 "sm_expense": round(fmq.sm_expense, 2),
                 "rd_expense": round(fmq.rd_expense, 2),
                 "ga_expense": round(fmq.ga_expense, 2),
@@ -148,6 +153,7 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                 "revenue_per_employee": round(
                     fmq.revenue_per_employee * 1000, 1
                 ) if fmq.revenue_per_employee else 0.0,
+                "total_headcount": int(fmq.headcount),
             })
 
         return {
