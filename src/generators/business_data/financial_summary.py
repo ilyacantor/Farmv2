@@ -1,0 +1,123 @@
+"""
+Financial Summary generator — pushes pre-computed P&L metrics to DCL as a
+dedicated pipe so that the materializer can extract margin percentages and
+profitability line items.
+
+The financial model (financial_model.py) computes a full income statement per
+quarter, but that data only flows into the ground truth manifest. The existing
+source-system generators (NetSuite, Salesforce, etc.) produce transactional
+rows — invoices, GL entries, subscriptions — from which DCL can derive revenue,
+AR, headcount, etc.  However, derived P&L metrics like gross_margin_pct or
+EBITDA require either complex GL aggregation rules or a pre-computed summary.
+This generator provides the latter: one flat row per quarter with the full P&L.
+
+Field names are chosen to avoid collisions with existing extraction rules:
+- No `revenue` field (already extracted from invoices)
+- No `opex` field (matches the `cost` concept's example_fields)
+- Uses `operating_expenses` instead of `opex`/`total_opex`
+"""
+
+from typing import Any, Dict, List
+
+from src.generators.business_data.base import BaseBusinessGenerator
+
+
+SOURCE_SYSTEM = "oracle"
+
+SCHEMA_FIELDS: List[Dict[str, Any]] = [
+    {"name": "date", "type": "date", "semantic_hint": "fiscal_period_end"},
+    {"name": "quarter_label", "type": "string"},
+    # Margins (percentages)
+    {"name": "gross_margin_pct", "type": "number", "semantic_hint": "gross_margin"},
+    {"name": "operating_margin_pct", "type": "number", "semantic_hint": "operating_margin"},
+    {"name": "net_margin_pct", "type": "number", "semantic_hint": "net_margin"},
+    {"name": "ebitda_margin_pct", "type": "number", "semantic_hint": "ebitda_margin"},
+    # P&L line items (millions USD)
+    {"name": "cogs", "type": "number", "semantic_hint": "cost_of_goods_sold"},
+    {"name": "gross_profit", "type": "number", "semantic_hint": "gross_profit"},
+    {"name": "ebitda", "type": "number", "semantic_hint": "ebitda"},
+    {"name": "operating_profit", "type": "number", "semantic_hint": "operating_income"},
+    {"name": "net_income", "type": "number", "semantic_hint": "net_income"},
+    {"name": "operating_expenses", "type": "number", "semantic_hint": "total_opex"},
+    {"name": "sm_expense", "type": "number", "semantic_hint": "sales_marketing_expense"},
+    {"name": "rd_expense", "type": "number", "semantic_hint": "rd_expense"},
+    {"name": "ga_expense", "type": "number", "semantic_hint": "ga_expense"},
+    {"name": "da_expense", "type": "number", "semantic_hint": "depreciation_amortization"},
+    {"name": "tax_expense", "type": "number", "semantic_hint": "tax_expense"},
+    # ARR (annualized recurring revenue — millions USD)
+    {"name": "arr", "type": "number", "semantic_hint": "annual_recurring_revenue"},
+]
+
+# Quarter end dates for period derivation
+_QUARTER_END = {
+    1: "-03-31",
+    2: "-06-30",
+    3: "-09-30",
+    4: "-12-31",
+}
+
+
+class FinancialSummaryGenerator(BaseBusinessGenerator):
+    """
+    Generates one flat row per quarter containing the full income statement
+    from the financial model.  Designed for DCL's materializer to extract
+    margin percentages and profitability metrics via value_field_hint rules.
+    """
+
+    SOURCE_SYSTEM = SOURCE_SYSTEM
+    PIPE_PREFIX = "finsummary"
+
+    def __init__(self, model_quarters: List[Any], seed: int = 42):
+        super().__init__(seed=seed)
+        self._model_quarters = model_quarters
+
+    def generate(
+        self,
+        pipe_id: str = "finsummary-pnl-001",
+        run_id: str = "run-finsummary-001",
+        run_timestamp: str = "2026-01-15T00:00:00Z",
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Produce a single 'pnl' pipe with one row per quarter.
+
+        Returns dict with key 'pnl' containing the DCL payload.
+        """
+        rows: List[Dict[str, Any]] = []
+
+        for fmq in self._model_quarters:
+            year = int(fmq.quarter[:4])
+            q_num = int(fmq.quarter[-1])
+            quarter_end = f"{year}{_QUARTER_END[q_num]}"
+
+            rows.append({
+                "date": quarter_end,
+                "quarter_label": fmq.quarter,
+                # Margins (percentage values, e.g. 65.2 means 65.2%)
+                "gross_margin_pct": round(fmq.gross_margin_pct, 1),
+                "operating_margin_pct": round(fmq.operating_margin_pct, 1),
+                "net_margin_pct": round(fmq.net_margin_pct, 1),
+                "ebitda_margin_pct": round(fmq.ebitda_margin_pct, 1),
+                # P&L line items (millions USD)
+                "cogs": round(fmq.cogs, 2),
+                "gross_profit": round(fmq.gross_profit, 2),
+                "ebitda": round(fmq.ebitda, 2),
+                "operating_profit": round(fmq.operating_profit, 2),
+                "net_income": round(fmq.net_income, 2),
+                "operating_expenses": round(fmq.total_opex, 2),
+                "sm_expense": round(fmq.sm_expense, 2),
+                "rd_expense": round(fmq.rd_expense, 2),
+                "ga_expense": round(fmq.ga_expense, 2),
+                "da_expense": round(fmq.da_expense, 2),
+                "tax_expense": round(fmq.tax_expense, 2),
+                "arr": round(fmq.ending_arr, 2),
+            })
+
+        return {
+            "pnl": self.format_dcl_payload(
+                pipe_id=pipe_id,
+                run_id=run_id,
+                run_timestamp=run_timestamp,
+                schema_fields=SCHEMA_FIELDS,
+                data=rows,
+            ),
+        }

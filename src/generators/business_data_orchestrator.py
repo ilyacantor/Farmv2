@@ -25,12 +25,13 @@ from src.generators.business_data.zendesk import ZendeskGenerator
 from src.generators.business_data.jira_gen import JiraGenerator
 from src.generators.business_data.datadog_gen import DatadogGenerator
 from src.generators.business_data.aws_cost import AWSCostGenerator
+from src.generators.business_data.financial_summary import FinancialSummaryGenerator
 from src.generators.ground_truth import compute_ground_truth, validate_manifest_completeness
 
 logger = logging.getLogger("farm.business_data")
 
 # Tier classification for progressive generation
-TIER_1_GENERATORS = ["salesforce", "netsuite", "chargebee"]
+TIER_1_GENERATORS = ["salesforce", "netsuite", "chargebee", "financial_summary"]
 TIER_2_GENERATORS = ["workday", "zendesk"]
 TIER_3_GENERATORS = ["jira", "datadog", "aws_cost_explorer"]
 
@@ -496,5 +497,11 @@ class BusinessDataOrchestrator:
             "aws_cost_explorer": {
                 "instance": AWSCostGenerator(seed=self.seed + 7),
                 "interface": "generate_profile_only",
+            },
+            "financial_summary": {
+                "instance": FinancialSummaryGenerator(
+                    model_quarters=self.model_quarters, seed=self.seed + 8,
+                ),
+                "interface": "init_profile",
             },
         }

@@ -263,7 +263,7 @@ async def _push_to_dcl(
         )
 
     body = {
-        "source_system": "farm",
+        "source_system": source_system,
         "tenant_id": tenant_id,
         "snapshot_name": snapshot_name,
         "run_timestamp": run_timestamp,
@@ -274,7 +274,7 @@ async def _push_to_dcl(
 
     logger.info(
         f"Manifest push: pipe_id={pipe_id}, run_id={run_id}, "
-        f"rows={len(rows)}, url={dcl_url}"
+        f"source_system={source_system}, rows={len(rows)}, url={dcl_url}"
     )
 
     max_retries = manifest.limits.retry_count  # default: 2
