@@ -38,6 +38,7 @@ from src.generators.business_data.jira_gen import JiraGenerator
 from src.generators.business_data.datadog_gen import DatadogGenerator
 from src.generators.business_data.aws_cost import AWSCostGenerator
 from src.generators.financial_model import FinancialModel, Assumptions
+from src.generators.business_data.financial_summary import FinancialSummaryGenerator
 from src.models.manifest import (
     JobManifest,
     DCLPushResult,
@@ -996,6 +997,8 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     # share the same run_id → same seed → same profile. Eliminates 56
     # redundant FinancialModel + BusinessProfile builds (~0.5-2s CPU each).
     shared_profile: BusinessProfile | None = None
+    shared_quarters: list | None = None
+    finsummary_push_result: Optional[DCLPushResult] = None
     t_profile_start = time.monotonic()
     if manifests:
         first_run_id = manifests[0].run_id
@@ -1004,9 +1007,10 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         def _build_shared_profile():
             fm = FinancialModel(Assumptions())
             quarters = fm.generate()
-            return BusinessProfile.from_model_quarters(quarters, seed=shared_seed)
+            profile = BusinessProfile.from_model_quarters(quarters, seed=shared_seed)
+            return profile, quarters
 
-        shared_profile = await asyncio.to_thread(_build_shared_profile)
+        shared_profile, shared_quarters = await asyncio.to_thread(_build_shared_profile)
     t_profile_ms = int((time.monotonic() - t_profile_start) * 1000)
     if manifests:
         logger.info(
@@ -1126,6 +1130,131 @@ async def batch_manifest_intake(request: BatchManifestRequest):
             for m in execute_manifests
         ])
 
+        # ── Generate and push financial_summary pipe ──────────────────────
+        # The FinancialSummaryGenerator needs the model quarters that were
+        # computed for the shared BusinessProfile. This pipe provides
+        # pre-computed margin/metric data that DCL's strict_hint extraction
+        # rules depend on (gross_margin_pct, operating_margin_pct, etc.).
+        if manifests and shared_quarters:
+            try:
+                import os as _os
+
+                first_manifest = manifests[0]
+                # Use farm_ prefix so DCL's ingest guard recognizes this as a
+                # Farm self-directed push (bypasses AAM pipe blueprint check).
+                # The financial_summary pipe is Farm-originated, not AAM-dispatched.
+                finsummary_run_id = f"farm_finsummary_{first_manifest.run_id}"
+                finsummary_pipe_id = str(uuid.uuid5(
+                    uuid.NAMESPACE_URL, f"{first_manifest.run_id}:financial_summary"
+                ))
+                run_timestamp = first_manifest.provenance.get(
+                    "run_timestamp",
+                    datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                )
+
+                # Generate rows
+                fsg = FinancialSummaryGenerator(
+                    model_quarters=shared_quarters, seed=shared_seed
+                )
+                finsummary_data = fsg.generate(
+                    pipe_id=finsummary_pipe_id,
+                    run_id=finsummary_run_id,
+                    run_timestamp=run_timestamp,
+                )
+                finsummary_rows = finsummary_data["pnl"]["data"]
+
+                # Resolve DCL URL (same logic as _push_to_dcl)
+                dcl_url_env = _os.environ.get("DCL_INGEST_URL", "").strip()
+                dcl_url = (
+                    dcl_url_env
+                    if dcl_url_env
+                    else first_manifest.target.dcl_url.rstrip("/")
+                )
+                if not dcl_url.endswith("/api/dcl/ingest"):
+                    dcl_url = dcl_url.rstrip("/") + "/api/dcl/ingest"
+
+                # Build headers
+                fs_headers = {
+                    "Content-Type": "application/json",
+                    "x-run-id": finsummary_run_id,
+                    "x-pipe-id": finsummary_pipe_id,
+                    "x-schema-hash": hashlib.sha256(
+                        "financial_summary".encode()
+                    ).hexdigest()[:16],
+                }
+                if first_manifest.target.auth_token_ref:
+                    fs_headers["x-api-key"] = first_manifest.target.auth_token_ref
+                elif _os.environ.get("DCL_INGEST_KEY"):
+                    fs_headers["x-api-key"] = _os.environ["DCL_INGEST_KEY"]
+                else:
+                    raise ValueError(
+                        "No auth token for financial_summary DCL push: "
+                        "auth_token_ref is null and DCL_INGEST_KEY not set"
+                    )
+
+                fs_body = {
+                    "source_system": "oracle",
+                    "tenant_id": first_manifest.target.tenant_id,
+                    "snapshot_name": first_manifest.target.snapshot_name,
+                    "run_timestamp": run_timestamp,
+                    "schema_version": hashlib.sha256(
+                        "financial_summary".encode()
+                    ).hexdigest()[:16],
+                    "row_count": len(finsummary_rows),
+                    "rows": finsummary_rows,
+                }
+
+                logger.info(
+                    f"Financial summary push: pipe_id={finsummary_pipe_id}, "
+                    f"run_id={finsummary_run_id}, rows={len(finsummary_rows)}, "
+                    f"url={dcl_url}"
+                )
+
+                resp = await shared_client.post(
+                    dcl_url, json=fs_body, headers=fs_headers, timeout=60,
+                )
+
+                if resp.status_code in (200, 201):
+                    resp_data = resp.json()
+                    finsummary_push_result = DCLPushResult(
+                        run_id=finsummary_run_id,
+                        pipe_id=finsummary_pipe_id,
+                        farm_run_id=f"finsummary_{uuid.uuid4().hex[:8]}",
+                        status="success",
+                        rows_pushed=len(finsummary_rows),
+                        rows_accepted=resp_data.get("rows_accepted", len(finsummary_rows)),
+                    )
+                    logger.info(
+                        f"Financial summary pushed successfully: "
+                        f"pipe_id={finsummary_pipe_id}, rows={len(finsummary_rows)}"
+                    )
+                else:
+                    finsummary_push_result = DCLPushResult(
+                        run_id=finsummary_run_id,
+                        pipe_id=finsummary_pipe_id,
+                        farm_run_id=f"finsummary_{uuid.uuid4().hex[:8]}",
+                        status="failed",
+                        error=f"DCL returned {resp.status_code}: {resp.text[:300]}",
+                        error_type=f"dcl_http_{resp.status_code}",
+                    )
+                    logger.error(
+                        f"Financial summary push FAILED: pipe_id={finsummary_pipe_id}, "
+                        f"status={resp.status_code}, body={resp.text[:300]}"
+                    )
+            except Exception as fs_exc:
+                logger.error(
+                    f"Financial summary generation/push failed: {fs_exc}",
+                    exc_info=True,
+                )
+                finsummary_push_result = DCLPushResult(
+                    run_id=first_run_id,
+                    pipe_id="financial_summary",
+                    farm_run_id=f"finsummary_{uuid.uuid4().hex[:8]}",
+                    status="failed",
+                    error=str(fs_exc)[:500],
+                    error_type="finsummary_error",
+                )
+
     results = list(executed_results) + preflight_results
 
     pipes_pushed = 0
@@ -1137,6 +1266,28 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     errors_summary: Dict[str, int] = {}
     per_system: Dict[str, Dict[str, int]] = {}  # system -> {succeeded, failed, skipped}
     per_pipe_results: List[PipeResult] = []
+
+    # Append financial_summary result to batch summary if it was attempted
+    if finsummary_push_result is not None:
+        pipes_pushed += 1
+        fs_status = finsummary_push_result.status
+        if fs_status == "success":
+            pipes_succeeded += 1
+        else:
+            pipes_failed += 1
+            if finsummary_push_result.error_type:
+                errors_summary[finsummary_push_result.error_type] = (
+                    errors_summary.get(finsummary_push_result.error_type, 0) + 1
+                )
+        per_pipe_results.append(PipeResult(
+            pipe_id=finsummary_push_result.pipe_id,
+            status=fs_status,
+            error_type=finsummary_push_result.error_type,
+            rows_generated=finsummary_push_result.rows_pushed or 0,
+            rows_pushed=finsummary_push_result.rows_pushed or 0,
+            rows_accepted=finsummary_push_result.rows_accepted,
+            persisted=False,
+        ))
 
     for result in results:
         if result is None:
