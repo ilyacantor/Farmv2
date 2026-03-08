@@ -11,7 +11,8 @@ etc.) produce transactional rows — invoices, GL entries, subscriptions —
 from which DCL can derive revenue, AR, headcount, etc.  However, derived
 metrics like gross_margin_pct, win_rate, uptime_pct, etc. require either
 complex aggregation or a pre-computed summary. This generator provides
-the latter: one flat row per quarter with all pre-computed metrics.
+the latter: four rows per quarter (1 total + 3 regional) with all
+pre-computed metrics. Regional rows carry AMER/EMEA/APAC splits.
 
 Field names are chosen to match DCL extraction rule hints exactly:
 - No `revenue` field (already extracted from invoices)
@@ -29,6 +30,7 @@ SOURCE_SYSTEM = "oracle"
 SCHEMA_FIELDS: List[Dict[str, Any]] = [
     {"name": "date", "type": "date", "semantic_hint": "fiscal_period_end"},
     {"name": "quarter_label", "type": "string"},
+    {"name": "region", "type": "string", "semantic_hint": "territory"},
     # Total revenue (millions USD) — single source of truth for P&L consistency
     {"name": "total_revenue", "type": "number", "semantic_hint": "total_revenue"},
     # Margins (percentages)
@@ -78,12 +80,15 @@ _QUARTER_END = {
     4: "-12-31",
 }
 
+_REGIONS = ["AMER", "EMEA", "APAC"]
+
 
 class FinancialSummaryGenerator(BaseBusinessGenerator):
     """
-    Generates one flat row per quarter containing pre-computed metrics
-    from the financial model.  Designed for DCL's materializer to extract
-    via strict_hint value_field_hint rules.
+    Generates four rows per quarter (1 total + 3 regional) containing
+    pre-computed metrics from the financial model.  Designed for DCL's
+    materializer to extract via strict_hint value_field_hint rules.
+    Regional rows use AMER/EMEA/APAC splits from the financial model.
     """
 
     SOURCE_SYSTEM = SOURCE_SYSTEM
@@ -100,7 +105,8 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
         run_timestamp: str = "2026-01-15T00:00:00Z",
     ) -> Dict[str, Dict[str, Any]]:
         """
-        Produce a single 'pnl' pipe with one row per quarter.
+        Produce a single 'pnl' pipe with four rows per quarter
+        (1 total + 3 regional).
 
         Returns dict with key 'pnl' containing the DCL payload.
         """
@@ -111,17 +117,39 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
             q_num = int(fmq.quarter[-1])
             quarter_end = f"{year}{_QUARTER_END[q_num]}"
 
-            rows.append({
-                "date": quarter_end,
-                "quarter_label": fmq.quarter,
-                # Total revenue (millions USD)
-                "total_revenue": round(fmq.revenue, 2),
-                # Margins (percentage values, e.g. 65.2 means 65.2%)
+            # --- shared CRO / CTO / CHRO metrics (company-wide) ---
+            cro_cto_chro = {
+                "win_rate": round(fmq.win_rate, 1),
+                "churn_rate": round(fmq.gross_churn_pct, 2),
+                "nrr": round(fmq.nrr, 1),
+                "attainment_pct": round(fmq.quota_attainment, 1),
+                "sales_cycle_days": round(fmq.sales_cycle_days),
+                "uptime": round(fmq.uptime_pct, 2),
+                "time_to_resolve": round(fmq.mttr_p1_hours, 1),
+                "p1_incidents": int(fmq.p1_incidents),
+                "deploy_count": int(getattr(fmq, 'features_shipped', 0)),
+                "attrition_rate": round(fmq.attrition_rate, 1),
+                "engagement_score": round(getattr(fmq, 'csat', 3.8) * 20, 1),
+                "revenue_per_employee": round(
+                    fmq.revenue_per_employee * 1000, 1
+                ) if fmq.revenue_per_employee else 0.0,
+                "total_headcount": int(fmq.headcount),
+            }
+
+            # --- margin percentages (company-wide, same for all regions) ---
+            margins = {
                 "gross_margin_pct": round(fmq.gross_margin_pct, 1),
                 "operating_margin_pct": round(fmq.operating_margin_pct, 1),
                 "net_margin_pct": round(fmq.net_margin_pct, 1),
                 "ebitda_margin_pct": round(fmq.ebitda_margin_pct, 1),
-                # P&L line items (millions USD)
+            }
+
+            # 1. Total row (no region field — preserves flat queries)
+            rows.append({
+                "date": quarter_end,
+                "quarter_label": fmq.quarter,
+                "total_revenue": round(fmq.revenue, 2),
+                **margins,
                 "cogs": round(fmq.cogs, 2),
                 "gross_profit": round(fmq.gross_profit, 2),
                 "ebitda": round(fmq.ebitda, 2),
@@ -134,27 +162,37 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                 "da_expense": round(fmq.da_expense, 2),
                 "tax_expense": round(fmq.tax_expense, 2),
                 "arr": round(fmq.ending_arr, 2),
-                # Balance sheet (millions USD)
                 "cash": round(fmq.cash, 2),
-                # CRO metrics (percentages as raw numbers, days as integers)
-                "win_rate": round(fmq.win_rate, 1),
-                "churn_rate": round(fmq.gross_churn_pct, 2),
-                "nrr": round(fmq.nrr, 1),
-                "attainment_pct": round(fmq.quota_attainment, 1),
-                "sales_cycle_days": round(fmq.sales_cycle_days),
-                # CTO metrics
-                "uptime": round(fmq.uptime_pct, 2),
-                "time_to_resolve": round(fmq.mttr_p1_hours, 1),
-                "p1_incidents": int(fmq.p1_incidents),
-                "deploy_count": int(getattr(fmq, 'features_shipped', 0)),
-                # CHRO metrics
-                "attrition_rate": round(fmq.attrition_rate, 1),
-                "engagement_score": round(getattr(fmq, 'csat', 3.8) * 20, 1),
-                "revenue_per_employee": round(
-                    fmq.revenue_per_employee * 1000, 1
-                ) if fmq.revenue_per_employee else 0.0,
-                "total_headcount": int(fmq.headcount),
+                **cro_cto_chro,
             })
+
+            # 2. Regional rows (AMER / EMEA / APAC)
+            for region in _REGIONS:
+                region_revenue = fmq.revenue_by_region[region]
+                region_pct = region_revenue / fmq.revenue if fmq.revenue else 0.0
+                region_arr = fmq.arr_by_region[region]
+
+                rows.append({
+                    "date": quarter_end,
+                    "quarter_label": fmq.quarter,
+                    "region": region,
+                    "total_revenue": round(region_revenue, 2),
+                    **margins,
+                    "cogs": round(fmq.cogs * region_pct, 2),
+                    "gross_profit": round(fmq.gross_profit * region_pct, 2),
+                    "ebitda": round(fmq.ebitda * region_pct, 2),
+                    "operating_profit": round(fmq.operating_profit * region_pct, 2),
+                    "net_income": round(fmq.net_income * region_pct, 2),
+                    "operating_expenses": round((fmq.total_opex + fmq.da_expense) * region_pct, 2),
+                    "sm_expense": round(fmq.sm_expense * region_pct, 2),
+                    "rd_expense": round(fmq.rd_expense * region_pct, 2),
+                    "ga_expense": round(fmq.ga_expense * region_pct, 2),
+                    "da_expense": round(fmq.da_expense * region_pct, 2),
+                    "tax_expense": round(fmq.tax_expense * region_pct, 2),
+                    "arr": round(region_arr, 2),
+                    "cash": round(fmq.cash * region_pct, 2),
+                    **cro_cto_chro,
+                })
 
         return {
             "pnl": self.format_dcl_payload(
