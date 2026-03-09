@@ -166,11 +166,11 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                 **cro_cto_chro,
             })
 
-            # 2. Regional rows (AMER / EMEA / APAC)
-            for region in _REGIONS:
+            # 2. Regional rows — use revenue_by_region keys (handles LATAM, etc.)
+            for region in fmq.revenue_by_region:
                 region_revenue = fmq.revenue_by_region[region]
                 region_pct = region_revenue / fmq.revenue if fmq.revenue else 0.0
-                region_arr = fmq.arr_by_region[region]
+                region_arr = fmq.arr_by_region.get(region, 0.0)
 
                 rows.append({
                     "date": quarter_end,

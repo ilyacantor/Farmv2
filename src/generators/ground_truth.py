@@ -11,7 +11,7 @@ revenue decomposition, and 13 dimensional breakdowns from the financial model.
 
 import random
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.generators.business_data.profile import (
     BusinessProfile,
@@ -295,6 +295,259 @@ def compute_ground_truth(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# v3.0 — Multi-entity ground truth (MEI / Convergence)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# The 6 COFA (Chart-of-Accounts / Financial Architecture) conflicts that arise
+# when comparing entities with structurally different accounting treatments.
+_COFA_CONFLICTS = [
+    {
+        "conflict_id": "COFA-001",
+        "metric": "benefits_loading",
+        "category": "compensation_structure",
+        "meridian_treatment": "Benefits bundled into consultant compensation",
+        "cascadia_treatment": "Benefits separated as distinct COGS line",
+        "impact_description": "Gross margin not comparable without reclassification",
+        "affected_metrics": ["cogs", "gross_profit", "gross_margin_pct"],
+    },
+    {
+        "conflict_id": "COFA-002",
+        "metric": "sales_marketing_reporting",
+        "category": "opex_classification",
+        "meridian_treatment": "Sales and Marketing reported as separate line items",
+        "cascadia_treatment": "Sales & Marketing combined into one OpEx line",
+        "impact_description": "S&M efficiency metrics not directly comparable across entities",
+        "affected_metrics": ["sm_expense", "opex", "sga"],
+    },
+    {
+        "conflict_id": "COFA-003",
+        "metric": "recruiting_capitalization",
+        "category": "capitalization_policy",
+        "meridian_treatment": "All recruiting costs expensed as incurred",
+        "cascadia_treatment": "Capitalizes $8M/yr recruiting costs as intangible asset",
+        "impact_description": "Cascadia EBITDA overstated by ~$2M/quarter vs Meridian treatment",
+        "affected_metrics": ["ebitda", "operating_profit", "intangibles", "total_assets"],
+    },
+    {
+        "conflict_id": "COFA-004",
+        "metric": "automation_capitalization",
+        "category": "capitalization_policy",
+        "meridian_treatment": "All technology costs expensed as incurred",
+        "cascadia_treatment": "Capitalizes $12M/yr automation platform development costs",
+        "impact_description": "Cascadia EBITDA overstated by ~$3M/quarter vs Meridian treatment",
+        "affected_metrics": ["ebitda", "operating_profit", "rd_expense", "intangibles", "capex"],
+    },
+    {
+        "conflict_id": "COFA-005",
+        "metric": "depreciation_method",
+        "category": "depreciation_policy",
+        "meridian_treatment": "Straight-line depreciation over 5 years",
+        "cascadia_treatment": "Accelerated depreciation over 3 years",
+        "impact_description": (
+            "Cascadia front-loads depreciation expense, creating timing "
+            "differences in operating profit and net income"
+        ),
+        "affected_metrics": ["da_expense", "operating_profit", "net_income", "pp_e"],
+    },
+    {
+        "conflict_id": "COFA-006",
+        "metric": "revenue_gross_up",
+        "category": "revenue_recognition",
+        "meridian_treatment": "Books contractor markup as revenue (net method)",
+        "cascadia_treatment": "Books full FTE rate as revenue (gross method)",
+        "impact_description": (
+            "~$50M annual revenue delta between gross and net recognition. "
+            "Cascadia revenue appears higher but margins are lower"
+        ),
+        "affected_metrics": ["revenue", "gross_margin_pct", "revenue_per_employee"],
+    },
+]
+
+
+def compute_multi_entity_ground_truth(
+    entity_inputs: List[Tuple[str, "BusinessProfile", List, Dict[str, Dict[str, Any]]]],
+    run_id: str,
+    shared_customers: Optional[List[str]] = None,
+    shared_vendors: Optional[List[str]] = None,
+    combining_result: Optional[Any] = None,
+    overlap_data: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """
+    Compute a multi-entity ground truth manifest (v3.0) for MEI/Convergence scenarios.
+
+    Delegates per-entity ground truth to the existing compute_ground_truth() function,
+    then layers on cross-entity truth and COFA conflicts.
+
+    Args:
+        entity_inputs: List of (entity_id, profile, model_quarters, generated_data)
+            tuples. Each tuple provides the inputs needed for one entity's ground truth.
+        run_id: The generation run identifier.
+        shared_customers: Optional list of customer names shared across entities.
+        shared_vendors: Optional list of vendor names shared across entities.
+
+    Returns:
+        Complete multi-entity ground truth manifest dict (manifest_version 3.0).
+    """
+    generated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    entities: List[str] = []
+    entity_profiles: Dict[str, Dict[str, Any]] = {}
+    ground_truth_by_entity: Dict[str, Any] = {}
+    all_source_systems: set = set()
+    all_record_counts: Dict[str, int] = {}
+
+    for entity_id, profile, model_quarters, generated_data in entity_inputs:
+        entities.append(entity_id)
+
+        # Build entity profile metadata
+        entity_profiles[entity_id] = {
+            "entity_name": getattr(profile, "entity_name", entity_id.replace("_", " ").title()),
+            "business_model": getattr(profile, "business_model", "unknown"),
+            "annual_revenue": getattr(profile, "base_revenue", 0) * 4,
+        }
+
+        # Delegate to existing compute_ground_truth() for per-entity truth
+        entity_manifest = compute_ground_truth(
+            profile=profile,
+            run_id=run_id,
+            generated_data=generated_data,
+            model_quarters=model_quarters,
+        )
+
+        # Extract the ground truth section (per-quarter data + dimensional + conflicts)
+        ground_truth_by_entity[entity_id] = entity_manifest["ground_truth"]
+
+        # Aggregate source systems and record counts
+        all_source_systems.update(entity_manifest.get("source_systems", []))
+        for pipe_id, count in entity_manifest.get("record_counts", {}).items():
+            all_record_counts[f"{entity_id}:{pipe_id}"] = count
+
+    # Build cross-entity truth by combining additive metrics across entities
+    cross_entity_truth = _build_cross_entity_truth(
+        entities=entities,
+        ground_truth_by_entity=ground_truth_by_entity,
+        shared_customers=shared_customers or [],
+        shared_vendors=shared_vendors or [],
+    )
+
+    manifest = {
+        "manifest_version": "3.0",
+        "run_id": run_id,
+        "generated_at": generated_at,
+        "entities": entities,
+        "entity_profiles": entity_profiles,
+        "source_systems": sorted(all_source_systems),
+        "record_counts": all_record_counts,
+        "ground_truth_by_entity": ground_truth_by_entity,
+        "cofa_conflicts": list(_COFA_CONFLICTS),
+        "cross_entity_truth": cross_entity_truth,
+    }
+
+    # Add combining statement truth if available
+    if combining_result is not None:
+        from dataclasses import asdict
+        manifest["combining_statements"] = {
+            "cofa_mappings": [asdict(m) for m in combining_result.cofa_mappings],
+            "conflict_register": [
+                {
+                    "conflict_id": c.conflict_id,
+                    "description": c.description,
+                    "metric": c.metric,
+                    "adjustment_amount": c.adjustment_amount,
+                }
+                for c in combining_result.conflict_register
+                if c.adjustment_amount != 0  # only material adjustments
+            ],
+            "income_statement_by_quarter": {
+                stmt.period: [
+                    {
+                        "line_item": li.line_item,
+                        "meridian": li.meridian,
+                        "cascadia": li.cascadia,
+                        "adjustments": li.adjustments,
+                        "combined": li.combined,
+                    }
+                    for li in stmt.line_items
+                ]
+                for stmt in combining_result.income_statements
+            },
+        }
+
+    # Add overlap truth if available
+    if overlap_data is not None:
+        manifest["entity_overlap"] = overlap_data.to_ground_truth_dict()
+
+    return manifest
+
+
+def _build_cross_entity_truth(
+    entities: List[str],
+    ground_truth_by_entity: Dict[str, Any],
+    shared_customers: List[str],
+    shared_vendors: List[str],
+) -> Dict[str, Any]:
+    """
+    Compute cross-entity aggregated truth for additive metrics.
+
+    Combines revenue and headcount across entities per quarter. Also includes
+    shared customers and vendors for entity overlap analysis.
+    """
+    # Collect all quarter labels across entities
+    all_quarters: set = set()
+    for entity_id in entities:
+        entity_gt = ground_truth_by_entity[entity_id]
+        for key in entity_gt:
+            # Quarter keys follow the pattern YYYY-QN
+            if isinstance(key, str) and "-Q" in key:
+                all_quarters.add(key)
+
+    sorted_quarters = sorted(all_quarters)
+
+    combined_revenue: Dict[str, Any] = {}
+    combined_headcount: Dict[str, Any] = {}
+
+    for q in sorted_quarters:
+        # Sum revenue across entities
+        rev_total = 0.0
+        rev_by_entity: Dict[str, float] = {}
+        for entity_id in entities:
+            entity_q = ground_truth_by_entity[entity_id].get(q, {})
+            rev_metric = entity_q.get("revenue", {})
+            rev_val = rev_metric.get("value", 0) if isinstance(rev_metric, dict) else 0
+            rev_total += rev_val
+            rev_by_entity[entity_id] = rev_val
+
+        combined_revenue[q] = {
+            "value": _r(rev_total),
+            "unit": "millions_usd",
+            "by_entity": {eid: _r(v) for eid, v in rev_by_entity.items()},
+        }
+
+        # Sum headcount across entities
+        hc_total = 0
+        hc_by_entity: Dict[str, int] = {}
+        for entity_id in entities:
+            entity_q = ground_truth_by_entity[entity_id].get(q, {})
+            hc_metric = entity_q.get("headcount", {})
+            hc_val = hc_metric.get("value", 0) if isinstance(hc_metric, dict) else 0
+            hc_total += hc_val
+            hc_by_entity[entity_id] = hc_val
+
+        combined_headcount[q] = {
+            "value": hc_total,
+            "unit": "count",
+            "by_entity": hc_by_entity,
+        }
+
+    return {
+        "combined_revenue": combined_revenue,
+        "combined_headcount": combined_headcount,
+        "shared_customers": shared_customers,
+        "shared_vendors": shared_vendors,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # v2.0 — Full financial model metrics
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -459,6 +712,7 @@ def _build_v2_quarterly_truth(
 
             # ── Meta ──────────────────────────────────────────────────────
             "is_forecast": fmq.is_forecast,
+            "period_type": fmq.period_type,
         }
 
     return quarterly_truth

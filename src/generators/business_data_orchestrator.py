@@ -26,7 +26,9 @@ from src.generators.business_data.jira_gen import JiraGenerator
 from src.generators.business_data.datadog_gen import DatadogGenerator
 from src.generators.business_data.aws_cost import AWSCostGenerator
 from src.generators.business_data.financial_summary import FinancialSummaryGenerator
-from src.generators.ground_truth import compute_ground_truth, validate_manifest_completeness
+from src.generators.ground_truth import compute_ground_truth, validate_manifest_completeness, compute_multi_entity_ground_truth
+from src.generators.combining_statements import CombiningStatementEngine
+from src.generators.entity_overlap import EntityOverlapGenerator
 
 logger = logging.getLogger("farm.business_data")
 
@@ -453,6 +455,178 @@ class BusinessDataOrchestrator:
                 if isinstance(payload, dict) and payload.get("meta", {}).get("pipe_id") == pipe_id:
                     return payload
         return None
+
+    def generate_multi_entity(
+        self,
+        entity_configs: List[str],
+        shared_customers: Optional[List[str]] = None,
+        shared_vendors: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate data for multiple entities and produce a unified manifest.
+
+        Args:
+            entity_configs: List of YAML config file paths (e.g.,
+                ["farm_config_meridian.yaml", "farm_config_cascadia.yaml"])
+            shared_customers: Optional list of customer names shared across entities
+            shared_vendors: Optional list of vendor names shared across entities
+
+        Returns:
+            Summary dict with per-entity results and unified manifest.
+        """
+        run_id = self.generate_run_id()
+        self.run_id = run_id
+        run_timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        logger.info(
+            f"Starting multi-entity generation run: {run_id} "
+            f"({len(entity_configs)} entities)"
+        )
+
+        entity_results: Dict[str, Dict[str, Any]] = {}
+        entity_inputs_for_manifest = []
+
+        for config_path in entity_configs:
+            # Load entity-specific assumptions
+            assumptions = Assumptions.from_yaml(config_path)
+            entity_id = assumptions.entity_id or "unknown"
+            entity_name = assumptions.entity_name or entity_id
+
+            logger.info(
+                f"Generating entity: {entity_name} ({entity_id}) "
+                f"from {config_path}"
+            )
+
+            # Run financial model
+            model = FinancialModel(assumptions)
+            quarters = model.generate()
+            model_issues = validate_model(quarters)
+            if model_issues:
+                logger.warning(
+                    f"  [{entity_id}] Financial model validation: "
+                    f"{len(model_issues)} issues"
+                )
+                for issue in model_issues[:3]:
+                    logger.warning(f"    - {issue}")
+            else:
+                logger.info(f"  [{entity_id}] Financial model validated: 0 issues")
+
+            # Create profile from model quarters
+            profile = BusinessProfile.from_model_quarters(
+                quarters, seed=self.seed + hash(entity_id) % 1000
+            )
+
+            # Generate source system data
+            entity_data: Dict[str, Dict[str, Any]] = {}
+            self.profile = profile
+            self.model_quarters = quarters
+            generator_specs = self._create_generator_specs()
+
+            for system_name, spec in generator_specs.items():
+                if system_name not in self.active_systems:
+                    continue
+                try:
+                    generator = spec["instance"]
+                    interface = spec["interface"]
+                    if interface == "generate_profile":
+                        data = generator.generate(profile, run_id, run_timestamp)
+                    elif interface == "init_profile":
+                        data = generator.generate(
+                            run_id=run_id, run_timestamp=run_timestamp
+                        )
+                    elif interface == "generate_profile_only":
+                        data = generator.generate(profile)
+                    else:
+                        data = generator.generate(profile, run_id, run_timestamp)
+                    entity_data[system_name] = data
+                except Exception as e:
+                    logger.error(
+                        f"  [{entity_id}] Failed to generate {system_name}: {e}",
+                        exc_info=True,
+                    )
+                    entity_data[system_name] = {"_error": str(e)}
+
+            total_records = 0
+            for sys_data in entity_data.values():
+                for pipe_name, payload in sys_data.items():
+                    if isinstance(payload, dict) and "meta" in payload:
+                        total_records += payload["meta"].get("record_count", 0)
+
+            entity_results[entity_id] = {
+                "entity_id": entity_id,
+                "entity_name": entity_name,
+                "business_model": assumptions.business_model,
+                "annual_revenue": assumptions.starting_annual_revenue,
+                "model_issues": len(model_issues),
+                "total_records": total_records,
+                "quarters": len(quarters),
+                "q1_metrics": {
+                    "revenue": quarters[0].revenue,
+                    "gross_margin_pct": quarters[0].gross_margin_pct,
+                    "ebitda_margin_pct": quarters[0].ebitda_margin_pct,
+                    "headcount": quarters[0].headcount,
+                },
+            }
+
+            entity_inputs_for_manifest.append(
+                (entity_id, profile, quarters, entity_data)
+            )
+
+            # Store generated data keyed by entity
+            self.generated_data[entity_id] = entity_data
+
+        # Build combining financial statements if we have exactly 2 entities
+        combining_result = None
+        all_quarters = {}
+        for entity_id, profile, quarters, entity_data in entity_inputs_for_manifest:
+            all_quarters[entity_id] = quarters
+        if len(all_quarters) == 2:
+            entity_ids = list(all_quarters.keys())
+            logger.info("Building combining financial statements...")
+            combining_engine = CombiningStatementEngine(
+                all_quarters[entity_ids[0]], all_quarters[entity_ids[1]]
+            )
+            combining_result = combining_engine.generate()
+            combine_issues = combining_engine.validate(combining_result)
+            if combine_issues:
+                logger.warning(f"Combining statement validation: {len(combine_issues)} issues")
+                for issue in combine_issues[:5]:
+                    logger.warning(f"  - {issue}")
+            else:
+                logger.info("Combining statements validated: 0 issues")
+
+        # Generate entity overlap data
+        logger.info("Generating entity overlap data...")
+        overlap_gen = EntityOverlapGenerator(seed=self.seed)
+        overlap_data = overlap_gen.generate()
+
+        # Build unified multi-entity manifest
+        logger.info("Computing multi-entity ground truth manifest...")
+        self.manifest = compute_multi_entity_ground_truth(
+            entity_inputs=entity_inputs_for_manifest,
+            run_id=run_id,
+            shared_customers=shared_customers or [],
+            shared_vendors=shared_vendors or [],
+            combining_result=combining_result,
+            overlap_data=overlap_data,
+        )
+
+        summary = {
+            "run_id": run_id,
+            "run_timestamp": run_timestamp,
+            "entity_count": len(entity_configs),
+            "entities": entity_results,
+            "manifest_version": self.manifest.get("manifest_version", "3.0"),
+            "cofa_conflict_count": len(self.manifest.get("cofa_conflicts", [])),
+        }
+
+        logger.info(
+            f"Multi-entity generation complete: "
+            f"{len(entity_configs)} entities, "
+            f"{sum(e['total_records'] for e in entity_results.values())} total records"
+        )
+
+        return summary
 
     def _create_generator_specs(self) -> Dict[str, Dict[str, Any]]:
         """

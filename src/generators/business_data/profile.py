@@ -78,6 +78,11 @@ class QuarterMetrics:
     # Pipeline by stage (millions USD)
     pipeline_by_stage: Dict[str, float] = field(default_factory=dict)
 
+    # Entity identification (multi-entity support)
+    entity_id: Optional[str] = None
+    entity_name: Optional[str] = None
+    business_model: str = "saas"
+
 
 REGIONS = _schema.get("regions", ["AMER", "EMEA", "APAC"])
 REGION_WEIGHTS = {"AMER": _A.region_amer, "EMEA": _A.region_emea, "APAC": _A.region_apac}
@@ -107,6 +112,10 @@ class BusinessProfile:
     """
 
     seed: int = 42
+    entity_id: Optional[str] = None
+    entity_name: Optional[str] = None
+    business_model: str = "saas"
+    regions: List[str] = field(default_factory=lambda: ["AMER", "EMEA", "APAC"])
     base_revenue: float = _A.starting_arr / 4
     yoy_growth_rate: float = _A.arr_growth_rate_annual
     base_arr: float = _A.starting_arr
@@ -321,6 +330,17 @@ class BusinessProfile:
         profile.base_customer_count = model_quarters[0].customer_count if model_quarters else 760
         profile.base_headcount = model_quarters[0].headcount if model_quarters else 235
 
+        # Entity identification from source Quarter objects
+        profile.entity_id = getattr(model_quarters[0], "entity_id", None) if model_quarters else None
+        profile.entity_name = getattr(model_quarters[0], "entity_name", None) if model_quarters else None
+        profile.business_model = getattr(model_quarters[0], "business_model", "saas") if model_quarters else "saas"
+
+        # Derive regions from the Quarter objects' revenue_by_region keys
+        if model_quarters and hasattr(model_quarters[0], "revenue_by_region") and model_quarters[0].revenue_by_region:
+            profile.regions = list(model_quarters[0].revenue_by_region.keys())
+        else:
+            profile.regions = ["AMER", "EMEA", "APAC"]
+
         converted = []
         for fmq in model_quarters:
             qm = QuarterMetrics(
@@ -332,7 +352,7 @@ class BusinessProfile:
                 pipeline=round(fmq.pipeline, 2),
                 new_pipeline=round(fmq.pipeline * 0.3, 2),
                 win_rate=round(fmq.win_rate, 1),
-                customer_count=min(fmq.customer_count, 2000),
+                customer_count=fmq.customer_count,
                 new_customers=fmq.new_customers,
                 churned_customers=fmq.churned_customers,
                 nrr=round(fmq.nrr, 1),
@@ -341,7 +361,7 @@ class BusinessProfile:
                 new_hires=fmq.hires,
                 terminations=fmq.terminations,
                 attrition_rate=round(fmq.attrition_rate, 1),
-                support_tickets=min(fmq.support_tickets, 5000),
+                support_tickets=fmq.support_tickets,
                 csat=round(fmq.csat, 2),
                 sprint_velocity=round(fmq.sprint_velocity, 1),
                 sprints_in_quarter=6,
@@ -354,6 +374,9 @@ class BusinessProfile:
                 revenue_by_region=dict(fmq.revenue_by_region),
                 headcount_by_dept=dict(fmq.headcount_by_department),
                 pipeline_by_stage=dict(fmq.pipeline_by_stage),
+                entity_id=getattr(fmq, "entity_id", None),
+                entity_name=getattr(fmq, "entity_name", None),
+                business_model=getattr(fmq, "business_model", "saas"),
             )
             converted.append(qm)
 

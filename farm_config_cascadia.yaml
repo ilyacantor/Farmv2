@@ -1,0 +1,261 @@
+# =============================================================================
+# Farm Financial Model Configuration — Cascadia Process Solutions
+# =============================================================================
+# Entity: Cascadia Process Solutions — $1B business process management company
+# Business model: BPM (managed services, per-FTE, per-transaction revenue)
+#
+# COFA conflicts vs Meridian Partners:
+#   1. Benefits loading: C separates benefits from comp as distinct COGS line.
+#      M bundles benefits into consultant comp. Gross margin not comparable
+#      without reclassification.
+#   2. Sales & Marketing bundled: C combines S&M into one OpEx line.
+#      M reports Sales and Marketing as separate line items.
+#   3. Recruiting capitalization: C capitalizes $8M/yr recruiting tied to new
+#      contracts. M expenses all recruiting costs immediately.
+#   4. Automation capitalization: C capitalizes $12M/yr automation platform dev.
+#      M expenses all technology costs immediately.
+#   5. Depreciation: C uses accelerated/3yr on delivery center equipment.
+#      M uses straight-line/5yr.
+#   6. Revenue gross-up: C books full FTE rate as revenue. M books contractor
+#      markup as revenue. ~$50M delta when comparing top-line revenue.
+# =============================================================================
+
+entity:
+  entity_id: "cascadia"
+  entity_name: "Cascadia Process Solutions"
+  business_model: "bpm"  # saas | consultancy | bpm
+
+# ── Schema: structural dimensions that define the shape of generated data ─────
+schema:
+  regions:
+    - AMER
+    - EMEA
+    - APAC
+
+  service_lines:
+    - "Finance & Accounting"
+    - "HR Operations"
+    - "Customer Operations"
+    - "Supply Chain"
+
+  delivery_geos:
+    - India
+    - Philippines
+    - "Costa Rica"
+    - Poland
+    - "United States"
+    - "United Kingdom"
+
+  departments:
+    - Delivery
+    - Sales
+    - "Sales & Marketing"  # bundled — COFA conflict with Meridian (M separates Sales / Marketing)
+    - Finance
+    - HR
+    - IT
+    - Legal
+    - Operations
+    - "G&A"
+
+  cost_centers:
+    - "DC-Mumbai"
+    - "DC-Manila"
+    - "DC-San Jose CR"
+    - "DC-Warsaw"
+    - "DC-Chicago"
+    - "DC-London"
+    - "Corporate-HQ"
+    - "Corporate-Regional"
+
+# ── Company Profile: who the company is at t=0 ───────────────────────────────
+company_profile:
+
+  # ---------------------------------------------------------------------------
+  # Revenue model — BPM specific (managed services + per-FTE + per-transaction)
+  # ---------------------------------------------------------------------------
+  starting_annual_revenue: 1000.0       # $1B in millions
+  revenue_growth_rate_annual: 0.08      # 8% for growing BPM
+  revenue_growth_deceleration: 0.01
+
+  # Revenue streams (sums to 1.00)
+  managed_services_pct: 0.44            # $440M — fixed monthly fees
+  per_fte_revenue_pct: 0.37             # $370M — FTE count × monthly rate
+  per_transaction_pct: 0.19             # $190M — volume × price per transaction
+
+  # Service line revenue distribution (sums to 1.00)
+  sl_finance_accounting_pct: 0.30       # $300M
+  sl_hr_operations_pct: 0.25            # $250M
+  sl_customer_operations_pct: 0.28      # $280M
+  sl_supply_chain_pct: 0.17             # $170M
+
+  # ---------------------------------------------------------------------------
+  # Delivery model — FTE counts and compensation
+  # ---------------------------------------------------------------------------
+  onshore_fte_count: 1500
+  offshore_fte_count: 21000
+  nearshore_fte_count: 5250
+  bench_fte_count: 4200
+  onshore_avg_comp: 0.070               # $70K in millions
+  offshore_avg_comp: 0.020              # $20K in millions
+  nearshore_avg_comp: 0.020             # $20K in millions
+
+  # ---------------------------------------------------------------------------
+  # COGS breakdown — BPM specific
+  # $1B * 0.71 = $710M COGS → 29% gross margin
+  # ---------------------------------------------------------------------------
+  cogs_pct: 0.71                        # 71% of revenue
+  cogs_onshore_pct: 0.110               # of COGS ~$78M
+  cogs_offshore_pct: 0.438              # of COGS ~$311M
+  cogs_nearshore_pct: 0.110             # of COGS ~$78M
+  cogs_bench_pct: 0.096                 # of COGS ~$68M (idle/between-contract delivery staff)
+  cogs_delivery_center_ops_pct: 0.084   # of COGS ~$60M
+  cogs_subcontractor_pct: 0.061         # of COGS ~$43M
+  cogs_benefits_pct: 0.101              # of COGS ~$72M — COFA conflict: C separates benefits
+  # from comp. M bundles benefits into consultant comp (one COGS line).
+  # Gross margin not comparable without reclassification.
+
+  # ---------------------------------------------------------------------------
+  # OpEx — percentages of revenue
+  # GP = $290M, OpEx ≈ $432M → EBITDA ≈ -$142M
+  # Sales & Marketing BUNDLED (COFA conflict: M separates Sales / Marketing)
+  # ---------------------------------------------------------------------------
+  sm_pct: 0.132                         # Sales & Marketing BUNDLED — COFA conflict with Meridian
+  ga_pct: 0.165                         # G&A — large corporate overhead
+  tech_automation_pct: 0.080            # Technology & Automation (partially capitalized — COFA conflict)
+  facilities_corporate_pct: 0.055       # Corporate facilities
+  recruiting_capitalized_pct: 0.008     # Capitalized recruiting for new contracts — COFA conflict
+  # Note: C capitalizes recruiting tied to new contracts ($8M/yr). M expenses all.
+  # Note: C capitalizes automation platform dev ($12M/yr). M expenses all tech.
+
+  # Capitalization amounts (annual, creates COFA conflicts)
+  capitalized_recruiting_annual: 8.0    # $8M — would be OpEx under Meridian's treatment
+  capitalized_automation_annual: 12.0   # $12M — would be OpEx under Meridian's treatment
+
+  # ---------------------------------------------------------------------------
+  # Balance sheet
+  # ---------------------------------------------------------------------------
+  dso_days: 52.0
+  capex_pct_revenue: 0.035              # higher capex (delivery centers)
+  tax_rate: 0.22                        # lower effective rate (offshore operations)
+  starting_cash: 145.0
+  starting_ar: 144.0
+  starting_unbilled_revenue: 28.0
+  starting_prepaid: 22.0
+  starting_pp_e: 185.0                  # delivery center equipment
+  starting_intangibles: 95.0            # capitalized software/automation
+  starting_goodwill: 320.0
+  starting_ap: 65.0
+  starting_accrued_expenses: 110.0
+  deferred_rev_months: 2.0              # some upfront billing on managed services
+
+  # ---------------------------------------------------------------------------
+  # People
+  # ---------------------------------------------------------------------------
+  starting_delivery_count: 35000        # W-2 only — COFA conflict: C counts W-2 only, M includes contractors
+  starting_corporate_count: 3000
+  starting_headcount: 38000
+  bench_delivery_count: 4200
+
+  # Department splits (of corporate staff)
+  hc_sales_marketing_pct: 0.167         # bundled (COFA conflict: M splits Sales / Marketing)
+  hc_finance_pct: 0.117                 # 350 people
+  hc_hr_pct: 0.067                      # 200 people
+  hc_it_pct: 0.093                      # 280 people
+  hc_legal_pct: 0.027                   # 80 people
+  hc_operations_pct: 0.20
+  hc_ga_pct: 0.329
+
+  attrition_rate_annual: 0.22           # high for BPM delivery staff
+  attrition_corporate_annual: 0.10      # lower for corporate
+
+  # ---------------------------------------------------------------------------
+  # Regional mix (sums to 1.00)
+  # ---------------------------------------------------------------------------
+  region_amer: 0.55                     # $550M
+  region_emea: 0.25                     # $250M
+  region_apac: 0.20                     # $200M
+
+  # ---------------------------------------------------------------------------
+  # Customers and contracts
+  # ---------------------------------------------------------------------------
+  starting_customer_count: 200
+  avg_contract_value: 5.0               # $5M ACV (millions)
+  avg_contract_duration_years: 3.5
+  avg_fte_per_contract: 140
+
+  # ---------------------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------------------
+  pipeline_multiple: 2.2
+  win_rate: 42.0                        # higher win rate, fewer but larger deals
+  sales_cycle_days: 150.0               # long sales cycles for BPM
+
+  # ---------------------------------------------------------------------------
+  # Delivery metrics
+  # ---------------------------------------------------------------------------
+  process_count: 850                    # total processes managed
+  automation_rate: 0.35                 # 35% of processes automated
+  sla_attainment: 0.972                 # 97.2%
+
+  # ---------------------------------------------------------------------------
+  # Support
+  # ---------------------------------------------------------------------------
+  tickets_per_customer_annual: 24.0     # more support-heavy
+  csat_base: 4.05
+  nps_base: 35
+
+  # ---------------------------------------------------------------------------
+  # Depreciation — COFA conflict with Meridian
+  # C uses accelerated/3yr on delivery center equipment
+  # M uses straight-line/5yr
+  # ---------------------------------------------------------------------------
+  depreciation_method: "accelerated"
+  depreciation_years: 3                 # 3-year accelerated vs Meridian's 5-year straight-line
+
+realism_params:
+  revenue_growth_deceleration: 0.01
+  cogs_improvement_annual: 0.005        # automation improving delivery costs
+  dso_improvement_annual: 1.0
+  attrition_improvement_annual: 0.01
+  automation_improvement_annual: 0.03   # automation rate increases 3pp/year
+
+vendors:
+  sor_vendors_by_domain:
+    customer:
+      - salesforce.com
+    employee:
+      - bamboohr.com
+    financial:
+      - oracle.com
+    service_management:
+      - servicenow.com
+    project:
+      - atlassian.com
+    automation:
+      - blueprism.com
+
+  systems:
+    - name: "Salesforce Professional"
+      vendor: salesforce.com
+      type: CRM
+      domain: customer
+    - name: "Oracle EBS R12"
+      vendor: oracle.com
+      type: ERP
+      domain: financial
+    - name: "BambooHR"
+      vendor: bamboohr.com
+      type: HCM
+      domain: employee
+    - name: "ServiceNow"
+      vendor: servicenow.com
+      type: ITSM
+      domain: service_management
+    - name: "Jira"
+      vendor: atlassian.com
+      type: PM
+      domain: project
+    - name: "Blue Prism"
+      vendor: blueprism.com
+      type: RPA
+      domain: automation

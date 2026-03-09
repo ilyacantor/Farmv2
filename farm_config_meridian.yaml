@@ -1,0 +1,215 @@
+# =============================================================================
+# Farm Financial Model Configuration — Meridian Partners
+# =============================================================================
+# Entity: Meridian Partners — $5B global management consultancy
+# Business model: Consultancy (project-based revenue, not ARR/SaaS)
+#
+# COFA conflicts vs Cascadia (SaaS baseline):
+#   - Consultant comp includes benefits (Meridian bundles; Cascadia separates)
+#   - Recruiting is fully expensed (Cascadia capitalizes a portion)
+#   - Sales and Marketing are SEPARATE line items (Cascadia bundles S&M)
+#   - Depreciation: straight-line 5yr (Cascadia uses accelerated)
+# =============================================================================
+
+entity:
+  entity_id: "meridian"
+  entity_name: "Meridian Partners"
+  business_model: "consultancy"  # saas | consultancy | bpm
+
+schema:
+  regions:
+    - AMER
+    - EMEA
+    - APAC
+    - LATAM
+  practice_areas:
+    - Strategy
+    - Operations
+    - Technology
+    - Risk
+    - "Digital/AI"
+    - Commercial
+  departments:
+    - Consulting
+    - Sales
+    - Marketing
+    - Finance
+    - HR
+    - IT
+    - Legal
+    - "G&A"
+  levels:
+    - Partner
+    - Principal
+    - Senior Manager
+    - Manager
+    - Senior Consultant
+    - Consultant
+    - Analyst
+
+company_profile:
+  # ---------------------------------------------------------------------------
+  # Revenue model — project-based, NOT ARR
+  # ---------------------------------------------------------------------------
+  starting_annual_revenue: 5000.0       # $5B in millions
+  revenue_growth_rate_annual: 0.06      # 6% for mature consultancy
+  revenue_growth_deceleration: 0.005
+
+  # Revenue mix
+  tm_revenue_pct: 0.65                  # 65% time & materials
+  fixed_fee_revenue_pct: 0.35           # 35% fixed-fee projects
+
+  # Practice area revenue distribution (sums to 1.00)
+  practice_strategy_pct: 0.18           # $900M
+  practice_operations_pct: 0.22         # $1,100M
+  practice_technology_pct: 0.20         # $1,000M
+  practice_risk_pct: 0.12              # $600M
+  practice_digital_ai_pct: 0.16        # $800M
+  practice_commercial_pct: 0.12        # $600M
+
+  # ---------------------------------------------------------------------------
+  # Billing rates and utilization
+  # ---------------------------------------------------------------------------
+  avg_billing_rate: 350.0               # $/hour blended across levels
+  utilization_rate: 0.72                # 72% billable
+  realization_rate: 0.94                # 94% of billed collected
+
+  # ---------------------------------------------------------------------------
+  # COGS breakdown — consultancy specific
+  # $5B * 0.61 = $3,050M COGS → 39% gross margin
+  # ---------------------------------------------------------------------------
+  cogs_pct: 0.61                        # 61% of revenue
+  cogs_consultant_comp_pct: 0.62        # $1,891M — includes benefits (COFA conflict: M bundles benefits)
+  cogs_bench_pct: 0.267                 # ~$814M bench cost
+  cogs_subcontractor_pct: 0.082         # ~$250M
+  cogs_travel_pct: 0.031                # ~$95M
+  # COGS component pcts sum to 1.000
+
+  # ---------------------------------------------------------------------------
+  # OpEx — percentages of revenue
+  # Sales and Marketing are SEPARATE (COFA conflict: Cascadia bundles S&M)
+  # ---------------------------------------------------------------------------
+  sales_pct: 0.04                       # 4% — $200M
+  marketing_pct: 0.025                  # 2.5% — $125M
+  rd_pct: 0.015                         # 1.5% — $75M (methodology/tools dev)
+  ga_pct: 0.055                         # 5.5% — $275M
+  da_pct: 0.02                          # 2% — $100M (straight-line 5yr — COFA conflict: different depreciation method)
+  facilities_pct: 0.005                 # 0.5% — $25M
+  recruiting_pct: 0.01                  # 1% — $50M (fully expensed — COFA conflict: Cascadia capitalizes)
+  # Total OpEx: 17% of revenue = $850M
+  # EBIT: revenue - COGS - OpEx = $5,000M - $3,050M - $850M = $1,100M (22% margin)
+
+  # ---------------------------------------------------------------------------
+  # Balance sheet
+  # ---------------------------------------------------------------------------
+  dso_days: 58.0                        # consultancies have longer DSO
+  capex_pct_revenue: 0.015
+  tax_rate: 0.24
+  starting_cash: 890.0
+  starting_ar: 805.0                    # high AR typical for consultancy
+  starting_unbilled_revenue: 340.0      # WIP (work in progress)
+  starting_prepaid: 85.0
+  starting_pp_e: 420.0
+  starting_intangibles: 180.0
+  starting_goodwill: 2400.0             # large goodwill from prior acquisitions
+  starting_ap: 195.0
+  starting_accrued_expenses: 620.0
+  deferred_rev_months: 1.5              # low deferred rev for consultancy (billed as delivered)
+
+  # ---------------------------------------------------------------------------
+  # People
+  # ---------------------------------------------------------------------------
+  starting_consultant_count: 25000
+  starting_corporate_count: 5000
+  starting_headcount: 30000
+  bench_consultant_count: 4500
+  bench_monthly_cost: 0.0151            # $15.1K/month per bench consultant (in millions)
+
+  # Department splits (of corporate staff, sums to ~1.00)
+  hc_sales_pct: 0.20                    # 1,000
+  hc_marketing_pct: 0.10                # 500
+  hc_finance_pct: 0.08                  # 400
+  hc_hr_pct: 0.05                       # 250
+  hc_it_pct: 0.12                       # 600
+  hc_legal_pct: 0.024                   # 120
+  hc_ga_pct: 0.406                      # 2,030
+  # Sum: 0.98 (residual absorbed by G&A rounding)
+
+  attrition_rate_annual: 0.15           # higher for consultancy
+
+  # ---------------------------------------------------------------------------
+  # Regional mix (sums to 1.00)
+  # ---------------------------------------------------------------------------
+  region_amer: 0.45                     # $2,250M
+  region_emea: 0.30                     # $1,500M
+  region_apac: 0.18                     # $900M
+  region_latam: 0.07                    # $350M
+
+  # ---------------------------------------------------------------------------
+  # Customers and engagements
+  # ---------------------------------------------------------------------------
+  starting_customer_count: 1200
+  avg_engagement_value: 4.2             # $4.2M average engagement value (millions)
+  avg_engagements_per_customer: 2.3
+
+  # ---------------------------------------------------------------------------
+  # Pipeline
+  # ---------------------------------------------------------------------------
+  pipeline_multiple: 2.8                # lower for consultancy (longer cycles, bigger deals)
+  win_rate: 35.0                        # percent
+  sales_cycle_days: 120.0
+
+  # ---------------------------------------------------------------------------
+  # Support / delivery
+  # ---------------------------------------------------------------------------
+  tickets_per_customer_annual: 8.0
+  csat_base: 4.25
+  nps_base: 45
+
+realism_params:
+  revenue_growth_deceleration: 0.005
+  cogs_improvement_annual: 0.003
+  dso_improvement_annual: 1.5
+  attrition_improvement_annual: 0.008
+  utilization_improvement_annual: 0.005
+
+vendors:
+  sor_vendors_by_domain:
+    customer:
+      - salesforce.com
+    employee:
+      - workday.com
+    financial:
+      - sap.com
+    project:
+      - kantata.com
+    service_management:
+      - servicenow.com
+    travel:
+      - concur.com
+
+  systems:
+    - name: "Salesforce Enterprise"
+      vendor: salesforce.com
+      type: CRM
+      domain: customer
+    - name: "SAP S/4HANA"
+      vendor: sap.com
+      type: ERP
+      domain: financial
+    - name: "Workday"
+      vendor: workday.com
+      type: HCM
+      domain: employee
+    - name: "Kantata"
+      vendor: kantata.com
+      type: PSA
+      domain: project
+    - name: "ServiceNow"
+      vendor: servicenow.com
+      type: ITSM
+      domain: service_management
+    - name: "Concur"
+      vendor: concur.com
+      type: T&E
+      domain: travel
