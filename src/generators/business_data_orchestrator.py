@@ -97,6 +97,7 @@ class BusinessDataOrchestrator:
         self.manifest: Optional[Dict[str, Any]] = None
         self.push_results: List[Dict[str, Any]] = []
         self.run_id: Optional[str] = None
+        self._multi_entity_ids: set = set()  # Populated by generate_multi_entity
 
     def generate_snapshot_name(self) -> str:
         """Generate a deterministic cloudedge-xxxx snapshot name from the seed."""
@@ -273,37 +274,59 @@ class BusinessDataOrchestrator:
         _CHUNK_SIZE = 5000  # Max rows per POST to avoid 26MB+ payloads blocking DCL
 
         pipe_tasks = []
-        for system_name, pipes in self.generated_data.items():
-            for pipe_name, payload in pipes.items():
-                if pipe_name.startswith("_"):
-                    continue
-                if not isinstance(payload, dict) or "data" not in payload:
-                    continue
-                meta = payload.get("meta", {})
-                rows = payload.get("data", [])
-                pipe_id = meta.get("pipe_id", f"{system_name}_{pipe_name}")
-                source_system = meta.get("source_system", system_name)
-                schema_version = meta.get("schema_version", "1.0")
 
-                if len(rows) > _CHUNK_SIZE:
-                    for i in range(0, len(rows), _CHUNK_SIZE):
-                        pipe_tasks.append({
-                            "pipe_id": pipe_id,
-                            "source_system": source_system,
-                            "rows": rows[i:i + _CHUNK_SIZE],
-                            "schema_version": schema_version,
-                        })
-                    logger.info(
-                        f"Chunked {pipe_id} ({source_system}): "
-                        f"{len(rows)} rows → {(len(rows) + _CHUNK_SIZE - 1) // _CHUNK_SIZE} chunks"
-                    )
-                else:
+        def _collect_pipe(entity_id, pipe_id, source_system, rows, schema_version):
+            """Add a pipe (possibly chunked) to the task list."""
+            if len(rows) > _CHUNK_SIZE:
+                for i in range(0, len(rows), _CHUNK_SIZE):
                     pipe_tasks.append({
                         "pipe_id": pipe_id,
                         "source_system": source_system,
-                        "rows": rows,
+                        "rows": rows[i:i + _CHUNK_SIZE],
                         "schema_version": schema_version,
+                        "entity_id": entity_id,
                     })
+                logger.info(
+                    f"Chunked {pipe_id} ({source_system}): "
+                    f"{len(rows)} rows → {(len(rows) + _CHUNK_SIZE - 1) // _CHUNK_SIZE} chunks"
+                )
+            else:
+                pipe_tasks.append({
+                    "pipe_id": pipe_id,
+                    "source_system": source_system,
+                    "rows": rows,
+                    "schema_version": schema_version,
+                    "entity_id": entity_id,
+                })
+
+        for top_key, top_value in self.generated_data.items():
+            if top_key in self._multi_entity_ids:
+                # Multi-entity mode: top_key = entity_id, top_value = {system_name: gen_output}
+                eid = top_key
+                for sys_name, payload in top_value.items():
+                    if sys_name.startswith("_"):
+                        continue
+                    if not isinstance(payload, dict) or "data" not in payload:
+                        continue
+                    meta = payload.get("meta", {})
+                    rows = payload.get("data", [])
+                    pipe_id = meta.get("pipe_id", f"{sys_name}")
+                    source_system = meta.get("source_system", sys_name)
+                    schema_version = meta.get("schema_version", "1.0")
+                    _collect_pipe(eid, pipe_id, source_system, rows, schema_version)
+            else:
+                # Single-entity mode: top_key = system_name, top_value = gen_output
+                for pipe_name, payload in top_value.items():
+                    if pipe_name.startswith("_"):
+                        continue
+                    if not isinstance(payload, dict) or "data" not in payload:
+                        continue
+                    meta = payload.get("meta", {})
+                    rows = payload.get("data", [])
+                    pipe_id = meta.get("pipe_id", f"{top_key}_{pipe_name}")
+                    source_system = meta.get("source_system", top_key)
+                    schema_version = meta.get("schema_version", "1.0")
+                    _collect_pipe(None, pipe_id, source_system, rows, schema_version)
 
         logger.info(f"Pushing {len(pipe_tasks)} pipes in parallel (max 5 concurrent)")
         semaphore = asyncio.Semaphore(5)
@@ -322,6 +345,8 @@ class BusinessDataOrchestrator:
                 "row_count": len(rows),
                 "rows": rows,
             }
+            if task.get("entity_id"):
+                dcl_body["entity_id"] = task["entity_id"]
             push_headers = {**base_headers, "x-pipe-id": pipe_id}
 
             async with semaphore:
@@ -594,6 +619,7 @@ class BusinessDataOrchestrator:
 
             # Store generated data keyed by entity
             self.generated_data[entity_id] = entity_data
+            self._multi_entity_ids.add(entity_id)
 
         # Build combining financial statements if we have exactly 2 entities
         combining_result = None
