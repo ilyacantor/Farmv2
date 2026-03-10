@@ -8,6 +8,7 @@ and retrieve ground truth manifests for verification.
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -127,6 +128,74 @@ async def generate_business_data(request: GenerateRequest):
         generation_errors=generation_errors,
         push_results=push_results,
     )
+
+
+@router.post("/generate-multi-entity")
+async def generate_multi_entity(
+    entities: str = Query(
+        default="meridian,cascadia",
+        description="Comma-separated entity names (maps to farm_config_{name}.yaml)",
+    ),
+    seed: int = Query(default=42, description="Random seed for deterministic generation"),
+    push_to_dcl: bool = Query(default=True, description="Whether to push generated data to DCL"),
+):
+    """
+    Generate data for multiple business entities and produce a unified manifest.
+
+    Each entity name maps to a config file: farm_config_{entity}.yaml.
+    The orchestrator generates full financial models per entity plus
+    combining statements and overlap data.
+    """
+    entity_names = [e.strip() for e in entities.split(",") if e.strip()]
+    if not entity_names:
+        raise HTTPException(status_code=400, detail="No entity names provided")
+
+    # Resolve config file paths
+    config_dir = Path(__file__).resolve().parents[2]  # farm/ root
+    entity_configs = []
+    for name in entity_names:
+        config_path = config_dir / f"farm_config_{name}.yaml"
+        if not config_path.exists():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Config file not found for entity '{name}': {config_path}",
+            )
+        entity_configs.append(str(config_path))
+
+    logger.info(
+        f"Starting multi-entity generation: entities={entity_names}, "
+        f"seed={seed}, configs={entity_configs}"
+    )
+
+    orchestrator = BusinessDataOrchestrator(seed=seed)
+
+    summary = orchestrator.generate_multi_entity(entity_configs)
+
+    run_id = summary["run_id"]
+    await _store_run(run_id, orchestrator)
+
+    # Optionally push to DCL
+    push_results = []
+    if push_to_dcl:
+        push_results = await orchestrator.push_to_dcl()
+        if push_results:
+            try:
+                await update_manifest_push_results(run_id, push_results)
+                logger.info(f"DCL push results persisted for multi-entity run {run_id}")
+            except Exception as e:
+                logger.error(f"Failed to persist push results for {run_id}: {e}")
+
+    manifest = orchestrator.get_manifest() or {}
+
+    return JSONResponse(content={
+        "run_id": run_id,
+        "status": "completed",
+        "manifest_version": manifest.get("manifest_version", "3.0"),
+        "entity_count": summary["entity_count"],
+        "entities": summary["entities"],
+        "cofa_conflict_count": summary.get("cofa_conflict_count", 0),
+        "push_results": push_results,
+    })
 
 
 @router.get("/ground-truth/{run_id}")
