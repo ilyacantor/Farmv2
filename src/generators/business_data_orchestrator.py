@@ -299,34 +299,47 @@ class BusinessDataOrchestrator:
                     "entity_id": entity_id,
                 })
 
-        for top_key, top_value in self.generated_data.items():
-            if top_key in self._multi_entity_ids:
-                # Multi-entity mode: top_key = entity_id, top_value = {system_name: gen_output}
-                eid = top_key
-                for sys_name, payload in top_value.items():
-                    if sys_name.startswith("_"):
-                        continue
-                    if not isinstance(payload, dict) or "data" not in payload:
-                        continue
-                    meta = payload.get("meta", {})
-                    rows = payload.get("data", [])
-                    pipe_id = meta.get("pipe_id", f"{sys_name}")
-                    source_system = meta.get("source_system", sys_name)
-                    schema_version = meta.get("schema_version", "1.0")
-                    _collect_pipe(eid, pipe_id, source_system, rows, schema_version)
+        def _collect_from_gen_output(gen_output: dict, system_name: str, entity_id=None):
+            """Extract pipes from a generator's output dict.
+
+            Generator output is {pipe_name: {"data": [...], "meta": {...}}}.
+            Some generators return a flat {"data": [...]} if single-pipe.
+            """
+            if not isinstance(gen_output, dict):
+                return
+            if "data" in gen_output:
+                # Flat single-pipe output: {"data": [...], "meta": {...}}
+                meta = gen_output.get("meta", {})
+                rows = gen_output.get("data", [])
+                pipe_id = meta.get("pipe_id", system_name)
+                source_system = meta.get("source_system", system_name)
+                schema_version = meta.get("schema_version", "1.0")
+                _collect_pipe(entity_id, pipe_id, source_system, rows, schema_version)
             else:
-                # Single-entity mode: top_key = system_name, top_value = gen_output
-                for pipe_name, payload in top_value.items():
+                # Multi-pipe output: {pipe_name: {"data": [...], "meta": {...}}}
+                for pipe_name, payload in gen_output.items():
                     if pipe_name.startswith("_"):
                         continue
                     if not isinstance(payload, dict) or "data" not in payload:
                         continue
                     meta = payload.get("meta", {})
                     rows = payload.get("data", [])
-                    pipe_id = meta.get("pipe_id", f"{top_key}_{pipe_name}")
-                    source_system = meta.get("source_system", top_key)
+                    pipe_id = meta.get("pipe_id", f"{system_name}_{pipe_name}")
+                    source_system = meta.get("source_system", system_name)
                     schema_version = meta.get("schema_version", "1.0")
-                    _collect_pipe(None, pipe_id, source_system, rows, schema_version)
+                    _collect_pipe(entity_id, pipe_id, source_system, rows, schema_version)
+
+        for top_key, top_value in self.generated_data.items():
+            if top_key in self._multi_entity_ids:
+                # Multi-entity: top_key=entity_id, top_value={system_name: gen_output}
+                eid = top_key
+                for sys_name, gen_output in top_value.items():
+                    if sys_name.startswith("_"):
+                        continue
+                    _collect_from_gen_output(gen_output, sys_name, entity_id=eid)
+            else:
+                # Single-entity: top_key=system_name, top_value=gen_output
+                _collect_from_gen_output(top_value, top_key)
 
         logger.info(f"Pushing {len(pipe_tasks)} pipes in parallel (max 5 concurrent)")
         semaphore = asyncio.Semaphore(5)
