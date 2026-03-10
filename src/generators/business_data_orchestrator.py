@@ -270,6 +270,8 @@ class BusinessDataOrchestrator:
             f"run_id={dcl_run_id}, snapshot={snapshot_name}, url={self.dcl_ingest_url}"
         )
 
+        _CHUNK_SIZE = 5000  # Max rows per POST to avoid 26MB+ payloads blocking DCL
+
         pipe_tasks = []
         for system_name, pipes in self.generated_data.items():
             for pipe_name, payload in pipes.items():
@@ -278,12 +280,30 @@ class BusinessDataOrchestrator:
                 if not isinstance(payload, dict) or "data" not in payload:
                     continue
                 meta = payload.get("meta", {})
-                pipe_tasks.append({
-                    "pipe_id": meta.get("pipe_id", f"{system_name}_{pipe_name}"),
-                    "source_system": meta.get("source_system", system_name),
-                    "rows": payload.get("data", []),
-                    "schema_version": meta.get("schema_version", "1.0"),
-                })
+                rows = payload.get("data", [])
+                pipe_id = meta.get("pipe_id", f"{system_name}_{pipe_name}")
+                source_system = meta.get("source_system", system_name)
+                schema_version = meta.get("schema_version", "1.0")
+
+                if len(rows) > _CHUNK_SIZE:
+                    for i in range(0, len(rows), _CHUNK_SIZE):
+                        pipe_tasks.append({
+                            "pipe_id": pipe_id,
+                            "source_system": source_system,
+                            "rows": rows[i:i + _CHUNK_SIZE],
+                            "schema_version": schema_version,
+                        })
+                    logger.info(
+                        f"Chunked {pipe_id} ({source_system}): "
+                        f"{len(rows)} rows → {(len(rows) + _CHUNK_SIZE - 1) // _CHUNK_SIZE} chunks"
+                    )
+                else:
+                    pipe_tasks.append({
+                        "pipe_id": pipe_id,
+                        "source_system": source_system,
+                        "rows": rows,
+                        "schema_version": schema_version,
+                    })
 
         logger.info(f"Pushing {len(pipe_tasks)} pipes in parallel (max 5 concurrent)")
         semaphore = asyncio.Semaphore(5)

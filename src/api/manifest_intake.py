@@ -801,14 +801,45 @@ async def _execute_single_manifest(
 
     schema_hash = _compute_schema_hash(rows)
     t_phase = time.monotonic()
-    push_result = await _push_to_dcl(
-        manifest=manifest,
-        rows=rows,
-        farm_run_id=farm_run_id,
-        source_system=system,
-        schema_hash=schema_hash,
-        http_client=http_client,
-    )
+
+    # Chunk large payloads to avoid 26MB+ JSON blocking DCL's event loop.
+    # Each chunk shares the same pipe_id and run_id; DCL merges them via
+    # the IngestStore which appends rows per (run_id, pipe_id) key.
+    _CHUNK_SIZE = 5000
+    if len(rows) > _CHUNK_SIZE:
+        chunks = [rows[i:i + _CHUNK_SIZE] for i in range(0, len(rows), _CHUNK_SIZE)]
+        logger.info(
+            f"Chunking {pipe_id}: {len(rows)} rows → {len(chunks)} chunks of ≤{_CHUNK_SIZE}"
+        )
+        push_result = None
+        for chunk_idx, chunk in enumerate(chunks):
+            chunk_result = await _push_to_dcl(
+                manifest=manifest,
+                rows=chunk,
+                farm_run_id=farm_run_id,
+                source_system=system,
+                schema_hash=schema_hash,
+                http_client=http_client,
+            )
+            if push_result is None or chunk_result.status != "success":
+                push_result = chunk_result
+            if chunk_result.status != "success":
+                logger.error(
+                    f"Chunk {chunk_idx+1}/{len(chunks)} failed for {pipe_id}: "
+                    f"{chunk_result.error}"
+                )
+                break
+        rows_pushed = len(rows) if push_result.status == "success" else 0
+    else:
+        push_result = await _push_to_dcl(
+            manifest=manifest,
+            rows=rows,
+            farm_run_id=farm_run_id,
+            source_system=system,
+            schema_hash=schema_hash,
+            http_client=http_client,
+        )
+
     t_push_ms = int((time.monotonic() - t_phase) * 1000)
     del rows, pipe_payload  # Release row data after push; only push_result metadata needed
 
