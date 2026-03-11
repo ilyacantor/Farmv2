@@ -739,6 +739,7 @@ def _build_v2_dimensional_truth(
         "headcount_by_geo": {"source": "workday"},
         "headcount_by_practice": {"source": "workday"},
         "headcount_by_level": {"source": "workday"},
+        "revenue_by_customer": {"source": "salesforce+netsuite"},
         "new_logo_revenue_by_region": {"source": "salesforce"},
         "cloud_spend_by_resource_type": {"source": "aws_cost_explorer"},
     }
@@ -760,6 +761,7 @@ def _build_v2_dimensional_truth(
         dims["headcount_by_geo"][q] = dict(fmq.headcount_by_geo) if fmq.headcount_by_geo else {}
         dims["headcount_by_practice"][q] = dict(fmq.headcount_by_practice) if fmq.headcount_by_practice else {}
         dims["headcount_by_level"][q] = dict(fmq.headcount_by_level) if fmq.headcount_by_level else {}
+        dims["revenue_by_customer"][q] = {k: _r(v) for k, v in fmq.revenue_by_customer.items()} if fmq.revenue_by_customer else {}
         dims["new_logo_revenue_by_region"][q] = {k: _r(v) for k, v in fmq.new_logo_revenue_by_region.items()}
         dims["cloud_spend_by_resource_type"][q] = {k: _r(v) for k, v in fmq.cloud_spend_by_resource_type.items()}
 

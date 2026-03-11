@@ -488,7 +488,52 @@ class Quarter:
     headcount_by_geo: Dict[str, int] = field(default_factory=dict)
     headcount_by_practice: Dict[str, int] = field(default_factory=dict)   # consultancy: practice areas, BPM: service lines
     headcount_by_level: Dict[str, int] = field(default_factory=dict)
+    revenue_by_customer: Dict[str, float] = field(default_factory=dict)   # top 20 customers by revenue
     new_logo_revenue_by_region: Dict[str, float] = field(default_factory=dict)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Top customers for revenue breakdown (used across models)
+_TOP_CUSTOMERS = [
+    "JPMorgan Chase", "Amazon", "UnitedHealth Group", "Bank of America",
+    "AT&T", "Pfizer", "Walmart", "Citigroup", "Johnson & Johnson",
+    "Verizon", "General Motors", "Procter & Gamble", "Goldman Sachs",
+    "Honeywell", "Intel", "Microsoft", "Oracle", "Deloitte",
+    "Accenture", "IBM",
+]
+
+
+def _generate_top_customer_revenue(revenue: float, customer_count: int,
+                                   seed: int, quarter_index: int) -> Dict[str, float]:
+    """Generate top-20 customer revenue using Pareto distribution.
+
+    Revenue follows 80/20 rule: top 20 customers get ~40% of total.
+    Returns dict of customer_name -> quarterly revenue in millions.
+    """
+    import random as _rng_mod
+    rng = _rng_mod.Random(seed + quarter_index * 777)
+
+    n_top = min(20, customer_count)
+    if n_top == 0:
+        return {}
+
+    # Pareto weights: each successive customer gets ~75% of previous
+    weights = [0.75 ** i for i in range(n_top)]
+    total_weight = sum(weights)
+
+    # Top 20 get ~40% of total revenue
+    top_revenue = revenue * 0.40
+    result = {}
+    for i in range(n_top):
+        share = (weights[i] / total_weight) * top_revenue
+        # Add slight jitter per quarter
+        jittered = share * rng.uniform(0.92, 1.08)
+        result[_TOP_CUSTOMERS[i]] = _r(jittered)
+
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1010,6 +1055,11 @@ class FinancialModel:
             "APAC": _r(q.new_logo_revenue * a.region_apac),
         }
 
+        # Top customer revenue breakdown
+        q.revenue_by_customer = _generate_top_customer_revenue(
+            q.revenue, q.customer_count, hash(self.a.entity_id or 'default') % 10000, q.quarter_index
+        )
+
         # Dimensional metadata — period-level identity for every Quarter record
         year = int(q.quarter[:4])
         q_num = int(q.quarter[-1])
@@ -1197,6 +1247,11 @@ class FinancialModel:
         q.churned_customers = max(int(round(prev_cust * churn_rate_q * 0.5)), 1)  # logo churn < ARR churn
         q.new_customers = max(int(round(q.revenue * 4 / a.avg_engagement_value / 8)), 1)  # rough new customer rate
         q.customer_count = prev_cust + q.new_customers - q.churned_customers
+
+        # Top customer revenue breakdown
+        q.revenue_by_customer = _generate_top_customer_revenue(
+            q.revenue, q.customer_count, hash(self.a.entity_id or 'default') % 10000, q.quarter_index
+        )
 
         q.pipeline = _r(q.revenue * a.pipeline_multiple)
         q.win_rate = _r(a.win_rate + years_elapsed * 0.3, 1)
@@ -1545,6 +1600,11 @@ class FinancialModel:
         regions = {"AMER": a.region_amer, "EMEA": a.region_emea, "APAC": a.region_apac}
         q.revenue_by_region = {k: _r(q.revenue * v) for k, v in regions.items()}
         q.pipeline_by_region = {k: _r(q.pipeline * v) for k, v in regions.items()}
+
+        # Top customer revenue breakdown
+        q.revenue_by_customer = _generate_top_customer_revenue(
+            q.revenue, q.customer_count, hash(self.a.entity_id or 'default') % 10000, q.quarter_index
+        )
 
         year = int(q.quarter[:4])
         q_num = int(q.quarter[-1])

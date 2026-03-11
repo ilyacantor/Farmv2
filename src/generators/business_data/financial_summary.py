@@ -243,6 +243,15 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                     "total_headcount": int(fmq.headcount),
                 })
 
+            # 4. Revenue by customer rows (top 20) — Type A format for DCL materializer
+            for customer, rev in fmq.revenue_by_customer.items():
+                rows.append({
+                    "date": quarter_end,
+                    "quarter_label": fmq.quarter,
+                    "customer": customer,
+                    "total_revenue": rev,
+                })
+
         return {
             "pnl": self.format_dcl_payload(
                 pipe_id=pipe_id,
