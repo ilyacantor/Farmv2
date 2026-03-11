@@ -119,20 +119,20 @@ company_profile:
   # ---------------------------------------------------------------------------
   # People
   # ---------------------------------------------------------------------------
-  starting_consultant_count: 25000
-  starting_corporate_count: 5000
-  starting_headcount: 30000
-  bench_consultant_count: 4500
+  starting_consultant_count: 1100
+  starting_corporate_count: 270
+  starting_headcount: 1370
+  bench_consultant_count: 165
   bench_monthly_cost: 0.0151            # $15.1K/month per bench consultant (in millions)
 
   # Department splits (of corporate staff, sums to ~1.00)
-  hc_sales_pct: 0.20                    # 1,000
-  hc_marketing_pct: 0.10                # 500
-  hc_finance_pct: 0.08                  # 400
-  hc_hr_pct: 0.05                       # 250
-  hc_it_pct: 0.12                       # 600
-  hc_legal_pct: 0.024                   # 120
-  hc_ga_pct: 0.406                      # 2,030
+  hc_sales_pct: 0.20                    # ~54
+  hc_marketing_pct: 0.10                # ~27
+  hc_finance_pct: 0.08                  # ~22
+  hc_hr_pct: 0.05                       # ~14
+  hc_it_pct: 0.12                       # ~32
+  hc_legal_pct: 0.024                   # ~6
+  hc_ga_pct: 0.406                      # ~110
   # Sum: 0.98 (residual absorbed by G&A rounding)
 
   attrition_rate_annual: 0.15           # higher for consultancy
