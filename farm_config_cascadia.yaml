@@ -151,10 +151,10 @@ company_profile:
   # ---------------------------------------------------------------------------
   # People
   # ---------------------------------------------------------------------------
-  starting_delivery_count: 730           # W-2 only — COFA conflict: C counts W-2 only, M includes contractors
-  starting_corporate_count: 180
-  starting_headcount: 910
-  bench_delivery_count: 90
+  starting_delivery_count: 35000         # W-2 only — COFA conflict: C counts W-2 only, M includes contractors
+  starting_corporate_count: 3000
+  starting_headcount: 38000
+  bench_delivery_count: 4200
 
   # Department splits (of corporate staff)
   hc_sales_marketing_pct: 0.167         # bundled (COFA conflict: M splits Sales / Marketing)

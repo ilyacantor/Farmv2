@@ -119,10 +119,10 @@ company_profile:
   # ---------------------------------------------------------------------------
   # People
   # ---------------------------------------------------------------------------
-  starting_consultant_count: 1100
-  starting_corporate_count: 270
-  starting_headcount: 1370
-  bench_consultant_count: 165
+  starting_consultant_count: 25000
+  starting_corporate_count: 5000
+  starting_headcount: 30000
+  bench_consultant_count: 4500
   bench_monthly_cost: 0.0151            # $15.1K/month per bench consultant (in millions)
 
   # Department splits (of corporate staff, sums to ~1.00)
