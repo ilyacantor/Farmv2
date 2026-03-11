@@ -578,7 +578,7 @@ class BusinessDataOrchestrator:
             entity_data: Dict[str, Dict[str, Any]] = {}
             self.profile = profile
             self.model_quarters = quarters
-            generator_specs = self._create_generator_specs()
+            generator_specs = self._create_generator_specs(entity_id=entity_id)
 
             for system_name, spec in generator_specs.items():
                 if system_name not in self.active_systems:
@@ -687,7 +687,7 @@ class BusinessDataOrchestrator:
 
         return summary
 
-    def _create_generator_specs(self) -> Dict[str, Dict[str, Any]]:
+    def _create_generator_specs(self, entity_id: str = "") -> Dict[str, Dict[str, Any]]:
         """
         Instantiate all source system generators with their interface type.
 
@@ -734,6 +734,7 @@ class BusinessDataOrchestrator:
             "financial_summary": {
                 "instance": FinancialSummaryGenerator(
                     model_quarters=self.model_quarters, seed=self.seed + 8,
+                    entity_id=entity_id,
                 ),
                 "interface": "init_profile",
             },

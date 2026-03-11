@@ -75,6 +75,11 @@ class QuarterMetrics:
     # Department headcount
     headcount_by_dept: Dict[str, int] = field(default_factory=dict)
 
+    # Dimensional headcount breakdowns
+    headcount_by_geo: Dict[str, int] = field(default_factory=dict)
+    headcount_by_practice: Dict[str, int] = field(default_factory=dict)  # practice area or service line
+    headcount_by_level: Dict[str, int] = field(default_factory=dict)
+
     # Pipeline by stage (millions USD)
     pipeline_by_stage: Dict[str, float] = field(default_factory=dict)
 
@@ -373,6 +378,9 @@ class BusinessProfile:
                 mttr_hours=round((fmq.mttr_p1_hours * fmq.p1_incidents + fmq.mttr_p2_hours * fmq.p2_incidents) / max(fmq.p1_incidents + fmq.p2_incidents, 1), 1),
                 revenue_by_region=dict(fmq.revenue_by_region),
                 headcount_by_dept=dict(fmq.headcount_by_department),
+                headcount_by_geo=dict(fmq.headcount_by_geo) if fmq.headcount_by_geo else {},
+                headcount_by_practice=dict(fmq.headcount_by_practice) if fmq.headcount_by_practice else {},
+                headcount_by_level=dict(fmq.headcount_by_level) if fmq.headcount_by_level else {},
                 pipeline_by_stage=dict(fmq.pipeline_by_stage),
                 entity_id=getattr(fmq, "entity_id", None),
                 entity_name=getattr(fmq, "entity_name", None),

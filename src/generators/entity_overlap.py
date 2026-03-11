@@ -188,6 +188,7 @@ class OverlapData:
                     }
                     for rd in p.role_detail
                 ],
+                "geo_distribution": getattr(p, '_raw_data', {}).get("geo_distribution"),
             })
 
         meridian_vendors = 2000
@@ -420,80 +421,126 @@ _PEOPLE_OVERLAPS_DATA: List[Dict[str, Any]] = [
         "meridian_headcount": 25000,
         "cascadia_headcount": 6500,
         "combined_headcount": 31500,
-        "role_overlap_examples": ["Managing Director", "Engagement Manager", "Senior Consultant", "Analyst", "Process Lead"],
+        "role_overlap_examples": ["Partner", "Principal", "Senior Manager", "Manager", "Senior Consultant", "Consultant", "Analyst"],
         "definitional_note": "Meridian counts all consultants including contractors. Cascadia counts W-2 delivery staff only — COFA conflict.",
+        # Explicit level pyramid for large functions (pct of function headcount)
+        "level_pyramid": {
+            "Partner":           {"meridian_pct": 0.03, "cascadia_pct": 0.02},
+            "Principal":         {"meridian_pct": 0.06, "cascadia_pct": 0.05},
+            "Senior Manager":    {"meridian_pct": 0.10, "cascadia_pct": 0.10},
+            "Manager":           {"meridian_pct": 0.15, "cascadia_pct": 0.13},
+            "Senior Consultant": {"meridian_pct": 0.22, "cascadia_pct": 0.20},
+            "Consultant":        {"meridian_pct": 0.25, "cascadia_pct": 0.25},
+            "Analyst":           {"meridian_pct": 0.19, "cascadia_pct": 0.25},
+        },
+        "geo_distribution": {
+            "meridian": {"AMER": 0.45, "EMEA": 0.30, "APAC": 0.18, "LATAM": 0.07},
+            "cascadia": {"India": 0.40, "Philippines": 0.25, "Costa Rica": 0.10, "Poland": 0.10, "United States": 0.10, "United Kingdom": 0.05},
+        },
     },
     {
         "function": "Sales",
         "meridian_headcount": 1000,
         "cascadia_headcount": 0,
         "combined_headcount": 1000,
-        "role_overlap_examples": ["CRO", "VP Sales", "Account Director", "Business Development Manager"],
+        "role_overlap_examples": ["CRO", "VP Sales", "Regional Sales Director", "Account Director", "Business Development Manager", "Sales Executive"],
         "definitional_note": "Meridian reports Sales separately. Cascadia bundles Sales & Marketing — COFA conflict.",
+        "geo_distribution": {
+            "meridian": {"AMER": 0.50, "EMEA": 0.28, "APAC": 0.15, "LATAM": 0.07},
+        },
     },
     {
         "function": "Marketing",
         "meridian_headcount": 500,
         "cascadia_headcount": 0,
         "combined_headcount": 500,
-        "role_overlap_examples": ["CMO", "VP Marketing", "Brand Director", "Demand Gen Manager"],
+        "role_overlap_examples": ["CMO", "VP Marketing", "Brand Director", "Demand Gen Manager", "Digital Marketing Lead", "Content Strategist"],
         "definitional_note": "Meridian reports Marketing separately. Cascadia bundles into Sales & Marketing.",
+        "geo_distribution": {
+            "meridian": {"AMER": 0.55, "EMEA": 0.25, "APAC": 0.20},
+        },
     },
     {
         "function": "Sales & Marketing",
         "meridian_headcount": 0,
         "cascadia_headcount": 250,
         "combined_headcount": 250,
-        "role_overlap_examples": ["VP Sales & Marketing", "Account Manager", "Marketing Coordinator"],
+        "role_overlap_examples": ["VP Sales & Marketing", "Account Manager", "Marketing Coordinator", "Sales Representative"],
         "definitional_note": "Cascadia bundles S&M into one department. Meridian separates them — COFA conflict.",
+        "geo_distribution": {
+            "cascadia": {"United States": 0.60, "United Kingdom": 0.25, "India": 0.15},
+        },
     },
     {
         "function": "Finance",
         "meridian_headcount": 400,
         "cascadia_headcount": 175,
         "combined_headcount": 575,
-        "role_overlap_examples": ["CFO", "VP Finance", "Controller", "FP&A Director", "Treasury Manager"],
+        "role_overlap_examples": ["CFO", "VP Finance", "Controller", "FP&A Director", "Treasury Manager", "Senior Accountant", "Financial Analyst"],
         "definitional_note": "Meridian includes finance contractors in headcount. Cascadia counts W-2 only.",
+        "geo_distribution": {
+            "meridian": {"AMER": 0.50, "EMEA": 0.30, "APAC": 0.20},
+            "cascadia": {"United States": 0.55, "India": 0.30, "United Kingdom": 0.15},
+        },
     },
     {
         "function": "HR",
         "meridian_headcount": 250,
         "cascadia_headcount": 100,
         "combined_headcount": 350,
-        "role_overlap_examples": ["CHRO", "VP People", "Talent Acquisition Director", "Benefits Manager"],
+        "role_overlap_examples": ["CHRO", "VP People", "Talent Acquisition Director", "HRBP Manager", "Benefits Manager", "HR Coordinator"],
         "definitional_note": "Meridian HR manages both W-2 and contractor onboarding. Cascadia HR is W-2 only.",
+        "geo_distribution": {
+            "meridian": {"AMER": 0.45, "EMEA": 0.30, "APAC": 0.25},
+            "cascadia": {"United States": 0.50, "India": 0.35, "Philippines": 0.15},
+        },
     },
     {
         "function": "IT",
         "meridian_headcount": 600,
         "cascadia_headcount": 140,
         "combined_headcount": 740,
-        "role_overlap_examples": ["CTO", "VP Infrastructure", "CISO", "Enterprise Architect", "DevOps Lead"],
+        "role_overlap_examples": ["CTO", "VP Infrastructure", "CISO", "Enterprise Architect", "DevOps Lead", "Systems Administrator", "IT Support Analyst"],
         "definitional_note": "Meridian IT includes managed service provider staff. Cascadia IT is internal only.",
+        "geo_distribution": {
+            "meridian": {"AMER": 0.40, "EMEA": 0.25, "APAC": 0.35},
+            "cascadia": {"United States": 0.40, "India": 0.40, "Poland": 0.20},
+        },
     },
     {
         "function": "Operations",
         "meridian_headcount": 0,
         "cascadia_headcount": 300,
         "combined_headcount": 300,
-        "role_overlap_examples": ["COO", "VP Operations", "Delivery Center Manager", "Quality Director"],
+        "role_overlap_examples": ["COO", "VP Operations", "Delivery Center Manager", "Quality Director", "Process Improvement Manager", "Operations Analyst"],
         "definitional_note": "Cascadia has dedicated Operations department for delivery centers. Meridian folds ops into G&A.",
+        "geo_distribution": {
+            "cascadia": {"India": 0.35, "Philippines": 0.25, "United States": 0.20, "Costa Rica": 0.10, "Poland": 0.10},
+        },
     },
     {
         "function": "Legal",
         "meridian_headcount": 120,
         "cascadia_headcount": 40,
         "combined_headcount": 160,
-        "role_overlap_examples": ["General Counsel", "VP Legal", "Corporate Secretary", "Compliance Director"],
+        "role_overlap_examples": ["General Counsel", "VP Legal", "Corporate Secretary", "Compliance Director", "Senior Counsel", "Legal Analyst"],
         "definitional_note": "Both count only internal legal staff. Neither includes outside counsel.",
+        "geo_distribution": {
+            "meridian": {"AMER": 0.60, "EMEA": 0.25, "APAC": 0.15},
+            "cascadia": {"United States": 0.70, "United Kingdom": 0.30},
+        },
     },
     {
         "function": "G&A",
         "meridian_headcount": 2030,
         "cascadia_headcount": 495,
         "combined_headcount": 2525,
-        "role_overlap_examples": ["CEO", "CAO", "VP Strategy", "Executive Assistant", "Facilities Manager"],
+        "role_overlap_examples": ["CEO", "CAO", "VP Strategy", "Executive Assistant", "Facilities Manager", "Administrative Coordinator"],
         "definitional_note": "Meridian absorbs Operations into G&A. Cascadia reports Operations separately.",
+        "geo_distribution": {
+            "meridian": {"AMER": 0.50, "EMEA": 0.25, "APAC": 0.15, "LATAM": 0.10},
+            "cascadia": {"United States": 0.55, "India": 0.25, "Philippines": 0.10, "United Kingdom": 0.10},
+        },
     },
 ]
 
@@ -676,7 +723,8 @@ class EntityOverlapGenerator:
         for i, vendor in enumerate(vendors):
             vendor.consolidation_detail = self._generate_vendor_consolidation_detail(vendor, i)
         for p in people:
-            p.role_detail = self._generate_people_role_detail(p)
+            raw = getattr(p, '_raw_data', None) or {}
+            p.role_detail = self._generate_people_role_detail(p, raw_data=raw)
 
         # Cascadia has ~200 accounts; overlap pct is relative to the smaller base
         cascadia_accounts = 200
@@ -907,8 +955,9 @@ class EntityOverlapGenerator:
 
     def _generate_people_overlaps(self) -> List[PeopleOverlap]:
         """Generate corporate function overlap data."""
-        return [
-            PeopleOverlap(
+        results = []
+        for d in _PEOPLE_OVERLAPS_DATA:
+            p = PeopleOverlap(
                 function=d["function"],
                 meridian_headcount=d["meridian_headcount"],
                 cascadia_headcount=d["cascadia_headcount"],
@@ -916,8 +965,10 @@ class EntityOverlapGenerator:
                 role_overlap_examples=d["role_overlap_examples"],
                 definitional_note=d["definitional_note"],
             )
-            for d in _PEOPLE_OVERLAPS_DATA
-        ]
+            # Stash raw data for role detail generation (level_pyramid, geo_distribution)
+            p._raw_data = d
+            results.append(p)
+        return results
 
     # ------------------------------------------------------------------ #
     # Detail generation
@@ -1007,58 +1058,97 @@ class EntityOverlapGenerator:
         )
 
     def _generate_people_role_detail(
-        self, people: PeopleOverlap
+        self, people: PeopleOverlap, raw_data: Dict[str, Any] = None
     ) -> List[RoleDetail]:
-        """Expand role_overlap_examples into full RoleDetail objects."""
+        """Expand role_overlap_examples into full RoleDetail objects.
+
+        If raw_data contains a 'level_pyramid', uses it for precise distribution.
+        Otherwise falls back to proportional distribution.
+        """
         roles = people.role_overlap_examples
         if not roles:
             return []
 
         details: List[RoleDetail] = []
-        # Top role (C-suite) gets 1 count each; remaining headcount distributed
-        # proportionally among the other roles.
-        remaining_m = max(people.meridian_headcount - 1, 0)
-        remaining_c = max(people.cascadia_headcount - 1, 0)
-        other_roles = roles[1:] if len(roles) > 1 else []
+        level_pyramid = (raw_data or {}).get("level_pyramid")
 
-        for i, title in enumerate(roles):
-            if i == 0:
-                # C-suite role: 1 each
-                m_count = 1
-                c_count = 1
-            elif i < len(roles) - 1:
-                # Distribute proportionally among non-top, non-last roles
-                share = 1.0 / max(len(other_roles), 1)
-                m_count = max(1, round(remaining_m * share))
-                c_count = max(1, round(remaining_c * share))
-            else:
-                # Last role gets whatever remains
-                allocated_m = sum(d.meridian_count for d in details)
-                allocated_c = sum(d.cascadia_count for d in details)
-                m_count = max(1, people.meridian_headcount - allocated_m)
-                c_count = max(1, people.cascadia_headcount - allocated_c)
+        if level_pyramid:
+            # Use explicit pyramid percentages for each level
+            allocated_m, allocated_c = 0, 0
+            for i, title in enumerate(roles):
+                pcts = level_pyramid.get(title, {})
+                m_pct = pcts.get("meridian_pct", 0)
+                c_pct = pcts.get("cascadia_pct", 0)
 
-            combined_count = m_count + c_count
+                if i < len(roles) - 1:
+                    m_count = int(round(people.meridian_headcount * m_pct)) if people.meridian_headcount else 0
+                    c_count = int(round(people.cascadia_headcount * c_pct)) if people.cascadia_headcount else 0
+                    allocated_m += m_count
+                    allocated_c += c_count
+                else:
+                    # Last level gets remainder to ensure totals match
+                    m_count = max(0, people.meridian_headcount - allocated_m)
+                    c_count = max(0, people.cascadia_headcount - allocated_c)
 
-            # Consolidation action based on role level
-            c_suite_titles = {"CFO", "CHRO", "CTO", "CISO", "General Counsel"}
-            if title in c_suite_titles:
-                consolidation_action = "retain_both"
-            elif "VP" in title or "Director" in title:
-                consolidation_action = "consolidate"
-            else:
-                consolidation_action = "evaluate"
+                combined_count = m_count + c_count
 
-            reporting_line = _REPORTING_LINES.get(title, "Department Head")
+                if title in {"Partner", "Managing Director"}:
+                    consolidation_action = "retain_both"
+                elif title in {"Principal", "Senior Manager"}:
+                    consolidation_action = "consolidate"
+                else:
+                    consolidation_action = "evaluate"
 
-            details.append(RoleDetail(
-                title=title,
-                meridian_count=m_count,
-                cascadia_count=c_count,
-                combined_count=combined_count,
-                consolidation_action=consolidation_action,
-                reporting_line=reporting_line,
-            ))
+                reporting_line = _REPORTING_LINES.get(title, "Practice Lead")
+
+                details.append(RoleDetail(
+                    title=title,
+                    meridian_count=m_count,
+                    cascadia_count=c_count,
+                    combined_count=combined_count,
+                    consolidation_action=consolidation_action,
+                    reporting_line=reporting_line,
+                ))
+        else:
+            # Fallback: C-suite gets 1 each, rest distributed proportionally
+            remaining_m = max(people.meridian_headcount - 1, 0) if people.meridian_headcount else 0
+            remaining_c = max(people.cascadia_headcount - 1, 0) if people.cascadia_headcount else 0
+            other_roles = roles[1:] if len(roles) > 1 else []
+
+            for i, title in enumerate(roles):
+                if i == 0:
+                    m_count = min(1, people.meridian_headcount) if people.meridian_headcount else 0
+                    c_count = min(1, people.cascadia_headcount) if people.cascadia_headcount else 0
+                elif i < len(roles) - 1:
+                    share = 1.0 / max(len(other_roles), 1)
+                    m_count = max(1, round(remaining_m * share)) if people.meridian_headcount else 0
+                    c_count = max(1, round(remaining_c * share)) if people.cascadia_headcount else 0
+                else:
+                    allocated_m = sum(d.meridian_count for d in details)
+                    allocated_c = sum(d.cascadia_count for d in details)
+                    m_count = max(0, people.meridian_headcount - allocated_m)
+                    c_count = max(0, people.cascadia_headcount - allocated_c)
+
+                combined_count = m_count + c_count
+
+                c_suite_titles = {"CFO", "CHRO", "CTO", "CISO", "General Counsel", "CRO", "CMO", "CEO", "CAO", "COO"}
+                if title in c_suite_titles:
+                    consolidation_action = "retain_both"
+                elif "VP" in title or "Director" in title:
+                    consolidation_action = "consolidate"
+                else:
+                    consolidation_action = "evaluate"
+
+                reporting_line = _REPORTING_LINES.get(title, "Department Head")
+
+                details.append(RoleDetail(
+                    title=title,
+                    meridian_count=m_count,
+                    cascadia_count=c_count,
+                    combined_count=combined_count,
+                    consolidation_action=consolidation_action,
+                    reporting_line=reporting_line,
+                ))
 
         return details
 

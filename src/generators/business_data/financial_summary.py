@@ -60,6 +60,8 @@ SCHEMA_FIELDS: List[Dict[str, Any]] = [
     {"name": "nrr", "type": "number", "semantic_hint": "net_revenue_retention"},
     {"name": "attainment_pct", "type": "number", "semantic_hint": "quota_attainment"},
     {"name": "sales_cycle_days", "type": "number", "semantic_hint": "sales_cycle"},
+    # Sales pipeline (millions USD)
+    {"name": "pipeline_value", "type": "number", "semantic_hint": "pipeline_total"},
     # CTO metrics
     {"name": "uptime", "type": "number", "semantic_hint": "uptime_percentage"},
     {"name": "time_to_resolve", "type": "number", "semantic_hint": "mttr_hours"},
@@ -94,13 +96,14 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
     SOURCE_SYSTEM = SOURCE_SYSTEM
     PIPE_PREFIX = "finsummary"
 
-    def __init__(self, model_quarters: List[Any], seed: int = 42):
+    def __init__(self, model_quarters: List[Any], seed: int = 42, entity_id: str = ""):
         super().__init__(seed=seed)
         self._model_quarters = model_quarters
+        self._entity_id = entity_id
 
     def generate(
         self,
-        pipe_id: str = "finsummary-pnl-001",
+        pipe_id: str = "",
         run_id: str = "run-finsummary-001",
         run_timestamp: str = "2026-01-15T00:00:00Z",
     ) -> Dict[str, Dict[str, Any]]:
@@ -110,6 +113,9 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
 
         Returns dict with key 'pnl' containing the DCL payload.
         """
+        if not pipe_id:
+            suffix = f"-{self._entity_id}" if self._entity_id else ""
+            pipe_id = f"finsummary-pnl-001{suffix}"
         rows: List[Dict[str, Any]] = []
 
         for fmq in self._model_quarters:
@@ -124,6 +130,7 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                 "nrr": round(fmq.nrr, 1),
                 "attainment_pct": round(fmq.quota_attainment, 1),
                 "sales_cycle_days": round(fmq.sales_cycle_days),
+                "pipeline_value": round(fmq.pipeline, 2),
                 "uptime": round(fmq.uptime_pct, 2),
                 "time_to_resolve": round(fmq.mttr_p1_hours, 1),
                 "p1_incidents": int(fmq.p1_incidents),
@@ -192,6 +199,48 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                     "arr": round(region_arr, 2),
                     "cash": round(fmq.cash * region_pct, 2),
                     **cro_cto_chro,
+                })
+
+            # 3. Headcount dimensional rows (department, geo, practice/service line, level)
+            for dept, count in fmq.headcount_by_department.items():
+                rows.append({
+                    "date": quarter_end,
+                    "quarter_label": fmq.quarter,
+                    "metric": "headcount",
+                    "dimension": "department",
+                    "dimension_value": dept,
+                    "value": count,
+                    "total_headcount": int(fmq.headcount),
+                })
+            for geo, count in fmq.headcount_by_geo.items():
+                rows.append({
+                    "date": quarter_end,
+                    "quarter_label": fmq.quarter,
+                    "metric": "headcount",
+                    "dimension": "geography",
+                    "dimension_value": geo,
+                    "value": count,
+                    "total_headcount": int(fmq.headcount),
+                })
+            for practice, count in fmq.headcount_by_practice.items():
+                rows.append({
+                    "date": quarter_end,
+                    "quarter_label": fmq.quarter,
+                    "metric": "headcount",
+                    "dimension": "practice_area",
+                    "dimension_value": practice,
+                    "value": count,
+                    "total_headcount": int(fmq.headcount),
+                })
+            for level, count in fmq.headcount_by_level.items():
+                rows.append({
+                    "date": quarter_end,
+                    "quarter_label": fmq.quarter,
+                    "metric": "headcount",
+                    "dimension": "level",
+                    "dimension_value": level,
+                    "value": count,
+                    "total_headcount": int(fmq.headcount),
                 })
 
         return {

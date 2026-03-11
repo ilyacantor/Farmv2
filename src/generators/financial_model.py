@@ -485,6 +485,9 @@ class Quarter:
     cogs_breakdown: Dict[str, float] = field(default_factory=dict)
     opex_breakdown: Dict[str, float] = field(default_factory=dict)
     headcount_by_department: Dict[str, int] = field(default_factory=dict)
+    headcount_by_geo: Dict[str, int] = field(default_factory=dict)
+    headcount_by_practice: Dict[str, int] = field(default_factory=dict)   # consultancy: practice areas, BPM: service lines
+    headcount_by_level: Dict[str, int] = field(default_factory=dict)
     new_logo_revenue_by_region: Dict[str, float] = field(default_factory=dict)
 
 
@@ -1132,6 +1135,62 @@ class FinancialModel:
                    - int(round(q.corporate_count * getattr(a, 'hc_legal_pct', 0.024))),
         }
 
+        # Headcount by practice area — consultants distributed across practices
+        practice_pcts = {
+            "Strategy": getattr(a, 'practice_strategy_pct', 0.18),
+            "Operations": getattr(a, 'practice_operations_pct', 0.22),
+            "Technology": getattr(a, 'practice_technology_pct', 0.20),
+            "Risk": getattr(a, 'practice_risk_pct', 0.12),
+            "Digital/AI": getattr(a, 'practice_digital_ai_pct', 0.16),
+            "Commercial": getattr(a, 'practice_commercial_pct', 0.12),
+        }
+        q.headcount_by_practice = {}
+        allocated = 0
+        practices = list(practice_pcts.items())
+        for name, pct in practices[:-1]:
+            count = int(round(q.consultant_count * pct))
+            q.headcount_by_practice[name] = count
+            allocated += count
+        q.headcount_by_practice[practices[-1][0]] = q.consultant_count - allocated
+
+        # Headcount by geo — follows regional revenue distribution
+        region_pcts = {
+            "AMER": a.region_amer,
+            "EMEA": a.region_emea,
+            "APAC": a.region_apac,
+        }
+        if hasattr(a, 'region_latam'):
+            region_pcts["LATAM"] = a.region_latam
+        q.headcount_by_geo = {}
+        allocated = 0
+        geos = list(region_pcts.items())
+        for name, pct in geos[:-1]:
+            count = int(round(q.headcount * pct))
+            q.headcount_by_geo[name] = count
+            allocated += count
+        q.headcount_by_geo[geos[-1][0]] = q.headcount - allocated
+
+        # Headcount by level — consultancy pyramid
+        level_pcts = {
+            "Partner": 0.03,
+            "Principal": 0.06,
+            "Senior Manager": 0.10,
+            "Manager": 0.15,
+            "Senior Consultant": 0.22,
+            "Consultant": 0.25,
+            "Analyst": 0.19,
+        }
+        q.headcount_by_level = {}
+        allocated = 0
+        levels = list(level_pcts.items())
+        for name, pct in levels[:-1]:
+            count = int(round(q.consultant_count * pct))
+            q.headcount_by_level[name] = count
+            allocated += count
+        q.headcount_by_level[levels[-1][0]] = q.consultant_count - allocated
+        # Corporate staff as one level bucket
+        q.headcount_by_level["Corporate Staff"] = q.corporate_count
+
         # ── Customers & Pipeline ─────────────────────────────────────────
         prev_cust = prev.customer_count if prev else a.starting_customer_count
         churn_rate_q = max(a.gross_churn_rate_annual - a.churn_improvement_annual * int(years_elapsed), 0.02) / 4
@@ -1356,6 +1415,60 @@ class FinancialModel:
                    - int(round(q.corporate_count * getattr(a, 'hc_legal_pct', 0.027)))
                    - int(round(q.corporate_count * getattr(a, 'hc_operations_pct', 0.20))),
         }
+
+        # Headcount by service line — delivery staff distributed across service lines
+        sl_pcts = {
+            "Finance & Accounting": getattr(a, 'sl_finance_accounting_pct', 0.30),
+            "HR Operations": getattr(a, 'sl_hr_operations_pct', 0.25),
+            "Customer Operations": getattr(a, 'sl_customer_operations_pct', 0.28),
+            "Supply Chain": getattr(a, 'sl_supply_chain_pct', 0.17),
+        }
+        q.headcount_by_practice = {}
+        allocated = 0
+        sls = list(sl_pcts.items())
+        for name, pct in sls[:-1]:
+            count = int(round(q.delivery_count * pct))
+            q.headcount_by_practice[name] = count
+            allocated += count
+        q.headcount_by_practice[sls[-1][0]] = q.delivery_count - allocated
+
+        # Headcount by delivery geo — distributes delivery staff across delivery centers
+        # Offshore split: India ~60%, Philippines ~40% of offshore
+        india_count = int(round(q.offshore_count * 0.60))
+        philippines_count = q.offshore_count - india_count
+        # Nearshore split: Costa Rica ~45%, Poland ~55% of nearshore
+        costa_rica_count = int(round(q.nearshore_count * 0.45))
+        poland_count = q.nearshore_count - costa_rica_count
+        # Onshore split: US ~70%, UK ~30% of onshore
+        us_count = int(round(q.onshore_count * 0.70))
+        uk_count = q.onshore_count - us_count
+        q.headcount_by_geo = {
+            "India": india_count,
+            "Philippines": philippines_count,
+            "Costa Rica": costa_rica_count,
+            "Poland": poland_count,
+            "United States": us_count + q.corporate_count,  # corporate HQ in US
+            "United Kingdom": uk_count,
+        }
+
+        # Headcount by level — BPM delivery pyramid (flatter than consultancy)
+        level_pcts = {
+            "Process Director": 0.02,
+            "Senior Manager": 0.05,
+            "Team Lead": 0.10,
+            "Senior Associate": 0.20,
+            "Associate": 0.35,
+            "Junior Associate": 0.28,
+        }
+        q.headcount_by_level = {}
+        allocated = 0
+        levels = list(level_pcts.items())
+        for name, pct in levels[:-1]:
+            count = int(round(q.delivery_count * pct))
+            q.headcount_by_level[name] = count
+            allocated += count
+        q.headcount_by_level[levels[-1][0]] = q.delivery_count - allocated
+        q.headcount_by_level["Corporate Staff"] = q.corporate_count
 
         # ── BPM delivery metrics ─────────────────────────────────────────
         q.automation_rate_q = _r(min(a.automation_rate + a.automation_improvement_annual * years_elapsed, 0.65), 3)
