@@ -272,6 +272,9 @@ async def _push_to_dcl(
         "row_count": len(rows),
         "rows": rows,
     }
+    # Pass entity_id to DCL when manifest specifies it — required for entity filtering
+    if manifest.target.entity_id:
+        body["entity_id"] = manifest.target.entity_id
 
     logger.info(
         f"Manifest push: pipe_id={pipe_id}, run_id={run_id}, "
