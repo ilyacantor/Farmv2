@@ -18,6 +18,7 @@ CRITICAL CONTRACT:
 import asyncio
 import hashlib
 import logging
+import os
 import time
 import uuid
 from datetime import datetime
@@ -272,9 +273,14 @@ async def _push_to_dcl(
         "row_count": len(rows),
         "rows": rows,
     }
-    # Pass entity_id to DCL when manifest specifies it — required for entity filtering
-    if manifest.target.entity_id:
-        body["entity_id"] = manifest.target.entity_id
+    # entity_id is required for DCL entity filtering — resolve from manifest or env fallback
+    resolved_entity_id = manifest.target.entity_id or os.environ.get("FARM_DEFAULT_ENTITY_ID")
+    if not resolved_entity_id:
+        raise ValueError(
+            f"entity_id required for DCL push of pipe {pipe_id} — "
+            f"set in manifest target or FARM_DEFAULT_ENTITY_ID env var"
+        )
+    body["entity_id"] = resolved_entity_id
 
     logger.info(
         f"Manifest push: pipe_id={pipe_id}, run_id={run_id}, "

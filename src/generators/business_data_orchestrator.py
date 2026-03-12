@@ -339,7 +339,10 @@ class BusinessDataOrchestrator:
                     _collect_from_gen_output(gen_output, sys_name, entity_id=eid)
             else:
                 # Single-entity: top_key=system_name, top_value=gen_output
-                _collect_from_gen_output(top_value, top_key)
+                _collect_from_gen_output(
+                    top_value, top_key,
+                    entity_id=os.environ.get("FARM_DEFAULT_ENTITY_ID"),
+                )
 
         logger.info(f"Pushing {len(pipe_tasks)} pipes in parallel (max 5 concurrent)")
         semaphore = asyncio.Semaphore(5)
@@ -358,8 +361,13 @@ class BusinessDataOrchestrator:
                 "row_count": len(rows),
                 "rows": rows,
             }
-            if task.get("entity_id"):
-                dcl_body["entity_id"] = task["entity_id"]
+            resolved_entity_id = task.get("entity_id") or os.environ.get("FARM_DEFAULT_ENTITY_ID")
+            if not resolved_entity_id:
+                raise ValueError(
+                    f"entity_id required for DCL push of pipe {pipe_id} — "
+                    f"set in task or FARM_DEFAULT_ENTITY_ID env var"
+                )
+            dcl_body["entity_id"] = resolved_entity_id
             push_headers = {**base_headers, "x-pipe-id": pipe_id}
 
             async with semaphore:
