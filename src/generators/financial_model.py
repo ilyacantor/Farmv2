@@ -487,6 +487,7 @@ class Quarter:
     headcount_by_department: Dict[str, int] = field(default_factory=dict)
     headcount_by_geo: Dict[str, int] = field(default_factory=dict)
     headcount_by_practice: Dict[str, int] = field(default_factory=dict)   # consultancy: practice areas, BPM: service lines
+    revenue_by_practice: Dict[str, float] = field(default_factory=dict)   # revenue split by practice area / service line
     headcount_by_level: Dict[str, int] = field(default_factory=dict)
     revenue_by_customer: Dict[str, float] = field(default_factory=dict)   # top 20 customers by revenue
     new_logo_revenue_by_region: Dict[str, float] = field(default_factory=dict)
@@ -1203,6 +1204,17 @@ class FinancialModel:
             allocated += count
         q.headcount_by_practice[practices[-1][0]] = q.consultant_count - allocated
 
+        # Revenue by practice area — proportional to consultant headcount
+        total_consultants = q.consultant_count or 1
+        q.revenue_by_practice = {}
+        rev_allocated = 0.0
+        practice_list = list(q.headcount_by_practice.items())
+        for name, count in practice_list[:-1]:
+            rev = _r(q.revenue * count / total_consultants)
+            q.revenue_by_practice[name] = rev
+            rev_allocated += rev
+        q.revenue_by_practice[practice_list[-1][0]] = _r(q.revenue - rev_allocated)
+
         # Headcount by geo — follows regional revenue distribution
         region_pcts = {
             "AMER": a.region_amer,
@@ -1486,6 +1498,17 @@ class FinancialModel:
             q.headcount_by_practice[name] = count
             allocated += count
         q.headcount_by_practice[sls[-1][0]] = q.delivery_count - allocated
+
+        # Revenue by service line — proportional to delivery headcount
+        total_delivery = q.delivery_count or 1
+        q.revenue_by_practice = {}
+        rev_allocated = 0.0
+        sl_list = list(q.headcount_by_practice.items())
+        for name, count in sl_list[:-1]:
+            rev = _r(q.revenue * count / total_delivery)
+            q.revenue_by_practice[name] = rev
+            rev_allocated += rev
+        q.revenue_by_practice[sl_list[-1][0]] = _r(q.revenue - rev_allocated)
 
         # Headcount by delivery geo — distributes delivery staff across delivery centers
         # Offshore split: India ~60%, Philippines ~40% of offshore

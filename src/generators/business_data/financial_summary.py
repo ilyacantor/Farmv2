@@ -31,6 +31,7 @@ SCHEMA_FIELDS: List[Dict[str, Any]] = [
     {"name": "date", "type": "date", "semantic_hint": "fiscal_period_end"},
     {"name": "quarter_label", "type": "string"},
     {"name": "region", "type": "string", "semantic_hint": "territory"},
+    {"name": "segment", "type": "string", "semantic_hint": "practice_area"},
     # Total revenue (millions USD) — single source of truth for P&L consistency
     {"name": "total_revenue", "type": "number", "semantic_hint": "total_revenue"},
     # Margins (percentages)
@@ -54,6 +55,26 @@ SCHEMA_FIELDS: List[Dict[str, Any]] = [
     {"name": "arr", "type": "number", "semantic_hint": "annual_recurring_revenue"},
     # Balance sheet (millions USD)
     {"name": "cash", "type": "number", "semantic_hint": "cash_and_equivalents"},
+    {"name": "ar", "type": "number", "semantic_hint": "accounts_receivable"},
+    {"name": "ap", "type": "number", "semantic_hint": "accounts_payable"},
+    {"name": "unbilled_revenue", "type": "number", "semantic_hint": "unbilled_revenue"},
+    {"name": "prepaid_expenses", "type": "number", "semantic_hint": "prepaid_expenses"},
+    {"name": "pp_e", "type": "number", "semantic_hint": "property_plant_equipment"},
+    {"name": "intangibles", "type": "number", "semantic_hint": "intangible_assets"},
+    {"name": "goodwill", "type": "number", "semantic_hint": "goodwill"},
+    {"name": "total_assets", "type": "number", "semantic_hint": "total_assets"},
+    {"name": "accrued_expenses", "type": "number", "semantic_hint": "accrued_expenses"},
+    {"name": "deferred_revenue", "type": "number", "semantic_hint": "deferred_revenue"},
+    {"name": "total_liabilities", "type": "number", "semantic_hint": "total_liabilities"},
+    {"name": "retained_earnings", "type": "number", "semantic_hint": "retained_earnings"},
+    {"name": "stockholders_equity", "type": "number", "semantic_hint": "stockholders_equity"},
+    # Cash flow (millions USD)
+    {"name": "cfo", "type": "number", "semantic_hint": "cash_from_operations"},
+    {"name": "capex", "type": "number", "semantic_hint": "capital_expenditures"},
+    {"name": "fcf", "type": "number", "semantic_hint": "free_cash_flow"},
+    {"name": "change_in_ar", "type": "number", "semantic_hint": "change_in_accounts_receivable"},
+    {"name": "change_in_ap", "type": "number", "semantic_hint": "change_in_accounts_payable"},
+    {"name": "change_in_deferred_rev", "type": "number", "semantic_hint": "change_in_deferred_revenue"},
     # CRO metrics
     {"name": "win_rate", "type": "number", "semantic_hint": "win_rate_percentage"},
     {"name": "churn_rate", "type": "number", "semantic_hint": "churn_rate_percentage"},
@@ -170,6 +191,27 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                 "tax_expense": round(fmq.tax_expense, 2),
                 "arr": round(fmq.ending_arr, 2),
                 "cash": round(fmq.cash, 2),
+                # Balance sheet
+                "ar": round(fmq.ar, 2),
+                "ap": round(fmq.ap, 2),
+                "unbilled_revenue": round(fmq.unbilled_revenue, 2),
+                "prepaid_expenses": round(fmq.prepaid_expenses, 2),
+                "pp_e": round(fmq.pp_e, 2),
+                "intangibles": round(fmq.intangibles, 2),
+                "goodwill": round(fmq.goodwill, 2),
+                "total_assets": round(fmq.total_assets, 2),
+                "accrued_expenses": round(fmq.accrued_expenses, 2),
+                "deferred_revenue": round(fmq.deferred_revenue, 2),
+                "total_liabilities": round(fmq.total_liabilities, 2),
+                "retained_earnings": round(fmq.retained_earnings, 2),
+                "stockholders_equity": round(fmq.stockholders_equity, 2),
+                # Cash flow
+                "cfo": round(fmq.cfo, 2),
+                "capex": round(fmq.capex, 2),
+                "fcf": round(fmq.fcf, 2),
+                "change_in_ar": round(fmq.change_in_ar, 2),
+                "change_in_ap": round(fmq.change_in_ap, 2),
+                "change_in_deferred_rev": round(fmq.change_in_deferred_rev, 2),
                 **cro_cto_chro,
             })
 
@@ -201,7 +243,32 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                     **cro_cto_chro,
                 })
 
-            # 3. Headcount dimensional rows (department, geo, practice/service line, level)
+            # 3. Segment rows — practice area / service line P&L breakdowns
+            for practice, practice_rev in getattr(fmq, 'revenue_by_practice', {}).items():
+                seg_pct = practice_rev / fmq.revenue if fmq.revenue else 0.0
+                rows.append({
+                    "date": quarter_end,
+                    "quarter_label": fmq.quarter,
+                    "segment": practice,
+                    "total_revenue": round(practice_rev, 2),
+                    **margins,
+                    "cogs": round(fmq.cogs * seg_pct, 2),
+                    "gross_profit": round(fmq.gross_profit * seg_pct, 2),
+                    "ebitda": round(fmq.ebitda * seg_pct, 2),
+                    "operating_profit": round(fmq.operating_profit * seg_pct, 2),
+                    "net_income": round(fmq.net_income * seg_pct, 2),
+                    "operating_expenses": round((fmq.total_opex + fmq.da_expense) * seg_pct, 2),
+                    "sm_expense": round(fmq.sm_expense * seg_pct, 2),
+                    "rd_expense": round(fmq.rd_expense * seg_pct, 2),
+                    "ga_expense": round(fmq.ga_expense * seg_pct, 2),
+                    "da_expense": round(fmq.da_expense * seg_pct, 2),
+                    "tax_expense": round(fmq.tax_expense * seg_pct, 2),
+                    "arr": round(fmq.ending_arr * seg_pct, 2),
+                    "cash": round(fmq.cash * seg_pct, 2),
+                    **cro_cto_chro,
+                })
+
+            # 4. Headcount dimensional rows (department, geo, practice/service line, level)
             for dept, count in fmq.headcount_by_department.items():
                 rows.append({
                     "date": quarter_end,
@@ -243,7 +310,7 @@ class FinancialSummaryGenerator(BaseBusinessGenerator):
                     "total_headcount": int(fmq.headcount),
                 })
 
-            # 4. Revenue by customer rows (top 20) — Type A format for DCL materializer
+            # 5. Revenue by customer rows (top 20) — Type A format for DCL materializer
             for customer, rev in fmq.revenue_by_customer.items():
                 rows.append({
                     "date": quarter_end,
