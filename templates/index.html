@@ -969,6 +969,11 @@
                   <div class="nlq-kpi-label">Failed</div>
                   <div class="nlq-kpi-val" id="rlKpiFailed" style="color:#f87171">—</div>
                 </div>
+                <div class="nlq-kpi" data-filter="skipped" title="Idempotency-skipped — Farm returned cached result from prior run, no new DCL push">
+                  <span class="nlq-kpi-badge">● active</span>
+                  <div class="nlq-kpi-label">Skipped</div>
+                  <div class="nlq-kpi-val" id="rlKpiSkipped" style="color:#fb923c">—</div>
+                </div>
                 <div class="nlq-kpi" data-filter="sor">
                   <span class="nlq-kpi-badge">● active</span>
                   <div class="nlq-kpi-label">SOR Count</div>
@@ -1932,6 +1937,7 @@
             document.getElementById('rlKpiTotal').textContent = summary.total || 0;
             document.getElementById('rlKpiFailed').textContent = (summary.failed || 0) + (summary.rejected_by_dcl || 0);
             document.getElementById('rlKpiDispatched').textContent = summary.completed || 0;
+            document.getElementById('rlKpiSkipped').textContent = summary.skipped || 0;
 
             // SOR Count — server-computed, excludes fabric-plane systems
             document.getElementById('rlKpiSorCount').textContent = summary.sor_count || 0;
@@ -1946,6 +1952,9 @@
 
             // Render transactional table
             rlRenderSystemTable(summary, runs);
+
+            // Render skipped pipes section
+            rlRenderSkippedPipes(summary.skipped_pipes || []);
         }
 
         function rlRenderSystemTable(summary, runs) {
@@ -1971,14 +1980,17 @@
 
             let html = '';
             for (const [system, counts] of Object.entries(perSystem)) {
-                const total = (counts.completed || 0) + (counts.failed || 0) + (counts.rejected_by_dcl || 0);
+                const total = (counts.completed || 0) + (counts.failed || 0) + (counts.rejected_by_dcl || 0) + (counts.skipped || 0);
                 const failed = (counts.failed || 0) + (counts.rejected_by_dcl || 0);
                 const dispatched = counts.completed || 0;
+                const skipped = counts.skipped || 0;
 
                 // Status pill
                 let pillClass, pillText;
                 if (failed > 0 && dispatched > 0) { pillClass = 'nlq-pill nlq-pill-partial'; pillText = 'Partial'; }
                 else if (failed > 0)               { pillClass = 'nlq-pill nlq-pill-fail';    pillText = 'Failed'; }
+                else if (skipped > 0 && dispatched > 0) { pillClass = 'nlq-pill nlq-pill-partial'; pillText = `Partial (${skipped} skipped)`; }
+                else if (skipped > 0 && dispatched === 0) { pillClass = 'nlq-pill nlq-pill-other'; pillText = 'Skipped'; }
                 else if (dispatched > 0)            { pillClass = 'nlq-pill nlq-pill-ok';      pillText = 'OK'; }
                 else                                { pillClass = 'nlq-pill nlq-pill-other';   pillText = 'Pending'; }
 
@@ -2012,6 +2024,49 @@
 
             tbody.innerHTML = html;
             document.getElementById('nlq-count-badge').textContent = systemKeys.length + ' sources';
+        }
+
+        function rlRenderSkippedPipes(skippedPipes) {
+            let container = document.getElementById('rlSkippedPipes');
+            if (!container) {
+                // Create container after the system table
+                container = document.createElement('div');
+                container.id = 'rlSkippedPipes';
+                container.style.cssText = 'margin-top:12px;';
+                const tableWrap = document.getElementById('nlq-table-wrap');
+                if (tableWrap) tableWrap.appendChild(container);
+            }
+            if (!skippedPipes || skippedPipes.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            let html = `
+                <div style="border:1px solid rgba(251,146,60,0.3);border-radius:8px;overflow:hidden;margin-top:8px;">
+                    <div style="padding:8px 12px;background:rgba(251,146,60,0.08);cursor:pointer;display:flex;align-items:center;gap:6px;font-size:0.82rem;color:#fb923c;font-weight:600;"
+                         onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? '' : 'none'">
+                        <span style="transition:transform 0.15s;" id="rlSkippedChevron">&#9654;</span>
+                        Skipped Pipes (${skippedPipes.length})
+                    </div>
+                    <div style="display:none;">
+                        <table style="width:100%;font-size:0.78rem;border-collapse:collapse;">
+                            <thead><tr style="background:rgba(30,41,59,0.5);color:#94a3b8;">
+                                <th style="padding:4px 8px;text-align:left;">Pipe ID</th>
+                                <th style="padding:4px 8px;text-align:left;">Source</th>
+                                <th style="padding:4px 8px;text-align:left;">Reason</th>
+                            </tr></thead>
+                            <tbody>`;
+            for (const sp of skippedPipes) {
+                const pid = sp.pipe_id || '--';
+                const src = sp.source_system || '--';
+                const reason = sp.reason || 'Idempotency skip';
+                html += `<tr style="border-top:1px solid rgba(51,65,85,0.5);">
+                    <td style="padding:4px 8px;color:#a78bfa;font-family:monospace;">${pid}</td>
+                    <td style="padding:4px 8px;">${src}</td>
+                    <td style="padding:4px 8px;color:#94a3b8;">${reason}</td>
+                </tr>`;
+            }
+            html += '</tbody></table></div></div>';
+            container.innerHTML = html;
         }
 
         function rlRenderPipeDetails(pipes) {
