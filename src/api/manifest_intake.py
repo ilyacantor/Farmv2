@@ -1232,6 +1232,14 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                         "auth_token_ref is null and DCL_INGEST_KEY not set"
                     )
 
+                # entity_id is required for DCL entity filtering — same resolution as _push_to_dcl
+                fs_entity_id = first_manifest.target.entity_id or _os.environ.get("FARM_DEFAULT_ENTITY_ID")
+                if not fs_entity_id:
+                    raise ValueError(
+                        f"entity_id required for financial_summary DCL push — "
+                        f"set in manifest target or FARM_DEFAULT_ENTITY_ID env var"
+                    )
+
                 fs_body = {
                     "source_system": "oracle",
                     "tenant_id": first_manifest.target.tenant_id,
@@ -1242,6 +1250,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                     ).hexdigest()[:16],
                     "row_count": len(finsummary_rows),
                     "rows": finsummary_rows,
+                    "entity_id": fs_entity_id,
                 }
 
                 logger.info(
