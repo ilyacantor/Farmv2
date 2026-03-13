@@ -1232,12 +1232,18 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                         "auth_token_ref is null and DCL_INGEST_KEY not set"
                     )
 
-                # entity_id is required for DCL entity filtering — same resolution as _push_to_dcl
-                fs_entity_id = first_manifest.target.entity_id or _os.environ.get("FARM_DEFAULT_ENTITY_ID")
+                # entity_id for DCL entity filtering.
+                # For manifest-intake (AAM-dispatched) runs, use the manifest's
+                # entity_id if set, otherwise use the tenant_id.  Do NOT fall
+                # back to FARM_DEFAULT_ENTITY_ID — that env var is for the
+                # self-directed multi-entity push path only.  Using it here
+                # would tag unrelated AAM pipe companies (HelixCorp, AeroLabs,
+                # etc.) as "meridian", contaminating DCL's entity-scoped data.
+                fs_entity_id = first_manifest.target.entity_id or first_manifest.target.tenant_id
                 if not fs_entity_id:
                     raise ValueError(
                         f"entity_id required for financial_summary DCL push — "
-                        f"set in manifest target or FARM_DEFAULT_ENTITY_ID env var"
+                        f"set entity_id or tenant_id in manifest target"
                     )
 
                 fs_body = {
