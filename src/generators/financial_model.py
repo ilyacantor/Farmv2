@@ -50,7 +50,7 @@ def _load_farm_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     if config_path:
         candidate = Path(config_path)
     else:
-        candidate = Path(__file__).resolve().parent.parent.parent / "farm_config.yaml"
+        candidate = Path(__file__).resolve().parent.parent.parent / "farm_config_meridian.yaml"
     if not candidate.is_file():
         return {}
     try:

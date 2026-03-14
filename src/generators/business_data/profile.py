@@ -15,7 +15,7 @@ from src.generators.financial_model import Assumptions, get_schema_config
 
 # ── Canonical assumptions instance ────────────────────────────────────────
 # All BusinessProfile defaults below derive from this single source.
-# If you need to change a company assumption, change it in farm_config.yaml
+# If you need to change a company assumption, change it in farm_config_meridian.yaml
 # (or in Assumptions compiled defaults if YAML is absent).
 _A = Assumptions()
 _schema = get_schema_config()

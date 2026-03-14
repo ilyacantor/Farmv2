@@ -79,7 +79,7 @@ def _build_plane_vendor_lists() -> Dict[str, list]:
     from pathlib import Path
     try:
         import yaml
-        candidate = Path(__file__).resolve().parent.parent.parent / "farm_config.yaml"
+        candidate = Path(__file__).resolve().parent.parent.parent / "farm_config_meridian.yaml"
         if candidate.is_file():
             with open(candidate, encoding="utf-8") as f:
                 raw = yaml.safe_load(f)

@@ -213,3 +213,30 @@ vendors:
       vendor: concur.com
       type: T&E
       domain: travel
+
+  fabric_plane_vendors:
+    # iPaaS
+    workato:                {plane: ipaas, domain: workato.com, vendor_name: Workato}
+    mulesoft:               {plane: ipaas, domain: mulesoft.com, vendor_name: MuleSoft}
+    boomi:                  {plane: ipaas, domain: boomi.com, vendor_name: Boomi}
+    tray.io:                {plane: ipaas, domain: tray.io, vendor_name: Tray.io}
+    celigo:                 {plane: ipaas, domain: celigo.com, vendor_name: Celigo}
+    sap_integration_suite:  {plane: ipaas, domain: sap.com, vendor_name: SAP Integration Suite}
+    # API Gateway
+    kong:                   {plane: api_gateway, domain: konghq.com, vendor_name: Kong}
+    apigee:                 {plane: api_gateway, domain: apigee.com, vendor_name: Apigee}
+    aws_api_gateway:        {plane: api_gateway, domain: amazonaws.com, vendor_name: AWS API Gateway}
+    azure_api_management:   {plane: api_gateway, domain: azure.com, vendor_name: Azure API Management}
+    # Event Bus
+    kafka:                  {plane: event_bus, domain: kafka.apache.org, vendor_name: Apache Kafka}
+    confluent:              {plane: event_bus, domain: confluent.io, vendor_name: Confluent}
+    eventbridge:            {plane: event_bus, domain: amazonaws.com, vendor_name: AWS EventBridge}
+    rabbitmq:               {plane: event_bus, domain: rabbitmq.com, vendor_name: RabbitMQ}
+    pulsar:                 {plane: event_bus, domain: pulsar.apache.org, vendor_name: Apache Pulsar}
+    azure_event_hubs:       {plane: event_bus, domain: azure.com, vendor_name: Azure Event Hubs}
+    # Data Warehouse
+    snowflake:              {plane: data_warehouse, domain: snowflake.com, vendor_name: Snowflake}
+    bigquery:               {plane: data_warehouse, domain: cloud.google.com, vendor_name: Google BigQuery}
+    redshift:               {plane: data_warehouse, domain: amazonaws.com, vendor_name: AWS Redshift}
+    databricks:             {plane: data_warehouse, domain: databricks.com, vendor_name: Databricks}
+    synapse:                {plane: data_warehouse, domain: azure.com, vendor_name: Azure Synapse}
