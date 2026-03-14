@@ -148,6 +148,12 @@ company_profile:
   starting_accrued_expenses: 110.0
   deferred_rev_months: 2.0              # some upfront billing on managed services
 
+  # Balance sheet / cash flow ratio parameters (S1 triple output)
+  long_term_debt_initial: 150.0          # $150M delivery center financing (15% of revenue)
+  long_term_debt_amort_pct_quarterly: 0.025  # 2.5% quarterly amortization
+  common_stock: 50.0                     # $50M paid-in capital (stable)
+  dividend_pct_net_income: 0.0           # no dividends
+
   # ---------------------------------------------------------------------------
   # People
   # ---------------------------------------------------------------------------

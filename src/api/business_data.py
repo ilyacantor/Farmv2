@@ -8,8 +8,12 @@ and retrieve ground truth manifests for verification.
 import json
 import logging
 import os
+import tempfile
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import yaml
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
@@ -196,6 +200,169 @@ async def generate_multi_entity(
         "cofa_conflict_count": summary.get("cofa_conflict_count", 0),
         "push_results": push_results,
     })
+
+
+@router.post("/generate-multi-entity-triples")
+async def generate_multi_entity_triples(
+    entities: str = Query(
+        default="meridian,cascadia",
+        description="Comma-separated entity names (maps to farm_config_{name}.yaml)",
+    ),
+    seed: int = Query(default=42, description="Random seed for deterministic generation"),
+    tenant_id: str = Query(
+        default="dev-00000000-0000-0000-0000-000000000000",
+        description="Tenant ID for triple output",
+    ),
+):
+    """
+    Generate semantic triples for multiple entities.
+
+    Produces JSONL output with one triple per line covering:
+    P&L, Balance Sheet, Cash Flow, COFA adjustments, entity overlaps,
+    EBITDA adjustments, service catalogs, and customer profiles.
+
+    The existing JSON-format endpoint is unaffected.
+    """
+    from src.generators.financial_model import FinancialModel, Assumptions
+    from src.generators.combining_statements import CombiningStatementEngine
+    from src.generators.entity_overlap import EntityOverlapGenerator
+    from src.generators.customer_profiles import CustomerProfileGenerator
+    from src.generators.triples.financial_statements import FinancialStatementTripleGenerator
+    from src.generators.triples.cofa_adjustments import COFATripleGenerator
+    from src.generators.triples.overlap import OverlapTripleGenerator
+    from src.generators.triples.ebitda_adjustments import EBITDAAdjustmentTripleGenerator
+    from src.generators.triples.service_catalogs import ServiceCatalogTripleGenerator
+    from src.generators.triples.customer_profiles import CustomerProfileTripleGenerator
+    from src.output.triple_writer import TripleWriter
+
+    entity_names = [e.strip() for e in entities.split(",") if e.strip()]
+    if not entity_names:
+        raise HTTPException(status_code=400, detail="No entity names provided")
+
+    config_dir = Path(__file__).resolve().parents[2]
+    entity_configs = []
+    for name in entity_names:
+        config_path = config_dir / f"farm_config_{name}.yaml"
+        if not config_path.exists():
+            raise HTTPException(
+                status_code=400,
+                detail=f"Config file not found for entity '{name}': {config_path}",
+            )
+        entity_configs.append(str(config_path))
+
+    run_id = f"triples_{uuid.uuid4().hex[:12]}"
+    logger.info(
+        f"Starting triple generation: run_id={run_id}, "
+        f"entities={entity_names}, seed={seed}"
+    )
+
+    all_triples = []
+    all_quarters = {}
+    entity_ids = []
+    config_raws = {}
+
+    # Generate financial models per entity
+    for config_path in entity_configs:
+        assumptions = Assumptions.from_yaml(config_path)
+        entity_id = assumptions.entity_id or "unknown"
+        entity_ids.append(entity_id)
+
+        with open(config_path, encoding="utf-8") as f:
+            config_raw = yaml.safe_load(f) or {}
+        config_raws[entity_id] = config_raw
+
+        model = FinancialModel(assumptions)
+        quarters = model.generate()
+        all_quarters[entity_id] = quarters
+
+        # P&L + BS + CF triples
+        fin_gen = FinancialStatementTripleGenerator(quarters, assumptions, config_raw)
+        all_triples.extend(fin_gen.generate())
+
+        # EBITDA adjustments
+        ebitda_gen = EBITDAAdjustmentTripleGenerator(quarters, entity_id, seed=seed)
+        all_triples.extend(ebitda_gen.generate())
+
+        # Service catalogs
+        svc_gen = ServiceCatalogTripleGenerator(entity_id, assumptions.business_model)
+        all_triples.extend(svc_gen.generate())
+
+    # COFA adjustments (requires 2 entities)
+    if len(all_quarters) == 2:
+        eids = list(all_quarters.keys())
+        engine = CombiningStatementEngine(
+            all_quarters[eids[0]], all_quarters[eids[1]]
+        )
+        combining_result = engine.generate()
+        cofa_gen = COFATripleGenerator(combining_result, entity_ids)
+        all_triples.extend(cofa_gen.generate())
+
+    # Entity overlaps
+    overlap_gen = EntityOverlapGenerator(seed=seed)
+    overlap_data = overlap_gen.generate()
+    overlap_triple_gen = OverlapTripleGenerator(overlap_data, entity_ids)
+    all_triples.extend(overlap_triple_gen.generate())
+
+    # Customer profiles
+    profile_gen = CustomerProfileGenerator(seed=seed)
+    for entity_id in entity_ids:
+        if entity_id == "meridian":
+            profiles = [_profile_to_dict(p) for p in profile_gen.meridian]
+        elif entity_id == "cascadia":
+            profiles = [_profile_to_dict(p) for p in profile_gen.cascadia]
+        else:
+            profiles = []
+        if profiles:
+            cp_gen = CustomerProfileTripleGenerator(profiles, entity_id)
+            all_triples.extend(cp_gen.generate())
+
+    # Stamp run_id on all triples
+    for t in all_triples:
+        if not hasattr(t, "run_id"):
+            pass  # run_id added during write
+
+    # Write JSONL
+    output_dir = os.path.join(config_dir, "output", "triples")
+    writer = TripleWriter(output_dir)
+    output_path = writer.write(all_triples, run_id, tenant_id)
+
+    # Count by concept domain
+    domain_counts: Dict[str, int] = {}
+    for t in all_triples:
+        domain = t.concept.split(".")[0]
+        domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
+    logger.info(
+        f"Triple generation complete: run_id={run_id}, "
+        f"triple_count={len(all_triples)}, output={output_path}"
+    )
+
+    return JSONResponse(content={
+        "run_id": run_id,
+        "status": "completed",
+        "triple_count": len(all_triples),
+        "output_file_path": output_path,
+        "counts_by_domain": domain_counts,
+        "entity_count": len(entity_ids),
+        "entity_ids": entity_ids,
+    })
+
+
+def _profile_to_dict(profile) -> dict:
+    """Convert a CustomerProfile dataclass to dict for triple generation."""
+    if isinstance(profile, dict):
+        return profile
+    if hasattr(profile, "__dataclass_fields__"):
+        from dataclasses import asdict
+        return asdict(profile)
+    return {
+        "name": getattr(profile, "customer_name", "unknown"),
+        "industry": getattr(profile, "industry", ""),
+        "segment": getattr(profile, "segment", ""),
+        "employees": getattr(profile, "employees", 0),
+        "engagement_value_M": getattr(profile, "engagement_value_M", 0),
+        "region": getattr(profile, "region", ""),
+    }
 
 
 @router.get("/ground-truth/{run_id}")

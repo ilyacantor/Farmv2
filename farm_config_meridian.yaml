@@ -116,6 +116,12 @@ company_profile:
   starting_accrued_expenses: 620.0
   deferred_rev_months: 1.5              # low deferred rev for consultancy (billed as delivered)
 
+  # Balance sheet / cash flow ratio parameters (S1 triple output)
+  long_term_debt_initial: 500.0          # $500M credit facility (10% of revenue)
+  long_term_debt_amort_pct_quarterly: 0.02  # 2% quarterly amortization
+  common_stock: 200.0                    # $200M paid-in capital (stable)
+  dividend_pct_net_income: 0.0           # no dividends (reinvesting)
+
   # ---------------------------------------------------------------------------
   # People
   # ---------------------------------------------------------------------------
