@@ -46,6 +46,9 @@ class DataDomain(str, Enum):
     PRODUCT = "product"
     IDENTITY = "identity"
     IT_ASSETS = "it_assets"
+    PROJECT = "project"
+    SERVICE_MANAGEMENT = "service_management"
+    TRAVEL = "travel"
 
 
 SIGNAL_WEIGHTS = {
