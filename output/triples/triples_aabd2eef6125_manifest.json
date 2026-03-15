@@ -1,0 +1,32 @@
+{
+  "run_id": "triples_aabd2eef6125",
+  "entities": [
+    "meridian",
+    "cascadia"
+  ],
+  "triple_count": 9350,
+  "domain_summary": {
+    "asset": 168,
+    "cash_flow": 264,
+    "cofa": 1176,
+    "cogs": 132,
+    "customer": 5872,
+    "ebitda_adjustment": 112,
+    "employee": 40,
+    "equity": 72,
+    "liability": 120,
+    "opex": 96,
+    "pnl": 120,
+    "revenue": 84,
+    "service": 30,
+    "vendor": 1064
+  },
+  "output_file": "triples_aabd2eef6125_triples.jsonl",
+  "pushed_to_dcl": false,
+  "identity_checks": {
+    "bs_identity": "PASS",
+    "cf_identity": "PASS",
+    "pl_identity": "PASS",
+    "cash_continuity": "PASS"
+  }
+}

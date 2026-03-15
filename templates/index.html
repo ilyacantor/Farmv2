@@ -315,6 +315,7 @@
                         <button id="tabAgents" onclick="switchMainTab('agents')" class="hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">AOA</button>
                         <button id="tabRunLog" onclick="switchMainTab('runlog')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">NLQ</button>
                         <button id="tabDcl" onclick="switchMainTab('dcl')" class="hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">DCL</button>
+                        <button id="tabTriples" onclick="switchMainTab('triples')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Triples</button>
                         <button id="tabGuide" onclick="switchMainTab('guide')" class="px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Guide</button>
                         <button id="tabTest" onclick="switchMainTab('test')" class="hidden px-3 py-1.5 text-sm text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors">Test Lab</button>
                     </nav>
@@ -1313,6 +1314,128 @@
             </div>
         </div>
 
+        <!-- Triples / Convergence Tab -->
+        <div id="triplesTab" class="hidden">
+            <!-- Summary Banner -->
+            <div id="triplesBanner" class="hidden mb-4 bg-slate-800/60 rounded-xl px-5 py-3 border border-cyan-700/50 flex items-center justify-between">
+                <div class="flex items-center gap-4">
+                    <span class="text-cyan-400 font-semibold text-sm" id="triplesBannerCount">--</span>
+                    <span class="text-slate-500 text-xs">|</span>
+                    <span class="text-slate-400 text-xs" id="triplesBannerDomains">-- domains</span>
+                    <span class="text-slate-500 text-xs">|</span>
+                    <span class="text-slate-400 text-xs" id="triplesBannerPeriods">-- quarters</span>
+                    <span class="text-slate-500 text-xs">|</span>
+                    <span class="text-slate-400 text-xs" id="triplesBannerEntities">-- entities</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="triplesPushBadge" class="text-xs text-slate-500">Not pushed</span>
+                    <span id="triplesGenTime" class="text-xs text-emerald-400 font-mono"></span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4" style="min-width: 0;">
+            <!-- LEFT: Convergence Generator -->
+            <div class="space-y-6 min-w-0">
+                <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700">
+                    <h2 class="text-lg font-semibold text-cyan-400 mb-4">Convergence Generator</h2>
+
+                    <!-- Entity Config Cards -->
+                    <div id="triplesEntityCards" class="space-y-3 mb-4">
+                        <div class="text-slate-500 text-sm text-center py-4">Loading entity configs...</div>
+                    </div>
+
+                    <!-- Generation Controls -->
+                    <div class="border-t border-slate-700/50 pt-4">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div>
+                                <label class="block text-xs font-medium text-slate-400 mb-1">Seed</label>
+                                <input type="number" id="triplesSeed" value="42"
+                                    class="w-24 bg-slate-900/60 border border-slate-700 rounded-lg px-2 py-2 text-sm text-white font-mono focus:border-cyan-500 outline-none">
+                            </div>
+                        </div>
+                        <button id="triplesGenerateBtn" onclick="generateTriples()"
+                            class="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 cyan-glow">
+                            Generate Triples
+                        </button>
+                        <div id="triplesGenerateStatus" class="hidden mt-3 text-sm text-slate-400"></div>
+                    </div>
+                </div>
+
+                <!-- Run History -->
+                <div class="bg-slate-800/60 rounded-xl border border-slate-700">
+                    <div class="flex items-center justify-between p-4 border-b border-slate-700">
+                        <h2 class="text-lg font-semibold text-purple-400">Previous Runs</h2>
+                        <span class="text-xs text-slate-500" id="triplesRunCount">0</span>
+                    </div>
+                    <div id="triplesRunsList" class="divide-y divide-slate-700/50 max-h-[calc(100vh-500px)] overflow-y-auto">
+                        <div class="text-slate-500 text-center py-8 text-sm">No runs yet</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: Identity Verification -->
+            <div class="bg-slate-800/60 rounded-xl border border-slate-700 min-w-0">
+                <div class="flex items-center justify-between p-4 border-b border-slate-700">
+                    <h2 class="text-lg font-semibold text-purple-400">Identity Verification</h2>
+                    <span id="triplesVerifyOverall" class="hidden text-xs font-semibold px-2 py-0.5 rounded-full uppercase"></span>
+                </div>
+                <div class="p-4 space-y-4">
+                    <!-- Identity Gate Cards -->
+                    <div id="triplesGateCards" class="grid grid-cols-2 gap-3">
+                        <div class="bg-slate-900/40 rounded-lg p-4 border border-slate-700/50 text-center">
+                            <div class="text-slate-500 text-xs mb-1">BS Identity</div>
+                            <div class="text-slate-600 text-sm">Assets = Liab + Equity</div>
+                            <div class="mt-2 text-slate-600 text-xs">--</div>
+                        </div>
+                        <div class="bg-slate-900/40 rounded-lg p-4 border border-slate-700/50 text-center">
+                            <div class="text-slate-500 text-xs mb-1">CF Identity</div>
+                            <div class="text-slate-600 text-sm">Op + Inv + Fin = Net</div>
+                            <div class="mt-2 text-slate-600 text-xs">--</div>
+                        </div>
+                        <div class="bg-slate-900/40 rounded-lg p-4 border border-slate-700/50 text-center">
+                            <div class="text-slate-500 text-xs mb-1">P&L Identity</div>
+                            <div class="text-slate-600 text-sm">Rev - COGS - OpEx = EBITDA</div>
+                            <div class="mt-2 text-slate-600 text-xs">--</div>
+                        </div>
+                        <div class="bg-slate-900/40 rounded-lg p-4 border border-slate-700/50 text-center">
+                            <div class="text-slate-500 text-xs mb-1">Cash Continuity</div>
+                            <div class="text-slate-600 text-sm">Cash(n) + Net = Cash(n+1)</div>
+                            <div class="mt-2 text-slate-600 text-xs">--</div>
+                        </div>
+                    </div>
+
+                    <!-- Domain Summary Table -->
+                    <div>
+                        <h3 class="text-sm font-medium text-slate-400 mb-2">Domain Breakdown</h3>
+                        <div id="triplesDomainTable" class="overflow-x-auto">
+                            <table class="w-full text-xs">
+                                <thead>
+                                    <tr class="text-slate-500 border-b border-slate-700/50">
+                                        <th class="text-left py-2 px-2">Domain</th>
+                                        <th class="text-right py-2 px-2">Count</th>
+                                        <th class="text-right py-2 px-2">%</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="triplesDomainBody">
+                                    <tr><td colspan="3" class="text-center py-4 text-slate-600">Generate triples to see breakdown</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Gate Detail Expansion -->
+                    <div id="triplesGateDetail" class="hidden">
+                        <div class="flex items-center justify-between mb-2">
+                            <h3 class="text-sm font-medium text-slate-400" id="triplesGateDetailTitle">--</h3>
+                            <button onclick="document.getElementById('triplesGateDetail').classList.add('hidden')" class="text-xs text-slate-500 hover:text-slate-300">Close</button>
+                        </div>
+                        <div id="triplesGateDetailBody" class="max-h-64 overflow-y-auto text-xs"></div>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+
         <div id="testTab" class="hidden">
             <div class="bg-slate-800/60 rounded-xl p-5 border border-slate-700 mb-6">
                 <h2 class="text-lg font-semibold text-cyan-400 mb-4">Decision Trace Comparison</h2>
@@ -1809,6 +1932,7 @@
                 agents: document.getElementById('agentsTab'),
                 runlog: document.getElementById('runlogTab'),
                 dcl: document.getElementById('dclTab'),
+                triples: document.getElementById('triplesTab'),
                 guide: document.getElementById('guideTab'),
                 test: document.getElementById('testTab'),
             };
@@ -1817,6 +1941,7 @@
                 agents: document.getElementById('tabAgents'),
                 runlog: document.getElementById('tabRunLog'),
                 dcl: document.getElementById('tabDcl'),
+                triples: document.getElementById('tabTriples'),
                 guide: document.getElementById('tabGuide'),
                 test: document.getElementById('tabTest'),
             };
@@ -1839,6 +1964,7 @@
             if (tab === 'agents') refreshAOAMetrics();
             if (tab === 'runlog') { nlqInitUI(); rlRefresh(); }
             if (tab === 'dcl') updateDclScenarioStatus();
+            if (tab === 'triples') initTriplesTab();
             if (tab === 'guide') loadUserGuide();
             if (tab === 'test') populateTestSnapshotSelect();
         }
@@ -3983,6 +4109,365 @@
             }
         }
         
+        // ── Triples / Convergence Tab ─────────────────────────────────
+        let triplesTabInitialized = false;
+        let triplesConfigs = [];
+        let triplesCurrentRun = null;
+
+        async function initTriplesTab() {
+            if (triplesTabInitialized) return;
+            triplesTabInitialized = true;
+            await loadTripleConfigs();
+            await loadTripleRuns();
+        }
+
+        async function loadTripleConfigs() {
+            try {
+                const resp = await fetch('/api/business-data/triple-configs');
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                triplesConfigs = data.configs || [];
+                renderTripleEntityCards();
+            } catch (e) {
+                document.getElementById('triplesEntityCards').innerHTML =
+                    `<div class="text-red-400 text-sm p-3">Failed to load entity configs: ${e.message}</div>`;
+            }
+        }
+
+        function renderTripleEntityCards() {
+            const container = document.getElementById('triplesEntityCards');
+            if (!triplesConfigs.length) {
+                container.innerHTML = '<div class="text-slate-500 text-sm text-center py-4">No entity configs found</div>';
+                return;
+            }
+            container.innerHTML = triplesConfigs.map((cfg, i) => {
+                const p = cfg.params || {};
+                const colors = i === 0
+                    ? { border: 'border-cyan-700/50', bg: 'bg-cyan-900/20', title: 'text-cyan-400', label: 'bg-cyan-600/30 text-cyan-300' }
+                    : { border: 'border-purple-700/50', bg: 'bg-purple-900/20', title: 'text-purple-400', label: 'bg-purple-600/30 text-purple-300' };
+                return `
+                <div class="rounded-lg p-3 border ${colors.border} ${colors.bg}">
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="font-semibold ${colors.title}">${cfg.entity_name}</span>
+                            <span class="text-xs px-1.5 py-0.5 rounded ${colors.label}">${cfg.business_model}</span>
+                        </div>
+                        <span class="text-white font-mono font-semibold text-sm">${p.revenue_scale || '--'}</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-xs text-slate-400">
+                        <div>Growth: <span class="text-slate-300">${p.revenue_growth_rate_annual ? (p.revenue_growth_rate_annual * 100).toFixed(0) + '%' : '--'}</span></div>
+                        <div>COGS: <span class="text-slate-300">${p.cogs_pct ? (p.cogs_pct * 100).toFixed(0) + '%' : '--'}</span></div>
+                        <div>HC: <span class="text-slate-300">${p.starting_headcount ? p.starting_headcount.toLocaleString() : '--'}</span></div>
+                    </div>
+                    <details class="mt-2">
+                        <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-300">Config: ${cfg.config_file}</summary>
+                        <pre class="mt-1 text-xs text-slate-500 font-mono overflow-x-auto">${JSON.stringify(p, null, 2)}</pre>
+                    </details>
+                </div>`;
+            }).join('');
+        }
+
+        async function generateTriples() {
+            const btn = document.getElementById('triplesGenerateBtn');
+            const status = document.getElementById('triplesGenerateStatus');
+            const seed = document.getElementById('triplesSeed').value || 42;
+
+            btn.disabled = true;
+            btn.innerHTML = '<span class="inline-block animate-spin mr-2">&#9696;</span> Generating...';
+            btn.classList.remove('bg-cyan-600', 'hover:bg-cyan-500');
+            btn.classList.add('bg-slate-600', 'cursor-wait');
+            status.classList.remove('hidden');
+            status.textContent = 'Generating triples for all entities...';
+
+            try {
+                const resp = await fetch(`/api/business-data/generate-multi-entity-triples?seed=${seed}&entities=meridian,cascadia`, {
+                    method: 'POST',
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+                    throw new Error(err.detail || err.error || `HTTP ${resp.status}`);
+                }
+                const data = await resp.json();
+                triplesCurrentRun = data;
+
+                status.innerHTML = `<span class="text-emerald-400">Generated ${data.triple_count.toLocaleString()} triples</span> <span class="text-slate-500 font-mono">${data.run_id}</span> <span class="text-emerald-500 font-mono">${data.generation_time_s}s</span>`;
+
+                // Update banner
+                updateTriplesBanner(data);
+
+                // Update domain table
+                renderDomainTable(
+                    data.counts_by_domain,
+                    data.domain_summary_by_entity,
+                    data.entity_ids
+                );
+
+                // Auto-verify
+                await verifyTripleRun(data.run_id);
+
+                // Refresh run list
+                await loadTripleRuns();
+
+            } catch (e) {
+                status.innerHTML = `<span class="text-red-400">Generation failed: ${e.message}</span>`;
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Generate Triples';
+                btn.classList.add('bg-cyan-600', 'hover:bg-cyan-500');
+                btn.classList.remove('bg-slate-600', 'cursor-wait');
+            }
+        }
+
+        function updateTriplesBanner(data) {
+            const banner = document.getElementById('triplesBanner');
+            banner.classList.remove('hidden');
+            document.getElementById('triplesBannerCount').textContent = `${(data.triple_count || 0).toLocaleString()} triples`;
+            const domainCount = data.counts_by_domain ? Object.keys(data.counts_by_domain).length : (data.domain_summary ? Object.keys(data.domain_summary).length : 0);
+            document.getElementById('triplesBannerDomains').textContent = `${domainCount} domains`;
+            document.getElementById('triplesBannerPeriods').textContent = `${data.periods ? data.periods.length : '--'} quarters`;
+            document.getElementById('triplesBannerEntities').textContent = `${data.entity_ids ? data.entity_ids.length : (data.entities ? data.entities.length : '--')} entities`;
+            if (data.generation_time_s) {
+                document.getElementById('triplesGenTime').textContent = `${data.generation_time_s}s`;
+            }
+            const pushBadge = document.getElementById('triplesPushBadge');
+            if (data.pushed_to_dcl) {
+                pushBadge.textContent = 'Pushed to DCL';
+                pushBadge.className = 'text-xs text-emerald-400 font-medium';
+            } else {
+                pushBadge.textContent = 'Not pushed';
+                pushBadge.className = 'text-xs text-slate-500';
+            }
+        }
+
+        async function verifyTripleRun(runId) {
+            try {
+                const resp = await fetch(`/api/business-data/triple-runs/${runId}/verify`, { method: 'POST' });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                renderGateCards(data.checks, data.all_pass);
+            } catch (e) {
+                console.error('Verify failed:', e);
+            }
+        }
+
+        function renderGateCards(checks, allPass) {
+            const container = document.getElementById('triplesGateCards');
+            const overall = document.getElementById('triplesVerifyOverall');
+            overall.classList.remove('hidden');
+
+            if (allPass) {
+                overall.textContent = 'ALL PASS';
+                overall.className = 'text-xs font-semibold px-2 py-0.5 rounded-full uppercase status-pass border';
+            } else {
+                overall.textContent = 'FAIL';
+                overall.className = 'text-xs font-semibold px-2 py-0.5 rounded-full uppercase status-fail border';
+            }
+
+            const gateLabels = {
+                bs_identity: { short: 'BS Identity', desc: 'Assets = Liab + Equity' },
+                cf_identity: { short: 'CF Identity', desc: 'Op + Inv + Fin = Net' },
+                pl_identity: { short: 'P&L Identity', desc: 'Rev - COGS - OpEx = EBITDA' },
+                cash_continuity: { short: 'Cash Continuity', desc: 'Cash(n) + Net = Cash(n+1)' },
+            };
+
+            container.innerHTML = checks.map(check => {
+                const label = gateLabels[check.name] || { short: check.name, desc: check.description };
+                const isPass = check.overall === 'PASS';
+                const statusClass = isPass ? 'status-pass' : 'status-fail';
+                const borderClass = isPass ? 'border-emerald-600/50' : 'border-red-600/50';
+                const bgClass = isPass ? 'bg-emerald-900/20' : 'bg-red-900/20';
+                return `
+                <div class="rounded-lg p-4 border ${borderClass} ${bgClass} cursor-pointer hover:brightness-110 transition-all"
+                     onclick="showGateDetail('${check.name}', ${JSON.stringify(check.results).replace(/"/g, '&quot;')})">
+                    <div class="text-xs text-slate-400 mb-1">${label.short}</div>
+                    <div class="text-sm text-slate-300 mb-2">${label.desc}</div>
+                    <div class="flex items-center justify-between">
+                        <span class="${statusClass} text-xs font-semibold px-2 py-0.5 rounded-full uppercase border">${check.overall}</span>
+                        <span class="text-xs text-slate-400 font-mono">${check.pass_count}/${check.pass_count + check.fail_count}</span>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function showGateDetail(name, results) {
+            const detail = document.getElementById('triplesGateDetail');
+            const title = document.getElementById('triplesGateDetailTitle');
+            const body = document.getElementById('triplesGateDetailBody');
+            detail.classList.remove('hidden');
+            title.textContent = name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) + ' — Per Period';
+
+            let html = '<table class="w-full"><thead><tr class="text-slate-500 border-b border-slate-700/50">';
+            html += '<th class="text-left py-1 px-1">Entity</th><th class="text-left py-1 px-1">Period</th><th class="text-left py-1 px-1">Status</th><th class="text-right py-1 px-1">Diff</th>';
+            html += '</tr></thead><tbody>';
+            results.forEach(r => {
+                const sc = r.status === 'PASS' ? 'text-emerald-400' : 'text-red-400';
+                html += `<tr class="border-b border-slate-800/50">
+                    <td class="py-1 px-1 text-slate-400 font-mono">${r.entity_id}</td>
+                    <td class="py-1 px-1 text-slate-300 font-mono">${r.period}</td>
+                    <td class="py-1 px-1 ${sc} font-semibold">${r.status}</td>
+                    <td class="py-1 px-1 text-right text-slate-400 font-mono">${r.diff !== undefined ? r.diff.toFixed(4) : '--'}</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            body.innerHTML = html;
+        }
+
+        function renderDomainTable(domainSummary, domainByEntity, entityIds) {
+            const body = document.getElementById('triplesDomainBody');
+            if (!domainSummary || !Object.keys(domainSummary).length) {
+                body.innerHTML = '<tr><td colspan="3" class="text-center py-4 text-slate-600">No data</td></tr>';
+                return;
+            }
+            const total = Object.values(domainSummary).reduce((a, b) => a + b, 0);
+            const sorted = Object.entries(domainSummary).sort((a, b) => b[1] - a[1]);
+
+            // Update table header to include per-entity columns
+            const thead = body.closest('table').querySelector('thead tr');
+            let headerHtml = '<th class="text-left py-2 px-2">Domain</th><th class="text-right py-2 px-2">Count</th>';
+            if (entityIds && entityIds.length > 1 && domainByEntity) {
+                entityIds.forEach(eid => {
+                    headerHtml += `<th class="text-right py-2 px-2">${eid.charAt(0).toUpperCase() + eid.slice(1)}</th>`;
+                });
+            }
+            headerHtml += '<th class="text-right py-2 px-2">%</th>';
+            thead.innerHTML = headerHtml;
+
+            body.innerHTML = sorted.map(([domain, count]) => {
+                const pct = ((count / total) * 100).toFixed(1);
+                let entityCells = '';
+                if (entityIds && entityIds.length > 1 && domainByEntity) {
+                    entityIds.forEach(eid => {
+                        const ec = domainByEntity[eid] ? (domainByEntity[eid][domain] || 0) : 0;
+                        entityCells += `<td class="text-right py-1.5 px-2 text-slate-400 font-mono">${ec.toLocaleString()}</td>`;
+                    });
+                }
+                return `<tr class="border-b border-slate-800/30 hover:bg-slate-800/30">
+                    <td class="py-1.5 px-2 text-slate-300">${domain}</td>
+                    <td class="text-right py-1.5 px-2 text-white font-mono">${count.toLocaleString()}</td>
+                    ${entityCells}
+                    <td class="text-right py-1.5 px-2 text-slate-500">${pct}%</td>
+                </tr>`;
+            }).join('');
+        }
+
+        async function loadTripleRuns() {
+            try {
+                const resp = await fetch('/api/business-data/triple-runs');
+                if (!resp.ok) return;
+                const data = await resp.json();
+                renderTripleRuns(data.runs || []);
+            } catch (e) {
+                console.warn('Failed to load triple runs:', e);
+            }
+        }
+
+        function renderTripleRuns(runs) {
+            const container = document.getElementById('triplesRunsList');
+            const count = document.getElementById('triplesRunCount');
+            count.textContent = runs.length;
+
+            if (!runs.length) {
+                container.innerHTML = '<div class="text-slate-500 text-center py-8 text-sm">No runs yet</div>';
+                return;
+            }
+
+            container.innerHTML = runs.map(run => {
+                const shortId = run.run_id.replace('triples_', '');
+                const ts = run.timestamp ? new Date(run.timestamp).toLocaleString() : '--';
+                const checksHtml = run.identity_checks
+                    ? Object.entries(run.identity_checks).map(([k, v]) => {
+                        const cls = v === 'PASS' ? 'status-pass' : 'status-fail';
+                        return `<span class="${cls} text-xs px-1.5 py-0.5 rounded border">${k.replace('_', ' ').split(' ').map(w => w[0].toUpperCase()).join('')}: ${v}</span>`;
+                    }).join(' ')
+                    : '';
+                const pushBadge = run.pushed_to_dcl
+                    ? '<span class="text-xs text-emerald-400">Pushed</span>'
+                    : '<span class="text-xs text-slate-600">Not pushed</span>';
+
+                return `
+                <div class="p-3 hover:bg-slate-700/20 transition-colors">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="flex items-center gap-2">
+                            <span class="text-cyan-400 font-mono text-xs">${shortId}</span>
+                            <span class="text-slate-500 text-xs">${ts}</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            ${pushBadge}
+                            <span class="text-white font-mono text-xs">${(run.triple_count || 0).toLocaleString()}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-xs text-slate-500">seed: ${run.seed || '--'}</span>
+                        <span class="text-xs text-slate-500">entities: ${(run.entities || []).join(', ')}</span>
+                        ${checksHtml}
+                    </div>
+                    <details class="mb-2">
+                        <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-300">Domain breakdown</summary>
+                        <div class="mt-1 grid grid-cols-3 gap-1 text-xs">
+                            ${run.domain_summary ? Object.entries(run.domain_summary).sort((a,b) => b[1]-a[1]).map(([d, c]) =>
+                                `<span class="text-slate-400">${d}: <span class="text-white font-mono">${c}</span></span>`
+                            ).join('') : '<span class="text-slate-600">--</span>'}
+                        </div>
+                    </details>
+                    <div class="flex items-center gap-2">
+                        <button onclick="selectTripleRun('${run.run_id}')"
+                            class="text-xs px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors">
+                            Re-verify
+                        </button>
+                        ${!run.pushed_to_dcl ? `
+                        <button onclick="pushTripleRun('${run.run_id}', this)"
+                            class="text-xs px-2 py-1 bg-purple-700/50 hover:bg-purple-600/60 text-purple-300 rounded border border-purple-600/50 transition-colors">
+                            Push to DCL
+                        </button>` : ''}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        async function selectTripleRun(runId) {
+            // Load manifest for banner
+            try {
+                const runsResp = await fetch('/api/business-data/triple-runs');
+                const runsData = await runsResp.json();
+                const run = (runsData.runs || []).find(r => r.run_id === runId);
+                if (run) {
+                    updateTriplesBanner(run);
+                    renderDomainTable(run.domain_summary, run.domain_summary_by_entity, run.entities);
+                }
+            } catch (e) { /* non-critical */ }
+
+            await verifyTripleRun(runId);
+        }
+
+        async function pushTripleRun(runId, btn) {
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'Pushing...';
+            }
+            try {
+                const resp = await fetch(`/api/business-data/triple-runs/${runId}/push-to-dcl`, { method: 'POST' });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.detail || data.error || `HTTP ${resp.status}`);
+                if (data.success) {
+                    if (btn) {
+                        btn.textContent = 'Pushed';
+                        btn.classList.remove('bg-purple-700/50', 'hover:bg-purple-600/60');
+                        btn.classList.add('bg-emerald-800/50', 'text-emerald-300');
+                    }
+                    await loadTripleRuns();
+                } else {
+                    throw new Error(`Pushed ${data.pushed}/${data.total}. Errors: ${JSON.stringify(data.errors)}`);
+                }
+            } catch (e) {
+                if (btn) {
+                    btn.textContent = 'Failed';
+                    btn.classList.add('bg-red-800/50', 'text-red-300');
+                }
+                console.error('Push failed:', e);
+                alert(`Push to DCL failed: ${e.message}`);
+            }
+        }
+
         async function openOperatorGuide() {
             const modal = document.getElementById('operatorGuideModal');
             const content = document.getElementById('operatorGuideContent');

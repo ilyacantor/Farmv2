@@ -9,7 +9,9 @@ import json
 import logging
 import os
 import tempfile
+import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -256,6 +258,8 @@ async def generate_multi_entity_triples(
         f"entities={entity_names}, seed={seed}"
     )
 
+    t_start = time.monotonic()
+
     all_triples = []
     all_quarters = {}
     entity_ids = []
@@ -275,7 +279,7 @@ async def generate_multi_entity_triples(
         quarters = model.generate()
         all_quarters[entity_id] = quarters
 
-        # P&L + BS + CF triples
+        # P&L + BS + CF triples (identity gates enforced here — raises ValueError on failure)
         fin_gen = FinancialStatementTripleGenerator(quarters, assumptions, config_raw)
         all_triples.extend(fin_gen.generate())
 
@@ -326,15 +330,50 @@ async def generate_multi_entity_triples(
     writer = TripleWriter(output_dir)
     output_path = writer.write(all_triples, run_id, tenant_id)
 
-    # Count by concept domain
+    generation_time_s = round(time.monotonic() - t_start, 2)
+
+    # Count by concept domain (total and per-entity)
     domain_counts: Dict[str, int] = {}
+    domain_counts_by_entity: Dict[str, Dict[str, int]] = {eid: {} for eid in entity_ids}
     for t in all_triples:
         domain = t.concept.split(".")[0]
         domain_counts[domain] = domain_counts.get(domain, 0) + 1
+        eid = t.entity_id
+        if eid in domain_counts_by_entity:
+            domain_counts_by_entity[eid][domain] = domain_counts_by_entity[eid].get(domain, 0) + 1
+
+    # Run identity verification against generated triples
+    identity_checks = _verify_triples_identity(all_triples, entity_ids)
+
+    # Determine number of quarters from data
+    periods = sorted({t.period for t in all_triples if t.period})
+
+    # Write manifest JSON alongside JSONL
+    manifest = {
+        "run_id": run_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "seed": seed,
+        "tenant_id": tenant_id,
+        "entities": entity_ids,
+        "triple_count": len(all_triples),
+        "generation_time_s": generation_time_s,
+        "periods": periods,
+        "domain_summary": domain_counts,
+        "domain_summary_by_entity": domain_counts_by_entity,
+        "identity_checks": {
+            check["name"]: check["overall"]
+            for check in identity_checks
+        },
+        "output_file": os.path.basename(output_path),
+        "pushed_to_dcl": False,
+    }
+    manifest_path = os.path.join(output_dir, f"{run_id}_manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
 
     logger.info(
         f"Triple generation complete: run_id={run_id}, "
-        f"triple_count={len(all_triples)}, output={output_path}"
+        f"triple_count={len(all_triples)}, time={generation_time_s}s, output={output_path}"
     )
 
     return JSONResponse(content={
@@ -343,8 +382,14 @@ async def generate_multi_entity_triples(
         "triple_count": len(all_triples),
         "output_file_path": output_path,
         "counts_by_domain": domain_counts,
+        "domain_summary_by_entity": domain_counts_by_entity,
         "entity_count": len(entity_ids),
         "entity_ids": entity_ids,
+        "generation_time_s": generation_time_s,
+        "identity_checks": {
+            check["name"]: check["overall"]
+            for check in identity_checks
+        },
     })
 
 
@@ -363,6 +408,456 @@ def _profile_to_dict(profile) -> dict:
         "engagement_value_M": getattr(profile, "engagement_value_M", 0),
         "region": getattr(profile, "region", ""),
     }
+
+
+def _verify_triples_identity(
+    triples: list,
+    entity_ids: List[str],
+) -> List[Dict[str, Any]]:
+    """Run accounting identity checks against a list of SemanticTriple objects.
+
+    Returns a list of check results, each with per-entity-period detail.
+    Checks:
+      1. BS Identity: asset.total == liability.total + equity.total
+      2. CF Identity: cash_flow.operating + cash_flow.investing + cash_flow.financing == cash_flow.net_change
+      3. P&L Identity: revenue.total - cogs.total - opex.total == pnl.ebitda
+      4. Cash Continuity: cash[Q(n)] + cash_flow.net_change[Q(n+1)] == cash[Q(n+1)]
+    """
+    # Index triples by (entity_id, period, concept)
+    idx: Dict[tuple, float] = {}
+    for t in triples:
+        if t.period and t.property == "amount":
+            key = (t.entity_id, t.period, t.concept)
+            idx[key] = t.value
+
+    # Collect all entity/period pairs
+    periods_by_entity: Dict[str, List[str]] = {}
+    for t in triples:
+        if t.period and t.entity_id in entity_ids:
+            periods_by_entity.setdefault(t.entity_id, set()).add(t.period)
+    for eid in periods_by_entity:
+        periods_by_entity[eid] = sorted(periods_by_entity[eid])
+
+    def _get(eid: str, period: str, concept: str) -> Optional[float]:
+        return idx.get((eid, period, concept))
+
+    checks = []
+
+    # 1. BS Identity
+    bs_results = []
+    for eid in entity_ids:
+        for period in periods_by_entity.get(eid, []):
+            assets = _get(eid, period, "asset.total")
+            liabilities = _get(eid, period, "liability.total")
+            equity = _get(eid, period, "equity.total")
+            if assets is not None and liabilities is not None and equity is not None:
+                liab_plus_eq = round(liabilities + equity, 2)
+                diff = abs(assets - liab_plus_eq)
+                bs_results.append({
+                    "entity_id": eid,
+                    "period": period,
+                    "status": "PASS" if diff <= 0.01 else "FAIL",
+                    "assets": assets,
+                    "liab_plus_equity": liab_plus_eq,
+                    "diff": round(diff, 4),
+                })
+    bs_pass = sum(1 for r in bs_results if r["status"] == "PASS")
+    bs_fail = len(bs_results) - bs_pass
+    checks.append({
+        "name": "bs_identity",
+        "description": "Assets = Liabilities + Equity",
+        "results": bs_results,
+        "pass_count": bs_pass,
+        "fail_count": bs_fail,
+        "overall": "PASS" if bs_fail == 0 and bs_pass > 0 else "FAIL",
+    })
+
+    # 2. CF Identity
+    cf_results = []
+    for eid in entity_ids:
+        for period in periods_by_entity.get(eid, []):
+            operating = _get(eid, period, "cash_flow.operating.total")
+            investing = _get(eid, period, "cash_flow.investing.total")
+            financing = _get(eid, period, "cash_flow.financing.total")
+            net_change = _get(eid, period, "cash_flow.net_change")
+            if all(v is not None for v in [operating, investing, financing, net_change]):
+                computed = round(operating + investing + financing, 2)
+                diff = abs(computed - net_change)
+                cf_results.append({
+                    "entity_id": eid,
+                    "period": period,
+                    "status": "PASS" if diff <= 0.01 else "FAIL",
+                    "operating": operating,
+                    "investing": investing,
+                    "financing": financing,
+                    "net_change": net_change,
+                    "computed": computed,
+                    "diff": round(diff, 4),
+                })
+    cf_pass = sum(1 for r in cf_results if r["status"] == "PASS")
+    cf_fail = len(cf_results) - cf_pass
+    checks.append({
+        "name": "cf_identity",
+        "description": "Operating + Investing + Financing = Net Change in Cash",
+        "results": cf_results,
+        "pass_count": cf_pass,
+        "fail_count": cf_fail,
+        "overall": "PASS" if cf_fail == 0 and cf_pass > 0 else "FAIL",
+    })
+
+    # 3. P&L Identity
+    pl_results = []
+    for eid in entity_ids:
+        for period in periods_by_entity.get(eid, []):
+            revenue = _get(eid, period, "revenue.total")
+            cogs = _get(eid, period, "cogs.total")
+            opex = _get(eid, period, "opex.total")
+            ebitda = _get(eid, period, "pnl.ebitda")
+            if all(v is not None for v in [revenue, cogs, opex, ebitda]):
+                computed = round(revenue - cogs - opex, 2)
+                diff = abs(computed - ebitda)
+                pl_results.append({
+                    "entity_id": eid,
+                    "period": period,
+                    "status": "PASS" if diff <= 0.01 else "FAIL",
+                    "revenue": revenue,
+                    "cogs": cogs,
+                    "opex": opex,
+                    "ebitda": ebitda,
+                    "computed_ebitda": computed,
+                    "diff": round(diff, 4),
+                })
+    pl_pass = sum(1 for r in pl_results if r["status"] == "PASS")
+    pl_fail = len(pl_results) - pl_pass
+    checks.append({
+        "name": "pl_identity",
+        "description": "Revenue - COGS - OpEx = EBITDA",
+        "results": pl_results,
+        "pass_count": pl_pass,
+        "fail_count": pl_fail,
+        "overall": "PASS" if pl_fail == 0 and pl_pass > 0 else "FAIL",
+    })
+
+    # 4. Cash Continuity
+    cc_results = []
+    for eid in entity_ids:
+        periods = periods_by_entity.get(eid, [])
+        for i in range(1, len(periods)):
+            prev_period = periods[i - 1]
+            curr_period = periods[i]
+            prev_cash = _get(eid, prev_period, "asset.current.cash")
+            net_change = _get(eid, curr_period, "cash_flow.net_change")
+            curr_cash = _get(eid, curr_period, "asset.current.cash")
+            if all(v is not None for v in [prev_cash, net_change, curr_cash]):
+                expected = round(prev_cash + net_change, 2)
+                diff = abs(expected - curr_cash)
+                cc_results.append({
+                    "entity_id": eid,
+                    "period": curr_period,
+                    "status": "PASS" if diff <= 0.02 else "FAIL",
+                    "prev_cash": prev_cash,
+                    "net_change": net_change,
+                    "expected_cash": expected,
+                    "actual_cash": curr_cash,
+                    "diff": round(diff, 4),
+                })
+    cc_pass = sum(1 for r in cc_results if r["status"] == "PASS")
+    cc_fail = len(cc_results) - cc_pass
+    checks.append({
+        "name": "cash_continuity",
+        "description": "Cash[Q(n)] + Net Change[Q(n+1)] = Cash[Q(n+1)]",
+        "results": cc_results,
+        "pass_count": cc_pass,
+        "fail_count": cc_fail,
+        "overall": "PASS" if cc_fail == 0 and cc_pass > 0 else "FAIL",
+    })
+
+    return checks
+
+
+def _get_triples_output_dir() -> str:
+    """Return the canonical triples output directory path."""
+    return os.path.join(Path(__file__).resolve().parents[2], "output", "triples")
+
+
+def _load_manifest(run_id: str) -> Optional[Dict[str, Any]]:
+    """Load a triple run manifest from disk."""
+    manifest_path = os.path.join(_get_triples_output_dir(), f"{run_id}_manifest.json")
+    if not os.path.exists(manifest_path):
+        return None
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_manifest(run_id: str, manifest: Dict[str, Any]) -> None:
+    """Write a triple run manifest to disk."""
+    manifest_path = os.path.join(_get_triples_output_dir(), f"{run_id}_manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+
+# ── Triple tab endpoints ─────────────────────────────────────────────────
+
+
+@router.get("/triple-configs")
+async def get_triple_configs():
+    """Return available entity configs for triple generation.
+
+    Reads from farm_config_{name}.yaml files — not hardcoded.
+    """
+    config_dir = Path(__file__).resolve().parents[2]
+    configs = []
+    for config_path in sorted(config_dir.glob("farm_config_*.yaml")):
+        # Skip the default farm_config.yaml (pipeline config, not entity config)
+        name = config_path.stem  # e.g. "farm_config_meridian"
+        entity_id = name.replace("farm_config_", "")
+        if entity_id == "":
+            continue
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+
+        entity_section = raw.get("entity", {})
+        cp = raw.get("company_profile", {})
+
+        configs.append({
+            "entity_id": entity_section.get("entity_id", entity_id),
+            "entity_name": entity_section.get("entity_name", entity_id),
+            "business_model": entity_section.get("business_model", "unknown"),
+            "config_file": config_path.name,
+            "params": {
+                "revenue_scale": f"~${int(cp.get('starting_annual_revenue', 0) / 1000)}B"
+                    if cp.get("starting_annual_revenue", 0) >= 1000
+                    else f"~${int(cp.get('starting_annual_revenue', 0))}M",
+                "starting_annual_revenue": cp.get("starting_annual_revenue"),
+                "revenue_growth_rate_annual": cp.get("revenue_growth_rate_annual"),
+                "cogs_pct": cp.get("cogs_pct"),
+                "starting_headcount": cp.get("starting_headcount"),
+                "starting_customer_count": cp.get("starting_customer_count"),
+                "dso_days": cp.get("dso_days"),
+                "tax_rate": cp.get("tax_rate"),
+            },
+        })
+
+    return JSONResponse(content={"configs": configs})
+
+
+@router.get("/triple-runs")
+async def list_triple_runs():
+    """List previous triple generation runs by reading manifest files.
+
+    Each run's manifest is stored as {run_id}_manifest.json in output/triples/.
+    """
+    output_dir = _get_triples_output_dir()
+    if not os.path.isdir(output_dir):
+        return JSONResponse(content={"runs": []})
+
+    runs = []
+    seen_run_ids = set()
+    for filename in sorted(os.listdir(output_dir), reverse=True):
+        if not filename.endswith("_manifest.json"):
+            continue
+        filepath = os.path.join(output_dir, filename)
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+            runs.append(manifest)
+            seen_run_ids.add(manifest.get("run_id"))
+        except (json.JSONDecodeError, OSError) as e:
+            logger.warning(f"Could not read manifest {filepath}: {e}")
+            continue
+
+    # Also pick up legacy seed_meta.json files from prior runs
+    for filename in sorted(os.listdir(output_dir), reverse=True):
+        if not filename.endswith("_seed_meta.json"):
+            continue
+        run_id = filename.replace("_seed_meta.json", "")
+        if run_id in seen_run_ids:
+            continue
+        filepath = os.path.join(output_dir, filename)
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            runs.append({
+                "run_id": meta.get("farm_run_id", run_id),
+                "timestamp": None,
+                "seed": None,
+                "entities": [],
+                "triple_count": meta.get("total_triples", 0),
+                "domain_summary": meta.get("concept_summary", {}),
+                "identity_checks": {},
+                "output_file": f"{run_id}_triples.jsonl",
+                "pushed_to_dcl": False,
+            })
+        except (json.JSONDecodeError, OSError):
+            continue
+
+    return JSONResponse(content={"runs": runs})
+
+
+@router.post("/triple-runs/{run_id}/verify")
+async def verify_triple_run(run_id: str):
+    """Re-run identity gate checks against a triple run's JSONL output.
+
+    Reads the JSONL file, parses triples, runs all 4 identity checks,
+    and returns detailed per-entity-period results.
+    """
+    from src.output.triple_writer import TripleWriter
+    from src.output.triple_format import SemanticTriple
+
+    manifest = _load_manifest(run_id)
+    if not manifest:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Triple run '{run_id}' not found — no manifest at "
+                   f"{_get_triples_output_dir()}/{run_id}_manifest.json",
+        )
+
+    output_dir = _get_triples_output_dir()
+    jsonl_filename = manifest.get("output_file", f"{run_id}_triples.jsonl")
+    jsonl_path = os.path.join(output_dir, jsonl_filename)
+    if not os.path.exists(jsonl_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"JSONL file not found: {jsonl_path}",
+        )
+
+    raw_triples = TripleWriter.read(jsonl_path)
+    entity_ids = manifest.get("entities", [])
+
+    # Convert dicts back to SemanticTriple objects for _verify_triples_identity
+    triples = []
+    for d in raw_triples:
+        triples.append(SemanticTriple(
+            entity_id=d.get("entity_id", ""),
+            concept=d.get("concept", ""),
+            property=d.get("property", ""),
+            value=d.get("value"),
+            period=d.get("period"),
+            currency=d.get("currency", "USD"),
+            unit=d.get("unit"),
+            source_system=d.get("source_system", ""),
+            source_table=d.get("source_table"),
+            source_field=d.get("source_field"),
+            pipe_id=d.get("pipe_id"),
+            confidence_score=d.get("confidence_score", 0.95),
+            confidence_tier=d.get("confidence_tier", "high"),
+        ))
+
+    checks = _verify_triples_identity(triples, entity_ids)
+    all_pass = all(c["overall"] == "PASS" for c in checks)
+
+    # Update manifest with latest verification results
+    manifest["identity_checks"] = {c["name"]: c["overall"] for c in checks}
+    _save_manifest(run_id, manifest)
+
+    return JSONResponse(content={
+        "run_id": run_id,
+        "checks": checks,
+        "all_pass": all_pass,
+    })
+
+
+@router.post("/triple-runs/{run_id}/push-to-dcl")
+async def push_triple_run_to_dcl(run_id: str):
+    """Push a triple run's JSONL output to DCL's ingest endpoint.
+
+    Reads the JSONL file, batches triples, and POSTs to DCL.
+    Requires DCL_INGEST_URL environment variable.
+    """
+    import httpx
+    from src.output.triple_writer import TripleWriter
+
+    dcl_url = os.getenv("DCL_INGEST_URL", "")
+    if not dcl_url:
+        raise HTTPException(
+            status_code=503,
+            detail="DCL_INGEST_URL environment variable is not set — "
+                   "cannot push triples to DCL. Set DCL_INGEST_URL and retry.",
+        )
+
+    manifest = _load_manifest(run_id)
+    if not manifest:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Triple run '{run_id}' not found — no manifest at "
+                   f"{_get_triples_output_dir()}/{run_id}_manifest.json",
+        )
+
+    output_dir = _get_triples_output_dir()
+    jsonl_filename = manifest.get("output_file", f"{run_id}_triples.jsonl")
+    jsonl_path = os.path.join(output_dir, jsonl_filename)
+    if not os.path.exists(jsonl_path):
+        raise HTTPException(
+            status_code=404,
+            detail=f"JSONL file not found: {jsonl_path}",
+        )
+
+    raw_triples = TripleWriter.read(jsonl_path)
+    total = len(raw_triples)
+    batch_size = 1000
+
+    base_url = dcl_url.rstrip("/")
+    # Use the triple-specific ingest endpoint
+    ingest_url = base_url.replace("/api/dcl/ingest", "/api/dcl/ingest-triples")
+    if "/ingest-triples" not in ingest_url:
+        ingest_url = base_url + "/ingest-triples"
+
+    pushed = 0
+    errors = []
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for i in range(0, total, batch_size):
+                batch = raw_triples[i:i + batch_size]
+                try:
+                    resp = await client.post(ingest_url, json={"triples": batch})
+                    if 200 <= resp.status_code < 300:
+                        pushed += len(batch)
+                    else:
+                        errors.append({
+                            "batch_start": i,
+                            "batch_size": len(batch),
+                            "status_code": resp.status_code,
+                            "detail": resp.text[:500],
+                        })
+                except httpx.TimeoutException:
+                    errors.append({
+                        "batch_start": i,
+                        "batch_size": len(batch),
+                        "error": "timeout",
+                        "detail": f"DCL timed out after 60s on batch starting at index {i}",
+                    })
+                except httpx.ConnectError as e:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"Cannot connect to DCL at {ingest_url} — "
+                               f"connection refused. Is DCL running? Error: {e}",
+                    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error pushing to DCL: {type(e).__name__}: {e}",
+        )
+
+    success = pushed == total and not errors
+
+    # Update manifest
+    manifest["pushed_to_dcl"] = success
+    manifest["pushed_at"] = datetime.now(timezone.utc).isoformat() if success else None
+    manifest["push_count"] = pushed
+    _save_manifest(run_id, manifest)
+
+    return JSONResponse(content={
+        "run_id": run_id,
+        "success": success,
+        "pushed": pushed,
+        "total": total,
+        "dcl_url": ingest_url,
+        "errors": errors,
+    })
 
 
 @router.get("/ground-truth/{run_id}")
