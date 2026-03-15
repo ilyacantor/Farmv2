@@ -1,0 +1,46 @@
+account_number,account_name,account_type,parent_account,fs_classification,normal_balance
+1000,Cash and Cash Equivalents,Asset,,Current Asset,Debit
+1100,Accounts Receivable,Asset,,Current Asset,Debit
+1110,AR - Consulting Revenue,Asset,1100,Current Asset,Debit
+1120,AR - Managed Services,Asset,1100,Current Asset,Debit
+1200,Prepaid Expenses,Asset,,Current Asset,Debit
+1500,"Property, Plant & Equipment",Asset,,Noncurrent Asset,Debit
+1510,Accumulated Depreciation,Asset,1500,Noncurrent Asset,Credit
+1600,Intangible Assets,Asset,,Noncurrent Asset,Debit
+1610,Goodwill,Asset,,Noncurrent Asset,Debit
+2000,Accounts Payable,Liability,,Current Liability,Credit
+2100,Accrued Expenses,Liability,,Current Liability,Credit
+2200,Deferred Revenue,Liability,,Current Liability,Credit
+2500,Long-term Debt,Liability,,Noncurrent Liability,Credit
+3000,Common Stock,Equity,,Equity,Credit
+3100,Retained Earnings,Equity,,Equity,Credit
+4000,Consulting Revenue,Revenue,,Revenue,Credit
+4010,Consulting - Strategy,Revenue,4000,Revenue,Credit
+4020,Consulting - Technology,Revenue,4000,Revenue,Credit
+4030,Consulting - Operations,Revenue,4000,Revenue,Credit
+4100,Managed Services Revenue,Revenue,,Revenue,Credit
+4200,Licensing Revenue,Revenue,,Revenue,Credit
+4900,Other Revenue,Revenue,,Revenue,Credit
+5000,Direct Labor,COGS,,Cost of Revenue,Debit
+5010,Subcontractor Costs,COGS,,Cost of Revenue,Debit
+5020,Travel - Client Delivery,COGS,,Cost of Revenue,Debit
+5030,Software Licenses - Client Projects,COGS,,Cost of Revenue,Debit
+5100,Bench Costs,COGS,,Cost of Revenue,Debit
+6000,Sales & Marketing,OpEx,,Operating Expense,Debit
+6010,Marketing Programs,OpEx,6000,Operating Expense,Debit
+6020,Sales Compensation,OpEx,6000,Operating Expense,Debit
+6030,Recruiting - Sales,OpEx,6000,Operating Expense,Debit
+6100,Research & Development,OpEx,,Operating Expense,Debit
+6110,R&D Labor,OpEx,6100,Operating Expense,Debit
+6120,R&D Software & Tools,OpEx,6100,Operating Expense,Debit
+6200,General & Administrative,OpEx,,Operating Expense,Debit
+6210,Executive Compensation,OpEx,6200,Operating Expense,Debit
+6220,Legal & Professional,OpEx,6200,Operating Expense,Debit
+6230,Office & Facilities,OpEx,6200,Operating Expense,Debit
+6240,Insurance,OpEx,6200,Operating Expense,Debit
+6250,Employee Benefits,OpEx,6200,Operating Expense,Debit
+7000,Depreciation,Below EBITDA,,D&A,Debit
+7100,Amortization,Below EBITDA,,D&A,Debit
+8000,Interest Expense,Below EBITDA,,Other,Debit
+8100,Interest Income,Below EBITDA,,Other,Credit
+9000,Income Tax Expense,Tax,,Tax,Debit

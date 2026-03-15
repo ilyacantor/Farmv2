@@ -1,0 +1,16 @@
+account_number,account_name
+100,Cash
+110,Receivables
+120,Prepaid
+200,Payables
+300,Equity
+400,Revenue
+500,Cost of Services
+600,Operating Costs
+610,Salaries
+620,Benefits
+630,Rent
+640,Software
+700,Depreciation
+800,Interest
+900,Tax

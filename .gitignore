@@ -9,8 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
-# AOS Farm data
+# AOS Farm data (except CoA test inputs)
 data/
+!data/coa/
 *.db
 *.sqlite
 
