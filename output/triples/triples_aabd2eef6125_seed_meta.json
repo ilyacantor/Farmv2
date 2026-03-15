@@ -1,0 +1,22 @@
+{
+  "farm_run_id": "triples_aabd2eef6125",
+  "dcl_run_id": "6754a9d7-387a-553f-8c4c-978bfbbfca13",
+  "dcl_tenant_id": "400aa910-a6b4-5d44-ab9f-e6aecde37721",
+  "total_triples": 9350,
+  "concept_summary": {
+    "asset": 168,
+    "cash_flow": 264,
+    "cofa": 1176,
+    "cogs": 132,
+    "customer": 5872,
+    "ebitda_adjustment": 112,
+    "employee": 40,
+    "equity": 72,
+    "liability": 120,
+    "opex": 96,
+    "pnl": 120,
+    "revenue": 84,
+    "service": 30,
+    "vendor": 1064
+  }
+}
