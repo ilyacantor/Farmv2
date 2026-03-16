@@ -122,6 +122,91 @@ class FinancialStatementTripleGenerator:
 
         return ts
 
+    # ── Period 0: Opening Balance Sheet ─────────────────────────────────
+
+    def _opening_cash(self, ltd_balance: float) -> float:
+        """Compute opening cash for 2023-Q4 (before any Q1 activity)."""
+        cp = self.config_raw.get("company_profile") or {}
+        return _r(cp.get("starting_cash", 0.0) + ltd_balance)
+
+    def _generate_opening_bs(self, ltd_balance: float) -> List[SemanticTriple]:
+        """Emit 2023-Q4 opening balance sheet as Period 0 anchor.
+
+        Uses starting_* values from config. No P&L or CF — this is a
+        point-in-time snapshot representing the position at the start
+        of the model.
+        """
+        cp = self.config_raw.get("company_profile") or {}
+        period = "2023-Q4"
+
+        cash = _r(cp.get("starting_cash", 0.0) + ltd_balance)
+        ar = _r(cp.get("starting_ar", 0.0))
+        prepaid = _r(cp.get("starting_prepaid", 0.0))
+        ppe = _r(cp.get("starting_pp_e", 0.0))
+        intangibles = _r(cp.get("starting_intangibles", 0.0))
+        goodwill = _r(cp.get("starting_goodwill", 0.0))
+        asset_total = _r(cash + ar + prepaid + ppe + intangibles + goodwill)
+
+        ap = _r(cp.get("starting_ap", 0.0))
+        accrued = _r(cp.get("starting_accrued_expenses", 0.0))
+        # Deferred revenue: starting_annual_revenue / 4 * deferred_rev_months / 3
+        starting_rev = cp.get("starting_annual_revenue", 0.0)
+        deferred_months = cp.get("deferred_rev_months", 0.0)
+        deferred_rev = _r(starting_rev / 12.0 * deferred_months)
+        long_term_debt = _r(ltd_balance)
+        liability_total = _r(ap + accrued + deferred_rev + long_term_debt)
+
+        common_stock = _r(self.common_stock)
+        retained_earnings = _r(asset_total - liability_total - common_stock)
+        equity_total = _r(retained_earnings + common_stock)
+
+        # HARD GATE: BS identity
+        bs_diff = abs(asset_total - (liability_total + equity_total))
+        if bs_diff > 0.005:
+            raise ValueError(
+                f"Opening BS identity violation for {self.entity_id} in {period}: "
+                f"asset.total={asset_total} != liability.total({liability_total}) "
+                f"+ equity.total({equity_total}), diff={bs_diff}"
+            )
+
+        triples: List[SemanticTriple] = []
+
+        def add_bs(concept: str, value: float, source: str = "erp"):
+            triples.append(SemanticTriple(
+                entity_id=self.entity_id,
+                concept=concept,
+                property="amount",
+                value=value,
+                period=period,
+                unit="dollars",
+                source_system=source,
+                confidence_score=0.95,
+                confidence_tier="high",
+            ))
+
+        add_bs("asset.total", asset_total)
+        add_bs("asset.current.cash", cash)
+        add_bs("asset.current.accounts_receivable", ar)
+        add_bs("asset.current.prepaid", prepaid)
+        add_bs("asset.noncurrent.property_plant_equipment", ppe)
+        add_bs("asset.noncurrent.intangibles", intangibles)
+        add_bs("asset.noncurrent.goodwill", goodwill)
+        add_bs("liability.total", liability_total)
+        add_bs("liability.current.accounts_payable", ap)
+        add_bs("liability.current.accrued_expenses", accrued)
+        add_bs("liability.current.deferred_revenue", deferred_rev)
+        add_bs("liability.noncurrent.long_term_debt", long_term_debt)
+        add_bs("equity.total", equity_total)
+        add_bs("equity.retained_earnings", retained_earnings)
+        add_bs("equity.common_stock", common_stock)
+
+        _logger.info(
+            f"[{self.entity_id}] Opening BS (2023-Q4): assets={asset_total}, "
+            f"liabilities={liability_total}, equity={equity_total}, cash={cash}"
+        )
+
+        return triples
+
     # ── Balance Sheet + Cash Flow ───────────────────────────────────────
 
     def _generate_bs_cf_triples(self) -> List[SemanticTriple]:
@@ -139,6 +224,12 @@ class FinancialStatementTripleGenerator:
         ltd_balance = self.long_term_debt_initial
         prev_cash_triple: Optional[float] = None
         prev_q: Optional[Quarter] = None
+
+        # ── Period 0: 2023-Q4 opening balance sheet anchor ────────────
+        # Emits the opening BS snapshot from config starting_* values.
+        # No P&L or CF for this period — it's a point-in-time position.
+        triples.extend(self._generate_opening_bs(ltd_balance))
+        prev_cash_triple = self._opening_cash(ltd_balance)
 
         for q in self.quarters:
             period = q.quarter
