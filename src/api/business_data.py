@@ -215,6 +215,10 @@ async def generate_multi_entity_triples(
         default=os.getenv("AOS_DEV_TENANT_ID", ""),
         description="Tenant ID for triple output (defaults to AOS_DEV_TENANT_ID env var)",
     ),
+    skip_push: bool = Query(
+        default=False,
+        description="If true, generate JSONL only — do not push to DCL",
+    ),
 ):
     """
     Generate semantic triples for multiple entities.
@@ -399,6 +403,20 @@ async def generate_multi_entity_triples(
         f"triple_count={len(all_triples)}, time={generation_time_s}s, output={output_path}"
     )
 
+    # Auto-push to DCL unless skip_push is set
+    push_results = None
+    if not skip_push:
+        from src.output.triple_writer import TripleWriter as _TW
+        raw_triples = _TW.read(output_path)
+        push_results = await _push_triples_to_dcl(
+            raw_triples=raw_triples,
+            tenant_id=tenant_id,
+            run_id=run_id,
+            manifest=manifest,
+        )
+        # Re-read manifest since _push_triples_to_dcl updated it
+        manifest = _load_manifest(run_id) or manifest
+
     return JSONResponse(content={
         "run_id": run_id,
         "status": "completed",
@@ -409,6 +427,8 @@ async def generate_multi_entity_triples(
         "entity_count": len(entity_ids),
         "entity_ids": entity_ids,
         "generation_time_s": generation_time_s,
+        "pushed_to_dcl": manifest.get("pushed_to_dcl", False),
+        "push_results": push_results,
         "identity_checks": {
             check["name"]: check["overall"]
             for check in identity_checks
@@ -619,6 +639,102 @@ def _save_manifest(run_id: str, manifest: Dict[str, Any]) -> None:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
 
 
+async def _push_triples_to_dcl(
+    raw_triples: List[Dict[str, Any]],
+    tenant_id: str,
+    run_id: str,
+    manifest: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Push triples to DCL's ingest-triples endpoint in batches.
+
+    Shared by generate-multi-entity-triples (auto-push) and
+    triple-runs/{run_id}/push-to-dcl (manual push).
+
+    Raises HTTPException on connection failure or missing config —
+    never silently succeeds when DCL is unreachable.
+    """
+    import httpx
+
+    dcl_url = os.getenv("DCL_INGEST_URL", "")
+    if not dcl_url:
+        raise HTTPException(
+            status_code=503,
+            detail="DCL_INGEST_URL environment variable is not set — "
+                   "cannot push triples to DCL. Set DCL_INGEST_URL and retry.",
+        )
+
+    base_url = dcl_url.rstrip("/")
+    ingest_url = base_url.replace("/api/dcl/ingest", "/api/dcl/ingest-triples")
+    if "/ingest-triples" not in ingest_url:
+        ingest_url = base_url + "/ingest-triples"
+
+    dcl_run_id = str(uuid.uuid4())
+    total = len(raw_triples)
+    batch_size = 1000
+    pushed = 0
+    errors = []
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            for i in range(0, total, batch_size):
+                batch = raw_triples[i:i + batch_size]
+                try:
+                    resp = await client.post(ingest_url, json={
+                        "tenant_id": tenant_id,
+                        "run_id": dcl_run_id,
+                        "triples": batch,
+                    })
+                    if 200 <= resp.status_code < 300:
+                        pushed += len(batch)
+                    else:
+                        errors.append({
+                            "batch_start": i,
+                            "batch_size": len(batch),
+                            "status_code": resp.status_code,
+                            "detail": resp.text[:500],
+                        })
+                except httpx.TimeoutException:
+                    errors.append({
+                        "batch_start": i,
+                        "batch_size": len(batch),
+                        "error": "timeout",
+                        "detail": f"DCL timed out after 60s on batch starting at index {i}",
+                    })
+                except httpx.ConnectError as e:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"Cannot connect to DCL at {ingest_url} — "
+                               f"connection refused. Is DCL running? Error: {e}",
+                    )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unexpected error pushing to DCL: {type(e).__name__}: {e}",
+        )
+
+    success = pushed == total and not errors
+
+    manifest["pushed_to_dcl"] = success
+    manifest["pushed_at"] = datetime.now(timezone.utc).isoformat() if success else None
+    manifest["push_count"] = pushed
+    _save_manifest(run_id, manifest)
+
+    logger.info(
+        f"DCL push {'succeeded' if success else 'FAILED'}: "
+        f"run_id={run_id}, pushed={pushed}/{total}, errors={len(errors)}"
+    )
+
+    return {
+        "success": success,
+        "pushed": pushed,
+        "total": total,
+        "dcl_url": ingest_url,
+        "errors": errors,
+    }
+
+
 # ── Triple tab endpoints ─────────────────────────────────────────────────
 
 
@@ -788,16 +904,7 @@ async def push_triple_run_to_dcl(run_id: str):
     Reads the JSONL file, batches triples, and POSTs to DCL.
     Requires DCL_INGEST_URL environment variable.
     """
-    import httpx
     from src.output.triple_writer import TripleWriter
-
-    dcl_url = os.getenv("DCL_INGEST_URL", "")
-    if not dcl_url:
-        raise HTTPException(
-            status_code=503,
-            detail="DCL_INGEST_URL environment variable is not set — "
-                   "cannot push triples to DCL. Set DCL_INGEST_URL and retry.",
-        )
 
     manifest = _load_manifest(run_id)
     if not manifest:
@@ -817,19 +924,7 @@ async def push_triple_run_to_dcl(run_id: str):
         )
 
     raw_triples = TripleWriter.read(jsonl_path)
-    total = len(raw_triples)
-    batch_size = 1000
 
-    base_url = dcl_url.rstrip("/")
-    # Use the triple-specific ingest endpoint
-    ingest_url = base_url.replace("/api/dcl/ingest", "/api/dcl/ingest-triples")
-    if "/ingest-triples" not in ingest_url:
-        ingest_url = base_url + "/ingest-triples"
-
-    # DCL's IngestRequest requires tenant_id and run_id (both UUIDs) at the top level.
-    # tenant_id comes from the manifest (set during generation).
-    # We generate a fresh UUID for run_id since each push is a distinct ingestion event.
-    import uuid
     tenant_id = manifest.get("tenant_id", "")
     if not tenant_id:
         raise HTTPException(
@@ -838,66 +933,17 @@ async def push_triple_run_to_dcl(run_id: str):
                    f"cannot push to DCL without a valid tenant_id. "
                    f"Re-generate triples with a tenant_id set.",
         )
-    dcl_run_id = str(uuid.uuid4())
 
-    pushed = 0
-    errors = []
-
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            for i in range(0, total, batch_size):
-                batch = raw_triples[i:i + batch_size]
-                try:
-                    resp = await client.post(ingest_url, json={
-                        "tenant_id": tenant_id,
-                        "run_id": dcl_run_id,
-                        "triples": batch,
-                    })
-                    if 200 <= resp.status_code < 300:
-                        pushed += len(batch)
-                    else:
-                        errors.append({
-                            "batch_start": i,
-                            "batch_size": len(batch),
-                            "status_code": resp.status_code,
-                            "detail": resp.text[:500],
-                        })
-                except httpx.TimeoutException:
-                    errors.append({
-                        "batch_start": i,
-                        "batch_size": len(batch),
-                        "error": "timeout",
-                        "detail": f"DCL timed out after 60s on batch starting at index {i}",
-                    })
-                except httpx.ConnectError as e:
-                    raise HTTPException(
-                        status_code=503,
-                        detail=f"Cannot connect to DCL at {ingest_url} — "
-                               f"connection refused. Is DCL running? Error: {e}",
-                    )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Unexpected error pushing to DCL: {type(e).__name__}: {e}",
-        )
-
-    success = pushed == total and not errors
-
-    # Update manifest
-    manifest["pushed_to_dcl"] = success
-    manifest["pushed_at"] = datetime.now(timezone.utc).isoformat() if success else None
-    manifest["push_count"] = pushed
-    _save_manifest(run_id, manifest)
+    result = await _push_triples_to_dcl(
+        raw_triples=raw_triples,
+        tenant_id=tenant_id,
+        run_id=run_id,
+        manifest=manifest,
+    )
 
     return JSONResponse(content={
         "run_id": run_id,
-        "success": success,
-        "pushed": pushed,
-        "total": total,
-        "dcl_url": ingest_url,
-        "errors": errors,
+        **result,
     })
 
 
