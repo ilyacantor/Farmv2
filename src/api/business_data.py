@@ -212,8 +212,8 @@ async def generate_multi_entity_triples(
     ),
     seed: int = Query(default=42, description="Random seed for deterministic generation"),
     tenant_id: str = Query(
-        default="dev-00000000-0000-0000-0000-000000000000",
-        description="Tenant ID for triple output",
+        default=os.getenv("AOS_DEV_TENANT_ID", ""),
+        description="Tenant ID for triple output (defaults to AOS_DEV_TENANT_ID env var)",
     ),
 ):
     """
@@ -238,6 +238,13 @@ async def generate_multi_entity_triples(
     from src.generators.triples.general_ledger import GeneralLedgerTripleGenerator
     from src.generators.triples.chart_of_accounts import ChartOfAccountsTripleGenerator
     from src.output.triple_writer import TripleWriter
+
+    if not tenant_id or not tenant_id.strip():
+        raise HTTPException(
+            status_code=422,
+            detail="tenant_id is required — set AOS_DEV_TENANT_ID environment variable "
+                   "or pass ?tenant_id= as a query parameter.",
+        )
 
     entity_names = [e.strip() for e in entities.split(",") if e.strip()]
     if not entity_names:
