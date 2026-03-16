@@ -667,19 +667,26 @@ async def _push_triples_to_dcl(
     ingest_url = base_url.replace("/api/dcl/ingest", "/api/dcl/ingest-triples")
     if "/ingest-triples" not in ingest_url:
         ingest_url = base_url + "/ingest-triples"
-
     dcl_run_id = str(uuid.uuid4())
     total = len(raw_triples)
     batch_size = 1000
     pushed = 0
     errors = []
 
+    # 180s per-request timeout: DCL's ingest can take ~70s per 1000-triple batch
+    # due to schema validation and upsert logic on Supabase.
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=180.0) as client:
             for i in range(0, total, batch_size):
                 batch = raw_triples[i:i + batch_size]
+                # First batch: replace=true deactivates any prior triples for this run_id.
+                # Subsequent batches: append=true skips idempotency check, adds to same run.
+                if i == 0:
+                    url = ingest_url + "?replace=true"
+                else:
+                    url = ingest_url + "?append=true"
                 try:
-                    resp = await client.post(ingest_url, json={
+                    resp = await client.post(url, json={
                         "tenant_id": tenant_id,
                         "run_id": dcl_run_id,
                         "triples": batch,
@@ -698,7 +705,7 @@ async def _push_triples_to_dcl(
                         "batch_start": i,
                         "batch_size": len(batch),
                         "error": "timeout",
-                        "detail": f"DCL timed out after 60s on batch starting at index {i}",
+                        "detail": f"DCL timed out after 180s on batch starting at index {i}",
                     })
                 except httpx.ConnectError as e:
                     raise HTTPException(
