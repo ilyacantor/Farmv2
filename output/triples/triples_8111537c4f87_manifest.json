@@ -1,0 +1,85 @@
+{
+  "run_id": "triples_8111537c4f87",
+  "timestamp": "2026-03-16T17:37:18.820762+00:00",
+  "seed": 42,
+  "tenant_id": "dev-00000000-0000-0000-0000-000000000000",
+  "entities": [
+    "meridian",
+    "cascadia"
+  ],
+  "triple_count": 9380,
+  "generation_time_s": 0.54,
+  "periods": [
+    "2023-Q4",
+    "2024-Q1",
+    "2024-Q2",
+    "2024-Q3",
+    "2024-Q4",
+    "2025-Q1",
+    "2025-Q2",
+    "2025-Q3",
+    "2025-Q4",
+    "2026-Q1",
+    "2026-Q2",
+    "2026-Q3",
+    "2026-Q4"
+  ],
+  "domain_summary": {
+    "revenue": 84,
+    "cogs": 132,
+    "opex": 96,
+    "pnl": 120,
+    "asset": 182,
+    "liability": 130,
+    "equity": 78,
+    "cash_flow": 264,
+    "ebitda_adjustment": 112,
+    "service": 30,
+    "cofa": 1176,
+    "customer": 5872,
+    "vendor": 1064,
+    "employee": 40
+  },
+  "domain_summary_by_entity": {
+    "meridian": {
+      "revenue": 36,
+      "cogs": 60,
+      "opex": 48,
+      "pnl": 60,
+      "asset": 91,
+      "liability": 65,
+      "equity": 39,
+      "cash_flow": 132,
+      "ebitda_adjustment": 56,
+      "service": 18,
+      "cofa": 588,
+      "customer": 4936,
+      "vendor": 532,
+      "employee": 20
+    },
+    "cascadia": {
+      "revenue": 48,
+      "cogs": 72,
+      "opex": 48,
+      "pnl": 60,
+      "asset": 91,
+      "liability": 65,
+      "equity": 39,
+      "cash_flow": 132,
+      "ebitda_adjustment": 56,
+      "service": 12,
+      "cofa": 588,
+      "customer": 936,
+      "vendor": 532,
+      "employee": 20
+    }
+  },
+  "identity_checks": {
+    "bs_identity": "PASS",
+    "cf_identity": "PASS",
+    "pl_identity": "PASS",
+    "cash_continuity": "PASS"
+  },
+  "output_file": "triples_8111537c4f87_triples.jsonl",
+  "pushed_to_dcl": false
+}
