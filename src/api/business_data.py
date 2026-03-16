@@ -819,6 +819,20 @@ async def push_triple_run_to_dcl(run_id: str):
     if "/ingest-triples" not in ingest_url:
         ingest_url = base_url + "/ingest-triples"
 
+    # DCL's IngestRequest requires tenant_id and run_id (both UUIDs) at the top level.
+    # tenant_id comes from the manifest (set during generation).
+    # We generate a fresh UUID for run_id since each push is a distinct ingestion event.
+    import uuid
+    tenant_id = manifest.get("tenant_id", "")
+    if not tenant_id:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Triple run '{run_id}' manifest is missing 'tenant_id' — "
+                   f"cannot push to DCL without a valid tenant_id. "
+                   f"Re-generate triples with a tenant_id set.",
+        )
+    dcl_run_id = str(uuid.uuid4())
+
     pushed = 0
     errors = []
 
@@ -827,7 +841,11 @@ async def push_triple_run_to_dcl(run_id: str):
             for i in range(0, total, batch_size):
                 batch = raw_triples[i:i + batch_size]
                 try:
-                    resp = await client.post(ingest_url, json={"triples": batch})
+                    resp = await client.post(ingest_url, json={
+                        "tenant_id": tenant_id,
+                        "run_id": dcl_run_id,
+                        "triples": batch,
+                    })
                     if 200 <= resp.status_code < 300:
                         pushed += len(batch)
                     else:
