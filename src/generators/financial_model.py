@@ -35,13 +35,13 @@ _logger = logging.getLogger("farm.financial_model")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# YAML config loader — reads farm_config.yaml once at import time.
+# YAML config loader — reads entity-specific farm_config_*.yaml at import time.
 # Absence of the file is normal; compiled defaults in the dataclass are used.
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _load_farm_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     """
-    Load a farm config YAML from the given path or default farm_config.yaml.
+    Load a farm config YAML from the given path or default entity config.
 
     Returns a flat dict merging company_profile + realism_params sections.
     Returns empty dict if the file is absent (compiled defaults apply).
@@ -69,20 +69,22 @@ def _load_farm_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             merged.setdefault(k, v)
         return merged
     except Exception as exc:
-        _logger.warning(f"Failed to load {candidate}: {exc} — using compiled defaults")
-        return {}
+        raise RuntimeError(
+            f"Failed to parse farm config at {candidate}: {exc}. "
+            f"The file exists but could not be loaded — fix the YAML syntax or remove the file."
+        ) from exc
 
 _cfg = _load_farm_config()
 
 
 def get_schema_config() -> Dict[str, Any]:
-    """Return the 'schema' section from farm_config.yaml, or empty dict."""
+    """Return the 'schema' section from entity config YAML, or empty dict."""
     raw = _cfg.get("_raw", {})
     return raw.get("schema") or {}
 
 
 def get_vendor_config() -> Dict[str, Any]:
-    """Return the 'vendors' section from farm_config.yaml, or empty dict."""
+    """Return the 'vendors' section from entity config YAML, or empty dict."""
     raw = _cfg.get("_raw", {})
     return raw.get("vendors") or {}
 
@@ -96,7 +98,7 @@ class Assumptions:
     """
     Driver assumptions that parameterize the entire financial model.
 
-    Values are loaded from farm_config.yaml when present.
+    Values are loaded from entity-specific farm_config_*.yaml when present.
     Compiled defaults (the second argument to _cfg.get) are the fallback
     when the YAML file is absent — Farm always runs without a config file.
     Field names are the DCL contract and must not be renamed.

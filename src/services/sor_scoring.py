@@ -64,7 +64,7 @@ SIGNAL_WEIGHTS = {
 
 MAX_SCORE = sum(w for w in SIGNAL_WEIGHTS.values() if w > 0)
 
-# Canonical source: farm_config.yaml → vendors.sor_vendors_by_domain
+# Canonical source: entity config YAML → vendors.sor_vendors_by_domain
 # Loaded via enterprise_data.SOR_VENDORS_BY_DOMAIN (string keys).
 # Re-keyed here to DataDomain enum for type-safe scoring.
 KNOWN_SOR_VENDORS = {DataDomain(k): v for k, v in SOR_VENDORS_BY_DOMAIN.items()}

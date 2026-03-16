@@ -310,12 +310,15 @@ async def generate_multi_entity_triples(
     # Customer profiles
     profile_gen = CustomerProfileGenerator(seed=seed)
     for entity_id in entity_ids:
-        if entity_id == "meridian":
-            profiles = [_profile_to_dict(p) for p in profile_gen.meridian]
-        elif entity_id == "cascadia":
-            profiles = [_profile_to_dict(p) for p in profile_gen.cascadia]
-        else:
-            profiles = []
+        entity_profiles = getattr(profile_gen, entity_id, None)
+        if entity_profiles is None:
+            _logger.warning(
+                f"CustomerProfileGenerator has no attribute '{entity_id}' — "
+                f"no customer profiles will be generated for this entity. "
+                f"Available: {[a for a in dir(profile_gen) if not a.startswith('_')]}"
+            )
+            continue
+        profiles = [_profile_to_dict(p) for p in entity_profiles]
         if profiles:
             cp_gen = CustomerProfileTripleGenerator(profiles, entity_id)
             all_triples.extend(cp_gen.generate())
@@ -608,7 +611,7 @@ async def get_triple_configs():
     config_dir = Path(__file__).resolve().parents[2]
     configs = []
     for config_path in sorted(config_dir.glob("farm_config_*.yaml")):
-        # Skip the default farm_config.yaml (pipeline config, not entity config)
+        # Only load entity-specific configs (farm_config_meridian.yaml, etc.)
         name = config_path.stem  # e.g. "farm_config_meridian"
         entity_id = name.replace("farm_config_", "")
         if entity_id == "":

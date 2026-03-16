@@ -5,8 +5,8 @@ Contains app catalogs, stress test scenarios, and reference data used
 by EnterpriseGenerator to create realistic enterprise snapshots.
 
 Vendor lists (SOR_VENDORS_BY_DOMAIN, FABRIC_VENDOR_DOMAINS) are loaded from
-farm_config.yaml's vendors section. Compiled defaults below are the fallback
-when the YAML file is absent.
+entity-specific farm_config_*.yaml vendors section. Compiled defaults below
+are the fallback when the YAML file is absent.
 """
 
 from src.generators.financial_model import get_vendor_config
@@ -272,7 +272,7 @@ GOVERNANCE_RATES = {
 # =============================================================================
 # SYSTEM OF RECORD (SOR) VENDOR PATTERNS
 # =============================================================================
-# Canonical source: farm_config.yaml → vendors.sor_vendors_by_domain
+# Canonical source: entity config YAML → vendors.sor_vendors_by_domain
 # Compiled defaults below are the fallback when YAML is absent.
 
 _SOR_VENDORS_COMPILED = {
@@ -328,7 +328,7 @@ SOR_APP_DOMAINS = {
 # =============================================================================
 # FABRIC PLANE VENDOR MAPPINGS
 # =============================================================================
-# Canonical source: farm_config.yaml → vendors.fabric_plane_vendors
+# Canonical source: entity config YAML → vendors.fabric_plane_vendors
 # Compiled defaults below are the fallback when YAML is absent.
 
 _FABRIC_VENDORS_COMPILED = {

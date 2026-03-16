@@ -23,7 +23,7 @@ from fastapi.responses import JSONResponse
 
 from src.farm.db import get_manifest_run, list_manifest_runs, connection as db_connection
 
-# Canonical fabric-plane categories — must match farm_config.yaml definitions
+# Canonical fabric-plane categories — must match entity config YAML definitions
 FABRIC_PLANE_CATEGORIES = {"ipaas", "api_gateway", "event_bus", "data_warehouse"}
 
 logger = logging.getLogger("farm.api.run_log")

@@ -72,7 +72,7 @@ class FabricPlaneConfig(BaseModel):
     latency_ms: Optional[int] = None
     
     
-# Canonical source: farm_config.yaml → vendors.fabric_plane_vendors
+# Canonical source: entity config YAML → vendors.fabric_plane_vendors
 # Reads YAML directly to avoid circular import through generators/__init__.py.
 # Compiled fallback below matches the YAML defaults.
 def _build_plane_vendor_lists() -> Dict[str, list]:
@@ -92,7 +92,7 @@ def _build_plane_vendor_lists() -> Dict[str, list]:
                     return dict(by_plane)
     except Exception:
         pass
-    # Compiled fallback — matches farm_config.yaml defaults
+    # Compiled fallback — matches entity config YAML defaults
     return {
         "ipaas": ["workato", "mulesoft", "boomi", "tray.io", "celigo", "sap_integration_suite"],
         "api_gateway": ["kong", "apigee", "aws_api_gateway", "azure_api_management"],
