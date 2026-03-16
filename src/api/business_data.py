@@ -235,6 +235,8 @@ async def generate_multi_entity_triples(
     from src.generators.triples.ebitda_adjustments import EBITDAAdjustmentTripleGenerator
     from src.generators.triples.service_catalogs import ServiceCatalogTripleGenerator
     from src.generators.triples.customer_profiles import CustomerProfileTripleGenerator
+    from src.generators.triples.general_ledger import GeneralLedgerTripleGenerator
+    from src.generators.triples.chart_of_accounts import ChartOfAccountsTripleGenerator
     from src.output.triple_writer import TripleWriter
 
     entity_names = [e.strip() for e in entities.split(",") if e.strip()]
@@ -282,6 +284,17 @@ async def generate_multi_entity_triples(
         # P&L + BS + CF triples (identity gates enforced here — raises ValueError on failure)
         fin_gen = FinancialStatementTripleGenerator(quarters, assumptions, config_raw)
         all_triples.extend(fin_gen.generate())
+
+        # GL triples — atomic monthly layer (new: GL-first generation)
+        # Generates monthly GL entries for first 8 quarters + opening balance.
+        # Runs alongside existing generators; derived quarterly triples included.
+        if len(quarters) >= 8 and assumptions.business_model in ("consultancy", "bpm"):
+            gl_gen = GeneralLedgerTripleGenerator(quarters, assumptions, config_raw)
+            all_triples.extend(gl_gen.generate())
+
+            # CoA triples — derived from GL account definitions (atemporal)
+            coa_gen = ChartOfAccountsTripleGenerator(entity_id, assumptions.business_model)
+            all_triples.extend(coa_gen.generate())
 
         # EBITDA adjustments
         ebitda_gen = EBITDAAdjustmentTripleGenerator(quarters, entity_id, seed=seed)
