@@ -29,3 +29,4 @@ attached_assets/
 
 # Log files
 *.log
+output/triples/*.jsonl

@@ -17,6 +17,7 @@ CRITICAL CONTRACT:
 
 import asyncio
 import hashlib
+import json
 import logging
 import os
 import time
@@ -104,6 +105,17 @@ _CATEGORY_TO_GENERATOR = {
     # Route to salesforce archetype (simplest generator, produces generic rows).
     "other": "salesforce",
 }
+
+
+def _is_valid_uuid(val: str) -> bool:
+    """Check if a string is a valid UUID (pure validation, not error handling)."""
+    if not isinstance(val, str) or not val:
+        return False
+    import re
+    return bool(re.match(
+        r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+        val.lower(),
+    ))
 
 
 def _resolve_generator_key(manifest: JobManifest) -> Optional[str]:
@@ -518,6 +530,7 @@ async def _execute_single_manifest(
     aam_run_id: str | None = None,
     precomputed_profile: BusinessProfile | None = None,
     http_client: httpx.AsyncClient | None = None,
+    triple_accumulator: list | None = None,
 ) -> ManifestExecutionResult:
     """
     Core logic for executing a single JobManifest.
@@ -793,6 +806,43 @@ async def _execute_single_manifest(
     rows = pipe_payload.get("data", [])
     rows_generated = len(rows)
     rows_pushed = rows_generated  # Default: all generated rows will be pushed
+
+    # ── Triple conversion (additive — does NOT replace old DCL push) ────
+    # Convert generator output to semantic triples for the v2 triple store.
+    # Accumulates triples in a shared list; batch endpoint pushes them after
+    # all manifests complete. Controlled by ENABLE_TRIPLE_CONVERSION env var.
+    if triple_accumulator is not None and os.environ.get("ENABLE_TRIPLE_CONVERSION", "true").lower() == "true":
+        try:
+            from src.services.triple_conversion import convert_batch_to_triples
+            entity_id = manifest.target.entity_id or manifest.target.tenant_id
+            pipe_triples, conversion_report = convert_batch_to_triples(
+                generated_data=generated_data,
+                source_system=system,
+                entity_id=entity_id,
+                run_id=run_id,
+                pipe_id=pipe_id,
+            )
+            if pipe_triples:
+                triple_accumulator.extend(pipe_triples)
+                logger.info(
+                    f"TRIPLE_CONVERSION: pipe_id={pipe_id}, system={system}, "
+                    f"triples={len(pipe_triples)}, mapped={conversion_report['total_mapped']}, "
+                    f"unmapped={conversion_report['total_unmapped']}"
+                )
+            if conversion_report.get("gaps"):
+                logger.info(
+                    f"TRIPLE_CONVERSION_GAPS: pipe_id={pipe_id}, "
+                    f"gaps={json.dumps(conversion_report['gaps'])}"
+                )
+        except Exception as tc_err:
+            # Triple conversion failure must NOT block the old-path push.
+            # Log the error loudly but continue with the existing pipeline.
+            logger.error(
+                f"TRIPLE_CONVERSION_ERROR: pipe_id={pipe_id}, system={system}, "
+                f"error={tc_err}. Old-path DCL push will proceed normally.",
+                exc_info=True,
+            )
+
     del generated_data  # Release ~14-40MB; no longer needed after row extraction
 
     logger.info(
@@ -1033,6 +1083,11 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     push_results: List[DCLPushResult] = []
     start_time = time.monotonic()
 
+    # Triple accumulator: collects SemanticTriple objects from all manifests
+    # for batch push to DCL triple store after all pipes complete.
+    _enable_triple_conversion = os.environ.get("ENABLE_TRIPLE_CONVERSION", "true").lower() == "true"
+    triple_accumulator: list = [] if _enable_triple_conversion else None
+
     # Pre-compute shared BusinessProfile (Fix 6): all manifests in a batch
     # share the same run_id → same seed → same profile. Eliminates 56
     # redundant FinancialModel + BusinessProfile builds (~0.5-2s CPU each).
@@ -1062,6 +1117,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         m: JobManifest,
         shared_client: httpx.AsyncClient,
         profile: BusinessProfile | None,
+        triples: list | None,
     ) -> Optional[ManifestExecutionResult]:
         async with semaphore:
             try:
@@ -1070,6 +1126,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                     aam_run_id=request.batch_id or batch_run_id,
                     precomputed_profile=profile,
                     http_client=shared_client,
+                    triple_accumulator=triples,
                 )
             except HTTPException as exc:
                 logger.error(
@@ -1158,6 +1215,10 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         else:
             execute_manifests.append(m)
 
+    # Triple push result tracking — initialized before async-with block
+    triple_push_count = 0
+    triple_push_error: str | None = None
+
     # Shared httpx client: one client for the entire batch eliminates per-pipe
     # TLS handshakes (~50-200ms each). The single-manifest endpoint is not
     # affected — it continues creating a fresh client per push.
@@ -1166,7 +1227,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         limits=httpx.Limits(max_connections=12, max_keepalive_connections=8),
     ) as shared_client:
         executed_results = await asyncio.gather(*[
-            _run_with_semaphore(m, shared_client, shared_profile)
+            _run_with_semaphore(m, shared_client, shared_profile, triple_accumulator)
             for m in execute_manifests
         ])
 
@@ -1238,7 +1299,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                 # back to FARM_DEFAULT_ENTITY_ID — that env var is for the
                 # self-directed multi-entity push path only.  Using it here
                 # would tag unrelated AAM pipe companies (HelixCorp, AeroLabs,
-                # etc.) as "meridian", contaminating DCL's entity-scoped data.
+                # etc.) as the default entity, contaminating DCL's entity-scoped data.
                 fs_entity_id = first_manifest.target.entity_id or first_manifest.target.tenant_id
                 if not fs_entity_id:
                     raise ValueError(
@@ -1308,6 +1369,132 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                     status="failed",
                     error=str(fs_exc)[:500],
                     error_type="finsummary_error",
+                )
+
+        # ── Push accumulated triples to DCL triple store ───────────────
+        # All pipes have been processed. If triple conversion was enabled
+        # and produced triples, write JSONL + push to DCL in one batch.
+        triple_push_count = 0
+        triple_push_error: str | None = None
+        if triple_accumulator and len(triple_accumulator) > 0:
+            try:
+                from src.output.triple_writer import TripleWriter
+                import os as _os
+
+                first_manifest = manifests[0]
+                triple_run_id = f"triples_pipeline_{first_manifest.run_id}"
+                triple_tenant_id = first_manifest.target.tenant_id
+                triple_entity_id = first_manifest.target.entity_id or triple_tenant_id
+
+                # Write JSONL to disk for audit trail
+                output_dir = _os.path.join(
+                    _os.path.dirname(_os.path.dirname(_os.path.dirname(__file__))),
+                    "output", "triples",
+                )
+                writer = TripleWriter(output_dir)
+                jsonl_path = writer.write(triple_accumulator, triple_run_id, triple_tenant_id)
+                logger.info(
+                    f"TRIPLE_CONVERSION_WRITTEN: {len(triple_accumulator)} triples → {jsonl_path}"
+                )
+
+                # Push to DCL via /api/dcl/ingest-triples
+                dcl_url_env = _os.environ.get("DCL_INGEST_URL", "").strip()
+                dcl_base = dcl_url_env if dcl_url_env else first_manifest.target.dcl_url.rstrip("/")
+                # Strip /api/dcl/ingest suffix if present to get base URL
+                if dcl_base.endswith("/api/dcl/ingest"):
+                    dcl_base = dcl_base[:-len("/api/dcl/ingest")]
+
+                ingest_url = f"{dcl_base}/api/dcl/ingest-triples"
+
+                # Convert run_id to UUID for DCL
+                triple_run_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, triple_run_id))
+                triple_tenant_uuid = (
+                    triple_tenant_id if _is_valid_uuid(triple_tenant_id)
+                    else str(uuid.uuid5(uuid.NAMESPACE_URL, triple_tenant_id))
+                )
+
+                # Build payload — DCL expects TriplePayload objects
+                triple_payloads = []
+                for t in triple_accumulator:
+                    td = t.to_dict()
+                    triple_payloads.append({
+                        "entity_id": td["entity_id"],
+                        "concept": td["concept"],
+                        "property": td["property"],
+                        "value": td["value"],
+                        "period": td.get("period"),
+                        "currency": td.get("currency", "USD"),
+                        "unit": td.get("unit"),
+                        "source_system": td.get("source_system", ""),
+                        "source_table": td.get("source_table"),
+                        "source_field": td.get("source_field"),
+                        "pipe_id": td.get("pipe_id"),
+                        "confidence_score": td.get("confidence_score", 0.85),
+                        "confidence_tier": td.get("confidence_tier", "high"),
+                    })
+
+                ingest_body = {
+                    "tenant_id": triple_tenant_uuid,
+                    "run_id": triple_run_uuid,
+                    "triples": triple_payloads,
+                }
+
+                logger.info(
+                    f"TRIPLE_PUSH_START: {len(triple_payloads)} triples → {ingest_url}, "
+                    f"run_id={triple_run_uuid}"
+                )
+
+                resp = await shared_client.post(
+                    ingest_url,
+                    json=ingest_body,
+                    params={"replace": "true"},
+                    timeout=120,
+                )
+
+                if resp.status_code == 201:
+                    resp_data = resp.json()
+                    triple_push_count = resp_data.get("triple_count", len(triple_payloads))
+                    logger.info(
+                        f"TRIPLE_PUSH_SUCCESS: {triple_push_count} triples ingested, "
+                        f"run_id={triple_run_uuid}"
+                    )
+                elif resp.status_code == 409:
+                    # Already exists — try with replace
+                    logger.info(
+                        f"TRIPLE_PUSH_CONFLICT: run_id={triple_run_uuid} already exists, "
+                        f"retrying with replace=true"
+                    )
+                    resp = await shared_client.post(
+                        ingest_url,
+                        json=ingest_body,
+                        params={"replace": "true"},
+                        timeout=120,
+                    )
+                    if resp.status_code == 201:
+                        resp_data = resp.json()
+                        triple_push_count = resp_data.get("triple_count", len(triple_payloads))
+                        logger.info(
+                            f"TRIPLE_PUSH_REPLACE_SUCCESS: {triple_push_count} triples, "
+                            f"run_id={triple_run_uuid}"
+                        )
+                    else:
+                        triple_push_error = (
+                            f"DCL triple ingest failed after replace: "
+                            f"HTTP {resp.status_code} — {resp.text[:300]}"
+                        )
+                        logger.error(f"TRIPLE_PUSH_FAILED: {triple_push_error}")
+                else:
+                    triple_push_error = (
+                        f"DCL triple ingest failed: HTTP {resp.status_code} — {resp.text[:300]}"
+                    )
+                    logger.error(f"TRIPLE_PUSH_FAILED: {triple_push_error}")
+
+            except Exception as tp_err:
+                triple_push_error = str(tp_err)[:500]
+                logger.error(
+                    f"TRIPLE_PUSH_ERROR: {tp_err}. "
+                    f"Old-path DCL push results are unaffected.",
+                    exc_info=True,
                 )
 
     results = list(executed_results) + preflight_results
@@ -1457,7 +1644,11 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         f"elapsed={round(elapsed, 2)}s, "
         f"t_profile_ms={t_profile_ms}, t_batch_wall_ms={t_batch_wall_ms}, "
         f"errors={dict(errors_summary) if errors_summary else 'none'}, "
-        f"per_system={dict(per_system)}"
+        f"per_system={dict(per_system)}, "
+        f"triple_conversion={'enabled' if _enable_triple_conversion else 'disabled'}, "
+        f"triples_accumulated={len(triple_accumulator) if triple_accumulator else 0}, "
+        f"triples_pushed={triple_push_count}, "
+        f"triple_push_error={triple_push_error or 'none'}"
     )
 
     return BatchManifestResponse(
