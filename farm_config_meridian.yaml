@@ -131,15 +131,20 @@ company_profile:
   bench_consultant_count: 4500
   bench_monthly_cost: 0.0151            # $15.1K/month per bench consultant (in millions)
 
-  # Department splits (of corporate staff, sums to ~1.00)
-  hc_sales_pct: 0.20                    # ~54
-  hc_marketing_pct: 0.10                # ~27
-  hc_finance_pct: 0.08                  # ~22
-  hc_hr_pct: 0.05                       # ~14
-  hc_it_pct: 0.12                       # ~32
-  hc_legal_pct: 0.024                   # ~6
-  hc_ga_pct: 0.406                      # ~110
-  # Sum: 0.98 (residual absorbed by G&A rounding)
+  # Department splits
+  # hc_consulting_pct is fraction of TOTAL headcount (25000/30000).
+  # All others are fractions of CORPORATE staff (~5000).
+  # profile.py auto-scales corporate-fraction pcts to total-headcount-fraction
+  # when a primary-workforce dept (>0.5) is present.
+  hc_consulting_pct: 0.833              # 25000/30000 — primary workforce
+  hc_sales_pct: 0.20                    # of corporate (~54)
+  hc_marketing_pct: 0.10                # of corporate (~27)
+  hc_finance_pct: 0.08                  # of corporate (~22)
+  hc_hr_pct: 0.05                       # of corporate (~14)
+  hc_it_pct: 0.12                       # of corporate (~32)
+  hc_legal_pct: 0.024                   # of corporate (~6)
+  hc_ga_pct: 0.406                      # of corporate (~110)
+  # Sum of corporate: 0.98 (residual absorbed by G&A rounding)
 
   attrition_rate_annual: 0.15           # higher for consultancy
 

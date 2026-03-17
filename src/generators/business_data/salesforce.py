@@ -15,7 +15,7 @@ from datetime import date, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.generators.business_data.base import BaseBusinessGenerator
-from src.generators.business_data.profile import BusinessProfile, QuarterMetrics, REGIONS
+from src.generators.business_data.profile import BusinessProfile, QuarterMetrics, REGIONS, REGION_WEIGHT_LIST
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -78,6 +78,7 @@ REGION_COUNTRIES: Dict[str, List[str]] = {
     "AMER": ["United States", "United States", "United States", "Canada", "Brazil"],
     "EMEA": ["United Kingdom", "Germany", "France", "Netherlands", "Sweden"],
     "APAC": ["Australia", "Japan", "Singapore", "India", "South Korea"],
+    "LATAM": ["Brazil", "Mexico", "Colombia", "Argentina", "Chile"],
 }
 
 # Typical account employee ranges by segment
@@ -122,7 +123,7 @@ LAST_NAMES = [
 # Company name building blocks (~100+ unique combinations)
 COMPANY_PREFIXES = [
     "Apex", "Quantum", "Stellar", "Vanguard", "Pinnacle", "Nexus", "Horizon",
-    "Meridian", "Summit", "Atlas", "Cipher", "Forge", "Helix", "Prism",
+    "Centric", "Summit", "Atlas", "Cipher", "Forge", "Helix", "Prism",
     "Vector", "Zenith", "Cobalt", "Ignite", "Lumen", "Nova", "Orbit",
     "Pulse", "Ridge", "Sable", "Titan", "Unity", "Vertex", "Axiom",
     "Beacon", "Crest", "Delta", "Echo", "Flux", "Glyph", "Haven",
@@ -327,7 +328,7 @@ class SalesforceGenerator(BaseBusinessGenerator):
             segment = self._weighted_choice(SEGMENTS, SEGMENT_WEIGHTS)
             region = self._weighted_choice(
                 REGIONS,
-                [0.50, 0.30, 0.20],
+                REGION_WEIGHT_LIST,
             )
             industry = self._pick(INDUSTRIES)
             country = self._pick(REGION_COUNTRIES[region])
@@ -523,7 +524,7 @@ class SalesforceGenerator(BaseBusinessGenerator):
         deals: List[Dict[str, Any]] = []
         for _ in range(count):
             segment = self._weighted_choice(SEGMENTS, SEGMENT_WEIGHTS)
-            region = self._weighted_choice(REGIONS, [0.50, 0.30, 0.20])
+            region = self._weighted_choice(REGIONS, REGION_WEIGHT_LIST)
             avg_deal = SEGMENT_AVG_DEAL[segment]
             amount = round(
                 avg_deal * self._rng.uniform(0.3, 2.2), 2
@@ -614,7 +615,7 @@ class SalesforceGenerator(BaseBusinessGenerator):
                     amount = min(amount, remaining)  # don't overshoot
                     remaining -= amount
 
-                    region = self._weighted_choice(REGIONS, [0.50, 0.30, 0.20])
+                    region = self._weighted_choice(REGIONS, REGION_WEIGHT_LIST)
                     region_accounts = accounts_by_region.get(region, accounts[:50])
                     region_reps = user_ids_by_region.get(region, active_user_ids)
                     account = self._pick(region_accounts)
@@ -773,12 +774,11 @@ class SalesforceGenerator(BaseBusinessGenerator):
     # ------------------------------------------------------------------ #
 
     def _distribute_across_regions(self, total: int) -> Dict[str, int]:
-        """Distribute ``total`` items across AMER/EMEA/APAC with standard weights.
+        """Distribute ``total`` items across schema-defined regions.
 
         Returns a dict mapping region -> count, ensuring they sum to ``total``.
         """
-        weights = [0.50, 0.30, 0.20]
-        raw = [int(total * w) for w in weights]
+        raw = [int(total * w) for w in REGION_WEIGHT_LIST]
         remainder = total - sum(raw)
         # Distribute remainder one at a time to the largest regions
         for i in range(remainder):

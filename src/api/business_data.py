@@ -689,6 +689,7 @@ async def _push_triples_to_dcl(
                     resp = await client.post(url, json={
                         "tenant_id": tenant_id,
                         "run_id": dcl_run_id,
+                        "source_run_tag": run_id,
                         "triples": batch,
                     })
                     if 200 <= resp.status_code < 300:

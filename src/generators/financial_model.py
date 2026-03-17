@@ -239,6 +239,8 @@ class Assumptions:
     hc_hr_pct: float = _cfg.get("hc_hr_pct", 0.05)
     hc_it_pct: float = _cfg.get("hc_it_pct", 0.12)
     hc_legal_pct: float = _cfg.get("hc_legal_pct", 0.024)
+    hc_consulting_pct: float = _cfg.get("hc_consulting_pct", 0.0)
+    hc_delivery_pct: float = _cfg.get("hc_delivery_pct", 0.0)
 
     # ── BPM-specific (business_model == "bpm") ───────────────────────────
     managed_services_pct: float = _cfg.get("managed_services_pct", 0.44)
@@ -1342,6 +1344,10 @@ class FinancialModel:
         if q.entity_id:
             q.dimensions["entity_id"] = q.entity_id
 
+        # ── Support & Infrastructure (shared across all business models) ──
+        self._compute_support(q)
+        self._compute_infrastructure(q)
+
     # ═══════════════════════════════════════════════════════════════════════
     # BPM MODEL ($1B business process management / outsourcing)
     # Revenue = managed services + per-FTE + per-transaction
@@ -1641,6 +1647,10 @@ class FinancialModel:
         }
         if q.entity_id:
             q.dimensions["entity_id"] = q.entity_id
+
+        # ── Support & Infrastructure (shared across all business models) ──
+        self._compute_support(q)
+        self._compute_infrastructure(q)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

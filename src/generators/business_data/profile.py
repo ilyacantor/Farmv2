@@ -93,17 +93,81 @@ class QuarterMetrics:
 
 
 REGIONS = _schema.get("regions", ["AMER", "EMEA", "APAC"])
-REGION_WEIGHTS = {"AMER": _A.region_amer, "EMEA": _A.region_emea, "APAC": _A.region_apac}
-
 DEPARTMENTS = _schema.get("departments", ["Engineering", "Product", "Marketing", "CS", "G&A", "Sales"])
-DEPT_WEIGHTS = {
-    "Engineering": _A.hc_engineering_pct,
-    "Product": _A.hc_product_pct,
-    "Marketing": _A.hc_marketing_pct,
-    "CS": _A.hc_cs_pct,
-    "G&A": _A.hc_ga_pct,
-    "Sales": _A.hc_sales_pct,
-}
+
+# Attribute-name overrides for departments whose names don't lower() cleanly.
+_DEPT_ATTR_OVERRIDES = {"G&A": "ga", "CS": "cs", "Sales & Marketing": "sales_marketing"}
+
+
+# ── Startup validation gate ──────────────────────────────────────────────
+# Fail loud at import time if the schema defines dimensions without
+# corresponding Assumptions fields.  Prevents silent 0.0 defaults (A1).
+
+def _validate_schema_config():
+    """Assert that every schema-defined region and department has an Assumptions field."""
+    errors = []
+    for region in REGIONS[:-1]:
+        attr = f"region_{region.lower()}"
+        if not hasattr(_A, attr):
+            errors.append(
+                f"Schema defines region '{region}' but Assumptions has no '{attr}' field. "
+                f"Add '{attr}' to the entity YAML (company_profile section)."
+            )
+    for dept in DEPARTMENTS[:-1]:
+        key = _DEPT_ATTR_OVERRIDES.get(dept, dept.lower())
+        attr = f"hc_{key}_pct"
+        if not hasattr(_A, attr):
+            errors.append(
+                f"Schema defines department '{dept}' but Assumptions has no '{attr}' field. "
+                f"Add '{attr}' to the entity YAML (company_profile section)."
+            )
+    if errors:
+        raise RuntimeError(
+            "Farm config validation failed — schema/assumptions mismatch:\n  • "
+            + "\n  • ".join(errors)
+        )
+
+
+_validate_schema_config()
+
+
+# ── Region weights ────────────────────────────────────────────────────────
+# REGION_WEIGHTS: dict mapping each non-last region to its Assumptions pct.
+# REGION_WEIGHT_LIST: ordered list matching REGIONS (last region = remainder).
+# Both used by _generate_trajectory() and exported for generators.
+
+REGION_WEIGHTS = {}
+for _region in REGIONS[:-1]:
+    REGION_WEIGHTS[_region] = getattr(_A, f"region_{_region.lower()}")
+
+REGION_WEIGHT_LIST = [REGION_WEIGHTS[r] for r in REGIONS[:-1]]
+REGION_WEIGHT_LIST.append(max(1.0 - sum(REGION_WEIGHT_LIST), 0.0))
+
+
+# ── Department weights ────────────────────────────────────────────────────
+# Raw weights from Assumptions.  For consultancy/BPM models, the primary
+# workforce dept (Consulting/Delivery) carries >50% of total headcount and
+# the remaining dept pcts are fractions of corporate_count.  The scaling
+# below converts corporate-fraction pcts to total-headcount-fraction pcts
+# so _generate_trajectory() can multiply headcount × weight directly.
+
+_raw_dept_weights = {}
+for _dept in DEPARTMENTS[:-1]:
+    _key = _DEPT_ATTR_OVERRIDES.get(_dept, _dept.lower())
+    _raw_dept_weights[_dept] = getattr(_A, f"hc_{_key}_pct")
+
+_primary_depts = [d for d, w in _raw_dept_weights.items() if w > 0.5]
+if _primary_depts:
+    # Corporate-fraction scaling: other dept pcts × (1 - primary pct)
+    _corporate_ratio = 1.0 - sum(_raw_dept_weights[d] for d in _primary_depts)
+    DEPT_WEIGHTS = {}
+    for _dept, _weight in _raw_dept_weights.items():
+        if _dept in _primary_depts:
+            DEPT_WEIGHTS[_dept] = _weight
+        else:
+            DEPT_WEIGHTS[_dept] = _weight * _corporate_ratio
+else:
+    DEPT_WEIGHTS = dict(_raw_dept_weights)
 
 PIPELINE_STAGES = _schema.get("pipeline_stages", ["Lead", "Qualified", "Proposal", "Negotiation", "Closed-Won"])
 _default_stage_weights = {"Lead": 0.25, "Qualified": 0.20, "Proposal": 0.20, "Negotiation": 0.16, "Closed-Won": 0.19}

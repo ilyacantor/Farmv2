@@ -570,7 +570,8 @@ class TestGroundTruthManifest:
         orch, summary = all_generated
         manifest = orch.get_manifest()
         expected = {"salesforce", "netsuite", "chargebee", "workday",
-                    "zendesk", "jira", "datadog", "aws_cost_explorer"}
+                    "zendesk", "jira", "datadog", "aws_cost_explorer",
+                    "financial_summary"}
         actual = set(manifest["source_systems"])
         assert expected == actual
 
