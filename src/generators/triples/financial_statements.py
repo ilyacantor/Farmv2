@@ -141,11 +141,12 @@ class FinancialStatementTripleGenerator:
 
         cash = _r(cp.get("starting_cash", 0.0) + ltd_balance)
         ar = _r(cp.get("starting_ar", 0.0))
+        unbilled_revenue = _r(cp.get("starting_unbilled_revenue", 0.0))
         prepaid = _r(cp.get("starting_prepaid", 0.0))
         ppe = _r(cp.get("starting_pp_e", 0.0))
         intangibles = _r(cp.get("starting_intangibles", 0.0))
         goodwill = _r(cp.get("starting_goodwill", 0.0))
-        asset_total = _r(cash + ar + prepaid + ppe + intangibles + goodwill)
+        asset_total = _r(cash + ar + unbilled_revenue + prepaid + ppe + intangibles + goodwill)
 
         ap = _r(cp.get("starting_ap", 0.0))
         accrued = _r(cp.get("starting_accrued_expenses", 0.0))
@@ -187,6 +188,7 @@ class FinancialStatementTripleGenerator:
         add_bs("asset.total", asset_total)
         add_bs("asset.current.cash", cash)
         add_bs("asset.current.accounts_receivable", ar)
+        add_bs("asset.current.unbilled_revenue", unbilled_revenue)
         add_bs("asset.current.prepaid", prepaid)
         add_bs("asset.noncurrent.property_plant_equipment", ppe)
         add_bs("asset.noncurrent.intangibles", intangibles)
@@ -220,44 +222,45 @@ class FinancialStatementTripleGenerator:
         """
         triples: List[SemanticTriple] = []
 
-        # Track LTD balance across quarters for amortization
-        ltd_balance = self.long_term_debt_initial
+        # LTD is now tracked in the Quarter dataclass by the financial model.
+        # The triple converter reads q.long_term_debt and q.cash directly.
         prev_cash_triple: Optional[float] = None
         prev_q: Optional[Quarter] = None
 
         # ── Period 0: 2023-Q4 opening balance sheet anchor ────────────
         # Emits the opening BS snapshot from config starting_* values.
         # No P&L or CF for this period — it's a point-in-time position.
-        triples.extend(self._generate_opening_bs(ltd_balance))
-        prev_cash_triple = self._opening_cash(ltd_balance)
+        triples.extend(self._generate_opening_bs(self.long_term_debt_initial))
+        prev_cash_triple = self._opening_cash(self.long_term_debt_initial)
 
         for q in self.quarters:
             period = q.quarter
 
-            # ── Debt amortization ───────────────────────────────────
-            debt_repayment = _r(ltd_balance * self.long_term_debt_amort_pct_quarterly)
+            # ── Debt repayment for CF (derived from quarter LTD values) ──
             if prev_q is not None:
-                ltd_balance = _r(ltd_balance - debt_repayment)
-            # Q1: no repayment yet, debt is at initial level
+                debt_repayment = _r(prev_q.long_term_debt - q.long_term_debt)
+            else:
+                debt_repayment = 0.0
 
             # ── Dividends ───────────────────────────────────────────
             dividends = _r(max(q.net_income, 0) * self.dividend_pct_net_income)
 
             # ── BS items from Quarter ───────────────────────────────
-            # Assets — add LTD proceeds to cash
-            cash = _r(q.cash + ltd_balance)
+            # Cash and LTD are already included in Quarter values by the financial model
+            cash = _r(q.cash)
             ar = _r(q.ar)
+            unbilled_revenue = _r(q.unbilled_revenue)
             prepaid = _r(q.prepaid_expenses)
             ppe = _r(q.pp_e)
             intangibles = _r(q.intangibles)
             goodwill = _r(q.goodwill)
-            asset_total = _r(cash + ar + prepaid + ppe + intangibles + goodwill)
+            asset_total = _r(cash + ar + unbilled_revenue + prepaid + ppe + intangibles + goodwill)
 
-            # Liabilities — add LTD
+            # Liabilities — LTD from Quarter
             ap = _r(q.ap)
             accrued = _r(q.accrued_expenses)
             deferred_rev = _r(q.deferred_revenue)
-            long_term_debt = _r(ltd_balance)
+            long_term_debt = _r(q.long_term_debt)
             liability_total = _r(ap + accrued + deferred_rev + long_term_debt)
 
             # Equity — common_stock from config, retained_earnings adjusted
@@ -322,7 +325,7 @@ class FinancialStatementTripleGenerator:
                     )
                 # Force exact continuity to prevent floating-point drift
                 cash = expected_cash
-                asset_total = _r(cash + ar + prepaid + ppe + intangibles + goodwill)
+                asset_total = _r(cash + ar + unbilled_revenue + prepaid + ppe + intangibles + goodwill)
                 retained_earnings = _r(asset_total - liability_total - common_stock)
                 equity_total = _r(retained_earnings + common_stock)
 
@@ -345,6 +348,7 @@ class FinancialStatementTripleGenerator:
             add_bs("asset.total", asset_total)
             add_bs("asset.current.cash", cash)
             add_bs("asset.current.accounts_receivable", ar)
+            add_bs("asset.current.unbilled_revenue", unbilled_revenue)
             add_bs("asset.current.prepaid", prepaid)
             add_bs("asset.noncurrent.property_plant_equipment", ppe)
             add_bs("asset.noncurrent.intangibles", intangibles)
@@ -363,6 +367,9 @@ class FinancialStatementTripleGenerator:
             add_bs("cash_flow.operating.net_income", operating_ni)
             add_bs("cash_flow.operating.depreciation_add_back", operating_da)
             add_bs("cash_flow.operating.working_capital_changes", wc_changes)
+            add_bs("cash_flow.operating.change_in_ar", _r(q.change_in_ar))
+            add_bs("cash_flow.operating.change_in_ap", _r(q.change_in_ap))
+            add_bs("cash_flow.operating.change_in_deferred_rev", _r(q.change_in_deferred_rev))
             add_bs("cash_flow.investing.total", investing_total)
             add_bs("cash_flow.investing.capex", investing_capex)
             add_bs("cash_flow.financing.total", financing_total)

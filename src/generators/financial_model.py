@@ -144,6 +144,8 @@ class Assumptions:
     deferred_rev_months: float = _cfg.get("deferred_rev_months", 5.5)
     capex_pct_revenue: float = _cfg.get("capex_pct_revenue", 0.03)
     tax_rate: float = _cfg.get("tax_rate", 0.25)
+    long_term_debt_initial: float = _cfg.get("long_term_debt_initial", 0.0)
+    long_term_debt_amort_pct_quarterly: float = _cfg.get("long_term_debt_amort_pct_quarterly", 0.02)
 
     # Starting balance sheet
     starting_cash: float = _cfg.get("starting_cash", 61.29)
@@ -356,6 +358,7 @@ class Quarter:
     deferred_revenue: float = 0.0
     deferred_revenue_current: float = 0.0
     deferred_revenue_lt: float = 0.0
+    long_term_debt: float = 0.0
     total_liabilities: float = 0.0
     retained_earnings: float = 0.0
     stockholders_equity: float = 0.0
@@ -872,18 +875,30 @@ class FinancialModel:
         # DPO = AP / annualised COGS × 365
         q.dpo = _r(q.ap / (q.cogs * 4) * 365, 1) if q.cogs else 0.0
 
+        # Long-term debt: amortizes quarterly from config initial balance
+        if prev:
+            q.long_term_debt = _r(prev.long_term_debt * (1 - a.long_term_debt_amort_pct_quarterly))
+        else:
+            q.long_term_debt = _r(a.long_term_debt_initial)
+
+        # Total liabilities (before total_assets which needs cash)
+        q.total_liabilities = _r(q.ap + q.accrued_expenses + q.deferred_revenue + q.long_term_debt)
+
         # Cash computed after cash flow
 
         # Retained earnings — for Q1, derive from BS identity to ensure balance
+        # LTD adds equally to assets (cash proceeds) and liabilities, so RE is unchanged
         if prev:
             prev_re = prev.retained_earnings
         else:
             # Compute starting assets & liabilities to derive initial retained earnings
-            start_assets = (a.starting_cash + a.starting_ar + a.starting_unbilled_revenue
+            start_assets = (a.starting_cash + a.long_term_debt_initial
+                            + a.starting_ar + a.starting_unbilled_revenue
                             + a.starting_prepaid + a.starting_pp_e + a.starting_intangibles
                             + a.starting_goodwill)
             start_dr = a.starting_arr * (a.deferred_rev_months / 12)
-            start_liabilities = a.starting_ap + a.starting_accrued_expenses + start_dr
+            start_liabilities = (a.starting_ap + a.starting_accrued_expenses + start_dr
+                                 + a.long_term_debt_initial)
             paid_in_capital = 40.0
             prev_re = start_assets - start_liabilities - paid_in_capital
         q.retained_earnings = _r(prev_re + q.net_income)
@@ -891,9 +906,6 @@ class FinancialModel:
         # Stockholders' equity = retained earnings + paid-in capital (stable)
         paid_in_capital = 40.0  # assumed constant
         q.stockholders_equity = _r(q.retained_earnings + paid_in_capital)
-
-        # Total liabilities (before total_assets which needs cash)
-        q.total_liabilities = _r(q.ap + q.accrued_expenses + q.deferred_revenue)
 
     # ─── Cash Flow ────────────────────────────────────────────────────────
 
@@ -929,9 +941,14 @@ class FinancialModel:
         # FCF
         q.fcf = _r(q.cfo - q.capex)
 
-        # Cash = previous cash + FCF
-        prev_cash = prev.cash if prev else a.starting_cash
-        q.cash = _r(prev_cash + q.fcf)
+        # Cash = previous cash + FCF, adjusted for debt
+        # Q1: starting cash includes LTD proceeds (company borrowed at inception)
+        # Q2+: subtract quarterly debt repayment
+        if prev:
+            debt_repayment = _r(prev.long_term_debt * a.long_term_debt_amort_pct_quarterly)
+            q.cash = _r(prev.cash + q.fcf - debt_repayment)
+        else:
+            q.cash = _r(a.starting_cash + a.long_term_debt_initial + q.fcf)
 
         # Now compute total assets (needs cash)
         q.total_assets = _r(q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
@@ -1290,7 +1307,11 @@ class FinancialModel:
         q.goodwill = a.starting_goodwill
         q.ap = _r(q.cogs * 0.12 + q.total_opex * 0.06)
         q.accrued_expenses = _r(q.total_opex * 0.32)
-        q.total_liabilities = _r(q.ap + q.accrued_expenses + q.deferred_revenue)
+        if prev:
+            q.long_term_debt = _r(prev.long_term_debt * (1 - a.long_term_debt_amort_pct_quarterly))
+        else:
+            q.long_term_debt = _r(a.long_term_debt_initial)
+        q.total_liabilities = _r(q.ap + q.accrued_expenses + q.deferred_revenue + q.long_term_debt)
 
         # ── Cash Flow (must run before equity to get total_assets) ────
         prev_ar = prev.ar if prev else a.starting_ar
@@ -1309,8 +1330,11 @@ class FinancialModel:
                     + q.change_in_deferred_rev - q.change_in_unbilled_rev
                     - q.change_in_prepaid + q.change_in_accrued)
         q.fcf = _r(q.cfo - q.capex)
-        prev_cash = prev.cash if prev else a.starting_cash
-        q.cash = _r(prev_cash + q.fcf)
+        if prev:
+            debt_repayment = _r(prev.long_term_debt * a.long_term_debt_amort_pct_quarterly)
+            q.cash = _r(prev.cash + q.fcf - debt_repayment)
+        else:
+            q.cash = _r(a.starting_cash + a.long_term_debt_initial + q.fcf)
         q.total_assets = _r(q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
                             + q.pp_e + q.intangibles + q.goodwill)
         current_assets = q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
@@ -1590,8 +1614,11 @@ class FinancialModel:
         q.goodwill = a.starting_goodwill
         q.ap = _r(q.cogs * 0.10 + q.total_opex * 0.05)
         q.accrued_expenses = _r(q.total_opex * 0.30)
-
-        q.total_liabilities = _r(q.ap + q.accrued_expenses + q.deferred_revenue)
+        if prev:
+            q.long_term_debt = _r(prev.long_term_debt * (1 - a.long_term_debt_amort_pct_quarterly))
+        else:
+            q.long_term_debt = _r(a.long_term_debt_initial)
+        q.total_liabilities = _r(q.ap + q.accrued_expenses + q.deferred_revenue + q.long_term_debt)
 
         # ── Cash Flow (must run before equity to get total_assets) ────
         prev_ar = prev.ar if prev else a.starting_ar
@@ -1610,8 +1637,11 @@ class FinancialModel:
                     + q.change_in_deferred_rev - q.change_in_unbilled_rev
                     - q.change_in_prepaid + q.change_in_accrued)
         q.fcf = _r(q.cfo - q.capex)
-        prev_cash = prev.cash if prev else a.starting_cash
-        q.cash = _r(prev_cash + q.fcf)
+        if prev:
+            debt_repayment = _r(prev.long_term_debt * a.long_term_debt_amort_pct_quarterly)
+            q.cash = _r(prev.cash + q.fcf - debt_repayment)
+        else:
+            q.cash = _r(a.starting_cash + a.long_term_debt_initial + q.fcf)
         q.total_assets = _r(q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
                             + q.pp_e + q.intangibles + q.goodwill)
         current_assets = q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
@@ -1732,12 +1762,14 @@ def validate_model(quarters: List[Quarter]) -> List[str]:
         if abs(q.total_assets - expected_total_eq) > tolerance:
             issues.append(f"{prefix} BS imbalance: assets={q.total_assets:.2f} vs L+E={expected_total_eq:.2f} (delta={abs(q.total_assets - expected_total_eq):.2f})")
 
-        # Cash flow → cash reconciliation
+        # Cash flow → cash reconciliation (includes debt repayment)
         if i > 0:
             prev = quarters[i - 1]
-            expected_cash = prev.cash + q.fcf
+            # Debt repayment = change in LTD balance (positive = repayment outflow)
+            debt_repayment = prev.long_term_debt - q.long_term_debt
+            expected_cash = prev.cash + q.fcf - debt_repayment
             if abs(q.cash - expected_cash) > 0.05:
-                issues.append(f"{prefix} Cash flow: cash={q.cash:.2f} vs prev+fcf={expected_cash:.2f}")
+                issues.append(f"{prefix} Cash flow: cash={q.cash:.2f} vs prev+fcf-debt={expected_cash:.2f}")
 
     return issues
 

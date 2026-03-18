@@ -193,10 +193,10 @@ class GeneralLedgerTripleGenerator:
 
         # Track BS ending balances across months
         prior_balances: Dict[str, float] = {}  # acct_number → ending_balance
-        ltd_balance = self.ltd_initial
 
         # ── Period 0: 2023-12 Opening Balance ─────────────────────────
-        opening = self._compute_opening_balances(ltd_balance)
+        # LTD is now tracked in the Quarter dataclass; opening BS still uses config initial.
+        opening = self._compute_opening_balances(self.ltd_initial)
         for acct_num, bal in opening.items():
             prior_balances[acct_num] = bal
         triples.extend(self._emit_opening_bs_triples("2023-12", opening))
@@ -213,16 +213,13 @@ class GeneralLedgerTripleGenerator:
 
             # Quarterly IS amounts
             quarterly_is_amounts = self._resolve_quarterly_is(quarter)
-            # Quarterly BS ending positions
+            # Quarterly BS ending positions — uses q.long_term_debt from the model
             quarterly_bs_endings = self._resolve_quarterly_bs(
-                quarter, ltd_balance, prior_re, quarter.net_income,
+                quarter, quarter.long_term_debt, prior_re, quarter.net_income,
             )
 
-            # Compute LTD amortization for this quarter
-            debt_repayment = _r(ltd_balance * self.ltd_amort_pct_q) if qi > 0 else 0.0
-            if qi > 0:
-                ltd_balance = _r(ltd_balance - debt_repayment)
-            quarterly_bs_endings["2400"] = _r(ltd_balance)
+            # LTD from Quarter (already amortized by the financial model)
+            quarterly_bs_endings["2400"] = _r(quarter.long_term_debt)
 
             # Common stock — stable
             quarterly_bs_endings["3100"] = _r(self.common_stock)
@@ -231,9 +228,8 @@ class GeneralLedgerTripleGenerator:
             cp = self.config_raw.get("company_profile") or {}
             quarterly_bs_endings["3300"] = _r(cp.get("apic", 0.0))
 
-            # Compute quarterly cash from financial_statements logic
-            # Cash = quarter.cash + ltd_balance (same as financial_statements.py)
-            quarterly_cash = _r(quarter.cash + ltd_balance)
+            # Cash from Quarter (already includes LTD proceeds from the financial model)
+            quarterly_cash = _r(quarter.cash)
             quarterly_bs_endings["1100"] = quarterly_cash
 
             # Compute retained earnings for end of quarter

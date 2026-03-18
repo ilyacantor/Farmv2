@@ -462,8 +462,8 @@ def compute_multi_entity_ground_truth(
                 stmt.period: [
                     {
                         "line_item": li.line_item,
-                        "meridian": li.meridian,
-                        "cascadia": li.cascadia,
+                        "acquirer": li.meridian,
+                        "target": li.cascadia,
                         "adjustments": li.adjustments,
                         "combined": li.combined,
                     }
@@ -610,6 +610,7 @@ def _build_v2_quarterly_truth(
             "deferred_revenue": {"value": _r(fmq.deferred_revenue), "unit": "millions_usd", "primary_source": "netsuite"},
             "deferred_revenue_current": {"value": _r(fmq.deferred_revenue_current), "unit": "millions_usd", "primary_source": "netsuite"},
             "deferred_revenue_lt": {"value": _r(fmq.deferred_revenue_lt), "unit": "millions_usd", "primary_source": "netsuite"},
+            "long_term_debt": {"value": _r(fmq.long_term_debt), "unit": "millions_usd", "primary_source": "netsuite"},
             "total_liabilities": {"value": _r(fmq.total_liabilities), "unit": "millions_usd", "primary_source": "netsuite"},
             "retained_earnings": {"value": _r(fmq.retained_earnings), "unit": "millions_usd", "primary_source": "netsuite"},
             "stockholders_equity": {"value": _r(fmq.stockholders_equity), "unit": "millions_usd", "primary_source": "netsuite"},
