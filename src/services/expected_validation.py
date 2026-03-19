@@ -10,9 +10,12 @@ Runs on every generated snapshot (before any AOD call) to validate:
 
 Fail mode: Broken generation = grading can't be trusted.
 """
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
+
+logger = logging.getLogger("farm.expected_validation")
 from dateutil import parser as dateutil_parser
 
 
@@ -205,12 +208,13 @@ def validate_clock_invariants(snapshot: dict, result: ValidationResult) -> None:
         )
         return
     
-    created_at = _parse_timestamp(created_at_str)
-    if not created_at:
+    try:
+        created_at = _parse_timestamp(created_at_str)
+    except (ValueError, TypeError, AttributeError) as e:
         result.add_error(
             asset_key='__meta__',
             rule='INVALID_CREATED_AT',
-            message=f'Cannot parse created_at timestamp: {created_at_str}',
+            message=f'Cannot parse created_at timestamp: {created_at_str} ({e})',
             reason_codes=[]
         )
         return
@@ -238,8 +242,10 @@ def validate_clock_invariants(snapshot: dict, result: ValidationResult) -> None:
         obs_ts_str = obs.get('observed_at')
         if not obs_ts_str:
             continue
-        obs_ts = _parse_timestamp(obs_ts_str)
-        if not obs_ts:
+        try:
+            obs_ts = _parse_timestamp(obs_ts_str)
+        except (ValueError, TypeError, AttributeError) as e:
+            logger.warning(f"Unparseable observation timestamp '{obs_ts_str}': {e}")
             continue
         
         if obs_ts > max_future:

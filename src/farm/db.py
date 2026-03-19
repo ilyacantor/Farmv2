@@ -677,9 +677,8 @@ class DatabaseManager:
                 if result != 1:
                     return False, f"DB test query returned unexpected result: {result}"
         except Exception as e:
-            health_result = (False, f"DB unreachable: {e}")
-            logger.warning(f"Health check failed: {health_result[1]}")
-            return health_result
+            logger.warning(f"Health check failed: DB unreachable: {e}")
+            raise DBUnavailable(f"DB unreachable: {e}") from e
         pool_size = self._pool.get_size()
         max_size = self._pool.get_max_size()
         idle_size = self._pool.get_idle_size()

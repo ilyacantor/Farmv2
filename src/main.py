@@ -20,8 +20,13 @@ Farm must be independently deployable as a watchdog, not a manager.
 import logging
 import uuid as uuid_mod
 from contextlib import asynccontextmanager
+from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+
+# Load .env from repo root (parent of src/)
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 farm_root = logging.getLogger("farm")
 if not farm_root.handlers:
@@ -337,7 +342,13 @@ async def health_check():
     tables, rotated credentials, exhausted pools all pass sync checks).
     Returns 503 when DB is unreachable so Render restarts the service.
     """
-    healthy, status_msg = await is_healthy_async()
+    try:
+        healthy, status_msg = await is_healthy_async()
+    except DBUnavailable as e:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "db": str(e)},
+        )
     return JSONResponse(
         status_code=200 if healthy else 503,
         content={

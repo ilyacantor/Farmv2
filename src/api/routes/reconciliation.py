@@ -251,7 +251,16 @@ async def list_reconciliations(
                 contract_status = "INCONSISTENT_CONTRACT" if has_mismatch else "CURRENT"
 
             # Extract has_any_discrepancy from analysis
-            has_any_discrepancy = _extract_has_discrepancy(row["analysis_json"])
+            try:
+                has_any_discrepancy = _extract_has_discrepancy(row["analysis_json"])
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.error(
+                    f"Corrupt analysis_json for reconciliation_id={row['reconciliation_id']}: {e}"
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Corrupt analysis_json for reconciliation {row['reconciliation_id']}: {e}",
+                )
 
             results.append(ReconcileMetadata(
                 reconciliation_id=row["reconciliation_id"],
@@ -629,7 +638,16 @@ async def download_assessment_markdown(reconciliation_id: str):
         status = row["status"]
         analysis_json = row["analysis_json"]
 
-        has_any_discrepancy = _extract_has_discrepancy(analysis_json)
+        try:
+            has_any_discrepancy = _extract_has_discrepancy(analysis_json)
+        except (json.JSONDecodeError, TypeError) as e:
+            logger.error(
+                f"Corrupt analysis_json for reconciliation_id={reconciliation_id}: {e}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Corrupt analysis_json for reconciliation {reconciliation_id}: {e}",
+            )
 
         if not assessment_md:
             if not has_any_discrepancy:
