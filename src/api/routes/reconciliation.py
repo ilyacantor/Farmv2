@@ -64,6 +64,13 @@ async def _create_reconciliation_internal(parsed_request: ReconcileRequest, raw_
     if mode not in ("sprawl", "infra", "all"):
         raise HTTPException(status_code=400, detail=f"Invalid mode: {mode}. Must be 'sprawl', 'infra', or 'all'")
 
+    # Check snapshot existence first — 404 takes priority over 422
+    async with db_connection() as conn:
+        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", parsed_request.snapshot_id)
+        if not row:
+            raise HTTPException(status_code=404, detail="Snapshot not found")
+        snapshot = json.loads(row["snapshot_json"])
+
     gradeability_result = ValidationResult(valid=True)
     validate_gradeability(raw_aod_lists, gradeability_result)
     if not gradeability_result.valid:
@@ -80,12 +87,6 @@ async def _create_reconciliation_internal(parsed_request: ReconcileRequest, raw_
                 "errors": error_messages,
             }
         )
-
-    async with db_connection() as conn:
-        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", parsed_request.snapshot_id)
-        if not row:
-            raise HTTPException(status_code=404, detail="Snapshot not found")
-        snapshot = json.loads(row["snapshot_json"])
 
     policy = await fetch_policy_config()
     expected_block = compute_expected_block(snapshot, mode=mode, policy=policy)
@@ -259,7 +260,6 @@ async def list_reconciliations(
                 aod_run_id=row["aod_run_id"],
                 created_at=row["created_at"],
                 status=row["status"],
-                report_text=row["report_text"] or "",
                 contract_status=contract_status,
                 has_any_discrepancy=has_any_discrepancy,
             ))
@@ -676,9 +676,17 @@ async def auto_reconcile(request: AutoReconcileRequest):
         )
 
     async with db_connection() as conn:
-        row = await conn.fetchrow("SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", request.snapshot_id)
+        row = await conn.fetchrow("SELECT snapshot_json, tenant_id FROM snapshots WHERE snapshot_id = $1", request.snapshot_id)
         if not row:
             raise HTTPException(status_code=404, detail="Snapshot not found")
+
+    # Verify tenant_id matches the snapshot's tenant_id
+    snapshot_tenant = row["tenant_id"]
+    if request.tenant_id and snapshot_tenant and request.tenant_id != snapshot_tenant:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tenant mismatch: request tenant_id '{request.tenant_id}' does not match snapshot tenant_id '{snapshot_tenant}'"
+        )
 
     headers = {}
     if aod_secret:
@@ -995,28 +1003,20 @@ def _parse_delete_count(result: str) -> int:
     """Parse row count from PostgreSQL DELETE result string (e.g., 'DELETE 42')."""
     if not result:
         return 0
-    try:
-        parts = result.split()
-        if len(parts) >= 2 and parts[0].upper() == "DELETE":
-            return int(parts[1])
-        return 0
-    except (ValueError, IndexError) as e:
-        logger.debug(f"Could not parse DELETE count from '{result}': {e}")
-        return 0
+    parts = result.split()
+    if len(parts) >= 2 and parts[0].upper() == "DELETE":
+        return int(parts[1])
+    return 0
 
 
 def _extract_has_discrepancy(analysis_json: str | None) -> bool:
     """Extract has_any_discrepancy from analysis JSON."""
     if not analysis_json:
         return False
-    try:
-        analysis = json.loads(analysis_json)
-        if 'has_any_discrepancy' in analysis:
-            return analysis['has_any_discrepancy']
-        return _compute_has_discrepancy_from_metrics(analysis)
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.debug(f"Could not parse analysis JSON for discrepancy check: {e}")
-        return False
+    analysis = json.loads(analysis_json)
+    if 'has_any_discrepancy' in analysis:
+        return analysis['has_any_discrepancy']
+    return _compute_has_discrepancy_from_metrics(analysis)
 
 
 def _compute_has_discrepancy_from_metrics(analysis: dict) -> bool:

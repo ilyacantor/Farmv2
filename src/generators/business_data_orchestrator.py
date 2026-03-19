@@ -627,10 +627,10 @@ class BusinessDataOrchestrator:
                 "total_records": total_records,
                 "quarters": len(quarters),
                 "q1_metrics": {
-                    "revenue": quarters[0].revenue,
-                    "gross_margin_pct": quarters[0].gross_margin_pct,
-                    "ebitda_margin_pct": quarters[0].ebitda_margin_pct,
-                    "headcount": quarters[0].headcount,
+                    "revenue": next(q for q in quarters if q.period_type != "opening").revenue,
+                    "gross_margin_pct": next(q for q in quarters if q.period_type != "opening").gross_margin_pct,
+                    "ebitda_margin_pct": next(q for q in quarters if q.period_type != "opening").ebitda_margin_pct,
+                    "headcount": next(q for q in quarters if q.period_type != "opening").headcount,
                 },
             }
 

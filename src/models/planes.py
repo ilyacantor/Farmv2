@@ -537,7 +537,6 @@ class ReconcileMetadata(BaseModel):
     aod_run_id: str
     created_at: str
     status: str
-    report_text: str = ""
     contract_status: str = "UNKNOWN"
     has_any_discrepancy: bool = False
 

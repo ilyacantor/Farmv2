@@ -103,11 +103,8 @@ def _parse_timestamp(ts: Optional[str]) -> Optional[datetime]:
     """Parse ISO timestamp string."""
     if not ts:
         return None
-    try:
-        dt = dateutil_parser.parse(ts)
-        return dt.replace(tzinfo=None) if dt.tzinfo else dt
-    except (ValueError, TypeError, AttributeError):
-        return None
+    dt = dateutil_parser.parse(ts)
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
 
 
 def validate_expected_block_consistency(expected_block: dict, result: ValidationResult) -> None:
@@ -585,9 +582,7 @@ def validate_gradeability(aod_lists: dict, result: ValidationResult) -> None:
         missing_fields.append('shadows')
     if not has_zombies:
         missing_fields.append('zombies')
-    if not has_reasons:
-        missing_fields.append('actual_reason_codes')
-    
+
     if missing_fields:
         result.add_error(
             asset_key='__aod_lists__',
@@ -631,15 +626,18 @@ def validate_gradeability(aod_lists: dict, result: ValidationResult) -> None:
             if key:
                 classified_assets.add(key)
     
-    assets_missing_reasons = []
-    for asset_key in classified_assets:
-        if asset_key not in actual_reason_codes or not actual_reason_codes.get(asset_key):
-            assets_missing_reasons.append(asset_key)
-    
-    if assets_missing_reasons:
-        result.add_error(
-            asset_key='__aod_output__',
-            rule='INVALID_INPUT_CONTRACT',
-            message=f'{len(assets_missing_reasons)} classified assets have empty reason codes - cannot grade',
-            reason_codes=assets_missing_reasons[:5]
-        )
+    # Only check reason codes if they were explicitly provided.
+    # Basic reconciliation (shadow/zombie comparison) works without reason codes.
+    if has_reasons:
+        assets_missing_reasons = []
+        for asset_key in classified_assets:
+            if asset_key not in actual_reason_codes or not actual_reason_codes.get(asset_key):
+                assets_missing_reasons.append(asset_key)
+
+        if assets_missing_reasons:
+            result.add_error(
+                asset_key='__aod_output__',
+                rule='INVALID_INPUT_CONTRACT',
+                message=f'{len(assets_missing_reasons)} classified assets have empty reason codes - cannot grade',
+                reason_codes=assets_missing_reasons[:5]
+            )

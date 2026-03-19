@@ -406,6 +406,7 @@ class WorkdayGenerator(BaseBusinessGenerator):
         quarters = self.profile.quarters
 
         # --- Q1: seed the initial workforce ---------------------------------
+        # Period 0 is already filtered out in profile.py — quarters[0] is Q1
         first_q = quarters[0]
         initial_headcount = first_q.headcount
         dept_counts = dict(first_q.headcount_by_dept)

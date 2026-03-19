@@ -39,6 +39,8 @@ def _make_manifest(**overrides) -> JobManifest:
             "dcl_url": "http://localhost:8000/api/dcl/ingest",
             "tenant_id": "acme-corp",
             "snapshot_name": "snap-2026Q1",
+            "auth_token_ref": "test-token-for-unit-tests",
+            "entity_id": "test-entity",
         },
         "provenance": {
             "run_timestamp": "2026-02-19T10:00:00Z",

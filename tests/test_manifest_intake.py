@@ -57,6 +57,8 @@ def _make_manifest(**overrides) -> JobManifest:
             "dcl_url": "http://localhost:8000/api/dcl/ingest",
             "tenant_id": "aos-demo",
             "snapshot_name": "test_snap",
+            "auth_token_ref": "test-token-for-unit-tests",
+            "entity_id": "test-entity",
         },
         "provenance": {
             "run_timestamp": "2026-02-16T10:00:00Z",
@@ -852,7 +854,9 @@ class TestManifestIntegration:
         mock_response.status_code = 200
         mock_response.json.return_value = _make_dcl_success_response()
 
-        with patch("src.api.manifest_intake.httpx.AsyncClient") as mock_client_cls:
+        with patch("src.api.manifest_intake.httpx.AsyncClient") as mock_client_cls, \
+             patch("src.api.manifest_intake.get_completed_run_for_pipe", new_callable=AsyncMock, return_value=None), \
+             patch("src.api.manifest_intake.save_manifest_run", new_callable=AsyncMock):
             mock_client = AsyncMock()
             mock_client.post.return_value = mock_response
             mock_client.__aenter__ = AsyncMock(return_value=mock_client)

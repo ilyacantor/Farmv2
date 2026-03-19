@@ -395,26 +395,31 @@ class BusinessProfile:
         """
         profile = cls.__new__(cls)
         profile.seed = seed
-        profile.base_revenue = model_quarters[0].revenue if model_quarters else 22.0
+
+        # Skip Period 0 (opening BS) — find first operating quarter
+        op_quarters = [q for q in model_quarters if q.period_type != "opening"]
+        first_op = op_quarters[0] if op_quarters else None
+
+        profile.base_revenue = first_op.revenue if first_op else 22.0
         profile.yoy_growth_rate = _A.arr_growth_rate_annual
-        profile.num_quarters = len(model_quarters)
-        profile.base_arr = model_quarters[0].beginning_arr if model_quarters else 83.6
-        profile.base_customer_count = model_quarters[0].customer_count if model_quarters else 760
-        profile.base_headcount = model_quarters[0].headcount if model_quarters else 235
+        profile.num_quarters = len(op_quarters)
+        profile.base_arr = first_op.beginning_arr if first_op else 83.6
+        profile.base_customer_count = first_op.customer_count if first_op else 760
+        profile.base_headcount = first_op.headcount if first_op else 235
 
         # Entity identification from source Quarter objects
-        profile.entity_id = getattr(model_quarters[0], "entity_id", None) if model_quarters else None
-        profile.entity_name = getattr(model_quarters[0], "entity_name", None) if model_quarters else None
-        profile.business_model = getattr(model_quarters[0], "business_model", "saas") if model_quarters else "saas"
+        profile.entity_id = getattr(first_op, "entity_id", None) if first_op else None
+        profile.entity_name = getattr(first_op, "entity_name", None) if first_op else None
+        profile.business_model = getattr(first_op, "business_model", "saas") if first_op else "saas"
 
         # Derive regions from the Quarter objects' revenue_by_region keys
-        if model_quarters and hasattr(model_quarters[0], "revenue_by_region") and model_quarters[0].revenue_by_region:
-            profile.regions = list(model_quarters[0].revenue_by_region.keys())
+        if first_op and hasattr(first_op, "revenue_by_region") and first_op.revenue_by_region:
+            profile.regions = list(first_op.revenue_by_region.keys())
         else:
             profile.regions = ["AMER", "EMEA", "APAC"]
 
         converted = []
-        for fmq in model_quarters:
+        for fmq in op_quarters:
             qm = QuarterMetrics(
                 quarter=fmq.quarter,
                 is_forecast=fmq.is_forecast,

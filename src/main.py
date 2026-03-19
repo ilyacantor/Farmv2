@@ -157,6 +157,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
             status_code=exc.status_code,
             content={
                 "error": exc.detail or "HTTP error",
+                "detail": exc.detail or "HTTP error",
                 "request_id": str(uuid_mod.uuid4())[:8],
                 "path": request.url.path,
                 "status_code": exc.status_code

@@ -112,6 +112,8 @@ def _generate_rep_level_data(
     open_deals_tracker: Dict[str, Dict[str, Any]] = {}
 
     for fmq in model_quarters:
+        if fmq.period_type == "opening":
+            continue  # Period 0 has no sales/pipeline data
         q = fmq.quarter
         qi = fmq.quarter_index
         rng = random.Random(42 + qi * 1000)
@@ -562,6 +564,30 @@ def _build_v2_quarterly_truth(
         q = fmq.quarter
         qi = fmq.quarter_index
         rng = random.Random(42 + qi * 777)
+
+        # Period 0: BS-only ground truth (no P&L, CF, or operational metrics)
+        if fmq.period_type == "opening":
+            quarterly_truth[q] = {
+                "cash": {"value": _r(fmq.cash), "unit": "millions_usd", "primary_source": "netsuite"},
+                "ar": {"value": _r(fmq.ar), "unit": "millions_usd", "primary_source": "netsuite"},
+                "unbilled_revenue": {"value": _r(fmq.unbilled_revenue), "unit": "millions_usd", "primary_source": "netsuite"},
+                "prepaid_expenses": {"value": _r(fmq.prepaid_expenses), "unit": "millions_usd", "primary_source": "netsuite"},
+                "pp_e": {"value": _r(fmq.pp_e), "unit": "millions_usd", "primary_source": "netsuite"},
+                "intangibles": {"value": _r(fmq.intangibles), "unit": "millions_usd", "primary_source": "netsuite"},
+                "goodwill": {"value": _r(fmq.goodwill), "unit": "millions_usd", "primary_source": "netsuite"},
+                "total_assets": {"value": _r(fmq.total_assets), "unit": "millions_usd", "primary_source": "netsuite"},
+                "ap": {"value": _r(fmq.ap), "unit": "millions_usd", "primary_source": "netsuite"},
+                "accrued_expenses": {"value": _r(fmq.accrued_expenses), "unit": "millions_usd", "primary_source": "netsuite"},
+                "deferred_revenue": {"value": _r(fmq.deferred_revenue), "unit": "millions_usd", "primary_source": "netsuite"},
+                "long_term_debt": {"value": _r(fmq.long_term_debt), "unit": "millions_usd", "primary_source": "netsuite"},
+                "total_liabilities": {"value": _r(fmq.total_liabilities), "unit": "millions_usd", "primary_source": "netsuite"},
+                "retained_earnings": {"value": _r(fmq.retained_earnings), "unit": "millions_usd", "primary_source": "netsuite"},
+                "stockholders_equity": {"value": _r(fmq.stockholders_equity), "unit": "millions_usd", "primary_source": "netsuite"},
+                "is_forecast": fmq.is_forecast,
+                "period_type": fmq.period_type,
+            }
+            continue
+
         quarterly_truth[q] = {
             # ── ARR Waterfall ─────────────────────────────────────────────
             "beginning_arr": {"value": _r(fmq.beginning_arr), "unit": "millions_usd", "primary_source": "chargebee"},
@@ -747,6 +773,8 @@ def _build_v2_dimensional_truth(
     }
 
     for fmq in model_quarters:
+        if fmq.period_type == "opening":
+            continue  # Period 0 has no dimensional breakdowns
         q = fmq.quarter
         dims["revenue_by_region"][q] = {k: _r(v) for k, v in fmq.revenue_by_region.items()}
         dims["revenue_by_segment"][q] = {k: _r(v) for k, v in fmq.revenue_by_segment.items()}
@@ -782,6 +810,8 @@ def _build_v2_dimensional_truth(
     dims["time_to_fill_by_department"] = {"source": "workday"}
 
     for fmq in model_quarters:
+        if fmq.period_type == "opening":
+            continue  # Period 0 has no department-level data
         q = fmq.quarter
         qi = fmq.quarter_index
         rng = random.Random(42 + qi * 555)
@@ -839,6 +869,8 @@ def _build_v2_expected_conflicts(model_quarters: List) -> List[Dict[str, Any]]:
     conflicts = []
 
     for fmq in model_quarters:
+        if fmq.period_type == "opening":
+            continue  # Period 0 has no cross-system conflicts
         q = fmq.quarter
 
         # Revenue conflict: Salesforce books on close date, NetSuite on rev rec schedule

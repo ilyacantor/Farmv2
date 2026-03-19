@@ -62,6 +62,8 @@ class FinancialStatementTripleGenerator:
     def _generate_pnl_triples(self) -> List[SemanticTriple]:
         triples: List[SemanticTriple] = []
         for q in self.quarters:
+            if q.period_type == "opening":
+                continue  # Period 0 has no P&L
             period = q.quarter
             triples.extend(self._pnl_for_quarter(q, period))
         return triples
@@ -122,42 +124,29 @@ class FinancialStatementTripleGenerator:
 
         return ts
 
-    # ── Period 0: Opening Balance Sheet ─────────────────────────────────
+    # ── Period 0: Opening Balance Sheet (from Quarter) ──────────────────
 
-    def _opening_cash(self, ltd_balance: float) -> float:
-        """Compute opening cash for 2023-Q4 (before any Q1 activity)."""
-        cp = self.config_raw.get("company_profile") or {}
-        return _r(cp.get("starting_cash", 0.0) + ltd_balance)
+    def _emit_bs_from_quarter(self, q: "Quarter") -> List[SemanticTriple]:
+        """Emit BS triples from a Quarter object (used for Period 0)."""
+        period = q.quarter
+        triples: List[SemanticTriple] = []
 
-    def _generate_opening_bs(self, ltd_balance: float) -> List[SemanticTriple]:
-        """Emit 2023-Q4 opening balance sheet as Period 0 anchor.
-
-        Uses starting_* values from config. No P&L or CF — this is a
-        point-in-time snapshot representing the position at the start
-        of the model.
-        """
-        cp = self.config_raw.get("company_profile") or {}
-        period = "2023-Q4"
-
-        cash = _r(cp.get("starting_cash", 0.0) + ltd_balance)
-        ar = _r(cp.get("starting_ar", 0.0))
-        unbilled_revenue = _r(cp.get("starting_unbilled_revenue", 0.0))
-        prepaid = _r(cp.get("starting_prepaid", 0.0))
-        ppe = _r(cp.get("starting_pp_e", 0.0))
-        intangibles = _r(cp.get("starting_intangibles", 0.0))
-        goodwill = _r(cp.get("starting_goodwill", 0.0))
+        cash = _r(q.cash)
+        ar = _r(q.ar)
+        unbilled_revenue = _r(q.unbilled_revenue)
+        prepaid = _r(q.prepaid_expenses)
+        ppe = _r(q.pp_e)
+        intangibles = _r(q.intangibles)
+        goodwill = _r(q.goodwill)
         asset_total = _r(cash + ar + unbilled_revenue + prepaid + ppe + intangibles + goodwill)
 
-        ap = _r(cp.get("starting_ap", 0.0))
-        accrued = _r(cp.get("starting_accrued_expenses", 0.0))
-        # Deferred revenue: starting_annual_revenue / 4 * deferred_rev_months / 3
-        starting_rev = cp.get("starting_annual_revenue", 0.0)
-        deferred_months = cp.get("deferred_rev_months", 0.0)
-        deferred_rev = _r(starting_rev / 12.0 * deferred_months)
-        long_term_debt = _r(ltd_balance)
+        ap = _r(q.ap)
+        accrued = _r(q.accrued_expenses)
+        deferred_rev = _r(q.deferred_revenue)
+        long_term_debt = _r(q.long_term_debt)
         liability_total = _r(ap + accrued + deferred_rev + long_term_debt)
 
-        common_stock = _r(self.common_stock)
+        common_stock = _r(q.common_stock)
         retained_earnings = _r(asset_total - liability_total - common_stock)
         equity_total = _r(retained_earnings + common_stock)
 
@@ -169,8 +158,6 @@ class FinancialStatementTripleGenerator:
                 f"asset.total={asset_total} != liability.total({liability_total}) "
                 f"+ equity.total({equity_total}), diff={bs_diff}"
             )
-
-        triples: List[SemanticTriple] = []
 
         def add_bs(concept: str, value: float, source: str = "erp"):
             triples.append(SemanticTriple(
@@ -203,7 +190,7 @@ class FinancialStatementTripleGenerator:
         add_bs("equity.common_stock", common_stock)
 
         _logger.info(
-            f"[{self.entity_id}] Opening BS (2023-Q4): assets={asset_total}, "
+            f"[{self.entity_id}] Opening BS ({period}): assets={asset_total}, "
             f"liabilities={liability_total}, equity={equity_total}, cash={cash}"
         )
 
@@ -227,13 +214,13 @@ class FinancialStatementTripleGenerator:
         prev_cash_triple: Optional[float] = None
         prev_q: Optional[Quarter] = None
 
-        # ── Period 0: 2023-Q4 opening balance sheet anchor ────────────
-        # Emits the opening BS snapshot from config starting_* values.
-        # No P&L or CF for this period — it's a point-in-time position.
-        triples.extend(self._generate_opening_bs(self.long_term_debt_initial))
-        prev_cash_triple = self._opening_cash(self.long_term_debt_initial)
-
         for q in self.quarters:
+            # ── Period 0: emit BS from Quarter, set prev_cash, skip CF ──
+            if q.period_type == "opening":
+                triples.extend(self._emit_bs_from_quarter(q))
+                prev_cash_triple = _r(q.cash)
+                prev_q = q
+                continue
             period = q.quarter
 
             # ── Debt repayment for CF (derived from quarter LTD values) ──

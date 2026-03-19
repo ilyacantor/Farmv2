@@ -160,7 +160,9 @@ class GeneralLedgerTripleGenerator:
                 f"GL generator requires at least {self._GL_QUARTERS} quarters, "
                 f"got {len(quarters)}. Entity: {assumptions.entity_id}"
             )
-        self.quarters = quarters[:self._GL_QUARTERS]
+        # Filter out Period 0 (opening BS) — GL generates its own opening BS from config
+        operating_quarters = [q for q in quarters if q.period_type != "opening"]
+        self.quarters = operating_quarters[:self._GL_QUARTERS]
         self.assumptions = assumptions
         self.config_raw = config_raw
         self.entity_id = assumptions.entity_id or "unknown"

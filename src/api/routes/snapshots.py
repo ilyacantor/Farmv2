@@ -83,12 +83,65 @@ async def create_snapshot(request: SnapshotRequest):
             )
 
             if existing:
+                # Return a new snapshot_id for tracking, but mark it as
+                # a duplicate of the existing snapshot with the same fingerprint.
+                new_snapshot_id = str(uuid.uuid4())
+                new_created_at = datetime.utcnow().isoformat() + "Z"
+                new_run_id = str(uuid.uuid4())
+
+                # Persist the duplicate record so it appears in snapshot listings
+                await conn.execute("""
+                    INSERT INTO runs (run_id, run_fingerprint, created_at, seed, schema_version, enterprise_profile, realism_profile, scale, tenant_id)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                """, new_run_id, fingerprint, new_created_at, request.seed, SCHEMA_VERSION,
+                    request.enterprise_profile.value, request.realism_profile.value, request.scale.value, request.tenant_id)
+
+                # Copy existing snapshot data to new record
+                existing_blob = await conn.fetchval(
+                    "SELECT snapshot_json FROM snapshots WHERE snapshot_id = $1", existing["snapshot_id"]
+                )
+                await conn.execute("""
+                    INSERT INTO snapshots (snapshot_id, run_id, sequence, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, snapshot_json)
+                    VALUES ($1, $2, 0, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                """, new_snapshot_id, new_run_id, fingerprint,
+                    request.tenant_id, request.seed, request.scale.value,
+                    request.enterprise_profile.value, request.realism_profile.value,
+                    new_created_at, SCHEMA_VERSION, existing_blob or '{}')
+
+                # Copy metadata and blob to hot/cold tables so duplicate
+                # appears in snapshot listings and is fetchable.
+                existing_meta = await conn.fetchrow(
+                    "SELECT total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, fabric_planes, sors, industry FROM snapshots_meta WHERE snapshot_id = $1",
+                    existing["snapshot_id"]
+                )
+                if existing_meta:
+                    await conn.execute("""
+                        INSERT INTO snapshots_meta (snapshot_id, run_id, snapshot_fingerprint, tenant_id, seed, scale, enterprise_profile, realism_profile, created_at, schema_version, total_assets, plane_counts, expected_summary, blob_size_bytes, blob_hash, backfill_state, fabric_planes, sors, industry)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'complete', $16, $17, $18)
+                    """, new_snapshot_id, new_run_id, fingerprint,
+                        request.tenant_id, request.seed, request.scale.value,
+                        request.enterprise_profile.value, request.realism_profile.value,
+                        new_created_at, SCHEMA_VERSION,
+                        existing_meta["total_assets"], existing_meta["plane_counts"],
+                        existing_meta["expected_summary"], existing_meta["blob_size_bytes"],
+                        existing_meta["blob_hash"], existing_meta["fabric_planes"],
+                        existing_meta["sors"], existing_meta["industry"])
+
+                existing_blob_row = await conn.fetchrow(
+                    "SELECT blob FROM snapshots_blob WHERE snapshot_id = $1", existing["snapshot_id"]
+                )
+                if existing_blob_row:
+                    await conn.execute("""
+                        INSERT INTO snapshots_blob (snapshot_id, blob, created_at)
+                        VALUES ($1, $2, $3)
+                    """, new_snapshot_id, existing_blob_row["blob"], new_created_at)
+
                 return SnapshotCreateResponse(
-                    snapshot_id=existing["snapshot_id"],
+                    snapshot_id=new_snapshot_id,
                     snapshot_fingerprint=fingerprint,
-                    tenant_id=existing["tenant_id"],
-                    created_at=existing["created_at"],
-                    schema_version=existing["schema_version"],
+                    tenant_id=request.tenant_id,
+                    created_at=new_created_at,
+                    schema_version=SCHEMA_VERSION,
                     duplicate_of_snapshot_id=existing["snapshot_id"],
                 )
 

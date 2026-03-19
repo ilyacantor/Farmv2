@@ -136,20 +136,25 @@ class CombiningStatementEngine:
             raise ValueError("meridian_quarters must not be empty")
         if not cascadia_quarters:
             raise ValueError("cascadia_quarters must not be empty")
-        if len(meridian_quarters) != len(cascadia_quarters):
+
+        # Filter out Period 0 (opening BS) — combining statements are P&L/BS/CF for operating quarters
+        m_operating = [q for q in meridian_quarters if q.period_type != "opening"]
+        c_operating = [q for q in cascadia_quarters if q.period_type != "opening"]
+
+        if len(m_operating) != len(c_operating):
             raise ValueError(
-                f"Quarter count mismatch: Meridian has {len(meridian_quarters)}, "
-                f"Cascadia has {len(cascadia_quarters)}"
+                f"Quarter count mismatch: Meridian has {len(m_operating)}, "
+                f"Cascadia has {len(c_operating)}"
             )
         # Verify quarter labels align
-        for mq, cq in zip(meridian_quarters, cascadia_quarters):
+        for mq, cq in zip(m_operating, c_operating):
             if mq.quarter != cq.quarter:
                 raise ValueError(
                     f"Quarter label mismatch: Meridian={mq.quarter}, Cascadia={cq.quarter}"
                 )
 
-        self._m_quarters = meridian_quarters
-        self._c_quarters = cascadia_quarters
+        self._m_quarters = m_operating
+        self._c_quarters = c_operating
 
     # ───────────────────────────────────────────────────────────────────────
     # Public API
@@ -1247,8 +1252,10 @@ if __name__ == "__main__":
     print("\nGenerating financial models...")
     m_quarters = FinancialModel(m_assumptions).generate()
     c_quarters = FinancialModel(c_assumptions).generate()
-    print(f"  Meridian: {len(m_quarters)} quarters, Q1 revenue = ${m_quarters[0].revenue:.1f}M")
-    print(f"  Cascadia: {len(c_quarters)} quarters, Q1 revenue = ${c_quarters[0].revenue:.1f}M")
+    m_op = [q for q in m_quarters if q.period_type != "opening"]
+    c_op = [q for q in c_quarters if q.period_type != "opening"]
+    print(f"  Meridian: {len(m_op)} operating quarters, Q1 revenue = ${m_op[0].revenue:.1f}M")
+    print(f"  Cascadia: {len(c_op)} operating quarters, Q1 revenue = ${c_op[0].revenue:.1f}M")
 
     print("\nRunning CombiningStatementEngine...")
     engine = CombiningStatementEngine(m_quarters, c_quarters)

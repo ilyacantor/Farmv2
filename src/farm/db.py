@@ -219,7 +219,7 @@ class DatabaseManager:
     async def connection(self):
         if DB_SIMULATE_DOWN:
             raise DBUnavailable("DB_SIMULATE_DOWN=true: Simulating database failure", retry_after=60)
-        
+
         allowed, retry_after = await self._circuit_breaker.check()
         if not allowed:
             wait_time = int(retry_after) if retry_after else 60
@@ -227,10 +227,33 @@ class DatabaseManager:
                 f"Circuit breaker open: DB unavailable. Try again in {wait_time}s",
                 retry_after=retry_after or 60.0
             )
-        
+
         async with self._semaphore:
             try:
                 pool = await self.get_pool()
+                # Verify pool connections are usable — connections created on a
+                # previous event loop (e.g. lifespan thread in sync TestClient)
+                # will fail with RuntimeError("Event loop is closed").
+                needs_reset = False
+                try:
+                    test_conn = await pool.acquire()
+                    try:
+                        await test_conn.execute("SELECT 1")
+                    except (asyncpg.exceptions.InterfaceError, RuntimeError):
+                        needs_reset = True
+                    finally:
+                        await pool.release(test_conn)
+                except (asyncpg.exceptions.InterfaceError, RuntimeError):
+                    needs_reset = True
+
+                if needs_reset:
+                    self._log("Stale connection detected, recreating pool")
+                    # Discard the old pool — don't call terminate() or close()
+                    # as that triggers ConnectionDoesNotExistError on pending
+                    # protocol operations from the previous event loop.
+                    self._pool = None
+                    pool = await self.get_pool()
+
                 async with pool.acquire() as conn:
                     await self._circuit_breaker.record_success()
                     yield conn
@@ -654,7 +677,9 @@ class DatabaseManager:
                 if result != 1:
                     return False, f"DB test query returned unexpected result: {result}"
         except Exception as e:
-            return False, f"DB unreachable: {e}"
+            health_result = (False, f"DB unreachable: {e}")
+            logger.warning(f"Health check failed: {health_result[1]}")
+            return health_result
         pool_size = self._pool.get_size()
         max_size = self._pool.get_max_size()
         idle_size = self._pool.get_idle_size()

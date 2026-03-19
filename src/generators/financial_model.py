@@ -146,6 +146,7 @@ class Assumptions:
     tax_rate: float = _cfg.get("tax_rate", 0.25)
     long_term_debt_initial: float = _cfg.get("long_term_debt_initial", 0.0)
     long_term_debt_amort_pct_quarterly: float = _cfg.get("long_term_debt_amort_pct_quarterly", 0.02)
+    common_stock: float = _cfg.get("common_stock", 40.0)
 
     # Starting balance sheet
     starting_cash: float = _cfg.get("starting_cash", 61.29)
@@ -361,6 +362,7 @@ class Quarter:
     long_term_debt: float = 0.0
     total_liabilities: float = 0.0
     retained_earnings: float = 0.0
+    common_stock: float = 0.0
     stockholders_equity: float = 0.0
 
     # ── Derived ratios ───────────────────────────────────────────────────
@@ -550,9 +552,10 @@ def _generate_top_customer_revenue(revenue: float, customer_count: int,
 
 class FinancialModel:
     """
-    Produces 12 quarters (2024-Q1 → 2026-Q4) of integrated financial data.
+    Produces 13 quarters (Period 0 + 2024-Q1 → 2026-Q4) of integrated financial data.
 
-    The computation flows strictly downward:
+    Period 0 (2023-Q4) is a BS-only opening snapshot. The 12 operating quarters
+    flow strictly downward:
         Assumptions → ARR → Revenue → P&L → Balance Sheet → Cash Flow → SaaS Metrics
     """
 
@@ -563,9 +566,88 @@ class FinancialModel:
 
     # ─── public ────────────────────────────────────────────────────────────
 
+    def _build_period_zero(self) -> Quarter:
+        """Build the Period 0 opening balance sheet (2023-Q4).
+
+        This is a BS-only snapshot representing the position at the start
+        of the model. All P&L and CF fields remain at zero. The opening BS
+        is computed entirely from existing config starting_* fields —
+        no redundant YAML section needed.
+        """
+        a = self.a
+        q = Quarter(
+            quarter="2023-Q4",
+            quarter_index=-1,
+            is_forecast=False,
+            period_type="opening",
+            entity_id=a.entity_id,
+            entity_name=a.entity_name,
+            business_model=a.business_model,
+        )
+
+        # Assets — all from config starting_* fields
+        q.cash = _r(a.starting_cash + a.long_term_debt_initial)
+        q.ar = _r(a.starting_ar)
+        q.unbilled_revenue = _r(a.starting_unbilled_revenue)
+        q.prepaid_expenses = _r(a.starting_prepaid)
+        q.pp_e = _r(a.starting_pp_e)
+        q.intangibles = _r(a.starting_intangibles)
+        q.goodwill = _r(a.starting_goodwill)
+        q.total_assets = _r(q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
+                            + q.pp_e + q.intangibles + q.goodwill)
+
+        # Liabilities
+        q.ap = _r(a.starting_ap)
+        q.accrued_expenses = _r(a.starting_accrued_expenses)
+
+        # Deferred revenue: depends on business model
+        if a.business_model == "saas":
+            q.deferred_revenue = _r(a.starting_arr * a.deferred_rev_months / 12)
+            q.deferred_revenue_current = _r(q.deferred_revenue * 0.75)
+            q.deferred_revenue_lt = _r(q.deferred_revenue * 0.25)
+        elif a.business_model == "consultancy":
+            q.deferred_revenue = _r(a.starting_annual_revenue / 12 * a.deferred_rev_months)
+            q.deferred_revenue_current = _r(q.deferred_revenue * 0.85)
+            q.deferred_revenue_lt = _r(q.deferred_revenue * 0.15)
+        else:  # bpm
+            q.deferred_revenue = _r(a.starting_annual_revenue / 12 * a.deferred_rev_months)
+            q.deferred_revenue_current = _r(q.deferred_revenue * 0.80)
+            q.deferred_revenue_lt = _r(q.deferred_revenue * 0.20)
+
+        q.long_term_debt = _r(a.long_term_debt_initial)
+        q.total_liabilities = _r(q.ap + q.accrued_expenses + q.deferred_revenue + q.long_term_debt)
+
+        # Equity — common_stock from config, retained_earnings is the plug
+        q.common_stock = a.common_stock
+        q.retained_earnings = _r(q.total_assets - q.total_liabilities - q.common_stock)
+        q.stockholders_equity = _r(q.retained_earnings + q.common_stock)
+
+        # Hard gate: BS identity
+        bs_diff = abs(q.total_assets - q.total_liabilities - q.stockholders_equity)
+        if bs_diff > 0.01:
+            raise ValueError(
+                f"Period 0 BS identity violation for {a.entity_id}: "
+                f"assets={q.total_assets} != liabilities({q.total_liabilities}) "
+                f"+ equity({q.stockholders_equity}), diff={bs_diff}"
+            )
+
+        # Minimal dimensional metadata
+        q.dimensions = {
+            "period": q.quarter,
+            "period_type": q.period_type,
+            "year": "2023",
+            "quarter_num": "4",
+        }
+        if q.entity_id:
+            q.dimensions["entity_id"] = q.entity_id
+
+        return q
+
     def generate(self, wall_clock: Optional[date] = None) -> List[Quarter]:
         quarters: List[Quarter] = []
-        prev: Optional[Quarter] = None
+        period_zero = self._build_period_zero()
+        quarters.append(period_zero)
+        prev: Optional[Quarter] = period_zero
         _wall_clock = wall_clock if wall_clock is not None else date.today()
         quarter_end_months = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
 
@@ -584,24 +666,28 @@ class FinancialModel:
                         entity_name=self.a.entity_name,
                         business_model=self.a.business_model)
 
+            # For P&L/operational computations, treat Period 0 as no-prev (it has no revenue/headcount).
+            # For BS continuity, use Period 0 as real prev (it has valid cash, AR, LTD, etc.).
+            op_prev = prev if (prev and prev.period_type != "opening") else None
+
             if self.a.business_model == "consultancy":
-                self._compute_consultancy(q, prev, years_elapsed)
+                self._compute_consultancy(q, op_prev, years_elapsed, bs_prev=prev)
             elif self.a.business_model == "bpm":
-                self._compute_bpm(q, prev, years_elapsed)
+                self._compute_bpm(q, op_prev, years_elapsed, bs_prev=prev)
             else:
                 # Default SaaS model (backward compatible with Phase 0)
-                self._compute_arr(q, prev, years_elapsed)
-                self._compute_revenue(q, prev)
-                self._compute_customers(q, prev, years_elapsed)
+                self._compute_arr(q, op_prev, years_elapsed)
+                self._compute_revenue(q, op_prev)
+                self._compute_customers(q, op_prev, years_elapsed)
                 self._compute_pipeline(q, years_elapsed)
                 self._compute_pnl(q, years_elapsed)
-                self._compute_people(q, prev, years_elapsed)
+                self._compute_people(q, op_prev, years_elapsed)
                 self._compute_support(q)
                 self._compute_engineering(q, years_elapsed)
                 self._compute_infrastructure(q)
                 self._compute_balance_sheet(q, prev, years_elapsed)
                 self._compute_cash_flow(q, prev)
-                self._compute_saas_metrics(q, prev)
+                self._compute_saas_metrics(q, op_prev)
                 self._compute_dimensional(q, years_elapsed)
 
             quarters.append(q)
@@ -886,26 +972,10 @@ class FinancialModel:
 
         # Cash computed after cash flow
 
-        # Retained earnings — for Q1, derive from BS identity to ensure balance
-        # LTD adds equally to assets (cash proceeds) and liabilities, so RE is unchanged
-        if prev:
-            prev_re = prev.retained_earnings
-        else:
-            # Compute starting assets & liabilities to derive initial retained earnings
-            start_assets = (a.starting_cash + a.long_term_debt_initial
-                            + a.starting_ar + a.starting_unbilled_revenue
-                            + a.starting_prepaid + a.starting_pp_e + a.starting_intangibles
-                            + a.starting_goodwill)
-            start_dr = a.starting_arr * (a.deferred_rev_months / 12)
-            start_liabilities = (a.starting_ap + a.starting_accrued_expenses + start_dr
-                                 + a.long_term_debt_initial)
-            paid_in_capital = 40.0
-            prev_re = start_assets - start_liabilities - paid_in_capital
-        q.retained_earnings = _r(prev_re + q.net_income)
-
-        # Stockholders' equity = retained earnings + paid-in capital (stable)
-        paid_in_capital = 40.0  # assumed constant
-        q.stockholders_equity = _r(q.retained_earnings + paid_in_capital)
+        # Retained earnings — flows from Period 0 via prev chain
+        q.retained_earnings = _r(prev.retained_earnings + q.net_income)
+        q.common_stock = a.common_stock
+        q.stockholders_equity = _r(q.retained_earnings + q.common_stock)
 
     # ─── Cash Flow ────────────────────────────────────────────────────────
 
@@ -1098,9 +1168,15 @@ class FinancialModel:
     # COGS = consultant comp (includes benefits) + bench + subcontractors + travel
     # ═══════════════════════════════════════════════════════════════════════
 
-    def _compute_consultancy(self, q: Quarter, prev: Optional[Quarter], years_elapsed: float):
-        """Full computation chain for consultancy business model."""
+    def _compute_consultancy(self, q: Quarter, prev: Optional[Quarter], years_elapsed: float,
+                              bs_prev: Optional[Quarter] = None):
+        """Full computation chain for consultancy business model.
+
+        prev: previous operating quarter (None for Q1) — used for P&L/operational fields.
+        bs_prev: previous quarter including Period 0 — used for BS continuity (cash, LTD, etc.).
+        """
         a = self.a
+        bs_prev = bs_prev or prev  # fallback for backward compat
 
         # ── Revenue ──────────────────────────────────────────────────────
         growth = max(a.revenue_growth_rate_annual - a.revenue_growth_deceleration * int(years_elapsed), 0.02)
@@ -1292,63 +1368,49 @@ class FinancialModel:
         q.avg_deal_size = _r(a.avg_engagement_value, 4)
 
         # ── Balance Sheet (non-equity items) ───────────────────────────
+        # bs_prev is Period 0 for Q1 (has valid BS data), prev is None for Q1
         dso = a.dso_days - getattr(a, 'dso_improvement_annual', 1.5) * years_elapsed
         q.dso = _r(dso, 1)
         q.ar = _r(q.revenue / 90 * dso)
         q.deferred_revenue = _r(q.revenue * (getattr(a, 'deferred_rev_months', 1.5) / 12))
         q.deferred_revenue_current = _r(q.deferred_revenue * 0.85)
         q.deferred_revenue_lt = _r(q.deferred_revenue * 0.15)
-        q.unbilled_revenue = _r((prev.unbilled_revenue if prev else a.starting_unbilled_revenue) * 1.015)
-        q.prepaid_expenses = _r((prev.prepaid_expenses if prev else a.starting_prepaid) * 1.01)
-        prev_ppe = prev.pp_e if prev else a.starting_pp_e
+        q.unbilled_revenue = _r(bs_prev.unbilled_revenue * 1.015)
+        q.prepaid_expenses = _r(bs_prev.prepaid_expenses * 1.01)
+        prev_ppe = bs_prev.pp_e
         q.capex = _r(q.revenue * a.capex_pct_revenue)
         q.pp_e = _r(prev_ppe - q.da_expense * 0.7 + q.capex)
-        q.intangibles = _r((prev.intangibles if prev else a.starting_intangibles) - q.da_expense * 0.3)
+        q.intangibles = _r(bs_prev.intangibles - q.da_expense * 0.3)
         q.goodwill = a.starting_goodwill
         q.ap = _r(q.cogs * 0.12 + q.total_opex * 0.06)
         q.accrued_expenses = _r(q.total_opex * 0.32)
-        if prev:
-            q.long_term_debt = _r(prev.long_term_debt * (1 - a.long_term_debt_amort_pct_quarterly))
-        else:
-            q.long_term_debt = _r(a.long_term_debt_initial)
+        q.long_term_debt = _r(bs_prev.long_term_debt * (1 - a.long_term_debt_amort_pct_quarterly))
         q.total_liabilities = _r(q.ap + q.accrued_expenses + q.deferred_revenue + q.long_term_debt)
 
         # ── Cash Flow (must run before equity to get total_assets) ────
-        prev_ar = prev.ar if prev else a.starting_ar
-        prev_ap = prev.ap if prev else a.starting_ap
-        prev_dr = prev.deferred_revenue if prev else q.deferred_revenue
-        prev_ubr = prev.unbilled_revenue if prev else a.starting_unbilled_revenue
-        prev_prepaid = prev.prepaid_expenses if prev else a.starting_prepaid
-        prev_accrued = prev.accrued_expenses if prev else a.starting_accrued_expenses
-        q.change_in_ar = _r(q.ar - prev_ar)
-        q.change_in_ap = _r(q.ap - prev_ap)
-        q.change_in_deferred_rev = _r(q.deferred_revenue - prev_dr)
-        q.change_in_unbilled_rev = _r(q.unbilled_revenue - prev_ubr)
-        q.change_in_prepaid = _r(q.prepaid_expenses - prev_prepaid)
-        q.change_in_accrued = _r(q.accrued_expenses - prev_accrued)
+        # Working capital changes compare against bs_prev (Period 0 for Q1)
+        q.change_in_ar = _r(q.ar - bs_prev.ar)
+        q.change_in_ap = _r(q.ap - bs_prev.ap)
+        q.change_in_deferred_rev = _r(q.deferred_revenue - bs_prev.deferred_revenue)
+        q.change_in_unbilled_rev = _r(q.unbilled_revenue - bs_prev.unbilled_revenue)
+        q.change_in_prepaid = _r(q.prepaid_expenses - bs_prev.prepaid_expenses)
+        q.change_in_accrued = _r(q.accrued_expenses - bs_prev.accrued_expenses)
         q.cfo = _r(q.net_income + q.da_expense - q.change_in_ar + q.change_in_ap
                     + q.change_in_deferred_rev - q.change_in_unbilled_rev
                     - q.change_in_prepaid + q.change_in_accrued)
         q.fcf = _r(q.cfo - q.capex)
-        if prev:
-            debt_repayment = _r(prev.long_term_debt * a.long_term_debt_amort_pct_quarterly)
-            q.cash = _r(prev.cash + q.fcf - debt_repayment)
-        else:
-            q.cash = _r(a.starting_cash + a.long_term_debt_initial + q.fcf)
+        debt_repayment = _r(bs_prev.long_term_debt * a.long_term_debt_amort_pct_quarterly)
+        q.cash = _r(bs_prev.cash + q.fcf - debt_repayment)
         q.total_assets = _r(q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
                             + q.pp_e + q.intangibles + q.goodwill)
         current_assets = q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
         current_liabilities = q.ap + q.accrued_expenses + q.deferred_revenue_current
         q.working_capital = _r(current_assets - current_liabilities)
 
-        # ── Equity (plug retained_earnings at Q1 to balance BS) ──────
-        paid_in_capital = _r(q.total_assets * 0.25)  # stable equity base
-        if prev:
-            q.retained_earnings = _r(prev.retained_earnings + q.net_income)
-            paid_in_capital = prev.stockholders_equity - prev.retained_earnings
-        else:
-            q.retained_earnings = _r(q.total_assets - q.total_liabilities - paid_in_capital)
-        q.stockholders_equity = _r(q.retained_earnings + paid_in_capital)
+        # ── Equity — common_stock from config, retained_earnings flows from bs_prev ──
+        q.common_stock = a.common_stock
+        q.retained_earnings = _r(bs_prev.retained_earnings + q.net_income)
+        q.stockholders_equity = _r(q.retained_earnings + q.common_stock)
 
         # ── Dimensional ──────────────────────────────────────────────────
         regions = {"AMER": a.region_amer, "EMEA": a.region_emea, "APAC": a.region_apac}
@@ -1378,9 +1440,15 @@ class FinancialModel:
     # COGS = onshore/offshore/nearshore labor + bench + delivery center ops
     # ═══════════════════════════════════════════════════════════════════════
 
-    def _compute_bpm(self, q: Quarter, prev: Optional[Quarter], years_elapsed: float):
-        """Full computation chain for BPM business model."""
+    def _compute_bpm(self, q: Quarter, prev: Optional[Quarter], years_elapsed: float,
+                     bs_prev: Optional[Quarter] = None):
+        """Full computation chain for BPM business model.
+
+        prev: previous operating quarter (None for Q1) — used for P&L/operational fields.
+        bs_prev: previous quarter including Period 0 — used for BS continuity.
+        """
         a = self.a
+        bs_prev = bs_prev or prev  # fallback for backward compat
 
         # ── Revenue ──────────────────────────────────────────────────────
         growth = max(a.revenue_growth_rate_annual - a.revenue_growth_deceleration * int(years_elapsed), 0.03)
@@ -1603,59 +1671,43 @@ class FinancialModel:
         q.deferred_revenue = _r(q.revenue * (getattr(a, 'deferred_rev_months', 2.0) / 12))
         q.deferred_revenue_current = _r(q.deferred_revenue * 0.80)
         q.deferred_revenue_lt = _r(q.deferred_revenue * 0.20)
-        q.unbilled_revenue = _r((prev.unbilled_revenue if prev else a.starting_unbilled_revenue) * 1.01)
-        q.prepaid_expenses = _r((prev.prepaid_expenses if prev else a.starting_prepaid) * 1.005)
+        q.unbilled_revenue = _r(bs_prev.unbilled_revenue * 1.01)
+        q.prepaid_expenses = _r(bs_prev.prepaid_expenses * 1.005)
 
-        prev_ppe = prev.pp_e if prev else a.starting_pp_e
+        prev_ppe = bs_prev.pp_e
         q.capex = _r(q.revenue * a.capex_pct_revenue + q.capitalized_recruiting + q.capitalized_automation)
         q.pp_e = _r(prev_ppe - q.da_expense * 0.6 + q.capex)
-        q.intangibles = _r((prev.intangibles if prev else a.starting_intangibles)
-                           - q.da_expense * 0.4 + q.capitalized_automation)
+        q.intangibles = _r(bs_prev.intangibles - q.da_expense * 0.4 + q.capitalized_automation)
         q.goodwill = a.starting_goodwill
         q.ap = _r(q.cogs * 0.10 + q.total_opex * 0.05)
         q.accrued_expenses = _r(q.total_opex * 0.30)
-        if prev:
-            q.long_term_debt = _r(prev.long_term_debt * (1 - a.long_term_debt_amort_pct_quarterly))
-        else:
-            q.long_term_debt = _r(a.long_term_debt_initial)
+        q.long_term_debt = _r(bs_prev.long_term_debt * (1 - a.long_term_debt_amort_pct_quarterly))
         q.total_liabilities = _r(q.ap + q.accrued_expenses + q.deferred_revenue + q.long_term_debt)
 
         # ── Cash Flow (must run before equity to get total_assets) ────
-        prev_ar = prev.ar if prev else a.starting_ar
-        prev_ap = prev.ap if prev else a.starting_ap
-        prev_dr = prev.deferred_revenue if prev else q.deferred_revenue
-        prev_ubr = prev.unbilled_revenue if prev else a.starting_unbilled_revenue
-        prev_prepaid = prev.prepaid_expenses if prev else a.starting_prepaid
-        prev_accrued = prev.accrued_expenses if prev else a.starting_accrued_expenses
-        q.change_in_ar = _r(q.ar - prev_ar)
-        q.change_in_ap = _r(q.ap - prev_ap)
-        q.change_in_deferred_rev = _r(q.deferred_revenue - prev_dr)
-        q.change_in_unbilled_rev = _r(q.unbilled_revenue - prev_ubr)
-        q.change_in_prepaid = _r(q.prepaid_expenses - prev_prepaid)
-        q.change_in_accrued = _r(q.accrued_expenses - prev_accrued)
+        # Working capital changes compare against bs_prev (Period 0 for Q1)
+        q.change_in_ar = _r(q.ar - bs_prev.ar)
+        q.change_in_ap = _r(q.ap - bs_prev.ap)
+        q.change_in_deferred_rev = _r(q.deferred_revenue - bs_prev.deferred_revenue)
+        q.change_in_unbilled_rev = _r(q.unbilled_revenue - bs_prev.unbilled_revenue)
+        q.change_in_prepaid = _r(q.prepaid_expenses - bs_prev.prepaid_expenses)
+        q.change_in_accrued = _r(q.accrued_expenses - bs_prev.accrued_expenses)
         q.cfo = _r(q.net_income + q.da_expense - q.change_in_ar + q.change_in_ap
                     + q.change_in_deferred_rev - q.change_in_unbilled_rev
                     - q.change_in_prepaid + q.change_in_accrued)
         q.fcf = _r(q.cfo - q.capex)
-        if prev:
-            debt_repayment = _r(prev.long_term_debt * a.long_term_debt_amort_pct_quarterly)
-            q.cash = _r(prev.cash + q.fcf - debt_repayment)
-        else:
-            q.cash = _r(a.starting_cash + a.long_term_debt_initial + q.fcf)
+        debt_repayment = _r(bs_prev.long_term_debt * a.long_term_debt_amort_pct_quarterly)
+        q.cash = _r(bs_prev.cash + q.fcf - debt_repayment)
         q.total_assets = _r(q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
                             + q.pp_e + q.intangibles + q.goodwill)
         current_assets = q.cash + q.ar + q.unbilled_revenue + q.prepaid_expenses
         current_liabilities = q.ap + q.accrued_expenses + q.deferred_revenue_current
         q.working_capital = _r(current_assets - current_liabilities)
 
-        # ── Equity (plug retained_earnings at Q1 to balance BS) ──────
-        paid_in_capital = _r(q.total_assets * 0.25)
-        if prev:
-            q.retained_earnings = _r(prev.retained_earnings + q.net_income)
-            paid_in_capital = prev.stockholders_equity - prev.retained_earnings
-        else:
-            q.retained_earnings = _r(q.total_assets - q.total_liabilities - paid_in_capital)
-        q.stockholders_equity = _r(q.retained_earnings + paid_in_capital)
+        # ── Equity — common_stock from config, retained_earnings flows from bs_prev ──
+        q.common_stock = a.common_stock
+        q.retained_earnings = _r(bs_prev.retained_earnings + q.net_income)
+        q.stockholders_equity = _r(q.retained_earnings + q.common_stock)
 
         # ── Dimensional ──────────────────────────────────────────────────
         regions = {"AMER": a.region_amer, "EMEA": a.region_emea, "APAC": a.region_apac}
@@ -1699,6 +1751,16 @@ def validate_model(quarters: List[Quarter]) -> List[str]:
     for i, q in enumerate(quarters):
         prefix = f"[{q.quarter}]"
 
+        # Period 0: validate BS identity only — no P&L or CF
+        if q.period_type == "opening":
+            expected_total_eq = q.total_liabilities + q.stockholders_equity
+            if abs(q.total_assets - expected_total_eq) > 0.01:
+                issues.append(
+                    f"{prefix} BS identity violation: assets={q.total_assets:.2f} "
+                    f"vs L+E={expected_total_eq:.2f}"
+                )
+            continue
+
         # P&L ties
         expected_gp = q.revenue - q.cogs
         if abs(q.gross_profit - expected_gp) > 0.05:
@@ -1724,15 +1786,15 @@ def validate_model(quarters: List[Quarter]) -> List[str]:
             if abs(q.ending_arr - expected_arr) > 0.05:
                 issues.append(f"{prefix} ARR continuity: ending={q.ending_arr} vs computed={expected_arr:.2f}")
 
-        # Customer continuity
-        if i > 0:
+        # Customer continuity (skip Q1 — Period 0 has no operating headcount/customers)
+        if i > 0 and quarters[i - 1].period_type != "opening":
             prev = quarters[i - 1]
             expected_cust = prev.customer_count + q.new_customers - q.churned_customers
             if q.customer_count != expected_cust:
                 issues.append(f"{prefix} Customer count: {q.customer_count} vs computed={expected_cust}")
 
-        # Headcount continuity
-        if i > 0:
+        # Headcount continuity (skip Q1 — Period 0 has no operating headcount)
+        if i > 0 and quarters[i - 1].period_type != "opening":
             prev = quarters[i - 1]
             expected_hc = prev.headcount + q.hires - q.terminations
             if q.headcount != expected_hc:
@@ -1763,7 +1825,8 @@ def validate_model(quarters: List[Quarter]) -> List[str]:
             issues.append(f"{prefix} BS imbalance: assets={q.total_assets:.2f} vs L+E={expected_total_eq:.2f} (delta={abs(q.total_assets - expected_total_eq):.2f})")
 
         # Cash flow → cash reconciliation (includes debt repayment)
-        if i > 0:
+        # Skip Q1 — Period 0 has no CF; Q1 cash is computed from Period 0 cash + FCF - debt_repayment
+        if i > 0 and quarters[i - 1].period_type != "opening":
             prev = quarters[i - 1]
             # Debt repayment = change in LTD balance (positive = repayment outflow)
             debt_repayment = prev.long_term_debt - q.long_term_debt

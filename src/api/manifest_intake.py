@@ -191,7 +191,8 @@ def _find_pipe_data(
                 continue
             if not (isinstance(payload, dict) and "data" in payload):
                 continue
-            if key.endswith(f"_{pipe_name}") or pipe_name.endswith(f"_{key}"):
+            if (key.endswith(f"_{pipe_name}") or pipe_name.endswith(f"_{key}")
+                    or key.startswith(f"{pipe_name}_") or pipe_name.startswith(f"{key}_")):
                 suffix_matches.append((key, payload))
 
         if len(suffix_matches) == 1:
@@ -600,6 +601,7 @@ async def _execute_single_manifest(
             push_result=None,
             persisted=True,
             skipped_duplicate=True,
+            farm_verification_requested=manifest.farm_verification,
         )
 
     generator_key = _resolve_generator_key(manifest)
@@ -607,8 +609,8 @@ async def _execute_single_manifest(
     if generator_key is None:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
         error_msg = (
-            f"No generator route for system='{system}', category='{category or None}'. "
-            f"AAM must provide a routable category."
+            f"NO_GENERATOR_ROUTE: system='{system}', category='{category or None}'. "
+            f"AAM must provide a routable category for this system."
         )
         try:
             await save_manifest_run(
@@ -616,22 +618,13 @@ async def _execute_single_manifest(
                 aam_run_id=aam_run_id,
                 tenant_id=tenant_id, snapshot_name=snapshot_name,
                 source_system=system, category=category or None,
-                generator_key=None, status="failed",
+                generator_key="unresolved", status="failed",
                 created_at=created_at, elapsed_ms=elapsed_ms,
                 error_type="no_generator_route", error_message=error_msg,
             )
         except Exception as db_err:
             logger.error(f"PERSISTENCE FAILURE: manifest run {farm_run_id} NOT saved: {db_err}", exc_info=True)
-            return ManifestExecutionResult(
-                run_id=run_id, pipe_id=pipe_id, farm_run_id=farm_run_id,
-                status="failed", source_system=system, rows_generated=0,
-                persisted=False, farm_verification_requested=manifest.farm_verification,
-            )
-        return ManifestExecutionResult(
-            run_id=run_id, pipe_id=pipe_id, farm_run_id=farm_run_id,
-            status="failed", source_system=system, rows_generated=0,
-            farm_verification_requested=manifest.farm_verification,
-        )
+        raise HTTPException(status_code=422, detail=error_msg)
 
     logger.info(
         f"Manifest received: run_id={run_id}, pipe_id={pipe_id}, "

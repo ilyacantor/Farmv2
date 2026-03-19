@@ -110,7 +110,9 @@ class EBITDAAdjustmentTripleGenerator:
         rng = random.Random(self.seed + hash(self.entity_id) % 10000)
 
         # Use latest full year EBITDA as base for adjustment sizing
-        annual_ebitda = sum(q.ebitda for q in self.quarters[:4])
+        # Skip Period 0 (opening BS with no P&L)
+        operating_quarters = [q for q in self.quarters if q.period_type != "opening"]
+        annual_ebitda = sum(q.ebitda for q in operating_quarters[:4])
         if annual_ebitda <= 0:
             annual_ebitda = abs(annual_ebitda) or 1.0
 

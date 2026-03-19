@@ -246,10 +246,10 @@ def test_05_pnl_completeness(generated_data):
 # ════════════════════════════════════════════════════════════════════════
 
 def test_06_bs_identity(generated_data):
-    """For each entity, each quarter: asset.total == liability.total + equity.total.
+    """For each entity, each quarter (including Period 0): asset.total == liability.total + equity.total.
     Tolerance: $0."""
     triples = generated_data["triples"]
-    quarters = [f"{y}-Q{q}" for y in range(2024, 2027) for q in range(1, 5)]
+    quarters = ["2023-Q4"] + [f"{y}-Q{q}" for y in range(2024, 2027) for q in range(1, 5)]
 
     for entity_id in ("meridian", "cascadia"):
         for period in quarters:
@@ -308,9 +308,9 @@ def test_07_cf_identity(generated_data):
 
 def test_08_cash_continuity(generated_data):
     """For each entity: cash[Q(n)] + net_change[Q(n+1)] == cash[Q(n+1)]
-    for all consecutive quarters."""
+    for all consecutive quarters, starting from Period 0."""
     triples = generated_data["triples"]
-    quarters = [f"{y}-Q{q}" for y in range(2024, 2027) for q in range(1, 5)]
+    quarters = ["2023-Q4"] + [f"{y}-Q{q}" for y in range(2024, 2027) for q in range(1, 5)]
 
     for entity_id in ("meridian", "cascadia"):
         for i in range(len(quarters) - 1):
@@ -579,12 +579,16 @@ def test_15_old_format_unbroken(generated_data):
     m_profile = BusinessProfile.from_model_quarters(m_quarters, seed=42)
     c_profile = BusinessProfile.from_model_quarters(c_quarters, seed=43)
 
-    # Quarters exist with expected fields
-    assert len(m_quarters) == 12, f"Meridian quarters: {len(m_quarters)}"
-    assert len(c_quarters) == 12, f"Cascadia quarters: {len(c_quarters)}"
+    # Quarters exist with expected fields (13 = Period 0 + 12 operating)
+    assert len(m_quarters) == 13, f"Meridian quarters: {len(m_quarters)}"
+    assert len(c_quarters) == 13, f"Cascadia quarters: {len(c_quarters)}"
 
-    # Quarter objects still have all expected fields
-    q = m_quarters[0]
+    # Period 0 is the opening BS
+    assert m_quarters[0].period_type == "opening"
+    assert m_quarters[0].quarter == "2023-Q4"
+
+    # Quarter objects still have all expected fields (check Q1, not Period 0)
+    q = m_quarters[1]
     for field in ("revenue", "cogs", "gross_profit", "ebitda", "net_income",
                   "cash", "ar", "total_assets", "total_liabilities",
                   "stockholders_equity", "cfo", "capex", "fcf"):
