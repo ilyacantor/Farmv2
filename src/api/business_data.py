@@ -22,12 +22,6 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from src.generators.business_data_orchestrator import (
-    BusinessDataOrchestrator,
-    TIER_1_GENERATORS,
-    TIER_2_GENERATORS,
-    TIER_3_GENERATORS,
-)
 from src.farm.db import save_ground_truth_manifest, load_ground_truth_manifest, list_ground_truth_runs, update_manifest_push_results
 
 logger = logging.getLogger("farm.api.business_data")
@@ -90,6 +84,13 @@ async def generate_business_data(request: GenerateRequest):
     if not os.getenv("BUSINESS_DATA_ENABLED", "false").lower() in ("true", "1", "yes"):
         # Allow generation even without env var, just log a warning
         logger.warning("BUSINESS_DATA_ENABLED not set, proceeding anyway")
+
+    from src.generators.business_data_orchestrator import (
+        BusinessDataOrchestrator,
+        TIER_1_GENERATORS,
+        TIER_2_GENERATORS,
+        TIER_3_GENERATORS,
+    )
 
     # Parse tiers
     tier_nums = [t.strip() for t in request.tiers.split(",")]
@@ -179,6 +180,8 @@ async def generate_multi_entity(
                 detail=f"Config file not found for entity '{name}': {config_path}",
             )
         entity_configs.append(str(config_path))
+
+    from src.generators.business_data_orchestrator import BusinessDataOrchestrator
 
     logger.info(
         f"Starting multi-entity generation: entities={entity_names}, "
@@ -1674,7 +1677,7 @@ async def verify_dcl_readback(run_id: str, quarter: Optional[str] = Query(None))
     )
 
 
-async def _store_run(run_id: str, orchestrator: BusinessDataOrchestrator):
+async def _store_run(run_id: str, orchestrator: "BusinessDataOrchestrator"):
     """Store run data in memory and persist manifest to DB."""
     manifest = orchestrator.get_manifest()
     _run_store[run_id] = {
