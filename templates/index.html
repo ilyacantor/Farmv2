@@ -4217,6 +4217,11 @@
                 // Refresh run list
                 await loadTripleRuns();
 
+                // Poll push status if push was queued
+                if (data.push_status === 'queued') {
+                    pollPushStatus(data.run_id);
+                }
+
             } catch (e) {
                 status.innerHTML = `<span class="text-red-400">Generation failed: ${e.message}</span>`;
             } finally {
@@ -4249,6 +4254,48 @@
                 pushBadge.textContent = 'Not pushed';
                 pushBadge.className = 'text-xs text-slate-500';
             }
+        }
+
+        function pollPushStatus(runId) {
+            const pushBadge = document.getElementById('triplesPushBadge');
+            const status = document.getElementById('triplesGenerateStatus');
+            const intervalId = setInterval(async () => {
+                try {
+                    const resp = await fetch('/api/business-data/generation-status');
+                    if (!resp.ok) return;
+                    const state = await resp.json();
+                    if (state.status === 'pushing') {
+                        pushBadge.textContent = 'Pushing to DCL...';
+                        pushBadge.className = 'text-xs text-amber-400 font-medium';
+                    } else if (state.status === 'idle') {
+                        clearInterval(intervalId);
+                        if (state.error) {
+                            pushBadge.textContent = 'Push failed';
+                            pushBadge.className = 'text-xs text-red-400 font-medium';
+                            status.innerHTML = status.innerHTML.replace(
+                                /\(pushing to DCL in background\.\.\.\)/i,
+                                `<span class="text-red-400">Push failed: ${state.error}</span>`
+                            );
+                        } else if (state.push_result && state.push_result.success) {
+                            pushBadge.textContent = 'Pushed to DCL';
+                            pushBadge.className = 'text-xs text-emerald-400 font-medium';
+                            status.innerHTML = status.innerHTML.replace(
+                                /\(pushing to DCL in background\.\.\.\)/i,
+                                '<span class="text-emerald-400">Pushed to DCL</span>'
+                            );
+                            // Refresh run list to show updated push status
+                            await loadTripleRuns();
+                        } else {
+                            pushBadge.textContent = 'Push incomplete';
+                            pushBadge.className = 'text-xs text-amber-400 font-medium';
+                        }
+                    }
+                } catch (e) {
+                    // Network error during poll — don't spam, just stop
+                    clearInterval(intervalId);
+                    console.error('Push status poll error:', e);
+                }
+            }, 3000);
         }
 
         async function verifyTripleRun(runId) {

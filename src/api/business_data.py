@@ -38,8 +38,16 @@ router = APIRouter(prefix="/api/business-data", tags=["business-data"])
 _run_store: Dict[str, Dict[str, Any]] = {}
 _MAX_STORED_RUNS = 10
 
-# Prevents concurrent triple generation requests from fighting over DCL's triple store
-_generation_lock = asyncio.Lock()
+# Lifecycle state machine for triple generation + DCL push.
+# States: idle → generating → pushing → idle
+# Rejects concurrent requests when not idle (HTTP 409).
+_generation_state: Dict[str, Any] = {
+    "status": "idle",       # idle | generating | pushing
+    "run_id": None,
+    "started_at": None,
+    "error": None,
+    "push_result": None,    # set after push completes or fails
+}
 
 
 class GenerateRequest(BaseModel):
@@ -234,16 +242,42 @@ async def generate_multi_entity_triples(
 
     The existing JSON-format endpoint is unaffected.
     """
-    if _generation_lock.locked():
+    if _generation_state["status"] != "idle":
         raise HTTPException(
             status_code=409,
-            detail="Triple generation already in progress. Wait for it to complete.",
+            detail=f"Triple generation already in progress (status={_generation_state['status']}, "
+                   f"run_id={_generation_state['run_id']}). Wait for it to complete.",
         )
 
-    async with _generation_lock:
+    _generation_state["status"] = "generating"
+    _generation_state["run_id"] = None
+    _generation_state["started_at"] = datetime.now(timezone.utc).isoformat()
+    _generation_state["error"] = None
+    _generation_state["push_result"] = None
+    try:
         return await _do_generate_multi_entity_triples(
             background_tasks, entities, seed, tenant_id, skip_push,
         )
+    except Exception:
+        _generation_state["status"] = "idle"
+        _generation_state["error"] = "generation_failed"
+        raise
+
+
+@router.get("/generation-status")
+async def generation_status():
+    """Return the current state of the triple generation lifecycle.
+
+    States: idle, generating, pushing.
+    Includes run_id, error, and push_result when available.
+    """
+    return JSONResponse(content={
+        "status": _generation_state["status"],
+        "run_id": _generation_state["run_id"],
+        "started_at": _generation_state["started_at"],
+        "error": _generation_state["error"],
+        "push_result": _generation_state["push_result"],
+    })
 
 
 async def _do_generate_multi_entity_triples(
@@ -428,11 +462,15 @@ async def _do_generate_multi_entity_triples(
         f"triple_count={len(all_triples)}, time={generation_time_s}s, output={output_path}"
     )
 
+    # Update state with run_id now that generation is complete
+    _generation_state["run_id"] = run_id
+
     # Queue DCL push as a background task so the response returns immediately.
     # This prevents Render's proxy timeout from killing the request when DCL is slow.
     if not skip_push:
         from src.output.triple_writer import TripleWriter as _TW
         raw_triples = _TW.read(output_path)
+        _generation_state["status"] = "pushing"
         background_tasks.add_task(
             _background_push_to_dcl,
             raw_triples=raw_triples,
@@ -442,6 +480,7 @@ async def _do_generate_multi_entity_triples(
         )
         push_status = "queued"
     else:
+        _generation_state["status"] = "idle"
         push_status = "skipped"
 
     return JSONResponse(content={
@@ -684,16 +723,26 @@ async def _background_push_to_dcl(
             f"Background DCL push complete: run_id={run_id}, "
             f"success={result.get('success')}, pushed={result.get('pushed')}/{result.get('total')}"
         )
+        _generation_state["status"] = "idle"
+        _generation_state["push_result"] = {
+            "success": result.get("success"),
+            "pushed": result.get("pushed"),
+            "total": result.get("total"),
+        }
     except HTTPException as e:
         logger.error(f"Background DCL push failed: run_id={run_id}, detail={e.detail}")
         manifest["pushed_to_dcl"] = False
         manifest["push_error"] = str(e.detail)
         _save_manifest(run_id, manifest)
+        _generation_state["status"] = "idle"
+        _generation_state["error"] = str(e.detail)
     except Exception as e:
         logger.error(f"Background DCL push failed: run_id={run_id}, error={type(e).__name__}: {e}")
         manifest["pushed_to_dcl"] = False
         manifest["push_error"] = f"{type(e).__name__}: {e}"
         _save_manifest(run_id, manifest)
+        _generation_state["status"] = "idle"
+        _generation_state["error"] = f"{type(e).__name__}: {e}"
 
 
 async def _push_triples_to_dcl(
