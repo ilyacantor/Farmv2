@@ -5,6 +5,7 @@ Exposes endpoints to trigger business data generation, push to DCL,
 and retrieve ground truth manifests for verification.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -17,7 +18,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -36,6 +37,9 @@ router = APIRouter(prefix="/api/business-data", tags=["business-data"])
 # In-memory store for recent runs (production would use DB)
 _run_store: Dict[str, Dict[str, Any]] = {}
 _MAX_STORED_RUNS = 10
+
+# Prevents concurrent triple generation requests from fighting over DCL's triple store
+_generation_lock = asyncio.Lock()
 
 
 class GenerateRequest(BaseModel):
@@ -206,6 +210,7 @@ async def generate_multi_entity(
 
 @router.post("/generate-multi-entity-triples")
 async def generate_multi_entity_triples(
+    background_tasks: BackgroundTasks,
     entities: str = Query(
         default="meridian,cascadia",
         description="Comma-separated entity names (maps to farm_config_{name}.yaml)",
@@ -229,6 +234,26 @@ async def generate_multi_entity_triples(
 
     The existing JSON-format endpoint is unaffected.
     """
+    if _generation_lock.locked():
+        raise HTTPException(
+            status_code=409,
+            detail="Triple generation already in progress. Wait for it to complete.",
+        )
+
+    async with _generation_lock:
+        return await _do_generate_multi_entity_triples(
+            background_tasks, entities, seed, tenant_id, skip_push,
+        )
+
+
+async def _do_generate_multi_entity_triples(
+    background_tasks: BackgroundTasks,
+    entities: str,
+    seed: int,
+    tenant_id: str,
+    skip_push: bool,
+) -> JSONResponse:
+    """Inner implementation — runs under _generation_lock."""
     from src.generators.financial_model import FinancialModel, Assumptions
     from src.generators.combining_statements import CombiningStatementEngine
     from src.generators.entity_overlap import EntityOverlapGenerator
@@ -336,7 +361,7 @@ async def generate_multi_entity_triples(
     for entity_id in entity_ids:
         entity_profiles = getattr(profile_gen, entity_id, None)
         if entity_profiles is None:
-            _logger.warning(
+            logger.warning(
                 f"CustomerProfileGenerator has no attribute '{entity_id}' — "
                 f"no customer profiles will be generated for this entity. "
                 f"Available: {[a for a in dir(profile_gen) if not a.startswith('_')]}"
@@ -403,19 +428,21 @@ async def generate_multi_entity_triples(
         f"triple_count={len(all_triples)}, time={generation_time_s}s, output={output_path}"
     )
 
-    # Auto-push to DCL unless skip_push is set
-    push_results = None
+    # Queue DCL push as a background task so the response returns immediately.
+    # This prevents Render's proxy timeout from killing the request when DCL is slow.
     if not skip_push:
         from src.output.triple_writer import TripleWriter as _TW
         raw_triples = _TW.read(output_path)
-        push_results = await _push_triples_to_dcl(
+        background_tasks.add_task(
+            _background_push_to_dcl,
             raw_triples=raw_triples,
             tenant_id=tenant_id,
             run_id=run_id,
             manifest=manifest,
         )
-        # Re-read manifest since _push_triples_to_dcl updated it
-        manifest = _load_manifest(run_id) or manifest
+        push_status = "queued"
+    else:
+        push_status = "skipped"
 
     return JSONResponse(content={
         "run_id": run_id,
@@ -427,8 +454,8 @@ async def generate_multi_entity_triples(
         "entity_count": len(entity_ids),
         "entity_ids": entity_ids,
         "generation_time_s": generation_time_s,
-        "pushed_to_dcl": manifest.get("pushed_to_dcl", False),
-        "push_results": push_results,
+        "push_status": push_status,
+        "pushed_to_dcl": False,
         "identity_checks": {
             check["name"]: check["overall"]
             for check in identity_checks
@@ -637,6 +664,36 @@ def _save_manifest(run_id: str, manifest: Dict[str, Any]) -> None:
     manifest_path = os.path.join(_get_triples_output_dir(), f"{run_id}_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+
+async def _background_push_to_dcl(
+    raw_triples: List[Dict[str, Any]],
+    tenant_id: str,
+    run_id: str,
+    manifest: Dict[str, Any],
+) -> None:
+    """Background task: push triples to DCL after the HTTP response is sent.
+
+    Updates the manifest file on disk with push results when done.
+    Does not raise HTTPException — logs errors instead since there is
+    no client connection to send them to.
+    """
+    try:
+        result = await _push_triples_to_dcl(raw_triples, tenant_id, run_id, manifest)
+        logger.info(
+            f"Background DCL push complete: run_id={run_id}, "
+            f"success={result.get('success')}, pushed={result.get('pushed')}/{result.get('total')}"
+        )
+    except HTTPException as e:
+        logger.error(f"Background DCL push failed: run_id={run_id}, detail={e.detail}")
+        manifest["pushed_to_dcl"] = False
+        manifest["push_error"] = str(e.detail)
+        _save_manifest(run_id, manifest)
+    except Exception as e:
+        logger.error(f"Background DCL push failed: run_id={run_id}, error={type(e).__name__}: {e}")
+        manifest["pushed_to_dcl"] = False
+        manifest["push_error"] = f"{type(e).__name__}: {e}"
+        _save_manifest(run_id, manifest)
 
 
 async def _push_triples_to_dcl(

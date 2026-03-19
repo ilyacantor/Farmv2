@@ -4185,12 +4185,21 @@
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+                    if (resp.status === 409) {
+                        throw new Error('Triple generation already in progress — wait for it to finish.');
+                    }
                     throw new Error(err.detail || err.error || `HTTP ${resp.status}`);
                 }
                 const data = await resp.json();
                 triplesCurrentRun = data;
 
-                status.innerHTML = `<span class="text-emerald-400">Generated ${data.triple_count.toLocaleString()} triples</span> <span class="text-slate-500 font-mono">${data.run_id}</span> <span class="text-emerald-500 font-mono">${data.generation_time_s}s</span>`;
+                let pushNote = '';
+                if (data.push_status === 'queued') {
+                    pushNote = ' <span class="text-amber-400">(pushing to DCL in background...)</span>';
+                } else if (data.push_status === 'skipped') {
+                    pushNote = ' <span class="text-slate-500">(DCL push skipped)</span>';
+                }
+                status.innerHTML = `<span class="text-emerald-400">Generated ${data.triple_count.toLocaleString()} triples</span> <span class="text-slate-500 font-mono">${data.run_id}</span> <span class="text-emerald-500 font-mono">${data.generation_time_s}s</span>${pushNote}`;
 
                 // Update banner
                 updateTriplesBanner(data);
@@ -4233,6 +4242,9 @@
             if (data.pushed_to_dcl) {
                 pushBadge.textContent = 'Pushed to DCL';
                 pushBadge.className = 'text-xs text-emerald-400 font-medium';
+            } else if (data.push_status === 'queued') {
+                pushBadge.textContent = 'Pushing to DCL...';
+                pushBadge.className = 'text-xs text-amber-400 font-medium';
             } else {
                 pushBadge.textContent = 'Not pushed';
                 pushBadge.className = 'text-xs text-slate-500';

@@ -505,6 +505,7 @@ class TestAutoReconcile:
 
     def test_auto_reconcile_missing_aod_url_returns_400(self, client, snapshot_id, monkeypatch):
         monkeypatch.delenv("AOD_URL", raising=False)
+        monkeypatch.delenv("AOD_BASE_URL", raising=False)
         
         response = client.post("/api/reconcile/auto", json={
             "snapshot_id": snapshot_id,
