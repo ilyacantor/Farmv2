@@ -121,7 +121,7 @@ def step_generate(farm_url: str, seed: int, entities: str, tenant_id: str) -> di
 
 # ── Step 2: Push to DCL ───────────────────────────────────────────────────
 
-def step_push_to_dcl(gen_result: dict, db_url: str) -> dict:
+def step_push_to_dcl(gen_result: dict, db_url: str, seed: int, entities: str) -> dict:
     """Read JSONL and push triples directly to PG via execute_values."""
     _section("Step 2: Push to DCL (direct PG insert)")
     elapsed = _timer()
@@ -155,17 +155,21 @@ def step_push_to_dcl(gen_result: dict, db_url: str) -> dict:
     run_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, run_id))
     tenant_uuid = tenant_id if _is_uuid(tenant_id) else str(uuid.uuid5(uuid.NAMESPACE_URL, tenant_id))
 
-    # Deactivate any existing triples for this run_id first
+    # Deactivate ALL existing active triples for these entities.
+    # Previous runs with different run_uuids must not stay active alongside
+    # the new run — otherwise DISTINCT ON dedup is non-deterministic.
+    entity_ids = sorted(set(t["entity_id"] for t in triples))
     conn = psycopg2.connect(db_url)
     try:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE semantic_triples SET is_active = false WHERE run_id = %s",
-                (run_uuid,),
+                "UPDATE semantic_triples SET is_active = false "
+                "WHERE is_active = true AND entity_id = ANY(%s)",
+                (entity_ids,),
             )
             deactivated = cur.rowcount
             if deactivated > 0:
-                print(f"  Deactivated {deactivated:,} existing triples for run_id={run_uuid}")
+                print(f"  Deactivated {deactivated:,} existing triples for entities {entity_ids}")
             conn.commit()
 
         # Insert via execute_values for performance
@@ -213,6 +217,82 @@ def step_push_to_dcl(gen_result: dict, db_url: str) -> dict:
 
         print(f"  Inserted {inserted:,} triples into semantic_triples")
         print(f"  run_id (UUID): {run_uuid}")
+
+        # --- Provenance: engagement_state + run_ledger ---
+        # Deterministic engagement_id from seed + entities
+        engagement_id = f"e2e-seed{seed}-{entities}"
+
+        # Parse entity names for engagement_state fields (alphabetical order)
+        entity_names = sorted(entities.split(","))
+        if len(entity_names) < 2:
+            _die(f"Need at least 2 entities for engagement, got: {entity_names}")
+        entity_a = entity_names[0]
+        entity_b = entity_names[1]
+
+        with conn.cursor() as cur:
+            # Clean up orphaned engagement_state entries from prior test sessions
+            cur.execute(
+                "DELETE FROM run_ledger WHERE engagement_id NOT IN "
+                "(SELECT engagement_id FROM engagement_state WHERE engagement_id = %s)",
+                (engagement_id,),
+            )
+            orphan_ledger = cur.rowcount
+            cur.execute(
+                "DELETE FROM engagement_state WHERE engagement_id != %s",
+                (engagement_id,),
+            )
+            orphan_eng = cur.rowcount
+            if orphan_eng > 0 or orphan_ledger > 0:
+                print(f"  Cleaned up {orphan_eng} orphaned engagement(s), {orphan_ledger} orphaned ledger row(s)")
+
+            # Upsert engagement_state
+            cur.execute(
+                "INSERT INTO engagement_state "
+                "(tenant_id, engagement_id, entity_a_id, entity_b_id, status, config) "
+                "VALUES (%s, %s, %s, %s, 'active', %s) "
+                "ON CONFLICT (engagement_id) DO UPDATE SET "
+                "  entity_a_id = EXCLUDED.entity_a_id, "
+                "  entity_b_id = EXCLUDED.entity_b_id, "
+                "  status = EXCLUDED.status, "
+                "  config = EXCLUDED.config, "
+                "  updated_at = now()",
+                (
+                    tenant_uuid,
+                    engagement_id,
+                    entity_a,
+                    entity_b,
+                    json.dumps({
+                        "entity_a_name": entity_a,
+                        "entity_b_name": entity_b,
+                        "created_by": "e2e_convergence",
+                        "source_run_tag": run_id,
+                        "run_uuid": run_uuid,
+                    }),
+                ),
+            )
+            print(f"  engagement_state: engagement_id={engagement_id}, entities=({entity_a}, {entity_b})")
+
+            # Upsert run_ledger entry for triple_ingest step
+            idem_key = f"e2e-ingest-{run_uuid}"
+            cur.execute(
+                "INSERT INTO run_ledger "
+                "(tenant_id, engagement_id, step_name, status, idempotency_key, "
+                " started_at, completed_at, outputs_ref) "
+                "VALUES (%s, %s, 'triple_ingest', 'complete', %s, now(), now(), %s) "
+                "ON CONFLICT (idempotency_key) DO UPDATE SET "
+                "  status = EXCLUDED.status, "
+                "  completed_at = EXCLUDED.completed_at, "
+                "  outputs_ref = EXCLUDED.outputs_ref",
+                (
+                    tenant_uuid,
+                    engagement_id,
+                    idem_key,
+                    f"semantic_triples:run_id={run_uuid}",
+                ),
+            )
+            print(f"  run_ledger: step=triple_ingest, idem_key={idem_key}")
+
+        conn.commit()
         print(f"  Step time: {_fmt_time(elapsed())}")
 
     except Exception as e:
@@ -229,6 +309,7 @@ def step_push_to_dcl(gen_result: dict, db_url: str) -> dict:
         "triples_ingested": inserted,
         "run_uuid": run_uuid,
         "tenant_uuid": tenant_uuid,
+        "engagement_id": engagement_id,
         "step_time": elapsed(),
     }
 
@@ -687,8 +768,8 @@ def main():
     # Step 1: Generate
     gen_result = step_generate(args.farm_url, args.seed, args.entities, args.tenant_id)
 
-    # Step 2: Push to DCL
-    push_result = step_push_to_dcl(gen_result, db_url)
+    # Step 2: Push to DCL (includes engagement_state + run_ledger creation)
+    push_result = step_push_to_dcl(gen_result, db_url, args.seed, args.entities)
 
     # Step 3: Verify identity gates (stop on failure)
     verify_result = step_verify_identity(push_result, db_url)
