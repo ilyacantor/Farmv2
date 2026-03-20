@@ -5,6 +5,7 @@ Generates → Ingests → Verifies → Queries
 
 Usage:
     python scripts/e2e_convergence.py [--seed 42] [--dcl-url http://localhost:8004]
+    python scripts/e2e_convergence.py --clear-ledger   # wipe run_ledger + engagement_state
 
 Requires:
     SUPABASE_DB_URL env var pointing to the shared Supabase PostgreSQL instance.
@@ -230,21 +231,6 @@ def step_push_to_dcl(gen_result: dict, db_url: str, seed: int, entities: str) ->
         entity_b = entity_names[1]
 
         with conn.cursor() as cur:
-            # Clean up orphaned engagement_state entries from prior test sessions
-            cur.execute(
-                "DELETE FROM run_ledger WHERE engagement_id NOT IN "
-                "(SELECT engagement_id FROM engagement_state WHERE engagement_id = %s)",
-                (engagement_id,),
-            )
-            orphan_ledger = cur.rowcount
-            cur.execute(
-                "DELETE FROM engagement_state WHERE engagement_id != %s",
-                (engagement_id,),
-            )
-            orphan_eng = cur.rowcount
-            if orphan_eng > 0 or orphan_ledger > 0:
-                print(f"  Cleaned up {orphan_eng} orphaned engagement(s), {orphan_ledger} orphaned ledger row(s)")
-
             # Upsert engagement_state
             cur.execute(
                 "INSERT INTO engagement_state "
@@ -752,9 +738,33 @@ def main():
         default="dev-00000000-0000-0000-0000-000000000000",
         help="Tenant ID for triple output",
     )
+    parser.add_argument(
+        "--clear-ledger", action="store_true",
+        help="Clear all run_ledger and engagement_state entries, then exit",
+    )
     args = parser.parse_args()
 
     db_url = _db_url()
+
+    # --clear-ledger: wipe run_ledger and engagement_state, then exit
+    if args.clear_ledger:
+        print("Clearing run_ledger and engagement_state...")
+        conn = psycopg2.connect(db_url)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM run_ledger")
+                ledger_count = cur.rowcount
+                cur.execute("DELETE FROM engagement_state")
+                eng_count = cur.rowcount
+            conn.commit()
+            print(f"  Deleted {ledger_count} run_ledger row(s), {eng_count} engagement_state row(s)")
+            print("  Done.")
+        except Exception as e:
+            conn.rollback()
+            _die(f"Clear failed: {e}")
+        finally:
+            conn.close()
+        return
 
     print("=" * 60)
     print("  AOS E2E Convergence Pipeline")
