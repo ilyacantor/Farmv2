@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/business-data", tags=["business-data"])
 
 # In-memory store for recent runs (production would use DB)
 _run_store: Dict[str, Dict[str, Any]] = {}
-_MAX_STORED_RUNS = 10
+_MAX_STORED_RUNS = 3
 
 # Lifecycle state machine for triple generation + DCL push.
 # States: idle → generating → pushing → idle
@@ -393,6 +393,13 @@ async def _do_generate_multi_entity_triples(
     overlap_triple_gen = OverlapTripleGenerator(overlap_data, entity_ids)
     all_triples.extend(overlap_triple_gen.generate())
 
+    # Capture overlap counts for ground truth manifest
+    overlap_counts = {
+        "customer": len(overlap_data.customers),
+        "vendor": len(overlap_data.vendors),
+        "employee": len(overlap_data.people),
+    }
+
     # Customer profiles
     profile_gen = CustomerProfileGenerator(seed=seed)
     for entity_id in entity_ids:
@@ -418,6 +425,26 @@ async def _do_generate_multi_entity_triples(
     output_dir = os.path.join(config_dir, "output", "triples")
     writer = TripleWriter(output_dir)
     output_path = writer.write(all_triples, run_id, tenant_id)
+
+    # Build ground truth index from generated triples for test verification (B10)
+    # Periodic: {entity_id: {period: {concept: value}}} — financial statement triples
+    # Atemporal: {entity_id: {concept: {property: value}}} — EBITDA adjustments, etc.
+    triple_ground_truth: Dict[str, Dict[str, Dict[str, float]]] = {}
+    atemporal_ground_truth: Dict[str, Dict[str, Dict[str, Any]]] = {}
+    for t in all_triples:
+        eid = t.entity_id
+        if t.period and t.property == "amount":
+            if eid not in triple_ground_truth:
+                triple_ground_truth[eid] = {}
+            if t.period not in triple_ground_truth[eid]:
+                triple_ground_truth[eid][t.period] = {}
+            triple_ground_truth[eid][t.period][t.concept] = t.value
+        elif not t.period and isinstance(t.value, (int, float)):
+            if eid not in atemporal_ground_truth:
+                atemporal_ground_truth[eid] = {}
+            if t.concept not in atemporal_ground_truth[eid]:
+                atemporal_ground_truth[eid][t.concept] = {}
+            atemporal_ground_truth[eid][t.concept][t.property] = t.value
 
     generation_time_s = round(time.monotonic() - t_start, 2)
 
@@ -455,10 +482,30 @@ async def _do_generate_multi_entity_triples(
         },
         "output_file": os.path.basename(output_path),
         "pushed_to_dcl": False,
+        "triple_ground_truth": triple_ground_truth,
+        "atemporal_ground_truth": atemporal_ground_truth,
+        "overlap_counts": overlap_counts,
     }
     manifest_path = os.path.join(output_dir, f"{run_id}_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
+
+    # Persist to DB so GET /ground-truth/{run_id} can serve it
+    try:
+        await save_ground_truth_manifest(
+            run_id=run_id,
+            seed=seed,
+            created_at=manifest["timestamp"],
+            manifest=manifest,
+            source_systems=["financial_model"],
+            record_counts=domain_counts,
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to save ground truth manifest to DB for {run_id}: {e}. "
+            f"Manifest saved to disk at {manifest_path}. "
+            f"GET /ground-truth/{run_id} will return 404 until DB is fixed."
+        )
 
     logger.info(
         f"Triple generation complete: run_id={run_id}, "
@@ -471,12 +518,10 @@ async def _do_generate_multi_entity_triples(
     # Queue DCL push as a background task so the response returns immediately.
     # This prevents Render's proxy timeout from killing the request when DCL is slow.
     if not skip_push:
-        from src.output.triple_writer import TripleWriter as _TW
-        raw_triples = _TW.read(output_path)
         _generation_state["status"] = "pushing"
         background_tasks.add_task(
             _background_push_to_dcl,
-            raw_triples=raw_triples,
+            output_path=output_path,
             tenant_id=tenant_id,
             run_id=run_id,
             manifest=manifest,
@@ -709,19 +754,20 @@ def _save_manifest(run_id: str, manifest: Dict[str, Any]) -> None:
 
 
 async def _background_push_to_dcl(
-    raw_triples: List[Dict[str, Any]],
+    output_path: str,
     tenant_id: str,
     run_id: str,
     manifest: Dict[str, Any],
 ) -> None:
     """Background task: push triples to DCL after the HTTP response is sent.
 
-    Updates the manifest file on disk with push results when done.
-    Does not raise HTTPException — logs errors instead since there is
-    no client connection to send them to.
+    Streams triples from the JSONL file in batches to avoid loading the full
+    dataset into memory. Updates the manifest file on disk with push results
+    when done. Does not raise HTTPException — logs errors instead since there
+    is no client connection to send them to.
     """
     try:
-        result = await _push_triples_to_dcl(raw_triples, tenant_id, run_id, manifest)
+        result = await _push_triples_to_dcl(output_path, tenant_id, run_id, manifest)
         logger.info(
             f"Background DCL push complete: run_id={run_id}, "
             f"success={result.get('success')}, pushed={result.get('pushed')}/{result.get('total')}"
@@ -749,12 +795,15 @@ async def _background_push_to_dcl(
 
 
 async def _push_triples_to_dcl(
-    raw_triples: List[Dict[str, Any]],
+    output_path: str,
     tenant_id: str,
     run_id: str,
     manifest: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Push triples to DCL's ingest-triples endpoint in batches.
+
+    Streams from the JSONL file on disk in batches of 1000, so peak memory
+    is one batch (~1000 dicts) instead of the full ~18.5K triple dataset.
 
     Shared by generate-multi-entity-triples (auto-push) and
     triple-runs/{run_id}/push-to-dcl (manual push).
@@ -763,6 +812,7 @@ async def _push_triples_to_dcl(
     never silently succeeds when DCL is unreachable.
     """
     import httpx
+    from src.output.triple_writer import TripleWriter
 
     dcl_url = os.getenv("DCL_INGEST_URL", "")
     if not dcl_url:
@@ -777,21 +827,21 @@ async def _push_triples_to_dcl(
     if "/ingest-triples" not in ingest_url:
         ingest_url = base_url + "/ingest-triples"
     dcl_run_id = str(uuid.uuid4())
-    total = len(raw_triples)
-    batch_size = 1000
+    total = manifest.get("triple_count", 0)
     pushed = 0
     errors = []
+    is_first_batch = True
 
     # 180s per-request timeout: DCL's ingest can take ~70s per 1000-triple batch
     # due to schema validation and upsert logic on Supabase.
     try:
         async with httpx.AsyncClient(timeout=180.0) as client:
-            for i in range(0, total, batch_size):
-                batch = raw_triples[i:i + batch_size]
+            for batch in TripleWriter.read_batches(output_path, batch_size=1000):
                 # First batch: replace=true deactivates any prior triples for this run_id.
                 # Subsequent batches: append=true skips idempotency check, adds to same run.
-                if i == 0:
+                if is_first_batch:
                     url = ingest_url + "?replace=true"
+                    is_first_batch = False
                 else:
                     url = ingest_url + "?append=true"
                 try:
@@ -805,17 +855,15 @@ async def _push_triples_to_dcl(
                         pushed += len(batch)
                     else:
                         errors.append({
-                            "batch_start": i,
                             "batch_size": len(batch),
                             "status_code": resp.status_code,
                             "detail": resp.text[:500],
                         })
                 except httpx.TimeoutException:
                     errors.append({
-                        "batch_start": i,
                         "batch_size": len(batch),
                         "error": "timeout",
-                        "detail": f"DCL timed out after 180s on batch starting at index {i}",
+                        "detail": f"DCL timed out after 180s on batch ({len(batch)} triples)",
                     })
                 except httpx.ConnectError as e:
                     raise HTTPException(
@@ -1018,11 +1066,9 @@ async def verify_triple_run(run_id: str):
 async def push_triple_run_to_dcl(run_id: str):
     """Push a triple run's JSONL output to DCL's ingest endpoint.
 
-    Reads the JSONL file, batches triples, and POSTs to DCL.
+    Streams the JSONL file in batches and POSTs to DCL.
     Requires DCL_INGEST_URL environment variable.
     """
-    from src.output.triple_writer import TripleWriter
-
     manifest = _load_manifest(run_id)
     if not manifest:
         raise HTTPException(
@@ -1040,8 +1086,6 @@ async def push_triple_run_to_dcl(run_id: str):
             detail=f"JSONL file not found: {jsonl_path}",
         )
 
-    raw_triples = TripleWriter.read(jsonl_path)
-
     tenant_id = manifest.get("tenant_id", "")
     if not tenant_id:
         raise HTTPException(
@@ -1052,7 +1096,7 @@ async def push_triple_run_to_dcl(run_id: str):
         )
 
     result = await _push_triples_to_dcl(
-        raw_triples=raw_triples,
+        output_path=jsonl_path,
         tenant_id=tenant_id,
         run_id=run_id,
         manifest=manifest,
@@ -1206,24 +1250,12 @@ async def get_pipe_payload(run_id: str, pipe_id: str):
     if not run_data:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
-    orchestrator = run_data.get("orchestrator")
-    if not orchestrator:
-        raise HTTPException(status_code=404, detail="Orchestrator data not available")
-
-    payload = orchestrator.get_payload_for_pipe(pipe_id)
-    if not payload:
-        # List available pipes
-        available = []
-        for sys_name, pipes in orchestrator.get_payloads().items():
-            for pipe_name, p in pipes.items():
-                if isinstance(p, dict) and "meta" in p:
-                    available.append(p["meta"].get("pipe_id", f"{sys_name}_{pipe_name}"))
-        raise HTTPException(
-            status_code=404,
-            detail=f"Pipe '{pipe_id}' not found. Available: {available}",
-        )
-
-    return JSONResponse(content=payload)
+    raise HTTPException(
+        status_code=404,
+        detail=f"Pipe payloads for run '{run_id}' are no longer retained in memory "
+               f"after generation completes (memory optimization for Render deployment). "
+               f"Use GET /api/business-data/ground-truth/{run_id} for run metadata.",
+    )
 
 
 @router.get("/runs")
@@ -1269,122 +1301,12 @@ async def get_business_profile(run_id: str):
     if not run_data:
         raise HTTPException(status_code=404, detail=f"Run {run_id} not found")
 
-    orchestrator = run_data.get("orchestrator")
-    if not orchestrator or not orchestrator.profile:
-        raise HTTPException(status_code=404, detail="Profile data not available")
-
-    # Use financial model quarters if available (richer data)
-    if orchestrator.model_quarters:
-        quarters = []
-        for fmq in orchestrator.model_quarters:
-            quarters.append({
-                "quarter": fmq.quarter,
-                "is_forecast": fmq.is_forecast,
-                # ARR Waterfall
-                "beginning_arr": round(fmq.beginning_arr, 2),
-                "new_arr": round(fmq.new_arr, 2),
-                "new_logo_arr": round(fmq.new_logo_arr, 2),
-                "expansion_arr": round(fmq.expansion_arr, 2),
-                "churned_arr": round(fmq.churned_arr, 2),
-                "ending_arr": round(fmq.ending_arr, 2),
-                "mrr": round(fmq.mrr, 4),
-                # Revenue
-                "revenue": round(fmq.revenue, 2),
-                "new_logo_revenue": round(fmq.new_logo_revenue, 2),
-                "expansion_revenue": round(fmq.expansion_revenue, 2),
-                "renewal_revenue": round(fmq.renewal_revenue, 2),
-                # P&L
-                "cogs": round(fmq.cogs, 2),
-                "gross_profit": round(fmq.gross_profit, 2),
-                "gross_margin_pct": round(fmq.gross_margin_pct, 1),
-                "sm_expense": round(fmq.sm_expense, 2),
-                "rd_expense": round(fmq.rd_expense, 2),
-                "ga_expense": round(fmq.ga_expense, 2),
-                "total_opex": round(fmq.total_opex, 2),
-                "ebitda": round(fmq.ebitda, 2),
-                "ebitda_margin_pct": round(fmq.ebitda_margin_pct, 1),
-                "net_income": round(fmq.net_income, 2),
-                "net_margin_pct": round(fmq.net_margin_pct, 1),
-                # Balance Sheet
-                "cash": round(fmq.cash, 2),
-                "ar": round(fmq.ar, 2),
-                "total_assets": round(fmq.total_assets, 2),
-                "deferred_revenue": round(fmq.deferred_revenue, 2),
-                "total_liabilities": round(fmq.total_liabilities, 2),
-                "stockholders_equity": round(fmq.stockholders_equity, 2),
-                # Cash Flow
-                "cfo": round(fmq.cfo, 2),
-                "fcf": round(fmq.fcf, 2),
-                # SaaS Metrics
-                "nrr": round(fmq.nrr, 1),
-                "gross_churn_pct": round(fmq.gross_churn_pct, 1),
-                "ltv_cac_ratio": round(fmq.ltv_cac_ratio, 1),
-                "magic_number": round(fmq.magic_number, 2),
-                "burn_multiple": round(fmq.burn_multiple, 2),
-                "rule_of_40": round(fmq.rule_of_40, 1),
-                # Pipeline
-                "pipeline": round(fmq.pipeline, 2),
-                "win_rate": round(fmq.win_rate, 1),
-                "avg_deal_size": round(fmq.avg_deal_size, 4),
-                # Customer & People
-                "customer_count": fmq.customer_count,
-                "new_customers": fmq.new_customers,
-                "churned_customers": fmq.churned_customers,
-                "headcount": fmq.headcount,
-                "hires": fmq.hires,
-                "terminations": fmq.terminations,
-                "attrition_rate": round(fmq.attrition_rate, 1),
-                # Support & Engineering
-                "support_tickets": fmq.support_tickets,
-                "csat": round(fmq.csat, 2),
-                "sprint_velocity": round(fmq.sprint_velocity, 1),
-                "features_shipped": fmq.features_shipped,
-                # Infrastructure
-                "cloud_spend": round(fmq.cloud_spend, 2),
-                "p1_incidents": fmq.p1_incidents,
-                "p2_incidents": fmq.p2_incidents,
-                "uptime_pct": round(fmq.uptime_pct, 2),
-            })
-
-        return JSONResponse(content={
-            "run_id": run_id,
-            "model_version": "2.0",
-            "seed": orchestrator.seed,
-            "quarters": quarters,
-        })
-
-    # Fallback: legacy BusinessProfile data
-    profile = orchestrator.profile
-    quarters = []
-    for qm in profile.quarters:
-        quarters.append({
-            "quarter": qm.quarter,
-            "is_forecast": qm.is_forecast,
-            "revenue": qm.revenue,
-            "arr": qm.arr,
-            "mrr": qm.mrr,
-            "pipeline": qm.pipeline,
-            "win_rate": qm.win_rate,
-            "customer_count": qm.customer_count,
-            "headcount": qm.headcount,
-            "nrr": qm.nrr,
-            "gross_churn_pct": qm.gross_churn_pct,
-            "gross_margin_pct": qm.gross_margin_pct,
-            "support_tickets": qm.support_tickets,
-            "csat": qm.csat,
-            "sprint_velocity": qm.sprint_velocity,
-            "cloud_spend": qm.cloud_spend,
-            "incident_count": qm.incident_count,
-        })
-
-    return JSONResponse(content={
-        "run_id": run_id,
-        "model_version": "1.0",
-        "seed": profile.seed,
-        "base_revenue": profile.base_revenue,
-        "yoy_growth_rate": profile.yoy_growth_rate,
-        "quarters": quarters,
-    })
+    raise HTTPException(
+        status_code=404,
+        detail=f"Profile data for run '{run_id}' is no longer retained in memory "
+               f"after generation completes (memory optimization for Render deployment). "
+               f"Use GET /api/business-data/ground-truth/{run_id} for run metadata.",
+    )
 
 
 @router.get("/dcl-status")
@@ -1678,11 +1600,16 @@ async def verify_dcl_readback(run_id: str, quarter: Optional[str] = Query(None))
 
 
 async def _store_run(run_id: str, orchestrator: "BusinessDataOrchestrator"):
-    """Store run data in memory and persist manifest to DB."""
+    """Store run metadata in memory and persist manifest to DB.
+
+    Stores only the manifest and seed — NOT the full orchestrator object.
+    This prevents the orchestrator's generated_data, model_quarters, and
+    profile from being retained across requests (each can be tens of MB).
+    """
     manifest = orchestrator.get_manifest()
     _run_store[run_id] = {
-        "orchestrator": orchestrator,
         "manifest": manifest,
+        "seed": orchestrator.seed,
     }
     while len(_run_store) > _MAX_STORED_RUNS:
         oldest = next(iter(_run_store))

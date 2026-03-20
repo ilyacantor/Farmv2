@@ -30,17 +30,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
 from src.farm.db import save_manifest_run, get_completed_run_for_pipe, get_completed_pipes_batch
 
-from src.generators.business_data.profile import BusinessProfile
-from src.generators.business_data.salesforce import SalesforceGenerator
-from src.generators.business_data.netsuite import NetSuiteGenerator
-from src.generators.business_data.chargebee import ChargebeeGenerator
-from src.generators.business_data.workday import WorkdayGenerator
-from src.generators.business_data.zendesk import ZendeskGenerator
-from src.generators.business_data.jira_gen import JiraGenerator
-from src.generators.business_data.datadog_gen import DatadogGenerator
-from src.generators.business_data.aws_cost import AWSCostGenerator
-from src.generators.financial_model import FinancialModel, Assumptions
-from src.generators.business_data.financial_summary import FinancialSummaryGenerator
+import importlib
 from src.models.manifest import (
     JobManifest,
     DCLPushResult,
@@ -55,15 +45,24 @@ logger = logging.getLogger("farm.api.manifest_intake")
 router = APIRouter(prefix="/api/farm", tags=["manifest-intake"])
 
 _GENERATOR_REGISTRY = {
-    "salesforce": {"class": SalesforceGenerator, "interface": "generate_profile"},
-    "netsuite": {"class": NetSuiteGenerator, "interface": "init_profile"},
-    "chargebee": {"class": ChargebeeGenerator, "interface": "init_profile"},
-    "workday": {"class": WorkdayGenerator, "interface": "init_profile"},
-    "zendesk": {"class": ZendeskGenerator, "interface": "generate_profile_only"},
-    "jira": {"class": JiraGenerator, "interface": "generate_profile_only"},
-    "datadog": {"class": DatadogGenerator, "interface": "generate_profile_only"},
-    "aws_cost_explorer": {"class": AWSCostGenerator, "interface": "generate_profile_only"},
+    "salesforce": {"module": "src.generators.business_data.salesforce", "class_name": "SalesforceGenerator", "interface": "generate_profile"},
+    "netsuite": {"module": "src.generators.business_data.netsuite", "class_name": "NetSuiteGenerator", "interface": "init_profile"},
+    "chargebee": {"module": "src.generators.business_data.chargebee", "class_name": "ChargebeeGenerator", "interface": "init_profile"},
+    "workday": {"module": "src.generators.business_data.workday", "class_name": "WorkdayGenerator", "interface": "init_profile"},
+    "zendesk": {"module": "src.generators.business_data.zendesk", "class_name": "ZendeskGenerator", "interface": "generate_profile_only"},
+    "jira": {"module": "src.generators.business_data.jira_gen", "class_name": "JiraGenerator", "interface": "generate_profile_only"},
+    "datadog": {"module": "src.generators.business_data.datadog_gen", "class_name": "DatadogGenerator", "interface": "generate_profile_only"},
+    "aws_cost_explorer": {"module": "src.generators.business_data.aws_cost", "class_name": "AWSCostGenerator", "interface": "generate_profile_only"},
 }
+
+
+def _resolve_generator(key: str):
+    """Resolve a generator class by key, importing on first use and caching."""
+    spec = _GENERATOR_REGISTRY[key]
+    if "class" not in spec:
+        mod = importlib.import_module(spec["module"])
+        spec["class"] = getattr(mod, spec["class_name"])
+    return spec["class"], spec["interface"]
 
 _CATEGORY_TO_GENERATOR = {
     # Primary categories (1:1 with generators)
@@ -529,7 +528,7 @@ async def _push_to_dcl(
 async def _execute_single_manifest(
     manifest: JobManifest,
     aam_run_id: str | None = None,
-    precomputed_profile: BusinessProfile | None = None,
+    precomputed_profile: "object | None" = None,
     http_client: httpx.AsyncClient | None = None,
     triple_accumulator: list | None = None,
 ) -> ManifestExecutionResult:
@@ -643,15 +642,15 @@ async def _execute_single_manifest(
         # Financial model + profile construction is CPU-bound; offload to thread
         # to keep the event loop free for concurrent requests.
         def _build_profile():
+            from src.generators.financial_model import FinancialModel, Assumptions
+            from src.generators.business_data.profile import BusinessProfile
             fm = FinancialModel(Assumptions())
             quarters = fm.generate()
             return BusinessProfile.from_model_quarters(quarters, seed=seed)
 
         profile = await asyncio.to_thread(_build_profile)
 
-    spec = _GENERATOR_REGISTRY[generator_key]
-    gen_class = spec["class"]
-    interface = spec["interface"]
+    gen_class, interface = _resolve_generator(generator_key)
     run_timestamp = manifest.provenance.get(
         "run_timestamp", datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
     )
@@ -1084,7 +1083,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     # Pre-compute shared BusinessProfile (Fix 6): all manifests in a batch
     # share the same run_id → same seed → same profile. Eliminates 56
     # redundant FinancialModel + BusinessProfile builds (~0.5-2s CPU each).
-    shared_profile: BusinessProfile | None = None
+    shared_profile: object | None = None
     shared_quarters: list | None = None
     finsummary_push_result: Optional[DCLPushResult] = None
     t_profile_start = time.monotonic()
@@ -1093,6 +1092,8 @@ async def batch_manifest_intake(request: BatchManifestRequest):
         shared_seed = hash(first_run_id) % (2**31)
 
         def _build_shared_profile():
+            from src.generators.financial_model import FinancialModel, Assumptions
+            from src.generators.business_data.profile import BusinessProfile
             fm = FinancialModel(Assumptions())
             quarters = fm.generate()
             profile = BusinessProfile.from_model_quarters(quarters, seed=shared_seed)
@@ -1109,7 +1110,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
     async def _run_with_semaphore(
         m: JobManifest,
         shared_client: httpx.AsyncClient,
-        profile: BusinessProfile | None,
+        profile: object | None,
         triples: list | None,
     ) -> Optional[ManifestExecutionResult]:
         async with semaphore:
@@ -1247,6 +1248,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                 )
 
                 # Generate rows
+                from src.generators.business_data.financial_summary import FinancialSummaryGenerator
                 fsg = FinancialSummaryGenerator(
                     model_quarters=shared_quarters, seed=shared_seed
                 )

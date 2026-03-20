@@ -116,7 +116,12 @@ class FinancialStatementTripleGenerator:
         add("opex.general_admin", q.ga_expense)
 
         # Below-the-line
-        add("pnl.ebitda", q.ebitda)
+        # Compute EBITDA from the rounded triple values (rev, cogs, opex)
+        # to guarantee P&L identity at the triple level.  The model's
+        # internal q.ebitda goes through an intermediate gross_profit
+        # round, which can diverge by $0.01 from rev - cogs - opex.
+        ebitda_triple = _r(q.revenue - q.cogs - q.total_opex)
+        add("pnl.ebitda", ebitda_triple)
         add("pnl.depreciation_amortization", q.da_expense)
         add("pnl.operating_profit", q.operating_profit)
         add("pnl.tax", q.tax_expense)

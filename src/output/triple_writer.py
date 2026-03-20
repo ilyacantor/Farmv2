@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import List
+from typing import Generator, List
 
 from src.output.triple_format import SemanticTriple
 
@@ -50,3 +50,21 @@ class TripleWriter:
                 if line:
                     triples.append(json.loads(line))
         return triples
+
+    @staticmethod
+    def read_batches(filepath: str, batch_size: int = 1000) -> Generator[List[dict], None, None]:
+        """Yield triples from a JSONL file in batches.
+
+        Peak memory is one batch (~batch_size dicts) instead of the full file.
+        """
+        batch: List[dict] = []
+        with open(filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    batch.append(json.loads(line))
+                    if len(batch) >= batch_size:
+                        yield batch
+                        batch = []
+        if batch:
+            yield batch

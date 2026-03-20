@@ -680,7 +680,8 @@ class TestGeneratorRegistry:
 
     def test_each_has_class_and_interface(self):
         for system, spec in _GENERATOR_REGISTRY.items():
-            assert "class" in spec, f"{system} missing 'class'"
+            assert "module" in spec, f"{system} missing 'module'"
+            assert "class_name" in spec, f"{system} missing 'class_name'"
             assert "interface" in spec, f"{system} missing 'interface'"
             assert spec["interface"] in (
                 "generate_profile", "init_profile", "generate_profile_only"

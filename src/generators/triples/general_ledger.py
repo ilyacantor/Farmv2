@@ -643,40 +643,10 @@ class GeneralLedgerTripleGenerator:
                     confidence_tier="exact",
                 ))
 
-            # Also emit revenue.total and cogs.total as aggregates
-            rev_total = sum(
-                quarterly_is.get(a.number, 0.0)
-                for a in self._is_accounts if a.acct_type == "revenue"
-            )
-            cogs_total = sum(
-                quarterly_is.get(a.number, 0.0)
-                for a in self._is_accounts if a.acct_type == "cogs"
-            )
-            opex_total = sum(
-                quarterly_is.get(a.number, 0.0)
-                for a in self._is_accounts if a.acct_type == "opex"
-            )
-            da_total = sum(
-                quarterly_is.get(a.number, 0.0)
-                for a in self._is_accounts if a.acct_type == "da"
-            )
-
-            for concept, val in [
-                ("revenue.total", rev_total),
-                ("cogs.total", cogs_total),
-                ("opex.total", opex_total),
-            ]:
-                triples.append(SemanticTriple(
-                    entity_id=self.entity_id,
-                    concept=concept,
-                    property="amount",
-                    value=_r(val),
-                    period=period,
-                    unit="dollars",
-                    source_system="erp",
-                    source_field="trial_balance",
-                    confidence_score=1.0,
-                    confidence_tier="exact",
-                ))
+            # NOTE: quarterly revenue.total, cogs.total, opex.total are
+            # emitted by FinancialStatementTripleGenerator.  Duplicating
+            # them here from GL sums caused P&L identity mismatches
+            # because GL monthly-to-quarterly aggregation rounds
+            # differently than the financial model.
 
         return triples

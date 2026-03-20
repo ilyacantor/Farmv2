@@ -59,7 +59,7 @@ def step_generate(farm_url: str, seed: int, entities: str, tenant_id: str) -> di
     _section("Step 1: Generate Triples")
     elapsed = _timer()
 
-    url = f"{farm_url}/api/farm/generate-multi-entity-triples"
+    url = f"{farm_url}/api/business-data/generate-multi-entity-triples"
     params = {
         "entities": entities,
         "seed": seed,
@@ -175,6 +175,7 @@ def step_push_to_dcl(gen_result: dict, db_url: str) -> dict:
             "source_system", "source_table", "source_field",
             "pipe_id", "run_id",
             "confidence_score", "confidence_tier",
+            "source_run_tag",
         ]
         col_names = ", ".join(cols)
         insert_sql = f"INSERT INTO semantic_triples ({col_names}) VALUES %s"
@@ -197,6 +198,7 @@ def step_push_to_dcl(gen_result: dict, db_url: str) -> dict:
                 run_uuid,
                 t.get("confidence_score", 0.95),
                 t.get("confidence_tier", "high"),
+                run_id,
             ))
 
         # Batch insert in chunks of 2000 to avoid overwhelming PG
@@ -428,32 +430,32 @@ def step_query_metrics(dcl_url: str, push_result: dict) -> dict:
         {
             "name": "Combining IS",
             "path": "/api/dcl/reports/v2/combining/income-statement",
-            "params": {"period": "2025-Q1", "run_id": run_uuid},
+            "params": {"period": "2025-Q1", "tenant_id": tenant_uuid, "run_id": run_uuid},
         },
         {
             "name": "Combining BS",
             "path": "/api/dcl/reports/v2/combining/balance-sheet",
-            "params": {"period": "2025-Q1", "run_id": run_uuid},
+            "params": {"period": "2025-Q1", "tenant_id": tenant_uuid, "run_id": run_uuid},
         },
         {
             "name": "Overlap Summary",
             "path": "/api/dcl/reports/v2/overlap/summary",
-            "params": {"run_id": run_uuid},
+            "params": {"tenant_id": tenant_uuid, "run_id": run_uuid},
         },
         {
             "name": "EBITDA Bridge",
             "path": "/api/dcl/reports/v2/bridge",
-            "params": {"run_id": run_uuid},
+            "params": {"tenant_id": tenant_uuid, "run_id": run_uuid},
         },
         {
             "name": "QofE",
             "path": "/api/dcl/reports/v2/qoe",
-            "params": {"run_id": run_uuid},
+            "params": {"tenant_id": tenant_uuid, "run_id": run_uuid},
         },
         {
             "name": "Cross-sell",
             "path": "/api/dcl/reports/v2/cross-sell/summary",
-            "params": {"run_id": run_uuid},
+            "params": {"tenant_id": tenant_uuid, "run_id": run_uuid},
         },
         {
             "name": "Triples Overview",

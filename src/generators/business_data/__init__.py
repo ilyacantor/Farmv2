@@ -3,28 +3,10 @@ Business data generators for enterprise source systems.
 
 Generates realistic CRM, ERP, Billing, HCM, Support, PM, Monitoring, and Cloud Cost
 data shaped the way each source system actually stores it. This data feeds the DCL
-ingestion pipeline, replacing the static fact_base.json with live, semantically unified data.
+ingestion pipeline with live, semantically unified data.
+
+Generator classes are imported from their individual modules (e.g.
+``from src.generators.business_data.salesforce import SalesforceGenerator``).
+This package __init__ intentionally does NOT re-export them so that importing
+any single sub-module does not force-load all generators into memory.
 """
-
-from src.generators.business_data.profile import BusinessProfile, QuarterMetrics
-from src.generators.business_data.salesforce import SalesforceGenerator
-from src.generators.business_data.netsuite import NetSuiteGenerator
-from src.generators.business_data.chargebee import ChargebeeGenerator
-from src.generators.business_data.workday import WorkdayGenerator
-from src.generators.business_data.zendesk import ZendeskGenerator
-from src.generators.business_data.jira_gen import JiraGenerator
-from src.generators.business_data.datadog_gen import DatadogGenerator
-from src.generators.business_data.aws_cost import AWSCostGenerator
-
-__all__ = [
-    "BusinessProfile",
-    "QuarterMetrics",
-    "SalesforceGenerator",
-    "NetSuiteGenerator",
-    "ChargebeeGenerator",
-    "WorkdayGenerator",
-    "ZendeskGenerator",
-    "JiraGenerator",
-    "DatadogGenerator",
-    "AWSCostGenerator",
-]
