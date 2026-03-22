@@ -63,6 +63,7 @@ class TargetSpec(BaseModel):
     tenant_id: str = Field(..., description="Tenant identifier — required for provenance, no default")
     snapshot_name: str = Field(..., description="Snapshot name — required for provenance, no default")
     entity_id: Optional[str] = Field(default=None, description="Entity this data belongs to (e.g. 'meridian', 'cascadia') — required for DCL entity filtering")
+    triples_id: Optional[str] = Field(default=None, description="Pipeline-level triples correlation ID — echoed in response for provenance tracking")
     callback_url: Optional[str] = Field(default=None, description="AAM callback base URL — Farm appends /{run_id}")
 
 
@@ -137,6 +138,7 @@ class ManifestExecutionResult(BaseModel):
     run_id: str = Field(..., description="From manifest — echoed back")
     pipe_id: str = Field(..., description="From manifest.source.pipe_id")
     farm_run_id: str = Field(..., description="Farm's internal execution ID")
+    triples_id: Optional[str] = Field(default=None, description="Echoed from manifest target — pipeline-level triples correlation ID")
 
     # Execution summary
     status: str = Field(..., description="completed | skipped | failed | rejected_by_dcl")

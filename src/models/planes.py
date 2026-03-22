@@ -433,6 +433,7 @@ class SnapshotCreateResponse(BaseModel):
     snapshot_id: str
     snapshot_fingerprint: str
     tenant_id: str
+    tenant_name: Optional[str] = None
     created_at: str
     schema_version: str = SCHEMA_VERSION
     duplicate_of_snapshot_id: Optional[str] = None

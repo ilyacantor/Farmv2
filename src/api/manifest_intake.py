@@ -557,6 +557,7 @@ async def _execute_single_manifest(
     run_id = manifest.run_id
     tenant_id = manifest.target.tenant_id
     snapshot_name = manifest.target.snapshot_name
+    triples_id = manifest.target.triples_id
 
     # ── Per-phase timing ────────────────────────────────────────────
     t_idempotency_ms: int | None = None
@@ -601,6 +602,7 @@ async def _execute_single_manifest(
             persisted=True,
             skipped_duplicate=True,
             farm_verification_requested=manifest.farm_verification,
+            triples_id=triples_id,
         )
 
     generator_key = _resolve_generator_key(manifest)
@@ -702,6 +704,7 @@ async def _execute_single_manifest(
                 run_id=run_id, pipe_id=pipe_id, farm_run_id=farm_run_id,
                 status="failed", source_system=system, rows_generated=0,
                 persisted=False, farm_verification_requested=manifest.farm_verification,
+                triples_id=triples_id,
             )
         return ManifestExecutionResult(
             run_id=run_id,
@@ -711,6 +714,7 @@ async def _execute_single_manifest(
             source_system=system,
             rows_generated=0,
             farm_verification_requested=manifest.farm_verification,
+            triples_id=triples_id,
         )
     except Exception as e:
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
@@ -735,6 +739,7 @@ async def _execute_single_manifest(
                 run_id=run_id, pipe_id=pipe_id, farm_run_id=farm_run_id,
                 status="failed", source_system=system, rows_generated=0,
                 persisted=False, farm_verification_requested=manifest.farm_verification,
+                triples_id=triples_id,
             )
         return ManifestExecutionResult(
             run_id=run_id,
@@ -744,6 +749,7 @@ async def _execute_single_manifest(
             source_system=system,
             rows_generated=0,
             farm_verification_requested=manifest.farm_verification,
+            triples_id=triples_id,
         )
 
     t_generator_ms = int((time.monotonic() - t_phase) * 1000)
@@ -784,6 +790,7 @@ async def _execute_single_manifest(
                     run_id=run_id, pipe_id=pipe_id, farm_run_id=farm_run_id,
                     status="failed", source_system=system, rows_generated=0,
                     persisted=False, farm_verification_requested=manifest.farm_verification,
+                    triples_id=triples_id,
                 )
             return ManifestExecutionResult(
                 run_id=run_id,
@@ -793,6 +800,7 @@ async def _execute_single_manifest(
                 source_system=system,
                 rows_generated=0,
                 farm_verification_requested=manifest.farm_verification,
+                triples_id=triples_id,
             )
 
     rows = pipe_payload.get("data", [])
@@ -1033,6 +1041,7 @@ async def _execute_single_manifest(
         t_push_ms=t_push_ms,
         t_persist_ms=t_persist_ms,
         t_total_ms=t_total_ms,
+        triples_id=triples_id,
     )
 
 
@@ -1144,6 +1153,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                         error=str(exc.detail)[:500],
                         error_type=f"http_{exc.status_code}",
                     ),
+                    triples_id=m.target.triples_id,
                 )
             except Exception as exc:
                 logger.error(
@@ -1166,6 +1176,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                         error=str(exc)[:500],
                         error_type="execution_error",
                     ),
+                    triples_id=m.target.triples_id,
                 )
 
     # ── Bulk preflight idempotency check ─────────────────────────────
@@ -1205,6 +1216,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                 push_result=None,
                 persisted=True,
                 skipped_duplicate=True,
+                triples_id=m.target.triples_id,
             ))
         else:
             execute_manifests.append(m)

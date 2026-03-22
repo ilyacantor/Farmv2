@@ -140,6 +140,7 @@ async def create_snapshot(request: SnapshotRequest):
                     snapshot_id=new_snapshot_id,
                     snapshot_fingerprint=fingerprint,
                     tenant_id=request.tenant_id,
+                    tenant_name=request.tenant_id,
                     created_at=new_created_at,
                     schema_version=SCHEMA_VERSION,
                     duplicate_of_snapshot_id=existing["snapshot_id"],
@@ -203,6 +204,7 @@ async def _create_snapshot_background(request, fingerprint, run_id, unique_snaps
             "snapshot_id": unique_snapshot_id,
             "snapshot_fingerprint": fingerprint,
             "tenant_id": request.tenant_id,
+            "tenant_name": request.tenant_id,
             "status": "pending",
             "message": f"Snapshot generation started. Poll GET /api/jobs/{job_id} for status.",
         }
@@ -309,6 +311,7 @@ async def _create_snapshot_inline(request, fingerprint, run_id, unique_snapshot_
         snapshot_id=unique_snapshot_id,
         snapshot_fingerprint=fingerprint,
         tenant_id=meta_info['tenant_id'],
+        tenant_name=meta_info['tenant_id'],
         created_at=meta_info['created_at'],
         schema_version=SCHEMA_VERSION,
         duplicate_of_snapshot_id=None,
