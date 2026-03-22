@@ -8,6 +8,7 @@ from src.generators.triples.service_catalogs import ServiceCatalogTripleGenerato
 from src.generators.triples.customer_profiles import CustomerProfileTripleGenerator
 from src.generators.triples.general_ledger import GeneralLedgerTripleGenerator
 from src.generators.triples.chart_of_accounts import ChartOfAccountsTripleGenerator
+from src.generators.triples.pipeline_stages import PipelineStageTripleGenerator
 
 __all__ = [
     "FinancialStatementTripleGenerator",
@@ -18,4 +19,5 @@ __all__ = [
     "CustomerProfileTripleGenerator",
     "GeneralLedgerTripleGenerator",
     "ChartOfAccountsTripleGenerator",
+    "PipelineStageTripleGenerator",
 ]

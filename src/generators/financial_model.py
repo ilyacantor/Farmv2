@@ -1363,6 +1363,13 @@ class FinancialModel:
         )
 
         q.pipeline = _r(q.revenue * a.pipeline_multiple)
+        q.pipeline_by_stage = {
+            "Lead": _r(q.pipeline * 0.25),
+            "Qualified": _r(q.pipeline * 0.20),
+            "Proposal": _r(q.pipeline * 0.20),
+            "Negotiation": _r(q.pipeline * 0.16),
+            "Closed-Won": _r(q.pipeline * 0.19),
+        }
         q.win_rate = _r(a.win_rate + years_elapsed * 0.3, 1)
         q.sales_cycle_days = _r(a.sales_cycle_days - years_elapsed * 1, 0)
         q.avg_deal_size = _r(a.avg_engagement_value, 4)
@@ -1660,6 +1667,13 @@ class FinancialModel:
         q.customer_count = prev_cust + q.new_customers - q.churned_customers
 
         q.pipeline = _r(q.revenue * a.pipeline_multiple)
+        q.pipeline_by_stage = {
+            "Lead": _r(q.pipeline * 0.25),
+            "Qualified": _r(q.pipeline * 0.20),
+            "Proposal": _r(q.pipeline * 0.20),
+            "Negotiation": _r(q.pipeline * 0.16),
+            "Closed-Won": _r(q.pipeline * 0.19),
+        }
         q.win_rate = _r(a.win_rate + years_elapsed * 0.3, 1)
         q.sales_cycle_days = _r(a.sales_cycle_days - years_elapsed * 1, 0)
         q.avg_deal_size = _r(getattr(a, 'avg_contract_value', 5.0), 4)

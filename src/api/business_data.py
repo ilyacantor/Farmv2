@@ -303,6 +303,7 @@ async def _do_generate_multi_entity_triples(
     from src.generators.triples.customer_profiles import CustomerProfileTripleGenerator
     from src.generators.triples.general_ledger import GeneralLedgerTripleGenerator
     from src.generators.triples.chart_of_accounts import ChartOfAccountsTripleGenerator
+    from src.generators.triples.pipeline_stages import PipelineStageTripleGenerator
     from src.output.triple_writer import TripleWriter
 
     if not tenant_id or not tenant_id.strip():
@@ -376,6 +377,10 @@ async def _do_generate_multi_entity_triples(
         # Service catalogs
         svc_gen = ServiceCatalogTripleGenerator(entity_id, assumptions.business_model)
         all_triples.extend(svc_gen.generate())
+
+        # Pipeline stage breakdown
+        pipeline_gen = PipelineStageTripleGenerator(quarters, entity_id)
+        all_triples.extend(pipeline_gen.generate())
 
     # COFA adjustments (requires 2 entities)
     if len(all_quarters) == 2:
