@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import JSONResponse
-from src.farm.db import save_manifest_run, get_completed_run_for_pipe, get_completed_pipes_batch
+from src.farm.db import save_manifest_run, save_ground_truth_manifest, get_completed_run_for_pipe, get_completed_pipes_batch
 
 import importlib
 from src.models.manifest import (
@@ -285,12 +285,13 @@ async def _push_to_dcl(
         "row_count": len(rows),
         "rows": rows,
     }
-    # entity_id is required for DCL entity filtering — resolve from manifest or env fallback
-    resolved_entity_id = manifest.target.entity_id or os.environ.get("FARM_DEFAULT_ENTITY_ID")
+    # entity_id is required for DCL entity filtering — must come from manifest
+    resolved_entity_id = manifest.target.entity_id
     if not resolved_entity_id:
         raise ValueError(
             f"entity_id required for DCL push of pipe {pipe_id} — "
-            f"set in manifest target or FARM_DEFAULT_ENTITY_ID env var"
+            f"manifest.target.entity_id is empty. Platform must pass entity_id "
+            f"in the manifest target."
         )
     body["entity_id"] = resolved_entity_id
 
@@ -531,6 +532,7 @@ async def _execute_single_manifest(
     precomputed_profile: "object | None" = None,
     http_client: httpx.AsyncClient | None = None,
     triple_accumulator: list | None = None,
+    skip_legacy_push: bool = False,
 ) -> ManifestExecutionResult:
     """
     Core logic for executing a single JobManifest.
@@ -547,6 +549,9 @@ async def _execute_single_manifest(
                              → same profile. Eliminates redundant CPU work.
         http_client: Optional shared httpx client (batch mode) to avoid per-pipe
                      TLS handshakes. Falls back to creating a new client per push.
+        skip_legacy_push: When True, skip the deprecated _push_to_dcl call.
+                          The single-manifest endpoint sets this because it pushes
+                          triples directly to /api/dcl/ingest-triples instead.
     """
     start_time = time.monotonic()
     created_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -638,19 +643,41 @@ async def _execute_single_manifest(
 
     # Use pre-computed profile from batch if available (Fix 6: eliminates
     # 56 redundant profile builds — all manifests share the same seed).
+    fin_model_quarters = None
+    fin_model_assumptions = None
+    fin_model_config_raw = None
     if precomputed_profile is not None:
         profile = precomputed_profile
     else:
         # Financial model + profile construction is CPU-bound; offload to thread
         # to keep the event loop free for concurrent requests.
+        entity_id_for_config = (manifest.target.entity_id or manifest.target.tenant_id or "").lower()
+
         def _build_profile():
             from src.generators.financial_model import FinancialModel, Assumptions
             from src.generators.business_data.profile import BusinessProfile
-            fm = FinancialModel(Assumptions())
-            quarters = fm.generate()
-            return BusinessProfile.from_model_quarters(quarters, seed=seed)
+            from pathlib import Path
+            import yaml as _yaml
 
-        profile = await asyncio.to_thread(_build_profile)
+            # Try entity-specific config first (farm_config_meridian.yaml etc.)
+            config_dir = Path(__file__).resolve().parents[2]
+            config_path = config_dir / f"farm_config_{entity_id_for_config}.yaml"
+            if config_path.exists():
+                assumptions = Assumptions.from_yaml(str(config_path))
+                with open(config_path, encoding="utf-8") as f:
+                    config_raw = _yaml.safe_load(f) or {}
+            else:
+                assumptions = Assumptions()
+                config_raw = {}
+
+            fm = FinancialModel(assumptions)
+            quarters = fm.generate()
+            profile = BusinessProfile.from_model_quarters(quarters, seed=seed)
+            return profile, quarters, assumptions, config_raw
+
+        profile, fin_model_quarters, fin_model_assumptions, fin_model_config_raw = (
+            await asyncio.to_thread(_build_profile)
+        )
 
     gen_class, interface = _resolve_generator(generator_key)
     run_timestamp = manifest.provenance.get(
@@ -845,6 +872,37 @@ async def _execute_single_manifest(
 
     del generated_data  # Release ~14-40MB; no longer needed after row extraction
 
+    # ── Financial statement triples (additive — P&L, BS, CF) ─────────
+    # The FinancialModel quarters are already built during profile construction.
+    # Wire the same FinancialStatementTripleGenerator that business_data.py uses
+    # to produce revenue.total, cogs.total, asset.*, liability.*, cash_flow.*, etc.
+    # Only runs on the single-manifest path (fin_model_quarters is set above).
+    if (triple_accumulator is not None
+            and fin_model_quarters is not None
+            and os.environ.get("ENABLE_TRIPLE_CONVERSION", "true").lower() == "true"):
+        try:
+            from src.generators.triples.financial_statements import FinancialStatementTripleGenerator
+            fin_entity_id = manifest.target.entity_id or manifest.target.tenant_id
+            # Override entity_id on quarters so triples carry the manifest's entity
+            for fq in fin_model_quarters:
+                fq.entity_id = fin_entity_id
+            fin_gen = FinancialStatementTripleGenerator(
+                fin_model_quarters, fin_model_assumptions, fin_model_config_raw,
+            )
+            fin_triples = fin_gen.generate()
+            if fin_triples:
+                triple_accumulator.extend(fin_triples)
+                logger.info(
+                    f"FINANCIAL_STATEMENT_TRIPLES: pipe_id={pipe_id}, "
+                    f"entity_id={fin_entity_id}, triples={len(fin_triples)}"
+                )
+        except Exception as fin_err:
+            logger.error(
+                f"FINANCIAL_STATEMENT_TRIPLE_ERROR: pipe_id={pipe_id}, "
+                f"error={fin_err}",
+                exc_info=True,
+            )
+
     logger.info(
         f"Generated {rows_generated} rows for system={system} "
         f"(generator={generator_key}), manifest pipe_id={pipe_id}"
@@ -861,43 +919,58 @@ async def _execute_single_manifest(
     schema_hash = _compute_schema_hash(rows)
     t_phase = time.monotonic()
 
-    # Chunk large payloads to avoid 26MB+ JSON blocking DCL's event loop.
-    # Each chunk shares the same pipe_id and run_id; DCL merges them via
-    # the IngestStore which appends rows per (run_id, pipe_id) key.
-    _CHUNK_SIZE = 5000
-    if len(rows) > _CHUNK_SIZE:
-        chunks = [rows[i:i + _CHUNK_SIZE] for i in range(0, len(rows), _CHUNK_SIZE)]
-        logger.info(
-            f"Chunking {pipe_id}: {len(rows)} rows → {len(chunks)} chunks of ≤{_CHUNK_SIZE}"
+    if skip_legacy_push:
+        # Single-manifest path: triples are pushed by the caller via
+        # /api/dcl/ingest-triples. No raw-row push needed.
+        push_result = DCLPushResult(
+            run_id=run_id,
+            pipe_id=pipe_id,
+            farm_run_id=farm_run_id,
+            status="success",
+            rows_pushed=rows_generated,
+            rows_accepted=rows_generated,
         )
-        push_result = None
-        for chunk_idx, chunk in enumerate(chunks):
-            chunk_result = await _push_to_dcl(
+        logger.info(
+            f"Legacy push skipped (triple path): pipe_id={pipe_id}, "
+            f"rows={rows_generated}"
+        )
+    else:
+        # Batch path: legacy push to /api/dcl/ingest (unchanged).
+        # Chunk large payloads to avoid 26MB+ JSON blocking DCL's event loop.
+        _CHUNK_SIZE = 5000
+        if len(rows) > _CHUNK_SIZE:
+            chunks = [rows[i:i + _CHUNK_SIZE] for i in range(0, len(rows), _CHUNK_SIZE)]
+            logger.info(
+                f"Chunking {pipe_id}: {len(rows)} rows → {len(chunks)} chunks of ≤{_CHUNK_SIZE}"
+            )
+            push_result = None
+            for chunk_idx, chunk in enumerate(chunks):
+                chunk_result = await _push_to_dcl(
+                    manifest=manifest,
+                    rows=chunk,
+                    farm_run_id=farm_run_id,
+                    source_system=system,
+                    schema_hash=schema_hash,
+                    http_client=http_client,
+                )
+                if push_result is None or chunk_result.status != "success":
+                    push_result = chunk_result
+                if chunk_result.status != "success":
+                    logger.error(
+                        f"Chunk {chunk_idx+1}/{len(chunks)} failed for {pipe_id}: "
+                        f"{chunk_result.error}"
+                    )
+                    break
+            rows_pushed = len(rows) if push_result.status == "success" else 0
+        else:
+            push_result = await _push_to_dcl(
                 manifest=manifest,
-                rows=chunk,
+                rows=rows,
                 farm_run_id=farm_run_id,
                 source_system=system,
                 schema_hash=schema_hash,
                 http_client=http_client,
             )
-            if push_result is None or chunk_result.status != "success":
-                push_result = chunk_result
-            if chunk_result.status != "success":
-                logger.error(
-                    f"Chunk {chunk_idx+1}/{len(chunks)} failed for {pipe_id}: "
-                    f"{chunk_result.error}"
-                )
-                break
-        rows_pushed = len(rows) if push_result.status == "success" else 0
-    else:
-        push_result = await _push_to_dcl(
-            manifest=manifest,
-            rows=rows,
-            farm_run_id=farm_run_id,
-            source_system=system,
-            schema_hash=schema_hash,
-            http_client=http_client,
-        )
 
     t_push_ms = int((time.monotonic() - t_phase) * 1000)
     del rows, pipe_payload  # Release row data after push; only push_result metadata needed
@@ -1050,16 +1123,216 @@ async def manifest_intake(manifest: JobManifest):
     """
     Receive a JobManifest from AAM and execute it.
 
-    This is Path 2 (AAM → Farm) of the Trifecta architecture.
-    Farm generates data for the specified source system, then pushes it
-    to DCL (Path 3) using the manifest's pipe_id and target.dcl_url.
-
-    The manifest's source.pipe_id is the ONLY identity used in DCL push
-    headers. Generator-internal pipe_ids are not used.
+    Generates data via the appropriate generator, converts to semantic triples,
+    and pushes to DCL's /api/dcl/ingest-triples endpoint. The old raw-row
+    push path (/api/dcl/ingest) is no longer used.
     """
-    # Single dispatch is a batch of one — use run_id as the aam_run_id
-    # so the NLQ tab can always display a traceable AAM correlation key.
-    return await _execute_single_manifest(manifest, aam_run_id=manifest.run_id)
+    # Collect triples from the generator output, same as the batch path.
+    _enable = os.environ.get("ENABLE_TRIPLE_CONVERSION", "true").lower() == "true"
+    triple_accumulator: list = [] if _enable else None
+
+    result = await _execute_single_manifest(
+        manifest, aam_run_id=manifest.run_id,
+        triple_accumulator=triple_accumulator,
+        skip_legacy_push=True,
+    )
+
+    # If _execute_single_manifest already failed (generation error, etc.), return as-is
+    if result.status not in ("completed", "skipped"):
+        return result
+
+    # Push accumulated triples to DCL /api/dcl/ingest-triples
+    if triple_accumulator and len(triple_accumulator) > 0:
+        try:
+            entity_id = manifest.target.entity_id
+            if not entity_id:
+                raise ValueError(
+                    f"entity_id required for triple push of pipe {manifest.source.pipe_id} — "
+                    f"manifest.target.entity_id is empty"
+                )
+
+            triple_run_id = f"triples_single_{manifest.run_id}"
+            triple_run_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, triple_run_id))
+            tenant_id = manifest.target.tenant_id
+            triple_tenant_uuid = (
+                tenant_id if _is_valid_uuid(tenant_id)
+                else str(uuid.uuid5(uuid.NAMESPACE_URL, tenant_id))
+            )
+
+            # Build payload matching DCL IngestRequest schema
+            triple_payloads = []
+            for t in triple_accumulator:
+                td = t.to_dict()
+                raw_pipe_id = td.get("pipe_id")
+                triple_pipe_uuid = (
+                    raw_pipe_id if _is_valid_uuid(raw_pipe_id)
+                    else str(uuid.uuid5(uuid.NAMESPACE_URL, raw_pipe_id))
+                ) if raw_pipe_id else None
+                triple_payloads.append({
+                    "entity_id": td["entity_id"],
+                    "concept": td["concept"],
+                    "property": td["property"],
+                    "value": td["value"],
+                    "period": td.get("period"),
+                    "currency": td.get("currency", "USD"),
+                    "unit": td.get("unit"),
+                    "source_system": td.get("source_system", ""),
+                    "source_table": td.get("source_table"),
+                    "source_field": td.get("source_field"),
+                    "pipe_id": triple_pipe_uuid,
+                    "confidence_score": td.get("confidence_score", 0.85),
+                    "confidence_tier": td.get("confidence_tier", "high"),
+                })
+
+            ingest_body = {
+                "tenant_id": triple_tenant_uuid,
+                "run_id": triple_run_uuid,
+                "source_run_tag": manifest.run_id,
+                "triples": triple_payloads,
+            }
+
+            # Resolve DCL base URL, strip deprecated /api/dcl/ingest suffix
+            dcl_url_env = os.environ.get("DCL_INGEST_URL", "").strip()
+            dcl_base = dcl_url_env if dcl_url_env else manifest.target.dcl_url.rstrip("/")
+            if dcl_base.endswith("/api/dcl/ingest"):
+                dcl_base = dcl_base[:-len("/api/dcl/ingest")]
+            ingest_url = f"{dcl_base}/api/dcl/ingest-triples"
+
+            logger.info(
+                f"TRIPLE_PUSH_START: {len(triple_payloads)} triples → {ingest_url}, "
+                f"run_id={triple_run_uuid}, entity_id={entity_id}"
+            )
+
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(
+                    ingest_url,
+                    json=ingest_body,
+                    params={"replace": "true"},
+                )
+
+            if resp.status_code == 201:
+                resp_data = resp.json()
+                triple_count = resp_data.get("triple_count", len(triple_payloads))
+                logger.info(
+                    f"TRIPLE_PUSH_SUCCESS: {triple_count} triples ingested, "
+                    f"run_id={triple_run_uuid}"
+                )
+                result = result.model_copy(update={
+                    "push_result": DCLPushResult(
+                        run_id=manifest.run_id, pipe_id=manifest.source.pipe_id,
+                        dcl_run_id=resp_data.get("run_id"),
+                        farm_run_id=result.farm_run_id, status="success",
+                        rows_pushed=len(triple_payloads),
+                        rows_accepted=triple_count,
+                        status_code=201,
+                    ),
+                })
+                # Persist ground-truth so DCL recon can verify triple counts
+                try:
+                    await save_ground_truth_manifest(
+                        run_id=manifest.run_id,
+                        seed=0,
+                        created_at=datetime.utcnow().isoformat() + "Z",
+                        manifest={
+                            "total_triples": triple_count,
+                            "triple_count": triple_count,
+                            "run_id": manifest.run_id,
+                            "entity_id": entity_id,
+                            "source": "manifest-intake",
+                            "pipe_id": manifest.source.pipe_id,
+                            "dcl_run_id": resp_data.get("run_id"),
+                        },
+                        source_systems=[manifest.source.system],
+                        record_counts={"triples": triple_count},
+                    )
+                except Exception as gt_err:
+                    logger.error(
+                        f"GROUND_TRUTH_PERSIST_FAILURE: could not save ground-truth manifest "
+                        f"for run_id={manifest.run_id}: {gt_err}",
+                        exc_info=True,
+                    )
+            else:
+                error_text = str(resp.text)[:500] if hasattr(resp, 'text') else "unknown"
+                logger.error(
+                    f"TRIPLE_PUSH_ERROR: DCL returned {resp.status_code} for "
+                    f"run_id={triple_run_uuid}: {error_text}"
+                )
+                # 422 = rejection (schema/validation), other = failure
+                if resp.status_code == 422:
+                    try:
+                        rej_data = resp.json()
+                        rej_error_type = rej_data.get("error", "REJECTED")
+                    except Exception:
+                        rej_error_type = "REJECTED"
+                    rej_status = "rejected_by_dcl"
+                else:
+                    rej_error_type = None
+                    rej_status = "failed"
+                result = result.model_copy(update={
+                    "status": rej_status,
+                    "recon_triggered": False,
+                    "push_result": DCLPushResult(
+                        run_id=manifest.run_id, pipe_id=manifest.source.pipe_id,
+                        farm_run_id=result.farm_run_id, status="failed",
+                        status_code=resp.status_code,
+                        error=f"DCL returned {resp.status_code}: {error_text}",
+                        error_type=rej_error_type,
+                    ),
+                })
+        except Exception as e:
+            logger.error(
+                f"TRIPLE_PUSH_ERROR: {e}. "
+                f"pipe_id={manifest.source.pipe_id}, run_id={manifest.run_id}",
+                exc_info=True,
+            )
+            exc_error_type = "connection_error" if isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout)) else "triple_push_error"
+            result = result.model_copy(update={
+                "status": "failed",
+                "recon_triggered": False,
+                "push_result": DCLPushResult(
+                    run_id=manifest.run_id, pipe_id=manifest.source.pipe_id,
+                    farm_run_id=result.farm_run_id, status="failed",
+                    error=str(e)[:500],
+                    error_type=exc_error_type,
+                ),
+            })
+
+    # Persist final state after triple push — upserts over the initial record
+    # from _execute_single_manifest so the DB reflects the real outcome.
+    if result.push_result:
+        try:
+            pr = result.push_result
+            await save_manifest_run(
+                farm_run_id=result.farm_run_id,
+                run_id=manifest.run_id,
+                pipe_id=manifest.source.pipe_id,
+                aam_run_id=manifest.run_id,
+                dcl_run_id=pr.dcl_run_id,
+                tenant_id=manifest.target.tenant_id,
+                snapshot_name=manifest.target.snapshot_name,
+                source_system=manifest.source.system,
+                category=manifest.source.category or None,
+                generator_key=manifest.source.system,
+                status=result.status,
+                rows_generated=result.rows_generated,
+                rows_pushed=pr.rows_pushed or 0,
+                rows_accepted=pr.rows_accepted,
+                dcl_status_code=pr.status_code,
+                error_type=pr.error_type,
+                error_message=pr.error[:500] if pr.error else None,
+                schema_drift=pr.schema_drift or False,
+                created_at=datetime.utcnow().isoformat() + "Z",
+                elapsed_ms=result.t_total_ms,
+                push_result_json=pr.model_dump(),
+            )
+        except Exception as persist_err:
+            logger.error(
+                f"PERSISTENCE FAILURE: triple push result NOT saved for "
+                f"{result.farm_run_id}: {persist_err}",
+                exc_info=True,
+            )
+
+    return result
 
 
 @router.post("/manifest-intake/batch", response_model=BatchManifestResponse)
@@ -1424,6 +1697,11 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                 triple_payloads = []
                 for t in triple_accumulator:
                     td = t.to_dict()
+                    raw_pipe_id = td.get("pipe_id")
+                    triple_pipe_uuid = (
+                        raw_pipe_id if _is_valid_uuid(raw_pipe_id)
+                        else str(uuid.uuid5(uuid.NAMESPACE_URL, raw_pipe_id))
+                    ) if raw_pipe_id else None
                     triple_payloads.append({
                         "entity_id": td["entity_id"],
                         "concept": td["concept"],
@@ -1435,7 +1713,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                         "source_system": td.get("source_system", ""),
                         "source_table": td.get("source_table"),
                         "source_field": td.get("source_field"),
-                        "pipe_id": td.get("pipe_id"),
+                        "pipe_id": triple_pipe_uuid,
                         "confidence_score": td.get("confidence_score", 0.85),
                         "confidence_tier": td.get("confidence_tier", "high"),
                     })
@@ -1443,6 +1721,7 @@ async def batch_manifest_intake(request: BatchManifestRequest):
                 ingest_body = {
                     "tenant_id": triple_tenant_uuid,
                     "run_id": triple_run_uuid,
+                    "source_run_tag": first_manifest.run_id,
                     "triples": triple_payloads,
                 }
 

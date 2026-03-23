@@ -378,8 +378,8 @@ def convert_pipe_to_triples(
     run_id: str,
     period: Optional[str] = None,
     pipe_id: Optional[str] = None,
-    confidence_score: float = 0.85,
-    confidence_tier: str = "high",
+    confidence_score: float = 0.95,
+    confidence_tier: str = "exact",
 ) -> TripleConversionResult:
     """
     Convert a single pipe's data rows into semantic triples.
@@ -392,8 +392,8 @@ def convert_pipe_to_triples(
         run_id: The run/snapshot ID for provenance
         period: Optional time period (e.g., "2025-Q1")
         pipe_id: Optional AAM pipe_id for traceability
-        confidence_score: Confidence score for generated triples (default 0.85 for pipeline data)
-        confidence_tier: Confidence tier (default "high")
+        confidence_score: Confidence score for generated triples (default 0.95 for exact field match)
+        confidence_tier: Confidence tier (default "exact" for deterministic field mapping)
 
     Returns:
         TripleConversionResult with triples, mapping stats, and any unmapped data.

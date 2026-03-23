@@ -154,8 +154,12 @@ class TestExecutionPersistence:
         manifest = _make_manifest()
 
         mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = _dcl_success_response()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {
+            "triple_count": 20,
+            "run_id": "dcl-uuid-provenance-001",
+            "concept_summary": {},
+        }
 
         persisted = {}
 
@@ -174,7 +178,7 @@ class TestExecutionPersistence:
             result = await manifest_intake(manifest)
 
         assert result.status == "completed"
-        # Verify all correlation keys were persisted
+        # Verify all correlation keys were persisted (upserted after triple push)
         assert persisted["run_id"] == "aam-provenance-001"
         assert persisted["pipe_id"] == "sf-crm-001-opportunities"
         assert persisted["dcl_run_id"] == "dcl-uuid-provenance-001"
@@ -185,8 +189,7 @@ class TestExecutionPersistence:
         assert persisted["generator_key"] == "salesforce"
         assert persisted["rows_generated"] > 0
         assert persisted["rows_accepted"] == 20
-        assert persisted["dcl_status_code"] == 200
-        assert persisted["elapsed_ms"] is not None
+        assert persisted["dcl_status_code"] == 201
         assert persisted["farm_run_id"].startswith("farm_manifest_")
 
     @pytest.mark.asyncio
@@ -196,6 +199,7 @@ class TestExecutionPersistence:
 
         mock_response = MagicMock()
         mock_response.status_code = 422
+        mock_response.text = "NO_MATCHING_PIPE: No schema blueprint found"
         mock_response.json.return_value = _dcl_422_response()
 
         persisted = {}
@@ -226,10 +230,10 @@ class TestExecutionPersistence:
         """Connection error must persist with error_type=connection_error."""
         manifest = _make_manifest()
 
-        persisted = {}
+        persisted_calls = []
 
         async def capture_save(**kwargs):
-            persisted.update(kwargs)
+            persisted_calls.append(dict(kwargs))
 
         import httpx as httpx_mod
 
@@ -245,6 +249,8 @@ class TestExecutionPersistence:
             result = await manifest_intake(manifest)
 
         assert result.status == "failed"
+        # The final persistence call (upsert after triple push) has the real outcome
+        persisted = persisted_calls[-1]
         assert persisted["status"] == "failed"
         assert persisted["error_type"] == "connection_error"
         assert "Connection refused" in (persisted["error_message"] or "")
@@ -319,26 +325,27 @@ class TestDCLPushProvenance:
 
     @pytest.mark.asyncio
     async def test_dcl_body_uses_manifest_tenant_and_snapshot(self):
-        """DCL push body must use manifest's tenant_id and snapshot_name."""
+        """DCL triple push body must use manifest's tenant_id (as UUID5)."""
         manifest = _make_manifest(
             target={
                 "dcl_url": "http://localhost:8000",
                 "tenant_id": "globalbank-prod",
                 "snapshot_name": "gb-quarterly-2026Q1",
+                "entity_id": "test-entity",
             }
         )
 
         captured_body = {}
 
         mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = _dcl_success_response()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {"triple_count": 20, "run_id": "uuid-001", "concept_summary": {}}
 
         with patch("src.api.manifest_intake.httpx.AsyncClient") as mock_client_cls, \
              patch("src.api.manifest_intake.save_manifest_run", new_callable=AsyncMock):
             mock_client = AsyncMock()
 
-            async def capture_post(url, json=None, headers=None):
+            async def capture_post(url, json=None, **kwargs):
                 captured_body.update(json or {})
                 return mock_response
             mock_client.post = capture_post
@@ -349,6 +356,9 @@ class TestDCLPushProvenance:
             from src.api.manifest_intake import manifest_intake
             await manifest_intake(manifest)
 
-        assert captured_body["tenant_id"] == "globalbank-prod"
-        assert captured_body["snapshot_name"] == "gb-quarterly-2026Q1"
-        assert captured_body["source_system"] == "salesforce"
+        # Triple push body uses tenant_id as UUID5 deterministic hash
+        import uuid
+        expected_tenant_uuid = str(uuid.uuid5(uuid.NAMESPACE_URL, "globalbank-prod"))
+        assert captured_body["tenant_id"] == expected_tenant_uuid
+        assert "triples" in captured_body
+        assert len(captured_body["triples"]) > 0

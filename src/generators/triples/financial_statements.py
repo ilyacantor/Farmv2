@@ -72,7 +72,8 @@ class FinancialStatementTripleGenerator:
         ts: List[SemanticTriple] = []
 
         def add(concept: str, value: float, unit: str = "dollars",
-                source: str = "erp"):
+                source: str = "erp",
+                conf_score: float = 0.95, conf_tier: str = "exact"):
             ts.append(SemanticTriple(
                 entity_id=self.entity_id,
                 concept=concept,
@@ -81,45 +82,55 @@ class FinancialStatementTripleGenerator:
                 period=period,
                 unit=unit,
                 source_system=source,
-                confidence_score=0.95,
+                confidence_score=conf_score,
+                confidence_tier=conf_tier,
+            ))
+
+        # Revenue — totals are exact, breakdowns are high (allocated)
+        add("revenue.total", q.revenue)
+        if q.business_model == "consultancy":
+            add("revenue.consulting", q.tm_revenue, conf_score=0.85, conf_tier="high")
+            add("revenue.fixed_fee", q.fixed_fee_revenue, conf_score=0.85, conf_tier="high")
+        elif q.business_model == "bpm":
+            add("revenue.managed_services", q.managed_services_revenue, conf_score=0.85, conf_tier="high")
+            add("revenue.per_fte", q.per_fte_revenue, conf_score=0.85, conf_tier="high")
+            add("revenue.per_transaction", q.per_transaction_revenue, conf_score=0.85, conf_tier="high")
+
+        # Revenue by customer — top 20 customers from Pareto distribution
+        for customer_name, customer_rev in getattr(q, "revenue_by_customer", {}).items():
+            ts.append(SemanticTriple(
+                entity_id=self.entity_id,
+                concept="revenue.by_customer",
+                property=customer_name,
+                value=_r(customer_rev),
+                period=period,
+                unit="dollars",
+                source_system="erp",
+                confidence_score=0.80,
                 confidence_tier="high",
             ))
 
-        # Revenue
-        add("revenue.total", q.revenue)
-        if q.business_model == "consultancy":
-            add("revenue.consulting", q.tm_revenue)
-            add("revenue.fixed_fee", q.fixed_fee_revenue)
-        elif q.business_model == "bpm":
-            add("revenue.managed_services", q.managed_services_revenue)
-            add("revenue.per_fte", q.per_fte_revenue)
-            add("revenue.per_transaction", q.per_transaction_revenue)
-
-        # COGS
+        # COGS — total is exact, breakdowns are high (allocated)
         add("cogs.total", q.cogs)
         if q.business_model == "consultancy":
-            add("cogs.direct_labor", q.consultant_comp)
-            add("cogs.bench", q.bench_cost)
-            add("cogs.subcontractors", q.subcontractor_cost)
-            add("cogs.travel", q.travel_cost)
+            add("cogs.direct_labor", q.consultant_comp, conf_score=0.85, conf_tier="high")
+            add("cogs.bench", q.bench_cost, conf_score=0.85, conf_tier="high")
+            add("cogs.subcontractors", q.subcontractor_cost, conf_score=0.85, conf_tier="high")
+            add("cogs.travel", q.travel_cost, conf_score=0.85, conf_tier="high")
         elif q.business_model == "bpm":
-            add("cogs.direct_labor", q.onshore_cost + q.offshore_cost + q.nearshore_cost)
-            add("cogs.bench", q.bench_delivery_cost)
-            add("cogs.subcontractors", q.subcontractor_cost)
-            add("cogs.benefits", q.benefits_cost)
-            add("cogs.delivery_center_ops", q.delivery_center_ops_cost)
+            add("cogs.direct_labor", q.onshore_cost + q.offshore_cost + q.nearshore_cost, conf_score=0.85, conf_tier="high")
+            add("cogs.bench", q.bench_delivery_cost, conf_score=0.85, conf_tier="high")
+            add("cogs.subcontractors", q.subcontractor_cost, conf_score=0.85, conf_tier="high")
+            add("cogs.benefits", q.benefits_cost, conf_score=0.85, conf_tier="high")
+            add("cogs.delivery_center_ops", q.delivery_center_ops_cost, conf_score=0.85, conf_tier="high")
 
-        # OpEx
+        # OpEx — total is exact, breakdowns are high (allocated)
         add("opex.total", q.total_opex)
-        add("opex.sales_marketing", q.sm_expense)
-        add("opex.research_development", q.rd_expense)
-        add("opex.general_admin", q.ga_expense)
+        add("opex.sales_marketing", q.sm_expense, conf_score=0.85, conf_tier="high")
+        add("opex.research_development", q.rd_expense, conf_score=0.85, conf_tier="high")
+        add("opex.general_admin", q.ga_expense, conf_score=0.85, conf_tier="high")
 
-        # Below-the-line
-        # Compute EBITDA from the rounded triple values (rev, cogs, opex)
-        # to guarantee P&L identity at the triple level.  The model's
-        # internal q.ebitda goes through an intermediate gross_profit
-        # round, which can diverge by $0.01 from rev - cogs - opex.
+        # Below-the-line — deterministic calculations are exact
         ebitda_triple = _r(q.revenue - q.cogs - q.total_opex)
         add("pnl.ebitda", ebitda_triple)
         add("pnl.depreciation_amortization", q.da_expense)
@@ -164,7 +175,8 @@ class FinancialStatementTripleGenerator:
                 f"+ equity.total({equity_total}), diff={bs_diff}"
             )
 
-        def add_bs(concept: str, value: float, source: str = "erp"):
+        def add_bs(concept: str, value: float, source: str = "erp",
+                   conf_score: float = 0.95, conf_tier: str = "exact"):
             triples.append(SemanticTriple(
                 entity_id=self.entity_id,
                 concept=concept,
@@ -173,24 +185,27 @@ class FinancialStatementTripleGenerator:
                 period=period,
                 unit="dollars",
                 source_system=source,
-                confidence_score=0.95,
-                confidence_tier="high",
+                confidence_score=conf_score,
+                confidence_tier=conf_tier,
             ))
 
+        # Totals: exact
         add_bs("asset.total", asset_total)
-        add_bs("asset.current.cash", cash)
-        add_bs("asset.current.accounts_receivable", ar)
-        add_bs("asset.current.unbilled_revenue", unbilled_revenue)
-        add_bs("asset.current.prepaid", prepaid)
-        add_bs("asset.noncurrent.property_plant_equipment", ppe)
-        add_bs("asset.noncurrent.intangibles", intangibles)
-        add_bs("asset.noncurrent.goodwill", goodwill)
         add_bs("liability.total", liability_total)
-        add_bs("liability.current.accounts_payable", ap)
-        add_bs("liability.current.accrued_expenses", accrued)
-        add_bs("liability.current.deferred_revenue", deferred_rev)
-        add_bs("liability.noncurrent.long_term_debt", long_term_debt)
         add_bs("equity.total", equity_total)
+
+        # Line items: high (modeled/allocated)
+        add_bs("asset.current.cash", cash, conf_score=0.85, conf_tier="high")
+        add_bs("asset.current.accounts_receivable", ar, conf_score=0.85, conf_tier="high")
+        add_bs("asset.current.unbilled_revenue", unbilled_revenue, conf_score=0.85, conf_tier="high")
+        add_bs("asset.current.prepaid", prepaid, conf_score=0.85, conf_tier="high")
+        add_bs("asset.noncurrent.property_plant_equipment", ppe, conf_score=0.85, conf_tier="high")
+        add_bs("asset.noncurrent.intangibles", intangibles, conf_score=0.85, conf_tier="high")
+        add_bs("asset.noncurrent.goodwill", goodwill, conf_score=0.85, conf_tier="high")
+        add_bs("liability.current.accounts_payable", ap, conf_score=0.85, conf_tier="high")
+        add_bs("liability.current.accrued_expenses", accrued, conf_score=0.85, conf_tier="high")
+        add_bs("liability.current.deferred_revenue", deferred_rev, conf_score=0.85, conf_tier="high")
+        add_bs("liability.noncurrent.long_term_debt", long_term_debt, conf_score=0.85, conf_tier="high")
         add_bs("equity.retained_earnings", retained_earnings)
         add_bs("equity.common_stock", common_stock)
 
@@ -324,7 +339,8 @@ class FinancialStatementTripleGenerator:
             prev_cash_triple = cash
 
             # ── Emit BS triples ─────────────────────────────────────
-            def add_bs(concept: str, value: float, source: str = "erp"):
+            def add_bs(concept: str, value: float, source: str = "erp",
+                       conf_score: float = 0.95, conf_tier: str = "exact"):
                 triples.append(SemanticTriple(
                     entity_id=self.entity_id,
                     concept=concept,
@@ -333,42 +349,52 @@ class FinancialStatementTripleGenerator:
                     period=period,
                     unit="dollars",
                     source_system=source,
-                    confidence_score=0.95,
-                    confidence_tier="high",
+                    confidence_score=conf_score,
+                    confidence_tier=conf_tier,
                 ))
 
+            # BS totals: exact (deterministic sums)
             add_bs("asset.total", asset_total)
-            add_bs("asset.current.cash", cash)
-            add_bs("asset.current.accounts_receivable", ar)
-            add_bs("asset.current.unbilled_revenue", unbilled_revenue)
-            add_bs("asset.current.prepaid", prepaid)
-            add_bs("asset.noncurrent.property_plant_equipment", ppe)
-            add_bs("asset.noncurrent.intangibles", intangibles)
-            add_bs("asset.noncurrent.goodwill", goodwill)
             add_bs("liability.total", liability_total)
-            add_bs("liability.current.accounts_payable", ap)
-            add_bs("liability.current.accrued_expenses", accrued)
-            add_bs("liability.current.deferred_revenue", deferred_rev)
-            add_bs("liability.noncurrent.long_term_debt", long_term_debt)
             add_bs("equity.total", equity_total)
+
+            # BS line items: high (allocated/modeled values)
+            add_bs("asset.current.cash", cash, conf_score=0.85, conf_tier="high")
+            add_bs("asset.current.accounts_receivable", ar, conf_score=0.85, conf_tier="high")
+            add_bs("asset.current.unbilled_revenue", unbilled_revenue, conf_score=0.85, conf_tier="high")
+            add_bs("asset.current.prepaid", prepaid, conf_score=0.85, conf_tier="high")
+            add_bs("asset.noncurrent.property_plant_equipment", ppe, conf_score=0.85, conf_tier="high")
+            add_bs("asset.noncurrent.intangibles", intangibles, conf_score=0.85, conf_tier="high")
+            add_bs("asset.noncurrent.goodwill", goodwill, conf_score=0.85, conf_tier="high")
+            add_bs("liability.current.accounts_payable", ap, conf_score=0.85, conf_tier="high")
+            add_bs("liability.current.accrued_expenses", accrued, conf_score=0.85, conf_tier="high")
+            add_bs("liability.current.deferred_revenue", deferred_rev, conf_score=0.85, conf_tier="high")
+            add_bs("liability.noncurrent.long_term_debt", long_term_debt, conf_score=0.85, conf_tier="high")
             add_bs("equity.retained_earnings", retained_earnings)
             add_bs("equity.common_stock", common_stock)
 
             # ── Emit CF triples ─────────────────────────────────────
+            # CF totals: exact (deterministic sums)
             add_bs("cash_flow.operating.total", operating_total)
+            add_bs("cash_flow.investing.total", investing_total)
+            add_bs("cash_flow.financing.total", financing_total)
+            add_bs("cash_flow.net_change", net_change)
+
+            # CF components from P&L: exact
             add_bs("cash_flow.operating.net_income", operating_ni)
             add_bs("cash_flow.operating.depreciation_add_back", operating_da)
-            add_bs("cash_flow.operating.working_capital_changes", wc_changes)
-            add_bs("cash_flow.operating.change_in_ar", _r(q.change_in_ar))
-            add_bs("cash_flow.operating.change_in_ap", _r(q.change_in_ap))
-            add_bs("cash_flow.operating.change_in_deferred_rev", _r(q.change_in_deferred_rev))
-            add_bs("cash_flow.investing.total", investing_total)
+
+            # CF working capital changes: high (derived from BS deltas)
+            add_bs("cash_flow.operating.working_capital_changes", wc_changes, conf_score=0.85, conf_tier="high")
+            add_bs("cash_flow.operating.change_in_ar", _r(q.change_in_ar), conf_score=0.85, conf_tier="high")
+            add_bs("cash_flow.operating.change_in_ap", _r(q.change_in_ap), conf_score=0.85, conf_tier="high")
+            add_bs("cash_flow.operating.change_in_deferred_rev", _r(q.change_in_deferred_rev), conf_score=0.85, conf_tier="high")
+
+            # CF investing/financing components: exact (direct from model)
             add_bs("cash_flow.investing.capex", investing_capex)
-            add_bs("cash_flow.financing.total", financing_total)
             add_bs("cash_flow.financing.debt_proceeds", 0.0)
             add_bs("cash_flow.financing.debt_repayment", financing_debt_repayment)
             add_bs("cash_flow.financing.dividends", financing_dividends)
-            add_bs("cash_flow.net_change", net_change)
 
             prev_q = q
 

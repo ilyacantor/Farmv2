@@ -22,7 +22,7 @@ class SemanticTriple:
     source_field: Optional[str] = None
     pipe_id: Optional[str] = None
     confidence_score: float = 0.95
-    confidence_tier: str = "high"
+    confidence_tier: str = "exact"
 
     def to_dict(self) -> dict:
         """Serialize to dict. Value field must survive JSON round-trip."""
